@@ -20,7 +20,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import * as version from './version.js';
 import updates from '../src/updates.js';
@@ -237,4 +237,15 @@ function main(argv) {
   process.exit(stapleDmgs());
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main(process.argv.slice(2));
+// True when this file is the entry point, on every platform.
+//
+// `import.meta.url === `file://${process.argv[1]}`` is POSIX-only: on Windows
+// argv[1] is a backslash path (`D:\a\claw\desktop\scripts\build.js`), the string
+// never matches, and main() silently never ran. `npm run build:win` therefore
+// exited 0 having built nothing, and the failure only showed up two steps later
+// as a missing dist/. pathToFileURL produces the real URL form everywhere.
+function isEntry() {
+  return Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
+}
+
+if (isEntry()) main(process.argv.slice(2));
