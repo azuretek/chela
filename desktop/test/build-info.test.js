@@ -1,19 +1,18 @@
-'use strict';
-
-// Plain `node --test` — no Electron. src/build-info.js keeps its parsing and
+// Plain `node --test`, no Electron. src/build-info.js keeps its parsing and
 // formatting free of Electron for exactly this reason; only `read` touches the
 // disk, and it takes a path so it can be pointed at a fixture.
 //
 // Run with: npm test
 
-const test = require('node:test');
-const assert = require('node:assert');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+import test from 'node:test';
+import assert from 'node:assert';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-const buildInfo = require('../src/build-info');
-const cache = require('../src/cache');
+import * as buildInfo from '../src/build-info.js';
+import * as cache from '../src/cache.js';
+import { collect as collectBuildInfo } from '../scripts/build-info.js';
 
 const SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
 const CLEAN = { commit: SHA, branch: 'main', dirty: false, builtAt: '2026-09-02T08:41:07Z' };
@@ -49,7 +48,7 @@ test('a corrupt or empty file degrades instead of throwing', () => {
 
 test('dirty is only true when it is literally true', () => {
   // A truthy-but-not-true value ("false", 1) must not silently mark a release
-  // build as dirty — it would suppress the commit as a cache fingerprint.
+  // build as dirty, it would suppress the commit as a cache fingerprint.
   assert.equal(buildInfo.normalize({ ...CLEAN, dirty: 'false' }).dirty, false);
   assert.equal(buildInfo.normalize({ ...CLEAN, dirty: true }).dirty, true);
 });
@@ -70,7 +69,7 @@ test('a branch other than main is named, because that is the surprising case', (
   );
 });
 
-test('a dirty tree says so — its hash does not describe what was built', () => {
+test('a dirty tree says so, its hash does not describe what was built', () => {
   assert.match(buildInfo.describe('1.0.0', { ...CLEAN, dirty: true }), /a1b2c3d4e5-dirty/);
 });
 
@@ -147,19 +146,19 @@ test('with no commit it still falls back to size and mtime', () => {
 /* --------------------------------------------------- the generator, offline */
 
 test('the generator reads the repo it lives in', () => {
-  // Not asserting a specific hash — it moves every commit. What must hold is
+  // Not asserting a specific hash, it moves every commit. What must hold is
   // that it produces a usable stamp for THIS checkout, which is the only way to
   // catch the git invocation itself breaking.
-  const info = require('../scripts/build-info').collect();
+  const info = collectBuildInfo();
   assert.match(info.commit, /^[0-9a-f]{40}$/);
   assert.equal(typeof info.dirty, 'boolean');
   assert.match(info.builtAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
 });
 
 test('CI environment variables stand in when git is unavailable', () => {
-  // A build from a tarball or an image with no .git — the workflow still knows
+  // A build from a tarball or an image with no .git, the workflow still knows
   // what it checked out.
-  const info = require('../scripts/build-info').collect({
+  const info = collectBuildInfo({
     GITHUB_SHA: SHA, GITHUB_REF_NAME: 'v1.2.3', PATH: '/nonexistent',
   });
   assert.ok(info.commit, 'a commit should be resolved from somewhere');

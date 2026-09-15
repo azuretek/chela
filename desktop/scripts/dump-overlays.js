@@ -6,7 +6,7 @@
 // The companion to scripts/dump-menu.js, and it exists for the same reason: the
 // unit suite tests pure functions, and every defect these pages can have lives
 // outside one. A typo in an element id, a CSP that blocks the page's own
-// script, a selector that no longer matches — all of them pass `npm test` and
+// script, a selector that no longer matches, all of them pass `npm test` and
 // leave a modal that is blank, or worse, an invisible sheet over the whole
 // window. Only running it finds those.
 //
@@ -26,10 +26,11 @@
 // here answers with Electron's version rather than the one in package.json.
 // Every other value is the app's. Read the version from `npm start` instead.
 
-const path = require('node:path');
-const fs = require('node:fs');
-const os = require('node:os');
-const { app, Menu, webContents } = require('electron');
+import path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
+import http from 'node:http';
+import { app, Menu, webContents } from 'electron';
 
 // A throwaway profile, so a run cannot disturb the gateways, pinned
 // certificates or preferences of the app someone actually uses on this machine.
@@ -40,10 +41,10 @@ app.setPath('userData', PROFILE);
 // answering. It is what makes the loading cover's progress bar observable at
 // all: against a refused port the whole connect fails in milliseconds, so the
 // bar only ever exists in its frozen, failed state and the part that moves is
-// never seen. Holding the request produces a genuine, long CONNECTING phase —
-// the same one a sleeping tailnet gateway produces — without faking any of it.
+// never seen. Holding the request produces a genuine, long CONNECTING phase,
+// the same one a sleeping tailnet gateway produces, without faking any of it.
 const HOLD_MS = 5000;
-const slowGateway = require('node:http').createServer((_req, res) => {
+const slowGateway = http.createServer((_req, res) => {
   setTimeout(() => {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end('<!doctype html><title>Slow gateway</title><body>connected');
@@ -52,7 +53,7 @@ const slowGateway = require('node:http').createServer((_req, res) => {
 
 // Seeded with a gateway that cannot answer, which is the state being aimed for
 // rather than a shortcut. An empty profile is a *first run*, and on a first run
-// Settings is the window's own content rather than a modal over it — so the
+// Settings is the window's own content rather than a modal over it, so the
 // overlay path, the one being checked, is the one that never runs.
 fs.writeFileSync(path.join(PROFILE, 'config.json'), `${JSON.stringify({
   gateways: [
@@ -66,9 +67,10 @@ const outIndex = process.argv.indexOf('--out');
 const OUT = outIndex === -1 ? path.join(os.tmpdir(), 'claw-overlays') : process.argv[outIndex + 1];
 
 // The real thing. Loading it registers the IPC handlers, builds the menu, and
-// creates the window, all before our own whenReady handler below runs, because
-// it was required first.
-require('../src/main.js');
+// creates the window. Imported dynamically, and deliberately AFTER the userData
+// path and seed config are set above, because a static import would be hoisted
+// and run main before this harness had prepared its throwaway profile.
+await import('../src/main.js');
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -92,7 +94,7 @@ function overlayContents(file) {
  * possible.
  *
  * The text is the assertion and the image is the bonus, rather than the other
- * way round. It is the stronger signal for what breaks here — a mistyped
+ * way round. It is the stronger signal for what breaks here, a mistyped
  * element id or a CSP that blocked the page's own script both produce a card
  * with nothing in it, which reads as "rendered" in a thumbnail. It is also the
  * only signal available on a machine with no display: `capturePage` needs a
@@ -137,7 +139,7 @@ app.whenReady().then(async () => {
     // The banner, reached through the real update path: a source build has no
     // updater, and a manual check is the one trigger that says so. It is a
     // notice now rather than a modal, so this also proves the banner can carry
-    // an answer to something the user pressed and not only a standing fault —
+    // an answer to something the user pressed and not only a standing fault, 
     // the failed connection's own notice is up alongside it.
     {
       name: 'banner',
@@ -216,7 +218,7 @@ app.whenReady().then(async () => {
   } else {
     const before = JSON.parse(fs.readFileSync(path.join(PROFILE, 'config.json'), 'utf8'));
     // The checkbox is legitimately disabled on a build that could never install
-    // an update — a source run is one — and settings.js deliberately leaves the
+    // an update, a source run is one, and settings.js deliberately leaves the
     // key out of the patch when it is, so that a Linux user who once ran the
     // unpacked binary does not come back to their AppImage with the preference
     // silently off. Where that is the case, drive the same bridge call the
@@ -246,7 +248,7 @@ app.whenReady().then(async () => {
     console.error('FAIL loading: settings overlay is gone, cannot start a slow connect');
     failed = true;
   } else {
-    // The Connect button of the gateway that is *not* active — the active one
+    // The Connect button of the gateway that is *not* active, the active one
     // reads "Reconnect", so an exact match picks the slow one without needing
     // to know the order the rows rendered in.
     const started = await settings.executeJavaScript(`(() => {
@@ -285,7 +287,7 @@ app.whenReady().then(async () => {
 
       // Now let it answer. The connect completes with Settings still open,
       // which is the one case that used to need a card on the Settings page
-      // itself — it is a notice now, and only reachable because the banner
+      // itself, it is a notice now, and only reachable because the banner
       // draws above the overlays.
       await delay(HOLD_MS + 2500);
       const done = overlayContents('banner.html');
@@ -293,7 +295,7 @@ app.whenReady().then(async () => {
       if (done) await capture('banner.html', 'banner-connected').catch(() => {});
       // No composite screenshot of the notice sitting over Settings, and it is
       // not for want of trying: `BrowserWindow.capturePage()` captures the
-      // window's *own* WebContents, and this window has none — it is child views
+      // window's *own* WebContents, and this window has none, it is child views
       // all the way down. It returns an empty image rather than failing, so a
       // shot taken that way is a zero-byte file next to a line reading OK.
       // Position is asserted instead, in scripts/test-connection-failure.js:

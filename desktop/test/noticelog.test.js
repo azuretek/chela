@@ -1,5 +1,3 @@
-'use strict';
-
 // The on-disk failure log.
 //
 // The store in src/notices.js answers "what is wrong now" by replacing a notice
@@ -14,13 +12,14 @@
 //
 // Run with: npm test
 
-const test = require('node:test');
-const assert = require('node:assert');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+import test from 'node:test';
+import assert from 'node:assert';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-const noticelog = require('../src/noticelog');
+import * as noticelog from '../src/noticelog.js';
+import * as notices from '../src/notices.js';
 
 /** A log in a throwaway directory, with a clock the test drives. */
 function withLog(startMs = Date.UTC(2026, 8, 5, 12), opts = {}) {
@@ -193,7 +192,7 @@ test('the store and the log agree about what a notice is', () => {
   // raised without an explicit tone arrives here as undefined, fails the tone
   // check, and the most common kind of failure is the one that never gets
   // written down.
-  const store = require('../src/notices').create();
+  const store = notices.create();
   const { log, dir } = withLog();
   assert.ok(dir);
 

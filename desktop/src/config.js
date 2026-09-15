@@ -1,57 +1,62 @@
-'use strict';
+import electron from 'electron';
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import defaults from './defaults.js';
+import * as model from '../../core/config-model.js';
 
-const { app } = require('electron');
-const fs = require('node:fs');
-const path = require('node:path');
-const crypto = require('node:crypto');
-const defaults = require('./defaults');
+// Desktop's config file: the persistence around the shared config model.
+//
+// The shape of a fresh config and the CRUD over its gateway list live in
+// core/config-model.js, so the desktop and the iOS client cannot disagree about
+// what "remove the active gateway" does. Everything platform-bound stays here:
+// where the file lives (Electron's userData), the atomic read/write, the cache,
+// and the desktop-only defaults (window bounds, the global shortcut) handed to
+// the model's blank().
 
 let cache = null;
 let configFile = null;
+let userDataOverride = null;
+
+// Where the profile lives. `electron` is the default import so this module loads
+// under plain `node` (the electron stub has no `app`) and only reaches for
+// `app.getPath` when actually run inside Electron. A unit test points this at a
+// temp directory through setUserDataDir() rather than launching Electron, the
+// same seam profile.js and noticelog.js already take as a parameter.
+function userDataDir() {
+  if (userDataOverride) return userDataOverride;
+  return electron.app.getPath('userData');
+}
 
 function file() {
-  if (!configFile) configFile = path.join(app.getPath('userData'), 'config.json');
+  if (!configFile) configFile = path.join(userDataDir(), 'config.json');
   return configFile;
 }
 
+/**
+ * Test seam: point config at a directory and clear the cache, so a unit test
+ * can exercise the real read/write path without an Electron `app`. Not called
+ * in production, where userData comes from Electron.
+ */
+export function setUserDataDir(dir) {
+  userDataOverride = dir;
+  configFile = null;
+  cache = null;
+}
+
 function blank() {
-  return {
-    gateways: defaults.suggestedGateways.map((g) => ({ id: crypto.randomUUID(), ...g })),
-    activeGatewayId: null,
-    window: { width: defaults.windowDefaults.width, height: defaults.windowDefaults.height, x: null, y: null, maximized: false },
-    zoomLevel: 0,
+  return model.blank({
+    suggestedGateways: defaults.suggestedGateways,
+    uuid: () => crypto.randomUUID(),
+    window: {
+      width: defaults.windowDefaults.width,
+      height: defaults.windowDefaults.height,
+      x: null,
+      y: null,
+      maximized: false,
+    },
     globalShortcut: defaults.globalShortcut,
-    closeToTray: true,
-    launchAtLogin: false,
-    startHidden: false,
-    // Opt-in because these facts leave the desktop and become part of each
-    // ordinary chat prompt sent to the configured gateway.
-    promptMetadata: false,
-    // Download and offer to install a new version without being asked. True by
-    // default because an out-of-date client against a moving gateway is the
-    // failure this app is most likely to have, and the update is offered rather
-    // than applied — nothing restarts behind anyone's back. Turning it off keeps
-    // the six-hourly check, so the app can still say a release exists and offer
-    // to fetch it on the spot; see updates.policy().
-    autoUpdate: true,
-    // "light" | "dark" | null — the Control UI's theme as of the last run, so a
-    // cold start opens its windows in the right colours before the gateway has
-    // answered. Learned, never configured; see adoptTheme in src/main.js.
-    themeMode: null,
-    // host -> "sha256/BASE64", pinned on first accept. See src/certs.js.
-    trustedCerts: {},
-    // origin -> Control UI build id as of the last successful load, so an
-    // upgraded gateway has its service-worker cache dropped exactly once rather
-    // than on every connect. Learned, never configured; see src/cache.js.
-    swVersions: {},
-    // Fingerprint of the app build that last ran — version plus the app
-    // bundle's size and mtime, because the semver alone does not move between
-    // builds. An app upgrade brings a new Electron and a new preload, so its
-    // caches are cleared once on the first run after. null on a fresh profile,
-    // which is deliberately *not* an upgrade: there is nothing stale in a cache
-    // that does not exist yet.
-    appBuild: null,
-  };
+  });
 }
 
 function read() {
@@ -98,38 +103,28 @@ function update(patch) {
 }
 
 function activeGateway() {
-  const cfg = read();
-  return cfg.gateways.find((g) => g.id === cfg.activeGatewayId) || null;
+  return model.activeGateway(read());
 }
 
 function addGateway({ label, url }) {
-  const cfg = read();
-  const entry = { id: crypto.randomUUID(), label: label || url, url };
-  write({ ...cfg, gateways: [...cfg.gateways, entry] });
+  const { config, entry } = model.addGateway(read(), { label, url }, () => crypto.randomUUID());
+  write(config);
   return entry;
 }
 
 function updateGateway(id, patch) {
-  const cfg = read();
-  const gateways = cfg.gateways.map((g) => (g.id === id
-    ? { ...g, label: patch.label ?? g.label, url: patch.url ?? g.url }
-    : g));
-  return write({ ...cfg, gateways });
+  return write(model.updateGateway(read(), id, patch));
 }
 
 function removeGateway(id) {
-  const cfg = read();
-  const gateways = cfg.gateways.filter((g) => g.id !== id);
-  const activeGatewayId = cfg.activeGatewayId === id ? null : cfg.activeGatewayId;
-  return write({ ...cfg, gateways, activeGatewayId });
+  return write(model.removeGateway(read(), id));
 }
 
 function trustCert(host, fingerprint) {
-  const cfg = read();
-  return write({ ...cfg, trustedCerts: { ...cfg.trustedCerts, [host]: fingerprint } });
+  return write(model.trustCert(read(), host, fingerprint));
 }
 
-module.exports = {
+export default {
   path: file,
   get: read,
   update,

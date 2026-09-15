@@ -1,39 +1,43 @@
-'use strict';
-
-const {
+import {
   app, BrowserWindow, WebContentsView, Tray, Menu, MenuItem, shell,
   globalShortcut, nativeImage, ipcMain, screen, session,
-} = require('electron');
+} from 'electron';
+import http from 'node:http';
+import { autoUpdater } from 'electron-updater';
+import { clipboard } from 'electron';
 // No `dialog` here on purpose. Everything this app says to the user is one of
-// its own overlay pages -- see the overlay section below. The one exception in
+// its own overlay pages, see the overlay section below. The one exception in
 // the project is src/certs.js, which has to be able to ask about a certificate
 // before any page has loaded, and where the question is a security decision
 // rather than a piece of app chrome.
-const path = require('node:path');
-const fs = require('node:fs');
-const https = require('node:https');
-const autostart = require('./autostart');
-const config = require('./config');
-const buildInfo = require('./build-info');
-const cache = require('./cache');
-const certs = require('./certs');
-const chrome = require('./chrome');
-const connectionState = require('./connection');
-const menus = require('./menus');
-const noticeStore = require('./notices');
-const noticelog = require('./noticelog');
-const overlay = require('./overlay');
-const profile = require('./profile');
-const progress = require('./progress');
-const promptMetadata = require('./prompt-metadata');
-const quips = require('./quips');
-const updates = require('./updates');
-const secrets = require('./secrets');
-const defaults = require('./defaults');
+import path from 'node:path';
+import fs from 'node:fs';
+import https from 'node:https';
+import { fileURLToPath } from 'node:url';
+import * as autostart from './autostart.js';
+import config from './config.js';
+import * as buildInfo from './build-info.js';
+import * as cache from './cache.js';
+import * as certs from './certs.js';
+import chrome from './chrome.js';
+import * as connectionState from './connection.js';
+import * as menus from './menus.js';
+import * as noticeStore from './notices.js';
+import * as noticelog from './noticelog.js';
+import * as overlay from './overlay.js';
+import * as profile from './profile.js';
+import * as progress from './progress.js';
+import * as promptMetadata from './prompt-metadata.js';
+import * as quips from './quips.js';
+import updates from './updates.js';
+import secrets from './secrets.js';
+import defaults from './defaults.js';
+import { withTokenHandoff } from '../../core/gateway-url.js';
 
-const UI_DIR = path.join(__dirname, 'ui');
-const ASSETS = path.join(__dirname, 'assets');
-const PRELOAD = path.join(__dirname, 'preload.js');
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const UI_DIR = path.join(HERE, 'ui');
+const ASSETS = path.join(HERE, 'assets');
+const PRELOAD = path.join(HERE, 'preload.cjs');
 
 // Read once: the stamp is baked into the bundle at pack time and cannot change
 // while the app is running.
@@ -41,8 +45,7 @@ const buildStamp = buildInfo.read();
 
 /* ------------------------------------------------------- profile after rename */
 
-// Runs at load, before app.whenReady() and before anything opens the profile —
-// `appData` is one of the few paths resolvable that early. The logic itself
+// Runs at load, before app.whenReady() and before anything opens the profile, // `appData` is one of the few paths resolvable that early. The logic itself
 // lives in src/profile.js so it can be tested without launching Electron.
 {
   const migration = profile.migrate(app.getPath('appData'));
@@ -51,13 +54,13 @@ const buildStamp = buildInfo.read();
 }
 
 let mainWindow = null;
-// The gateway page — and the app's own error and first-run pages — live in a
+// The gateway page, and the app's own error and first-run pages, live in a
 // child view rather than in the window's own WebContents, because a child view
 // can be given bounds and a window's own contents cannot.
 //
 // That is the entire mechanism behind the reserved title strip: the view starts
 // below the window buttons, so the page's viewport genuinely excludes them and
-// nothing it draws can land underneath — not a header, not a docked panel, not a
+// nothing it draws can land underneath, not a header, not a docked panel, not a
 // `position: fixed` overlay anchored to a corner. Linux keeps its OS frame, so
 // there the view simply fills the window and this costs nothing.
 let pageView = null;
@@ -80,7 +83,7 @@ const themeCssKeys = new Map();
 // The colours the app paints for itself, tracking whichever theme the Control
 // UI is in. Seeded from the last run so a cold start opens in the right ones
 // rather than flashing the wrong palette for as long as the gateway takes to
-// answer — which, over Tailscale to a sleeping box, is not a flash.
+// answer, which, over Tailscale to a sleeping box, is not a flash.
 let currentTheme = chrome.fallbackTheme(config.get().themeMode);
 
 /* ------------------------------------------------------------------ helpers */
@@ -114,7 +117,7 @@ function installPromptMetadata(wc) {
 }
 
 /**
- * The WebContents showing the gateway — or, on a first run or a failed connect,
+ * The WebContents showing the gateway, or, on a first run or a failed connect,
  * one of the app's own pages. Everything that used to address
  * `mainWindow.webContents` addresses this instead.
  */
@@ -149,7 +152,7 @@ function layoutViews() {
 
 function trayImage() {
   // Not a macOS template image. A template adapts to the menu bar automatically,
-  // which is the more native behaviour — but legibility is the reason to want
+  // which is the more native behaviour, but legibility is the reason to want
   // one, and the mark was checked against both a light and a dark menu bar and
   // holds contrast in red on either. So it keeps the app's colour.
   const img = nativeImage.createFromPath(path.join(ASSETS, 'tray.png'));
@@ -160,7 +163,7 @@ function trayImage() {
 /* ------------------------------------------------------------- window state */
 
 // Persist size/position, but only reuse them if the saved rectangle still
-// intersects a display that exists now — otherwise unplugging a monitor strands
+// intersects a display that exists now, otherwise unplugging a monitor strands
 // the window off-screen with no way to get it back.
 function restoredBounds() {
   const saved = config.get().window;
@@ -204,8 +207,8 @@ function schedulePersist() {
 //
 // An earlier version gave each gateway entry its own `persist:` partition,
 // reasoning that device pairing is per browser profile. That was wrong twice
-// over. Chromium already keys site storage — localStorage, IndexedDB, cookies,
-// cache — by origin, so two gateways at different origins are isolated inside
+// over. Chromium already keys site storage, localStorage, IndexedDB, cookies,
+// cache, by origin, so two gateways at different origins are isolated inside
 // one session anyway; the partition bought nothing. And because the partition
 // name was derived from the entry's UUID, the app threw away its device
 // identity the moment the entry changed, so the Gateway saw a brand-new device
@@ -228,7 +231,7 @@ function configureSession(ses, gw) {
   applyHeaders(ses);
 }
 
-// Extra request headers for gateways behind an authenticating proxy — Cloudflare
+// Extra request headers for gateways behind an authenticating proxy, Cloudflare
 // Access, a shared-secret header, Basic auth on a reverse proxy.
 //
 // Matched per request against the origin of the gateway that owns them, which is
@@ -303,7 +306,7 @@ function reachMilestone(milestone) {
  *
  * One situation needs this now: a first run, where there is no gateway to lay a
  * modal over and nothing to connect to. A failed connection used to come here
- * too — it raises a notice instead, and leaves the window where it was.
+ * too, it raises a notice instead, and leaves the window where it was.
  *
  * @param {{firstRun?: boolean}} [opts]
  */
@@ -323,7 +326,7 @@ function showSettingsAsPage(opts = {}) {
  * Two screens have held this job before: a dedicated error page whose whole
  * content was one sentence and two buttons, and then Settings itself. Both take
  * the window away from someone who did not ask to leave it, and both make the
- * failure a *place* — somewhere you now are and have to get back out of.
+ * failure a *place*, somewhere you now are and have to get back out of.
  *
  * It is a condition instead. The notice slides down from the top, stays until
  * the gateway answers or the reader dismisses it, and offers the one link worth
@@ -378,25 +381,10 @@ function announceConnected() {
 
 /* -------------------------------------------------------------- main window */
 
-// The Control UI accepts a token handoff on the URL fragment — `#token=<token>`
-// — reads it during boot, stores it for that gateway, and strips it from the
-// address bar (docs/web/urls.md, "Remote Gateway handoff"). The fragment form is
-// the documented preference over `?token=` because fragments never reach HTTP
-// request logs or a Referer header. This is what lets the app supply the
-// credential instead of asking you to paste one, and because it is reapplied on
-// every connect it also self-heals a stale stored token.
-function withTokenHandoff(rawUrl, token) {
-  if (!token) return rawUrl;
-  try {
-    const url = new URL(rawUrl);
-    const frag = new URLSearchParams(url.hash.startsWith('#') ? url.hash.slice(1) : url.hash);
-    frag.set('token', token);
-    url.hash = `#${frag.toString()}`;
-    return url.toString();
-  } catch {
-    return rawUrl;
-  }
-}
+// The Control UI token handoff (build the URL with the token on the `#token=`
+// fragment) lives in the shared core now, so desktop and the iOS client hand a
+// credential over identically. See core/gateway-url.js for the why; it is
+// imported as withTokenHandoff at the top of this file.
 
 function loadActiveGateway() {
   const gw = config.activeGateway();
@@ -427,7 +415,7 @@ function loadActiveGateway() {
   });
   // Raised before the load rather than after, because the whole point is to
   // cover the gap: a `loadURL` to an unreachable host leaves the previous
-  // document — or a blank view — on screen for as long as it takes to fail.
+  // document, or a blank view, on screen for as long as it takes to fail.
   showLoadingCover();
   const creds = secrets.load(gw.id);
   const supplied = [creds.token && 'token', creds.password && 'password', creds.headers.length && `${creds.headers.length} header(s)`]
@@ -439,7 +427,7 @@ function loadActiveGateway() {
 /* --------------------------------------------------------------- stale cache */
 
 // The Control UI is a PWA whose service worker serves /assets/ cache-first. A
-// browser re-checks sw.js on navigation, which is normally often enough — but
+// browser re-checks sw.js on navigation, which is normally often enough, but
 // this app closes to tray rather than quitting, so its document can sit there
 // for weeks without one, still controlled by the worker an old gateway
 // installed. What that looks like is an app that keeps showing yesterday's
@@ -464,8 +452,8 @@ function forgetBuildIds(origins) {
 }
 
 // Set while a reload we triggered ourselves is in flight, so the probe on that
-// load is skipped. Not a loop guard — the new build id is recorded *before* the
-// reload, so a second pass would decide `unchanged` anyway — just a way to
+// load is skipped. Not a loop guard, the new build id is recorded *before* the
+// reload, so a second pass would decide `unchanged` anyway, just a way to
 // avoid re-probing a page we already know the answer for.
 let selfReloading = false;
 
@@ -507,7 +495,7 @@ async function maybeRefreshForNewBuild(wc) {
 
 /**
  * Manual escape hatch, on the File menu and the tray. Clears the active
- * gateway's caches — or every gateway's, if none is active, which is the case
+ * gateway's caches, or every gateway's, if none is active, which is the case
  * on the error page where this is most likely to be reached for.
  */
 async function clearCacheAndReload() {
@@ -525,7 +513,7 @@ async function clearCacheAndReload() {
  * Identify the installed build.
  *
  * Prefers the commit stamped in at pack time, which is what a build actually
- * is. Failing that — a source run, or a build made from a dirty tree — it stats
+ * is. Failing that, a source run, or a build made from a dirty tree, it stats
  * the app bundle (`app.asar` when packaged, the project directory in
  * development), because the semver alone does not move between builds. See
  * cache.buildFingerprint. A stat that fails degrades to the version, which
@@ -563,15 +551,14 @@ async function clearOnAppUpgrade() {
 
 /* --------------------------------------------------------------- login gate */
 
-// Password mode has no URL handoff — the Control UI parses only `gatewayUrl`,
+// Password mode has no URL handoff, the Control UI parses only `gatewayUrl`,
 // `token` and `bootstrapToken`, and its docs are explicit that "passwords stay
 // in memory only". So the one way to avoid a manual paste is to fill the login
 // gate ourselves.
 //
 // This is deliberately best-effort and must stay that way: it depends on the
 // Control UI's markup, which is not an API. It fills only empty fields, runs at
-// most once per load, and if the gate never appears it simply does nothing —
-// the worst case is the login screen you would have seen anyway.
+// most once per load, and if the gate never appears it simply does nothing, // the worst case is the login screen you would have seen anyway.
 let autofilled = false;
 
 function autofillScript(creds) {
@@ -606,7 +593,7 @@ function autofillScript(creds) {
     };
 
     // The gate renders only after the WebSocket handshake is refused, which is
-    // after did-finish-load — so poll briefly rather than checking once.
+    // after did-finish-load, so poll briefly rather than checking once.
     if (attempt()) return 'filled';
     const deadline = Date.now() + 10000;
     const tick = () => { if (attempt() || Date.now() > deadline) return; setTimeout(tick, 250); };
@@ -662,7 +649,7 @@ function attachNavigationGuards(wc) {
 
 // Electron ships no default context menu; without this you cannot even
 // right-click → Paste into the composer, or into the settings page's token and
-// URL fields — which is the one place a paste is genuinely likely.
+// URL fields, which is the one place a paste is genuinely likely.
 function attachContextMenu(wc) {
   wc.on('context-menu', (_event, props) => {
     const menu = new Menu();
@@ -677,7 +664,7 @@ function attachContextMenu(wc) {
     if (props.linkURL && /^https?:/.test(props.linkURL)) {
       if (menu.items.length) menu.append(new MenuItem({ type: 'separator' }));
       menu.append(new MenuItem({ label: 'Open link in browser', click: () => shell.openExternal(props.linkURL) }));
-      menu.append(new MenuItem({ label: 'Copy link address', click: () => require('electron').clipboard.writeText(props.linkURL) }));
+      menu.append(new MenuItem({ label: 'Copy link address', click: () => clipboard.writeText(props.linkURL) }));
     }
     if (menu.items.length) menu.popup();
   });
@@ -690,7 +677,7 @@ function attachContextMenu(wc) {
  *
  * Deliberately inert: no preload, no IPC bridge, no script (its CSP forbids
  * one). It is a coloured, draggable band with a label, and the label is written
- * in from here — the one place that knows which session is loaded. Giving it a
+ * in from here, the one place that knows which session is loaded. Giving it a
  * bridge would mean a second privileged page for no gain.
  */
 function createStrip() {
@@ -764,11 +751,11 @@ function createMainWindow() {
   attachNavigationGuards(wc);
   layoutViews();
 
-  // The Control UI sets document.title to "<session> — OpenClaw", and Electron
+  // The Control UI sets document.title to "<session>, OpenClaw", and Electron
   // mirrors a page title onto the window by default. That put the upstream name
   // in our taskbar entry and window title even after the rename, which is the
-  // one place a user actually reads it. Keep the page's session name — it is
-  // genuinely useful when several windows are open — but under our own name.
+  // one place a user actually reads it. Keep the page's session name, it is
+  // genuinely useful when several windows are open, but under our own name.
   //
   // The event fires on the view now, not the window, so the title has to be set
   // rather than merely amended: a view's title does not reach the window at all.
@@ -779,7 +766,7 @@ function createMainWindow() {
   };
   wc.on('page-title-updated', refreshTitle);
   // Also on in-page navigation: the label depends on the route, not only on the
-  // title, and the two do not always change together — nor in a fixed order, so
+  // title, and the two do not always change together, nor in a fixed order, so
   // a title-only listener can read the previous URL.
   wc.on('did-navigate-in-page', refreshTitle);
 
@@ -826,7 +813,7 @@ function createMainWindow() {
     showConnectionFailure({ errorCode: details.reason, errorDescription: `The window stopped responding (${details.reason}).` });
   });
 
-  // Every event that changes the content size has to re-lay the views out — the
+  // Every event that changes the content size has to re-lay the views out, the
   // page's own size now depends on this, not just the modal's, so a missed one
   // is a page that does not fill the window rather than a cosmetic slip.
   mainWindow.on('resize', () => { layoutViews(); schedulePersist(); });
@@ -842,7 +829,7 @@ function createMainWindow() {
     event.preventDefault();
     // Hide the window but deliberately keep the Dock icon: hiding the Dock icon
     // too suppresses the 'activate' event, and then only the tray or the global
-    // shortcut can bring the app back — an easy way to lose it entirely.
+    // shortcut can bring the app back, an easy way to lose it entirely.
     mainWindow.hide();
   });
 
@@ -863,7 +850,7 @@ function createMainWindow() {
 
   // `ready-to-show` is the window's own signal and it never fires now: the
   // window has no content of its own, only child views. So the first paint of
-  // any of them is what the window waits for — `dom-ready` rather than
+  // any of them is what the window waits for, `dom-ready` rather than
   // `did-finish-load`, because subresources should not hold the window back.
   //
   // The window's backgroundColor is the theme surface, so the gap before that
@@ -888,7 +875,7 @@ function showMainWindow() {
   // The tray icon and the global shortcut are what someone reaches for when the
   // window has stopped responding, so this is the right place to sweep up a dead
   // overlay: it makes the instinctive gesture the recovery gesture. Supervision
-  // should have caught it already — this is the net under that.
+  // should have caught it already, this is the net under that.
   for (const name of [...overlayViews.keys()]) if (!overlayAlive(name)) closeOverlay(name);
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
@@ -941,7 +928,7 @@ function adoptTheme(theme) {
  * project rather than a preference about looks. A native message box is a
  * different dialog on each of the three platforms, takes its colours from the
  * OS rather than from the Control UI theme the rest of the app is tracking,
- * and — the reason the About box came here first — cannot carry anything but a
+ * and, the reason the About box came here first, cannot carry anything but a
  * fixed line of text and a row of buttons. Electron's `role: 'about'` panel
  * cannot show which commit a build came from, and it does not exist at all on
  * Windows before Electron 15.
@@ -961,14 +948,14 @@ const OVERLAY_PAGES = { settings: 'settings.html', about: 'about.html' };
 const overlayViews = new Map();
 
 // `frameless` rides in the URL rather than being fetched over IPC because the
-// page uses it for layout — how far down the card starts, to clear the drag
+// page uses it for layout, how far down the card starts, to clear the drag
 // band. Asked for asynchronously it arrives after first paint, and the card
 // visibly jumps on every open.
 function overlaySearch(opts = {}) {
   const params = new URLSearchParams();
   if (opts.firstRun) params.set('firstRun', '1');
   // Settings is the window's own content rather than a dialog in it. Kept
-  // separate from firstRun so the two can differ again — firstRun additionally
+  // separate from firstRun so the two can differ again, firstRun additionally
   // hides the preferences, which being the window's content does not imply.
   if (opts.page || opts.firstRun) params.set('page', '1');
   if (chrome.enabled()) params.set('frameless', '1');
@@ -989,7 +976,7 @@ function openOverlay(name, opts = {}) {
   if (!mainWindow || mainWindow.isDestroyed()) return null;
   // A destroyed view still covers the window and still eats clicks, so focusing
   // it does nothing and reopening has to mean *replace*. Otherwise the one
-  // action a wedged user would try — click the menu item again — is the one
+  // action a wedged user would try, click the menu item again, is the one
   // action guaranteed not to help.
   if (overlayViews.has(name) && !overlayAlive(name)) closeOverlay(name);
   if (overlayViews.has(name)) {
@@ -1070,8 +1057,8 @@ function closeSettings() {
 
 // Whether the window has had its one automatic reveal this lifetime.
 //
-// Several things can be the first to paint — the gateway page, the loading
-// cover, the timeout backstop — and exactly one of them should show the window.
+// Several things can be the first to paint, the gateway page, the loading
+// cover, the timeout backstop, and exactly one of them should show the window.
 // A flag rather than `once` on each, because they are separate emitters, and
 // without it a reconnect would re-show a window the user has since sent to the
 // tray. Reset when the window is recreated, which macOS does after a real
@@ -1092,7 +1079,7 @@ function revealMainWindow() {
 // A view of its own rather than a page loaded into the gateway's view, because
 // of what a failure does to that view. Chromium commits its own error document
 // there, and loading over the top of it would be a second navigation racing the
-// first — the exact shape that produced spurious `did-fail-load` events the
+// first, the exact shape that produced spurious `did-fail-load` events the
 // last time these two shared a WebContents. Here the gateway page loads, or
 // fails, underneath and untouched, and success is this view going away.
 let loadingView = null;
@@ -1104,7 +1091,7 @@ let loadingView = null;
  * order of these calls *is* the stacking order: the gateway page at the bottom,
  * then the cover over it, then any modals, and the notice banner above
  * everything. It runs whenever one of them appears, because a view added later
- * would otherwise land above ones that must stay above it — a cover over the
+ * would otherwise land above ones that must stay above it, a cover over the
  * Settings modal is a locked window.
  *
  * The banner is on top rather than under the modals, and that is the whole
@@ -1112,7 +1099,7 @@ let loadingView = null;
  * Underneath, anything raised while Settings was open was drawn behind it: a
  * connection failing, an update arriving, or the answer to a Connect pressed on
  * that very page went to a strip nobody could see. Which is why those three used
- * to be a dialog, a dialog, and a card on the Settings page — three shapes for
+ * to be a dialog, a dialog, and a card on the Settings page, three shapes for
  * one job, because the one shape did not work from everywhere.
  *
  * It costs the top ~72px of a modal while a notice is up. That is a real cost
@@ -1133,7 +1120,7 @@ function restackViews() {
 // as a pair.
 //
 // The cover is sandboxed and cannot require src/progress.js or src/quips.js, and
-// the alternative to pushing is copying the curve into the page — two owners for
+// the alternative to pushing is copying the curve into the page, two owners for
 // one number, which drift the first time either is touched. So main ticks and
 // the page draws.
 //
@@ -1299,7 +1286,7 @@ const noticeTimers = new Map();
  * Raise a notice, optionally for a fixed time.
  *
  * Almost every notice is a standing condition and stays until whoever raised it
- * says otherwise — that is the shape of the thing. `ttlMs` is for the handful
+ * says otherwise, that is the shape of the thing. `ttlMs` is for the handful
  * that are not: the answer to a manual "check for updates", which is a reply to
  * a question rather than a problem, and would otherwise sit there permanently
  * announcing that nothing is wrong.
@@ -1347,7 +1334,7 @@ function clearNotice(id) {
  * This is what makes settings look like part of the UI rather than beside it:
  * surfaces, borders, radii and the scrollbar tokens all come from whichever
  * palette the UI is actually running. ui.css declares a full fallback set, so a
- * page that loads before any theme has been reported — the first run — is
+ * page that loads before any theme has been reported, the first run, is
  * styled, just not matched.
  */
 async function applyThemeCss(wc) {
@@ -1395,8 +1382,8 @@ function setZoom(delta, absolute) {
 
 /* -------------------------------------------------------------------- updates */
 
-// How often a running app looks for a new release is read from its own version
-// — six hours on stable, five minutes on dev. See updates.checkIntervalMs().
+// How often a running app looks for a new release is read from its own version:
+// six hours on stable, five minutes on dev. See updates.checkIntervalMs().
 // Where a platform that cannot install for itself sends the user. Hard-coded
 // rather than read from electron-builder.yml's `publish` block: that file is not
 // packaged, so the app would be parsing something it does not ship.
@@ -1409,7 +1396,7 @@ let updater = null; // the electron-updater AppUpdater, or null where we do not 
 let updateReady = null; // version string once downloaded and installable
 let updateTimer = null;
 // The last check to actually finish, for About to report. Updating is otherwise
-// invisible — see updates.statusLine() for why that is worth a line.
+// invisible, see updates.statusLine() for why that is worth a line.
 let lastCheck = { at: null, result: null };
 
 function updatePolicy() {
@@ -1427,8 +1414,7 @@ function updatePolicy() {
  * turning the preference off leaves the scheduled check running, which is what
  * lets the app still say a release exists and offer to fetch it on the spot.
  * Restarting the app is not required for the toggle to take effect, and an
- * update already downloaded before it was switched off stays installable —
- * throwing away 130MB somebody already waited for would be a strange reading of
+ * update already downloaded before it was switched off stays installable, * throwing away 130MB somebody already waited for would be a strange reading of
  * "stop downloading updates".
  */
 function applyUpdatePreference() {
@@ -1449,7 +1435,6 @@ function initUpdates() {
   console.log(`[claw] updates: ${plan.action} (${plan.reason})`);
   if (!plan.check) return;
 
-  const { autoUpdater } = require('electron-updater');
   updater = autoUpdater;
   updater.autoDownload = plan.autoDownload;
   // Same channel only: a dev build follows dev releases, a stable build follows
@@ -1580,8 +1565,7 @@ async function checkForUpdates(trigger = 'manual') {
     await updater.checkForUpdates();
   } catch {
     // Deliberately silent. electron-updater emits 'error' *and* rejects for the
-    // same failure, so logging here too prints every update failure twice —
-    // which is exactly what a first run against a repo with no releases did.
+    // same failure, so logging here too prints every update failure twice, // which is exactly what a first run against a repo with no releases did.
     // This catch exists only to stop the rejection going unhandled.
   }
 }
@@ -1592,7 +1576,7 @@ async function checkForUpdates(trigger = 'manual') {
  * A notice rather than a dialog, and it is the case that shows why: a new
  * release is not urgent, it is not an error, and it is true until acted on. As a
  * dialog it stole focus from whatever was being typed, got dismissed, and left
- * nothing on screen — so the app knew about a waiting update and had no way to
+ * nothing on screen, so the app knew about a waiting update and had no way to
  * say so until the next six-hourly check came round.
  *
  * "Later" is the dismiss button every notice already has. What is left is one
@@ -1720,7 +1704,7 @@ function aboutState() {
  * Push a fresh About state into the box if it happens to be open.
  *
  * Without this, clicking "Check for updates" from inside About would leave the
- * status line it is sitting under saying "no check yet this run" — the one
+ * status line it is sitting under saying "no check yet this run", the one
  * question the box exists to answer, answered wrongly, immediately after the
  * user did the thing that changed it.
  */
@@ -1733,8 +1717,8 @@ function notifyAboutChanged() {
  * Tell the app's own pages that `currentState()` has moved under them.
  *
  * Settings renders from a snapshot it fetched when it opened, so without this a
- * certificate refused *while it is on screen* — which is exactly what happens
- * when you press Reconnect from inside it — would not appear until it was
+ * certificate refused *while it is on screen*, which is exactly what happens
+ * when you press Reconnect from inside it, would not appear until it was
  * closed and reopened.
  */
 function notifyStateChanged() {
@@ -1743,7 +1727,7 @@ function notifyStateChanged() {
   }
   // The cover is the one page whose entire content is the connection, so it is
   // the one that must never miss this. Left out, it renders once at whatever
-  // the phase was when it loaded and keeps saying it — which reads as an app
+  // the phase was when it loaded and keeps saying it, which reads as an app
   // stuck connecting long after the attempt stopped.
   if (loadingView && !loadingView.webContents.isDestroyed()) loadingView.webContents.send('app:state-changed');
   if (settingsIsPage && page()) page().send('app:state-changed');
@@ -1766,7 +1750,7 @@ function showAbout() {
  * Every command the menu bar and the tray can run, defined once.
  *
  * One definition per command, so a label or a behaviour cannot differ between
- * the places it appears — which is half of what keeps the platforms identical.
+ * the places it appears, which is half of what keeps the platforms identical.
  * src/menus.js arranges them; see the note at the top of that file for the
  * differences the operating systems impose and why nothing of ours hides behind
  * one.
@@ -1946,7 +1930,7 @@ function testGateway(rawUrl) {
     }
 
     const attempt = (rejectUnauthorized) => {
-      const mod = target.protocol === 'https:' ? https : require('node:http');
+      const mod = target.protocol === 'https:' ? https : http;
       const req = mod.request(
         { method: 'GET', hostname: target.hostname, port: target.port || (target.protocol === 'https:' ? 443 : 80), path: target.pathname || '/', rejectUnauthorized, timeout: 8000, servername: target.hostname },
         (res) => {
@@ -1960,8 +1944,8 @@ function testGateway(rawUrl) {
             ok: res.statusCode > 0 && res.statusCode < 500,
             status: res.statusCode,
             message: rejectUnauthorized
-              ? `Reachable — HTTP ${res.statusCode}.`
-              : `Reachable — HTTP ${res.statusCode}, but the certificate is self-signed. You will be asked to trust it once on connect.`,
+              ? `Reachable. HTTP ${res.statusCode}.`
+              : `Reachable. HTTP ${res.statusCode}, but the certificate is self-signed. You will be asked to trust it once on connect.`,
             fingerprint,
           });
         },
@@ -2100,7 +2084,7 @@ function registerIpc() {
   ipcMain.handle('app:trust-cert', (_e, host) => {
     const offer = certs.trust(String(host));
     // Reconnecting is the whole point of having trusted it, and the failed load
-    // that produced the offer left the window on the error page — so without
+    // that produced the offer left the window on the error page, so without
     // this the reward for making the decision is a page that still says the
     // connection failed.
     const gw = config.activeGateway();
@@ -2126,8 +2110,7 @@ function registerIpc() {
   });
   // Connect starts the connection and nothing else. Closing Settings here used
   // to be part of it, which meant the page vanished the instant you pressed the
-  // button and the next thing you saw was either the Control UI or a failure —
-  // with no moment in between that said which was coming. The connect runs
+  // button and the next thing you saw was either the Control UI or a failure, // with no moment in between that said which was coming. The connect runs
   // behind the page instead, the row reports it, and leaving is a second,
   // deliberate press once there is something to leave for.
   ipcMain.handle('app:connect', (_e, id) => {
@@ -2190,7 +2173,7 @@ function registerIpc() {
   // is a thing to grep, not to scroll.
   ipcMain.handle('app:open-notice-log', () => shell.openPath(noticeLog().dir));
   // A notice's one offer. A lookup rather than a dispatch, so a page can only
-  // ever reach a command that was written here — the renderer names it, it does
+  // ever reach a command that was written here, the renderer names it, it does
   // not describe it, and an unknown name is nothing rather than an error.
   ipcMain.handle('app:notice-action', (_e, command) => {
     const commands = {
@@ -2233,8 +2216,8 @@ function registerIpc() {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (event.sender !== page()) return;
     // The app's theme comes from the Control UI, never from one of our own
-    // pages. Without this the first run — where the settings page *is* the main
-    // window's content — would have the app take its colours from the very
+    // pages. Without this the first run, where the settings page *is* the main
+    // window's content, would have the app take its colours from the very
     // stylesheet it is supposed to be theming, and the settings page would end
     // up quoting itself back.
     if (!/^https?:/.test(event.sender.getURL())) return;

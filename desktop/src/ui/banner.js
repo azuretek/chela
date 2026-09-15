@@ -4,7 +4,7 @@
 //
 // The one thing this page owes the main process is an accurate height. Its view
 // is resized to whatever it reports, and a view eats every mouse event inside
-// its bounds whatever the page draws there — so reporting too much makes an
+// its bounds whatever the page draws there, so reporting too much makes an
 // invisible strip that swallows clicks on the Control UI underneath, and
 // reporting too little clips the banner.
 //
@@ -17,7 +17,7 @@ const api = window.clawDesktop;
 const stack = document.getElementById('stack');
 
 // Deliberately no `frameless` class. The banner's view is already positioned
-// below the title strip by main, so it has nothing to clear — and the rule that
+// below the title strip by main, so it has nothing to clear, and the rule that
 // class used to carry was written for the error page, which no longer exists.
 
 function el(tag, props = {}, children = []) {

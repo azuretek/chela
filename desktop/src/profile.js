@@ -1,14 +1,12 @@
-'use strict';
-
-const path = require('node:path');
-const fs = require('node:fs');
+import path from 'node:path';
+import fs from 'node:fs';
 
 // Profile directory migration for the OpenClaw -> Claw Desktop rename.
 //
 // `productName` is what Electron derives `app.getPath('userData')` from, so
 // renaming the app silently repoints the profile at an empty directory. That
 // would abandon three things at once: config.json, the encrypted
-// credentials.json, and the site storage holding the paired device identity —
+// credentials.json, and the site storage holding the paired device identity,
 // so the Gateway would see an unrecognised client and report a login from a new
 // device. Which is precisely the failure this app just stopped causing.
 //
@@ -19,18 +17,18 @@ const fs = require('node:fs');
 // (Learned the hard way: `HOME` does not redirect `app.getPath('appData')` on
 // macOS, so an "isolated" Electron run moved the live profile instead.)
 
-const PREVIOUS_NAME = 'OpenClaw';
-const CURRENT_NAME = 'Claw Desktop';
+export const PREVIOUS_NAME = 'OpenClaw';
+export const CURRENT_NAME = 'Claw Desktop';
 
 /**
  * Move an old-name profile into place, once.
  *
  * @param {string} appDataDir  Parent of the profile directories.
  * @returns {{status: string, from?: string, to?: string, error?: string}}
- *   `migrated` | `already-current` (target exists — never overwrite) |
+ *   `migrated` | `already-current` (target exists, never overwrite) |
  *   `nothing-to-migrate` | `failed`
  */
-function migrate(appDataDir, { previousName = PREVIOUS_NAME, currentName = CURRENT_NAME } = {}) {
+export function migrate(appDataDir, { previousName = PREVIOUS_NAME, currentName = CURRENT_NAME } = {}) {
   const from = path.join(appDataDir, previousName);
   const to = path.join(appDataDir, currentName);
 
@@ -47,5 +45,3 @@ function migrate(appDataDir, { previousName = PREVIOUS_NAME, currentName = CURRE
     return { status: 'failed', from, to, error: err.message };
   }
 }
-
-module.exports = { migrate, PREVIOUS_NAME, CURRENT_NAME };

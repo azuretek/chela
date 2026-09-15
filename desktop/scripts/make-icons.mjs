@@ -1,6 +1,6 @@
 // Rasterises the icon artwork into the PNGs electron-builder and the tray need.
 //
-// Two sources, not one. src/assets/claw.svg is the application icon — a tile with
+// Two sources, not one. src/assets/claw.svg is the application icon, a tile with
 // a window and a title bar in it. src/assets/claw-tray.svg is the same mark with
 // all of that removed, because at 16 physical pixels the frame and the title-bar
 // dots turn to mush, and a filled dark square is the wrong shape to hang in a

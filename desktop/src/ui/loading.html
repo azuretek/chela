@@ -15,7 +15,7 @@
        view, and the reason is what a failure does to that view. Chromium
        commits its own error document there, and loading over the top of it
        would be a second navigation racing the first. Here the gateway page
-       loads, or fails, underneath and untouched — and when it succeeds this
+       loads, or fails, underneath and untouched, and when it succeeds this
        whole view goes away with nothing to unwind.
 
        The failure text is not here. It slides down from the top as a notice,

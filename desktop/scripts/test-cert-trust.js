@@ -1,11 +1,11 @@
-'use strict';
+
 
 // Prove the certificate flow against a real refused certificate.
 //
 // This is the path with no dialog in it any more, and the failure it has to
 // avoid is a dead end: connection refused, error page shown, and no way from
 // there to a working app. So the whole loop is exercised rather than any one
-// piece of it — a real self-signed HTTPS server, a real handshake failure, the
+// piece of it, a real self-signed HTTPS server, a real handshake failure, the
 // real error page, the real Settings card, and then the connection actually
 // succeeding afterwards.
 //
@@ -16,12 +16,13 @@
 // Needs `openssl` on PATH to mint the throwaway certificate. Nothing is
 // committed: the key is generated per run into a temp directory and deleted.
 
-const path = require('node:path');
-const fs = require('node:fs');
-const os = require('node:os');
-const https = require('node:https');
-const { execFileSync } = require('node:child_process');
-const { app, Menu, webContents } = require('electron');
+import path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
+import https from 'node:https';
+import { execFileSync } from 'node:child_process';
+import { app, Menu, webContents } from 'electron';
+import * as certs from '../src/certs.js';
 
 const PORT = 18790; // not 18789, so a real gateway on this machine is untouched
 const HOST = `127.0.0.1:${PORT}`;
@@ -54,7 +55,10 @@ const server = https.createServer(
   },
 );
 
-require('../src/main.js');
+// Imported dynamically, and after this harness sets up its throwaway profile,
+// because a static import would be hoisted and run main before the profile was
+// prepared.
+await import('../src/main.js');
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -79,8 +83,8 @@ if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
  * What a page is showing, as text, and optionally as a picture.
  *
  * The text is the assertion; `--shots` is for looking at it afterwards. They
- * are not interchangeable — a card that renders empty because an element id was
- * mistyped looks fine in a thumbnail — and `capturePage` needs a display
+ * are not interchangeable, a card that renders empty because an element id was
+ * mistyped looks fine in a thumbnail, and `capturePage` needs a display
  * surface, so it fails outright on a headless or locked machine. That must not
  * be able to fail the run.
  */
@@ -163,11 +167,11 @@ app.whenReady().then(async () => {
 
   // Read from the store rather than from the page: by now the settings page has
   // been replaced by the gateway it just connected to, and a remote page gets
-  // no bridge at all — deliberately, since it is a website.
-  const offerNow = require('../src/certs').pendingOffers().length;
+  // no bridge at all, deliberately, since it is a website.
+  const offerNow = certs.pendingOffers().length;
   check('the offer is gone once it has been decided', offerNow === 0, `${offerNow} still pending`);
 
-  /* 4. The hostile case. Same host, same pin, different certificate — which is
+  /* 4. The hostile case. Same host, same pin, different certificate, which is
         what interception looks like, and must not read like the routine one. */
   await new Promise((r) => server.close(r));
   execFileSync('openssl', [
@@ -205,7 +209,7 @@ app.whenReady().then(async () => {
   check('and nothing stale is left on screen behind the decision',
     Boolean(contentsFor('loading.html')), 'no loading cover over the failed page');
 
-  // Doing nothing has to be the safe outcome — the whole reason this is not a
+  // Doing nothing has to be the safe outcome, the whole reason this is not a
   // modal whose easiest button is "yes".
   const stillPinned = JSON.parse(fs.readFileSync(path.join(PROFILE, 'config.json'), 'utf8')).trustedCerts || {};
   check('the original pin is untouched until someone decides',

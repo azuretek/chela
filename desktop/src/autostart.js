@@ -1,5 +1,3 @@
-'use strict';
-
 // "Launch at login" on Linux.
 //
 // Electron's app.setLoginItemSettings is `@platform darwin,win32`. On Linux it
@@ -16,19 +14,21 @@
 // derivation and the file body are the parts that can be wrong, and both are
 // pure functions of the environment.
 
-const path = require('node:path');
+import path from 'node:path';
+import os from 'node:os';
+import nodeFs from 'node:fs';
 
 /** The autostart entry's filename. Matches package.json `desktopName`. */
-const ENTRY = 'claw-desktop.desktop';
+export const ENTRY = 'claw-desktop.desktop';
 
 /**
  * Where the entry belongs.
  *
- * XDG_CONFIG_HOME wins when set to an absolute path, which is the spec's rule —
+ * XDG_CONFIG_HOME wins when set to an absolute path, which is the spec's rule,
  * a relative value is "invalid and must be ignored", and honouring one would
  * scatter autostart entries relative to the process's cwd.
  */
-function entryPath({ env = process.env, home = require('node:os').homedir() } = {}) {
+export function entryPath({ env = process.env, home = os.homedir() } = {}) {
   const configured = env.XDG_CONFIG_HOME;
   const base = configured && path.isAbsolute(configured) ? configured : path.join(home, '.config');
   return path.join(base, 'autostart', ENTRY);
@@ -40,12 +40,12 @@ function entryPath({ env = process.env, home = require('node:os').homedir() } = 
  * An AppImage is the case that matters, and the case that would otherwise
  * break. `process.execPath` inside a running AppImage points into the
  * temporary mount the runtime made (/tmp/.mount_ClawDeXXXXXX/claw-desktop),
- * which is unmounted the moment the app exits — so an entry written from
+ * which is unmounted the moment the app exits, so an entry written from
  * execPath names a path that does not exist by the time anything reads it, and
  * fails silently at every login. APPIMAGE is the AppImage runtime's own pointer
  * to the file the user actually keeps.
  */
-function launchCommand({ env = process.env, execPath = process.execPath } = {}) {
+export function launchCommand({ env = process.env, execPath = process.execPath } = {}) {
   return env.APPIMAGE || execPath;
 }
 
@@ -58,7 +58,7 @@ function launchCommand({ env = process.env, execPath = process.execPath } = {}) 
  * must itself be escaped. A path containing a backslash therefore needs four in
  * the file, which is the sort of thing worth a test rather than a squint.
  */
-function quoteExec(arg) {
+export function quoteExec(arg) {
   const escaped = String(arg).replace(/(["`$\\])/g, '\\\\$1');
   return `"${escaped}"`;
 }
@@ -69,7 +69,7 @@ function quoteExec(arg) {
  * X-GNOME-Autostart-enabled is redundant under the spec but is what GNOME's own
  * Tweaks writes, and its absence is read by some versions as disabled.
  */
-function entryBody({ exec, hidden = false, name = 'Claw Desktop' } = {}) {
+export function entryBody({ exec, hidden = false, name = 'Claw Desktop' } = {}) {
   const command = [quoteExec(exec), ...(hidden ? ['--hidden'] : [])].join(' ');
   return [
     '[Desktop Entry]',
@@ -93,7 +93,7 @@ function entryBody({ exec, hidden = false, name = 'Claw Desktop' } = {}) {
  *
  * @returns {{ok: boolean, error?: string, path?: string, wrote?: boolean}}
  */
-function apply({ enabled, hidden = false, fs = require('node:fs'), env = process.env, execPath = process.execPath, home } = {}) {
+export function apply({ enabled, hidden = false, fs = nodeFs, env = process.env, execPath = process.execPath, home } = {}) {
   const file = entryPath(home ? { env, home } : { env });
   try {
     if (!enabled) {
@@ -107,5 +107,3 @@ function apply({ enabled, hidden = false, fs = require('node:fs'), env = process
     return { ok: false, error: err.message, path: file };
   }
 }
-
-module.exports = { apply, entryPath, entryBody, launchCommand, quoteExec, ENTRY };

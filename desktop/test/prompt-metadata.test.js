@@ -1,12 +1,13 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert';
+import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
 
-const test = require('node:test');
-const assert = require('node:assert');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
+import * as metadata from '../src/prompt-metadata.js';
 
-const metadata = require('../src/prompt-metadata');
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 // The exact token OpenClaw owns. Pinned as a literal so any drift is a
 // deliberate edit rather than a silent divergence from the gateway's stripper.
@@ -151,7 +152,7 @@ test('the hook rewrites outbound frames only, because the gateway does the hidin
 /* -------------------------------------------------------------- settings wiring */
 
 test('the settings toggle is wired from the page through main to the gateway page', () => {
-  const root = path.join(__dirname, '..');
+  const root = path.join(HERE, '..');
   const html = fs.readFileSync(path.join(root, 'src', 'ui', 'settings.html'), 'utf8');
   const settings = fs.readFileSync(path.join(root, 'src', 'ui', 'settings.js'), 'utf8');
   const main = fs.readFileSync(path.join(root, 'src', 'main.js'), 'utf8');

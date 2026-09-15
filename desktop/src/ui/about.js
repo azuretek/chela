@@ -32,7 +32,7 @@ function render(state) {
   // The status line says what is happening. This says what to do about it,
   // which is the part someone opening About while suspicious is looking for.
   const hint = state.updateReady
-    ? `Version ${state.updateReady} is downloaded — restart from the tray or the menu bar to apply it.`
+    ? `Version ${state.updateReady} is downloaded, restart from the tray or the menu bar to apply it.`
     : (state.canInstall && !state.autoUpdate
       ? 'Automatic updates are off. Turn on “Install updates automatically” in Settings to have new versions applied without asking.'
       : '');
@@ -59,7 +59,7 @@ $('check').addEventListener('click', async () => {
   out.className = 'result';
   await api.checkUpdates();
   // The result arrives as its own message dialog, and the status line above
-  // refreshes itself through onAboutChanged — so all this has to do is stop
+  // refreshes itself through onAboutChanged, so all this has to do is stop
   // saying "Checking…" if the check never comes back at all.
   setTimeout(() => { if (out.textContent === 'Checking…') out.textContent = ''; }, 15000);
 });
@@ -78,7 +78,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') dismiss();
 
 // Pushed by the main process whenever a check finishes. Without it, clicking
 // "Check for updates" would leave the line above the button still saying "no
-// check yet this run" — the question this box exists to answer, answered
+// check yet this run", the question this box exists to answer, answered
 // wrongly, immediately after the user did the thing that changed it.
 api.onAboutChanged(() => {
   const out = $('check-result');

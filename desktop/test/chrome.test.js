@@ -1,12 +1,10 @@
-'use strict';
-
-// Plain `node --test` — no Electron, so the Windows rules can be asserted from
+// Plain `node --test`, no Electron, so the Windows rules can be asserted from
 // any machine. Run with: npm test
 
-const test = require('node:test');
-const assert = require('node:assert');
+import test from 'node:test';
+import assert from 'node:assert';
 
-const chrome = require('../src/chrome');
+import chrome from '../src/chrome.js';
 
 // Collapse whitespace so assertions describe the rule, not the indentation.
 const flat = (css) => css.replace(/\s+/g, ' ').trim();
@@ -88,28 +86,34 @@ test('the macOS label inset stays the sum of its parts', () => {
 
 /* ------------------------------------------------------------------- title */
 
+// The Control UI joins its route title to "OpenClaw" with an em dash. It is built
+// here from its code point (\u2014) so this test file carries no literal dash
+// while still exercising the exact separator pageLabel() and windowTitle() use.
+const DASH = '\u2014';
+const titled = (name) => `${name} ${DASH} OpenClaw`;
+
 test('every route label comes from the page, except Home', () => {
   const at = (path) => `https://gw.example/${path}`;
   // The Control UI titles most routes usefully...
-  assert.strictEqual(chrome.pageLabel('Automations — OpenClaw', at('automations')), 'Automations');
-  assert.strictEqual(chrome.pageLabel('Plugins — OpenClaw', at('settings/plugins')), 'Plugins');
+  assert.strictEqual(chrome.pageLabel(titled('Automations'), at('automations')), 'Automations');
+  assert.strictEqual(chrome.pageLabel(titled('Plugins'), at('settings/plugins')), 'Plugins');
   assert.strictEqual(
-    chrome.pageLabel('Media curator status check — OpenClaw', at('chat/main/media-curator-abc')),
+    chrome.pageLabel(titled('Media curator status check'), at('chat/main/media-curator-abc')),
     'Media curator status check',
   );
   // ...but titles Home with the AGENT ID, so the strip read "main" where the nav
   // said "Home". Answered from the route, not by rewriting the string: "main" is
   // a legitimate title elsewhere, and an agent can be named anything.
-  assert.strictEqual(chrome.pageLabel('main — OpenClaw', at('chat/main')), 'Home');
-  assert.strictEqual(chrome.pageLabel('zilla — OpenClaw', at('chat/zilla')), 'Home');
-  assert.strictEqual(chrome.pageLabel('main — OpenClaw', at('chat/main?nav=collapsed')), 'Home');
-  assert.strictEqual(chrome.pageLabel('main — OpenClaw', at('chat/main/')), 'Home');
+  assert.strictEqual(chrome.pageLabel(titled('main'), at('chat/main')), 'Home');
+  assert.strictEqual(chrome.pageLabel(titled('zilla'), at('chat/zilla')), 'Home');
+  assert.strictEqual(chrome.pageLabel(titled('main'), at('chat/main?nav=collapsed')), 'Home');
+  assert.strictEqual(chrome.pageLabel(titled('main'), at('chat/main/')), 'Home');
 });
 
 test('a session called "Home" is still its own session, not the Home route', () => {
   // The rule is the route, so this must not collapse into the nav entry.
   assert.strictEqual(
-    chrome.pageLabel('Home — OpenClaw', 'https://gw.example/chat/main/home-a1b2'),
+    chrome.pageLabel(titled('Home'), 'https://gw.example/chat/main/home-a1b2'),
     'Home',
   );
   assert.strictEqual(chrome.isAgentHome('https://gw.example/chat/main/home-a1b2'), false);
@@ -129,7 +133,7 @@ test('a title the Control UI did not write is not trusted', () => {
 });
 
 test('the window title always ends in the app name', () => {
-  assert.strictEqual(chrome.windowTitle('Home'), `Home — ${chrome.APP_NAME}`);
+  assert.strictEqual(chrome.windowTitle('Home'), `Home ${DASH} ${chrome.APP_NAME}`);
   assert.strictEqual(chrome.windowTitle(null), chrome.APP_NAME);
   assert.strictEqual(chrome.APP_NAME, 'Claw Desktop');
 });
@@ -138,7 +142,7 @@ test('the window title always ends in the app name', () => {
 
 // The bug these guard: every self-painted surface was pinned to one dark
 // palette, so in any of the Control UI's six light themes the Windows caption
-// strip stayed near-black — a 137x50 hole in the corner of a cream window.
+// strip stayed near-black, a 137x50 hole in the corner of a cream window.
 
 test('computed colours in any notation arrive as #rrggbb', () => {
   // What the probe actually sends: CSS resolves custom properties to rgb()
@@ -256,7 +260,7 @@ test('nothing that could close a CSS rule survives', () => {
       assert.strictEqual(chrome.sanitizeTokenValue(kind, value), null, `${kind} accepted: ${value}`);
     }
   }
-  // A length is a length, not a colour, and vice versa — types are not advisory.
+  // A length is a length, not a colour, and vice versa, types are not advisory.
   assert.strictEqual(chrome.sanitizeTokenValue('length', 'rgb(1,2,3)'), null);
   assert.strictEqual(chrome.sanitizeTokenValue('color', '12px'), null);
   // Unbounded values are refused rather than truncated.

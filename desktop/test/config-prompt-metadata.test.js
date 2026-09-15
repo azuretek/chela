@@ -1,35 +1,27 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-const test = require('node:test');
-const assert = require('node:assert');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const Module = require('node:module');
+import config, { setUserDataDir } from '../src/config.js';
 
-function loadConfig(userData) {
-  const originalLoad = Module._load;
-  Module._load = function load(request, parent, isMain) {
-    if (request === 'electron') {
-      return { app: { getPath: () => userData } };
-    }
-    return originalLoad.call(this, request, parent, isMain);
-  };
-  try {
-    delete require.cache[require.resolve('../src/config')];
-    return require('../src/config');
-  } finally {
-    Module._load = originalLoad;
-  }
+// Point config at a fresh temp profile for each case. Under CommonJS this was
+// done by intercepting `require('electron')` and busting the module cache; under
+// ESM the config module exposes a userData seam instead, which is the same idea
+// without reaching into the loader.
+function freshConfig() {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-prompt-metadata-'));
+  setUserDataDir(userData);
+  return { config, userData };
 }
 
 test('prompt metadata defaults off and an explicit choice persists', () => {
-  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-prompt-metadata-'));
-  const config = loadConfig(userData);
+  const { config: cfg, userData } = freshConfig();
 
-  assert.strictEqual(config.get().promptMetadata, false);
-  config.update({ promptMetadata: true });
-  assert.strictEqual(config.get().promptMetadata, true);
+  assert.strictEqual(cfg.get().promptMetadata, false);
+  cfg.update({ promptMetadata: true });
+  assert.strictEqual(cfg.get().promptMetadata, true);
 
   const written = JSON.parse(fs.readFileSync(path.join(userData, 'config.json'), 'utf8'));
   assert.strictEqual(written.promptMetadata, true);

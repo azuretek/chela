@@ -1,5 +1,3 @@
-'use strict';
-
 // What this app is allowed to do about a new version, per platform.
 //
 // The answer is not the same everywhere, and the reason is code signing rather
@@ -51,13 +49,13 @@
 // in the same commit. A true value on an unsigned build hands the update to
 // Squirrel.Mac, which refuses to install over an unsigned running bundle -- the
 // exact failure this flag exists to avoid.
-const MAC_SIGNED = true;
+export const MAC_SIGNED = true;
 
 /** What to do when a newer version exists. */
-const INSTALL = 'install'; // download it and offer to restart
-const MANUAL = 'manual'; // could install, but only when the user asks for it
-const NOTIFY = 'notify'; // tell the user, link to the release, install by hand
-const NONE = 'none'; // do not even check
+export const INSTALL = 'install'; // download it and offer to restart
+export const MANUAL = 'manual'; // could install, but only when the user asks for it
+export const NOTIFY = 'notify'; // tell the user, link to the release, install by hand
+export const NONE = 'none'; // do not even check
 
 /**
  * What the *platform* allows, ignoring what the user has asked for.
@@ -67,7 +65,7 @@ const NONE = 'none'; // do not even check
  * could never install anyway, and that reason is a fact about the build rather
  * than about the preference.
  */
-function capability({ platform, packaged, macSigned = MAC_SIGNED, appImage = Boolean(process.env.APPIMAGE) }) {
+export function capability({ platform, packaged, macSigned = MAC_SIGNED, appImage = Boolean(process.env.APPIMAGE) }) {
   // A source run has no app-update.yml and no version worth comparing.
   // electron-updater guards this itself (`app.isPackaged || forceDevUpdateConfig`)
   // but it does so by logging an error, which reads like a fault every `npm start`.
@@ -125,7 +123,7 @@ function capability({ platform, packaged, macSigned = MAC_SIGNED, appImage = Boo
  * MANUAL rather than NOTIFY when it is off, because the two are different
  * offers and saying the wrong one is worse than saying nothing. NOTIFY means
  * "go and replace the app yourself"; MANUAL means "press the button and I will
- * do it" — which is true here, and which NOTIFY's wording would deny.
+ * do it", which is true here, and which NOTIFY's wording would deny.
  *
  * @param {object} opts
  * @param {string} opts.platform   process.platform
@@ -136,7 +134,7 @@ function capability({ platform, packaged, macSigned = MAC_SIGNED, appImage = Boo
  * @returns {{action: string, check: boolean, autoDownload: boolean, reason: string,
  *           canInstall: boolean, capabilityReason: string}}
  */
-function policy({ autoUpdate = true, ...opts }) {
+export function policy({ autoUpdate = true, ...opts }) {
   const base = capability(opts);
   const canInstall = base.action === INSTALL;
   const common = { canInstall, capabilityReason: base.reason };
@@ -161,9 +159,9 @@ function policy({ autoUpdate = true, ...opts }) {
  * The "why not" half is the caller's `reason` rather than a sentence written in
  * here. It used to say "because it is not code signed", which was true of the
  * only platform that could reach it at the time and became false the moment
- * Linux could reach it too — a dialog confidently naming the wrong cause.
+ * Linux could reach it too, a dialog confidently naming the wrong cause.
  */
-function availableMessage({ action, version, current, reason = null }) {
+export function availableMessage({ action, version, current, reason = null }) {
   const headline = `Claw Desktop ${version} is available.`;
   if (action === INSTALL) {
     return { message: headline, detail: `You are on ${current}. It will download in the background, and you can restart to apply it.` };
@@ -171,20 +169,20 @@ function availableMessage({ action, version, current, reason = null }) {
   if (action === MANUAL) {
     return {
       message: headline,
-      detail: `You are on ${current}. Automatic updates are off, so nothing has been downloaded yet — `
+      detail: `You are on ${current}. Automatic updates are off, so nothing has been downloaded yet, `
         + 'install it now, or turn them back on in Settings.',
     };
   }
   const because = reason ? `, because ${reason}` : '';
   return {
     message: headline,
-    detail: `You are on ${current}. This build cannot update itself${because} — `
+    detail: `You are on ${current}. This build cannot update itself${because}, `
       + 'download the new version and replace the app to upgrade.',
   };
 }
 
 /** Whether a check should say anything when there is no update. */
-function shouldReportNoUpdate(trigger) {
+export function shouldReportNoUpdate(trigger) {
   // A scheduled check that announces "you are up to date" is noise, and more so
   // on dev, where it would say it every five minutes. Someone who just clicked
   // "Check for updates" is owed an answer.
@@ -199,13 +197,13 @@ function shouldReportNoUpdate(trigger) {
  * travels with the installed app, so a build cannot be wrong about which
  * channel it came from.
  */
-function channelOf(version) {
+export function channelOf(version) {
   const m = /^\d+\.\d+\.\d+-([0-9A-Za-z-]+)/.exec(String(version || '').trim());
   return m ? m[1] : null;
 }
 
 /**
- * Whether this build may consider prereleases — which is what keeps the two
+ * Whether this build may consider prereleases, which is what keeps the two
  * channels apart, in both directions.
  *
  * A stable build leaves it false, so electron-updater asks GitHub for
@@ -217,20 +215,20 @@ function channelOf(version) {
  * releases feed. There it compares each release's channel against its own
  * (taken from `semver.prerelease(currentVersion)[0]`, i.e. `dev`) and takes the
  * first match. A stable release has no prerelease component, so it matches
- * neither branch of that check and is skipped — a dev build is never offered
+ * neither branch of that check and is skipped, a dev build is never offered
  * stable either.
  *
  * The pairing to keep in step: the build must also publish to the matching
  * channel, or the update metadata it looks for will not exist. scripts/build.js
  * passes `--config.publish.channel` for exactly that reason.
  */
-function allowPrerelease(version) {
+export function allowPrerelease(version) {
   return channelOf(version) !== null;
 }
 
 /** How long a running app waits between scheduled checks. */
-const STABLE_INTERVAL_MS = 6 * 60 * 60 * 1000;
-const PRERELEASE_INTERVAL_MS = 5 * 60 * 1000;
+export const STABLE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+export const PRERELEASE_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
  * How often this build should look for a new release.
@@ -240,12 +238,12 @@ const PRERELEASE_INTERVAL_MS = 5 * 60 * 1000;
  *
  * A prerelease channel waits five minutes, because the two channels exist for
  * opposite reasons. A dev build is installed to watch a change land, so the
- * interval is the delay between pushing a fix and seeing it — six hours makes
+ * interval is the delay between pushing a fix and seeing it, six hours makes
  * the channel useless for the one job it has.
  *
  * Affordable because of where the check goes. On a prerelease channel
  * GitHubProvider reads `github.com/<owner>/<repo>/releases.atom` and then the
- * channel's own `.yml` from the release's download path — both plain github.com
+ * channel's own `.yml` from the release's download path, both plain github.com
  * URLs, so the 60-per-hour unauthenticated api.github.com rate limit never
  * applies. Twelve checks an hour is two small conditional GETs each, against a
  * CDN built for release traffic.
@@ -255,7 +253,7 @@ const PRERELEASE_INTERVAL_MS = 5 * 60 * 1000;
  * installed app, so a build cannot be wrong about which channel it is on. A
  * setting could disagree with the build it is running in.
  */
-function checkIntervalMs(version) {
+export function checkIntervalMs(version) {
   return channelOf(version) === null ? STABLE_INTERVAL_MS : PRERELEASE_INTERVAL_MS;
 }
 
@@ -266,7 +264,7 @@ function checkIntervalMs(version) {
  * and a precise timestamp invites the reader to work out the interval instead
  * of reading the answer.
  */
-function ago(ms) {
+export function ago(ms) {
   if (!Number.isFinite(ms) || ms < 0) return null;
   const minutes = Math.floor(ms / 60000);
   if (minutes < 1) return 'just now';
@@ -288,7 +286,7 @@ function ago(ms) {
  *
  * Three facts, in the order someone doubting it would ask for them: which
  * releases this build follows, what it does when it finds one, and when it last
- * looked. Nothing is persisted, so "no check yet" means this run — which is the
+ * looked. Nothing is persisted, so "no check yet" means this run, which is the
  * truth, and a stored timestamp claiming otherwise would not be.
  *
  * @param {object} opts
@@ -299,9 +297,9 @@ function ago(ms) {
  * @param {string|null} [opts.result]     how that check ended
  * @param {number} [opts.now]
  */
-function statusLine({ action, reason, channel = null, checkedAt = null, result = null, now = Date.now() }) {
+export function statusLine({ action, reason, channel = null, checkedAt = null, result = null, now = Date.now() }) {
   const follows = `${channel || 'stable'} channel`;
-  if (action === NONE) return `Updates: not checked — ${reason}`;
+  if (action === NONE) return `Updates: not checked, ${reason}`;
 
   const behaviour = {
     [INSTALL]: 'installed automatically',
@@ -312,7 +310,7 @@ function statusLine({ action, reason, channel = null, checkedAt = null, result =
   return `Updates: ${follows}, ${behaviour}; ${last}`;
 }
 
-module.exports = {
+export default {
   capability, policy, availableMessage, shouldReportNoUpdate, channelOf, allowPrerelease, checkIntervalMs, ago, statusLine,
   INSTALL, MANUAL, NOTIFY, NONE, MAC_SIGNED, STABLE_INTERVAL_MS, PRERELEASE_INTERVAL_MS,
 };

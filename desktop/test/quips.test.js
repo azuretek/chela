@@ -1,5 +1,3 @@
-'use strict';
-
 // The line under the loading bar.
 //
 // Two things here can actually break something: a list that runs out leaves the
@@ -9,10 +7,10 @@
 //
 // Run with: npm test
 
-const test = require('node:test');
-const assert = require('node:assert');
+import test from 'node:test';
+import assert from 'node:assert';
 
-const quips = require('../src/quips');
+import * as quips from '../src/quips.js';
 
 test('there are enough lines that a wait does not repeat itself quickly', () => {
   assert.ok(quips.QUIPS.length >= 12, `only ${quips.QUIPS.length} lines`);

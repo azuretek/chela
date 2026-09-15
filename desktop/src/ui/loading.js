@@ -10,7 +10,7 @@
 // has stopped waiting, and "connected" is the view being gone.
 //
 // The failure *reason* is deliberately absent. It is in the banner, once, with
-// the link to Settings — saying it in both places means two wordings of the
+// the link to Settings, saying it in both places means two wordings of the
 // same failure that drift apart, and the one on this page could not be
 // dismissed.
 

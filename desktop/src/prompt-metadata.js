@@ -1,6 +1,4 @@
-'use strict';
-
-const os = require('node:os');
+import os from 'node:os';
 
 // The marker OpenClaw already owns for inbound context.
 //
@@ -16,12 +14,12 @@ const os = require('node:os');
 //   1. the header must END with the marker, and
 //   2. a prose block runs until a blank line, so the prompt must be separated
 //      from the block by one. `inject` owns that separator.
-const CONTEXT_MARKER = '\u27E6openclaw:ctx\u27E7';
-const CONTEXT_HEADER = `Desktop client context: ${CONTEXT_MARKER}`;
-const MAX_VALUE_LENGTH = 256;
+export const CONTEXT_MARKER = '\u27E6openclaw:ctx\u27E7';
+export const CONTEXT_HEADER = `Desktop client context: ${CONTEXT_MARKER}`;
+export const MAX_VALUE_LENGTH = 256;
 
 /** Keep machine-controlled values on one bounded line inside the prompt block. */
-function clean(value, fallback = 'unknown') {
+export function clean(value, fallback = 'unknown') {
   const text = String(value ?? '')
     .replace(/[\u0000-\u001f\u007f]/g, ' ')
     // Angle brackets and the marker itself are neutralised so no value can
@@ -36,13 +34,13 @@ function clean(value, fallback = 'unknown') {
   return text || fallback;
 }
 
-function formatOs({ platform = process.platform, release = os.release(), arch = os.arch() } = {}) {
+export function formatOs({ platform = process.platform, release = os.release(), arch = os.arch() } = {}) {
   const names = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
   return `${names[platform] || clean(platform)} ${clean(release)} (${clean(arch)})`;
 }
 
 /** Gather only local facts that are useful when an agent reasons about this desktop. */
-function collectMetadata({
+export function collectMetadata({
   appVersion,
   platform = process.platform,
   release = os.release(),
@@ -72,7 +70,7 @@ function collectMetadata({
   };
 }
 
-function formatBlock(metadata) {
+export function formatBlock(metadata) {
   return [
     CONTEXT_HEADER,
     `host: ${clean(metadata.host)}`,
@@ -85,21 +83,21 @@ function formatBlock(metadata) {
   ].join('\n');
 }
 
-function shouldInject(message) {
+export function shouldInject(message) {
   if (typeof message !== 'string' || !message.trim()) return false;
   // A prefix would stop OpenClaw recognising a slash command as a command.
   if (/^\/\S/.test(message.trimStart())) return false;
   return !message.includes(CONTEXT_HEADER);
 }
 
-function inject(message, block) {
+export function inject(message, block) {
   return shouldInject(message) && typeof block === 'string' && block
     ? `${block}\n\n${message}`
     : message;
 }
 
 /** Transform one WebSocket frame without touching any method except chat.send. */
-function transformFrame(data, { enabled, block } = {}) {
+export function transformFrame(data, { enabled, block } = {}) {
   if (!enabled || typeof data !== 'string' || !data.startsWith('{')) return data;
   try {
     const payload = JSON.parse(data);
@@ -127,7 +125,7 @@ function transformFrame(data, { enabled, block } = {}) {
  * the marker above. Rewriting inbound frames here would put a second owner on
  * that behaviour and would hide the block from this app's users alone.
  */
-function clientScript(config) {
+export function clientScript(config) {
   return `(function() {
     window.__clawDesktopPromptMetadata = ${JSON.stringify(config)};
     if (window.__clawDesktopPromptMetadataInstalled) return;
@@ -150,17 +148,3 @@ function clientScript(config) {
     };
   })();`;
 }
-
-module.exports = {
-  CONTEXT_MARKER,
-  CONTEXT_HEADER,
-  MAX_VALUE_LENGTH,
-  clean,
-  formatOs,
-  collectMetadata,
-  formatBlock,
-  shouldInject,
-  inject,
-  transformFrame,
-  clientScript,
-};

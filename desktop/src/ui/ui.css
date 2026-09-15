@@ -9,7 +9,7 @@
  * overridden the moment one is.
  *
  * That is also why the scrollbar rules further down are copied verbatim from
- * the Control UI rather than approximated — driven by the same four tokens,
+ * the Control UI rather than approximated, driven by the same four tokens,
  * they render as the same scrollbar rather than a similar one.
  */
 :root {
@@ -95,7 +95,7 @@
 * { box-sizing: border-box; }
 
 /* The `hidden` attribute is only a UA-stylesheet `display: none`, so any author
-   rule that sets `display` beats it — which is how the close button stayed on
+   rule that sets `display` beats it, which is how the close button stayed on
    screen on a page that has nothing to close back to, despite being marked
    hidden. Everything here that hides itself does so through this attribute, so
    the override belongs once, at the top. */
@@ -113,8 +113,7 @@ html, body {
 /* ------------------------------------------------------------- scrollbars */
 
 /* Copied from the Control UI's core stylesheet, token for token. Firefox gets
-   the two standard properties; Chromium — which is what actually renders here —
-   gets the ::-webkit- rules, where `background-clip: content-box` over a
+   the two standard properties; Chromium, which is what actually renders here, gets the ::-webkit- rules, where `background-clip: content-box` over a
    transparent border is what insets the thumb from the track edge. */
 * {
   scrollbar-width: thin;
@@ -137,7 +136,7 @@ html, body {
 /* ------------------------------------------------------------------ modal */
 
 /* The scrim fills the overlay view, which fills the window. Padding-top clears
-   the drag band below so the card never sits under it — or, on Windows, under
+   the drag band below so the card never sits under it, or, on Windows, under
    the caption buttons the OS draws above the web contents. */
 .scrim {
   position: fixed;
@@ -149,8 +148,8 @@ html, body {
   background: var(--scrim);
 }
 
-/* When this page is the window's whole content — a first run, or a connection
-   that failed — there is nothing behind to show through, and a translucent wash
+/* When this page is the window's whole content, a first run, or a connection
+   that failed, there is nothing behind to show through, and a translucent wash
    would just look like a bug. */
 body.as-page .scrim { background: var(--bg); }
 
@@ -306,7 +305,7 @@ a  { color: var(--accent); }
 /* --------------------------------------------------------------- banner */
 
 /* The page inside the banner view. It is sized to exactly the stack's height by
-   main, so the body must add nothing of its own — a stray margin here becomes a
+   main, so the body must add nothing of its own, a stray margin here becomes a
    transparent strip that eats clicks on the UI underneath. */
 body.banner-body { background: transparent; overflow: hidden; }
 .banner-stack { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
@@ -344,7 +343,7 @@ body.banner-body { background: transparent; overflow: hidden; }
 
 /* Info is deliberately not the accent colour. This app's accent is its brand
    red, so an accent-edged notice is indistinguishable from a failure at the
-   glance the edge exists for — which is the whole job of the stripe. */
+   glance the edge exists for, which is the whole job of the stripe. */
 .banner--error { border-left-color: var(--destructive); }
 .banner--warn  { border-left-color: var(--warn); }
 .banner--info  { border-left-color: var(--border-strong); }
@@ -354,7 +353,7 @@ body.banner-body { background: transparent; overflow: hidden; }
 .banner__detail  { color: var(--muted); font-size: 12px; }
 
 /* The one offer a notice makes. Styled as a link rather than a button because
-   it navigates rather than acts — pressing it does not resolve the condition,
+   it navigates rather than acts, pressing it does not resolve the condition,
    so it must not look like the button that would. `flex: none` and the baseline
    nudge keep it on the message's line while the detail wraps under both. */
 .banner__action {
@@ -393,7 +392,7 @@ body.banner-body { background: transparent; overflow: hidden; }
 /* --------------------------------------------------------------- loading */
 
 /* The cover shown while there is no gateway page to show. Opaque `--bg`, not a
-   scrim: there is nothing behind it worth revealing — during a connect the view
+   scrim: there is nothing behind it worth revealing, during a connect the view
    underneath is blank, and after a failure it is Chromium's error document,
    which is the one thing this exists to keep off screen. */
 .loading-body { background: var(--bg); overflow: hidden; }
@@ -503,7 +502,7 @@ body.is-failed .loading__mark::before { animation: none; opacity: .3; }
   transition: width .32s linear;
 }
 
-/* Frozen, and saying so. The bar keeps the distance it got to — resetting it to
+/* Frozen, and saying so. The bar keeps the distance it got to, resetting it to
    zero would erase the one piece of evidence on screen about how far the
    connection got, which is the difference between "the host never answered" and
    "the page started loading and died". */
@@ -661,7 +660,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 22px 0 0; }
 
 /* Keeps the window movable where the app has taken the title bar away. It sits
    below the modal in the stacking order (which has z-index: 1) so it never eats
-   a click meant for the card — a drag region swallows mouse-down entirely. */
+   a click meant for the card, a drag region swallows mouse-down entirely. */
 .dragbar {
   position: fixed; top: 0; left: 0; right: 0; height: 50px; z-index: 0;
   -webkit-app-region: drag; app-region: drag;
@@ -669,7 +668,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 22px 0 0; }
 .dragbar ~ * button { -webkit-app-region: no-drag; app-region: no-drag; }
 /* Only reserve space where the frame is actually hidden; Linux keeps its own
    title bar and would otherwise get a 50px gap for nothing. The bar itself
-   stays in the DOM regardless — the error page never sets this class and still
+   stays in the DOM regardless, the error page never sets this class and still
    needs somewhere to grab the window by. */
 body:not(.frameless) .scrim { padding-top: 24px; }
 
@@ -679,7 +678,7 @@ body:not(.frameless) .scrim { padding-top: 24px; }
    over it. Geometry arrives from src/chrome.js as --strip-* so the height has
    one owner; the fallbacks here only have to hold for the first paint.
 
-   The whole strip drags. There is nothing to carve back out — it holds no
+   The whole strip drags. There is nothing to carve back out, it holds no
    controls, and the caption buttons floating over its right end are the OS's,
    not the page's, so `app-region` never reaches them. */
 .strip-body {

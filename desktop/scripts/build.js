@@ -1,5 +1,3 @@
-'use strict';
-
 // Run a build with the version this tree actually deserves.
 //
 //   npm run build:mac
@@ -9,7 +7,7 @@
 //
 // The problem this fixes: `artifactName` in electron-builder.yml interpolates
 // `${version}` from package.json, which only moves on a release. So every local
-// build produced `ClawDesktop-1.0.0-arm64.dmg` -- the same filename as an actual
+// build produced `ClawDesktop-1.0.0-arm64.dmg`, the same filename as an actual
 // 1.0.0 release, and the same filename as every other local build. CI grew a
 // `--config.extraMetadata.version` flag to fix that for itself, and local builds
 // kept the old behaviour, which is the worst arrangement: the machine you
@@ -19,15 +17,21 @@
 // CI passes CLAW_BUILD_VERSION (decided by the workflow's version job, which
 // also checks a tag against package.json); locally it is worked out from git.
 
-const { execFileSync, spawnSync } = require('node:child_process');
-const fs = require('node:fs');
-const path = require('node:path');
+import { execFileSync, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+import * as version from './version.js';
+import updates from '../src/updates.js';
 
-const version = require('./version');
-const updates = require('../src/updates');
-
-const ROOT = path.join(__dirname, '..');
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.join(HERE, '..');
 const PKG = path.join(ROOT, 'package.json');
+
+// electron-builder's CLI entry is resolved as a module, and require.resolve is
+// the tool for that; createRequire brings it into this ESM file.
+const require = createRequire(import.meta.url);
 
 /** A git command, or null if git has nothing to say. Never throws. */
 function git(...args) {
@@ -46,14 +50,14 @@ function git(...args) {
  * commit, then the commit itself. Only the first is a decision made elsewhere;
  * the other two are read off the tree being compiled.
  */
-function resolveVersion(packageVersion, env = process.env) {
+export function resolveVersion(packageVersion, env = process.env) {
   if (env.CLAW_BUILD_VERSION) {
     return { version: env.CLAW_BUILD_VERSION, note: 'from CLAW_BUILD_VERSION' };
   }
 
   const dirty = git('status', '--porcelain') ? true : false;
 
-  // A tag on HEAD means this commit *is* a release -- but only if the tag and
+  // A tag on HEAD means this commit *is* a release, but only if the tag and
   // package.json agree, and only if the tree is clean. Building "1.0.1" from a
   // modified checkout would produce something that is not 1.0.1.
   const tags = (git('tag', '--points-at', 'HEAD') || '').split('\n').filter(Boolean);
@@ -81,14 +85,14 @@ function resolveVersion(packageVersion, env = process.env) {
  * Resolved as a module rather than found on PATH so it is the copy in this
  * project's node_modules, never a global install of another version.
  */
-function builderEntry() {
+export function builderEntry() {
   return require.resolve('electron-builder/cli.js');
 }
 
 /**
  * Whether to notarize this run.
  *
- * Notarization is a credential, not a config choice — the same rule the mac
+ * Notarization is a credential, not a config choice, the same rule the mac
  * block in electron-builder.yml already follows for signing. `notarize` stays
  * false there so a build with no Apple credentials still succeeds, which is CI
  * today and any checkout that is not the signing machine; when the App Store
@@ -97,7 +101,7 @@ function builderEntry() {
  * All three or none: app-builder-lib throws InvalidConfigurationError when only
  * some are set, so a half-configured environment must not reach it.
  */
-function notarizeArgs(env = process.env) {
+export function notarizeArgs(env = process.env) {
   const ready = Boolean(env.APPLE_API_KEY && env.APPLE_API_KEY_ID && env.APPLE_API_ISSUER);
   return ready ? ['--config.mac.notarize=true'] : [];
 }
@@ -115,13 +119,13 @@ function notarizeArgs(env = process.env) {
  * disagree with what the build is. The same value is baked into app-update.yml,
  * which is how the installed app knows which channel it follows.
  */
-function channelArgs(version) {
+export function channelArgs(version) {
   const channel = updates.channelOf(version);
   return channel ? [`--config.publish.channel=${channel}`] : [];
 }
 
 /** The full argument list handed to electron-builder. */
-function builderArgs(argv, version, env = process.env) {
+export function builderArgs(argv, version, env = process.env) {
   return [
     ...argv,
     '--publish', 'never',
@@ -132,7 +136,7 @@ function builderArgs(argv, version, env = process.env) {
 }
 
 /** The DMGs this build produced, or [] when there are none. */
-function builtDmgs(dir = path.join(ROOT, 'dist')) {
+export function builtDmgs(dir = path.join(ROOT, 'dist')) {
   try {
     return fs
       .readdirSync(dir)
@@ -154,7 +158,7 @@ function builtDmgs(dir = path.join(ROOT, 'dist')) {
  * DMG around it as "rejected, no usable signature".
  *
  * Stapling embeds the ticket in the DMG so it validates without a network call.
- * It rewrites the file, which is why dmg.writeUpdateInfo is false — see
+ * It rewrites the file, which is why dmg.writeUpdateInfo is false, see
  * electron-builder.yml for why nothing that updates reads a DMG checksum.
  *
  * The DMG must already be signed, which dmg.sign in electron-builder.yml does.
@@ -167,7 +171,7 @@ function builtDmgs(dir = path.join(ROOT, 'dist')) {
  * Gated on the same credentials that enabled notarization, so a build without
  * them is unaffected, and on darwin, where xcrun exists.
  */
-function stapleDmgs(opts = {}) {
+export function stapleDmgs(opts = {}) {
   const {
     env = process.env,
     run = spawnSync,
@@ -216,8 +220,8 @@ function main(argv) {
   // Run electron-builder's own entry script with this node, rather than looking
   // for the `electron-builder` command. Two Windows failures avoided at once:
   // npm installs a `.cmd` shim there, which spawnSync cannot execute without a
-  // shell, and prepending to PATH by hand needs `path.delimiter` (`;`, not `:`)
-  // — getting that wrong corrupts PATH instead of extending it, which is
+  // shell, and prepending to PATH by hand needs `path.delimiter` (`;`, not `:`),
+  // getting that wrong corrupts PATH instead of extending it, which is
   // exactly how this failed the first time. `require.resolve` also means the
   // build cannot silently use a globally installed electron-builder of another
   // version.
@@ -233,6 +237,4 @@ function main(argv) {
   process.exit(stapleDmgs());
 }
 
-if (require.main === module) main(process.argv.slice(2));
-
-module.exports = { resolveVersion, builderEntry, builderArgs, notarizeArgs, channelArgs, builtDmgs, stapleDmgs };
+if (import.meta.url === `file://${process.argv[1]}`) main(process.argv.slice(2));

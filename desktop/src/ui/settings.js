@@ -4,7 +4,7 @@ const api = window.clawDesktop;
 const params = new URLSearchParams(location.search);
 const firstRun = params.has('firstRun');
 // This page is the window's own content rather than a dialog over it, which is
-// a first run and nothing else now — a failed connection leaves you where you
+// a first run and nothing else now, a failed connection leaves you where you
 // were and raises a notice. Kept separate from firstRun, which additionally
 // hides the preferences, so the two can differ again.
 const asPage = params.has('page');
@@ -48,14 +48,14 @@ function field(labelText, control, hint) {
 
 /* ---------------------------------------------------------------- gateways */
 
-// The renderer never receives a stored secret — only whether one exists. So the
+// The renderer never receives a stored secret, only whether one exists. So the
 // input is always empty, and its placeholder carries the state instead.
 function secretRow(gw, { key, title, has, hint }, out) {
   const input = el('input', {
     type: 'password',
     autocomplete: 'off',
     spellcheck: false,
-    placeholder: has ? 'Stored — type a new value to replace it' : 'Not set',
+    placeholder: has ? 'Stored, type a new value to replace it' : 'Not set',
   });
 
   const save = el('button', {
@@ -168,7 +168,7 @@ function gatewayEditor(gw) {
       key: 'password',
       title: 'Gateway password',
       has: creds.hasPassword,
-      hint: 'Only for gateways in password mode. There is no URL handoff for passwords, so the app fills the sign-in form instead — best effort.',
+      hint: 'Only for gateways in password mode. There is no URL handoff for passwords, so the app fills the sign-in form instead, best effort.',
     }, out),
     el('hr'),
     headerSection(gw, out),
@@ -228,7 +228,7 @@ function renderGateways() {
 
     // What this gateway is doing, and why it is not doing it. The badge used to
     // say "Connected" for whichever gateway was *selected*, which was a lie for
-    // the entire time a connection was failing — the state in which someone is
+    // the entire time a connection was failing, the state in which someone is
     // most likely to be reading it.
     const status = gw.status || { tone: 'muted', label: 'Not connected', detail: null };
 
@@ -238,7 +238,7 @@ function renderGateways() {
         el('span', { className: 'url', textContent: gw.url }),
         el('span', {
           className: 'muted-sm',
-          textContent: supplies.length ? `Signs in with: ${supplies.join(', ')}` : 'No saved credentials — you will be asked to sign in.',
+          textContent: supplies.length ? `Signs in with: ${supplies.join(', ')}` : 'No saved credentials, you will be asked to sign in.',
         }),
         status.detail ? el('span', { className: `result ${status.tone}`, textContent: status.detail }) : null,
       ]),
@@ -281,7 +281,7 @@ function renderGateways() {
  *
  * This is the whole reason there is no certificate prompt any more. The
  * fingerprints are here to be compared rather than dismissed, nothing is
- * blocked on the answer, and doing nothing leaves the connection refused —
+ * blocked on the answer, and doing nothing leaves the connection refused, 
  * which is the safe outcome, unlike a modal whose easiest button is "yes".
  */
 function renderCertOffers() {
@@ -308,7 +308,7 @@ function renderCertOffers() {
       className: 'muted-sm hint',
       textContent: offer.changed
         ? 'Expected if the gateway was reinstalled or regenerated its certificate. If nothing like that happened, '
-          + 'something is intercepting the connection — leave it refused.'
+          + 'something is intercepting the connection, leave it refused.'
         : 'The OpenClaw gateway generates its own certificate, so this is normal when you connect straight to its '
           + 'listener (an address ending in :18789) instead of going through the Tailscale Serve address.',
     });
@@ -459,18 +459,18 @@ function renderPrefs() {
   $('globalShortcut').value = s.globalShortcut || '';
 
   // A build that could never install an update has nothing to switch on, so the
-  // checkbox says why instead of sitting there doing nothing when clicked —
+  // checkbox says why instead of sitting there doing nothing when clicked, 
   // which is what an unsigned macOS build or a non-AppImage Linux run gets.
   const canInstall = !state.updates || state.updates.canInstall;
   $('autoUpdate').checked = s.autoUpdate && canInstall;
   $('autoUpdate').disabled = !canInstall;
   if (!canInstall) {
     $('autoUpdate-hint').textContent =
-      `This build cannot install its own updates — ${state.updates.reason}. It will still tell you when a new version exists.`;
+      `This build cannot install its own updates, ${state.updates.reason}. It will still tell you when a new version exists.`;
   }
 }
 
-// `state.build` already reads as "1.0.0 (a1b2c3d4e5, built …)" — the main
+// `state.build` already reads as "1.0.0 (a1b2c3d4e5, built …)", the main
 // process formats it, because this page is sandboxed and cannot require the
 // module that knows the rules.
 function renderAbout() {
@@ -558,7 +558,7 @@ async function refreshProblemCount() {
  *
  * It used to carry the reason this page was on screen, because a failure put it
  * there and it owed an explanation for having taken over the window. Nothing
- * does that any more — a failure raises a notice and leaves the window alone —
+ * does that any more, a failure raises a notice and leaves the window alone, 
  * so the page is only ever here because someone opened it, and it says which
  * part of itself you are looking at.
  */
@@ -664,8 +664,8 @@ $('save').addEventListener('click', async () => {
 
 /* ----------------------------------------------------------------- dismiss */
 
-// Only dismissable as a modal. When this page IS the window — a first run, or a
-// connection that failed — there is nothing behind it to go back to, and an
+// Only dismissable as a modal. When this page IS the window, a first run, or a
+// connection that failed, there is nothing behind it to go back to, and an
 // Escape key that emptied the window would leave the app running with a blank
 // frame and no way to pick a gateway.
 if (!asPage) {
@@ -706,8 +706,8 @@ if (!asPage) {
 
 /* -------------------------------------------------------------------- boot */
 
-// A certificate refused while this page is open — which is exactly what
-// pressing Reconnect from in here does — has to appear without the page being
+// A certificate refused while this page is open, which is exactly what
+// pressing Reconnect from in here does, has to appear without the page being
 // closed and reopened. The snapshot this renders from is otherwise as old as
 // the dialog.
 api.onStateChanged(async () => {

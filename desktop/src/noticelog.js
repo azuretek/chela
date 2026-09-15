@@ -1,5 +1,3 @@
-'use strict';
-
 // The on-disk record of things that went wrong, and when they stopped.
 //
 // The banner answers "what is wrong now" and dedupes hard to do it: one notice
@@ -21,25 +19,25 @@
 // injected, so the rotation and the retention window are testable without a
 // window, an app object or waiting a month. src/main.js owns the live instance.
 
-const fs = require('node:fs');
-const path = require('node:path');
+import fs from 'node:fs';
+import path from 'node:path';
 
 /** Kept per month, and only these. */
-const LOGGED_TONES = new Set(['error', 'warn']);
+export const LOGGED_TONES = new Set(['error', 'warn']);
 
 // Three files, so "what happened last month" is answerable and the month before
 // that is still there when someone gets round to asking.
-const KEEP_MONTHS = 3;
+export const KEEP_MONTHS = 3;
 
 // A flapping condition writes a line per transition, which is bounded by real
 // state changes rather than by time, so this should never be reached. It is here
 // because "should never" is how a tray app that runs for weeks fills a disk.
-const MAX_BYTES = 2 * 1024 * 1024;
+export const MAX_BYTES = 2 * 1024 * 1024;
 
 const MONTH_FILE = /^(\d{4}-\d{2})\.jsonl$/;
 
 /** The month a timestamp belongs to, as it appears in the filename. */
-function monthOf(ms) {
+export function monthOf(ms) {
   return new Date(ms).toISOString().slice(0, 7);
 }
 
@@ -50,7 +48,7 @@ function monthOf(ms) {
  * @param {number} [opts.keepMonths]
  * @param {number} [opts.maxBytes]      per-file ceiling
  */
-function create({ dir, now = Date.now, keepMonths = KEEP_MONTHS, maxBytes = MAX_BYTES }) {
+export function create({ dir, now = Date.now, keepMonths = KEEP_MONTHS, maxBytes = MAX_BYTES }) {
   // Which ids have a raised line with no cleared line yet. Without this, an OK
   // notice being cleared would write an orphan "cleared" for something that was
   // never logged as raised, and the reader would have to guess what it closed.
@@ -182,5 +180,3 @@ function create({ dir, now = Date.now, keepMonths = KEEP_MONTHS, maxBytes = MAX_
   // at a failure the Settings page has since aged out of its own view.
   return { raised, cleared, read, sessions, prune, fileFor, dir };
 }
-
-module.exports = { create, monthOf, LOGGED_TONES, KEEP_MONTHS, MAX_BYTES };

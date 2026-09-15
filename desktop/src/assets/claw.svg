@@ -1,4 +1,4 @@
-<!-- Claw Desktop — application icon.
+<!-- Claw Desktop, application icon.
 
      Original artwork. Three claw marks tearing across a window: the "claw"
      of the name, and the window it puts the Control UI in.
@@ -8,7 +8,7 @@
      be chosen from a moving one is a frame nobody composed.
 
      The tile takes ~83% of the canvas rather than bleeding to the edge, which is
-     the macOS icon grid's proportion — a full-bleed square reads noticeably
+     the macOS icon grid's proportion, a full-bleed square reads noticeably
      larger than its neighbours in the Dock. The marks are drawn past the tile
      and clipped to it, so they run off the edges instead of stopping politely
      inside them.
@@ -44,7 +44,7 @@
     <path d="M10 38 H110" stroke="#2b2b2b" stroke-width="2"/>
 
     <!-- Each mark is a lens: pointed at both ends, widest in the middle, which
-         is how a swipe actually cuts. Drawn twice — once fattened in near-black
+         is how a swipe actually cuts. Drawn twice, once fattened in near-black
          to darken the tile immediately around it, once in red on top. That halo
          is what makes the mark read as torn THROUGH the surface instead of
          painted onto it, and it is also what breaks the title bar cleanly. -->

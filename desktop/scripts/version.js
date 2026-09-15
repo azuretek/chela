@@ -1,5 +1,3 @@
-'use strict';
-
 // What version a CI build carries, and whether a tag build is self-consistent.
 //
 // Bumping and tagging are release-it's job (see .release-it.cjs); this is the
@@ -19,7 +17,7 @@
 const VERSION_RE = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
 
 /** Parse a version string, or null if it is not one we will release. */
-function parse(version) {
+export function parse(version) {
   const m = VERSION_RE.exec(String(version || '').trim());
   if (!m) return null;
   return {
@@ -30,7 +28,7 @@ function parse(version) {
   };
 }
 
-function format({ major, minor, patch, prerelease }) {
+export function format({ major, minor, patch, prerelease }) {
   return `${major}.${minor}.${patch}${prerelease ? `-${prerelease}` : ''}`;
 }
 
@@ -40,10 +38,10 @@ function format({ major, minor, patch, prerelease }) {
  * Accepts both the bare tag and the full ref, because CI hands over
  * `refs/tags/v1.2.3` while a person types `v1.2.3`.
  *
- * The `v` prefix is not decided here — `.release-it.cjs` owns `tagName` — so
+ * The `v` prefix is not decided here, `.release-it.cjs` owns `tagName`, so
  * this only has to read what that produces.
  */
-function versionFromTag(ref) {
+export function versionFromTag(ref) {
   const tag = String(ref || '').replace(/^refs\/tags\//, '');
   if (!tag.startsWith('v')) return null;
   const version = tag.slice(1);
@@ -51,7 +49,7 @@ function versionFromTag(ref) {
 }
 
 /** The next patch version, with any prerelease dropped. */
-function nextPatch(base) {
+export function nextPatch(base) {
   const v = parse(base);
   if (!v) throw new Error(`not a releasable version: ${base}`);
   return format({ major: v.major, minor: v.minor, patch: v.patch + 1, prerelease: null });
@@ -64,7 +62,7 @@ function nextPatch(base) {
  *
  * It must sort ABOVE the last release and below the next, so it names the NEXT
  * patch. Dev builds used to carry the current version (`1.0.0-dev.…`), which
- * sorts below `1.0.0` — fine while dev builds were only artifacts, wrong now
+ * sorts below `1.0.0`, fine while dev builds were only artifacts, wrong now
  * that they are a channel people install: every build after the 1.0.0 release
  * would look older than the release.
  *
@@ -76,7 +74,7 @@ function nextPatch(base) {
  *
  * It must name the exact code, so the sha stays. It costs nothing to order:
  * identifiers are compared left to right, the count differs first for any two
- * distinct commits, and the sha is only ever reached on a tie -- which means the
+ * distinct commits, and the sha is only ever reached on a tie, which means the
  * same commit, hence the same sha.
  *
  * `dirty` is carried for the same reason build-info.js records it: a commit hash
@@ -84,7 +82,7 @@ function nextPatch(base) {
  * committed, so the name has to say so or it is a lie. Local builds are where
  * this actually happens.
  */
-function devVersion(base, commit, { dirty = false, count = null } = {}) {
+export function devVersion(base, commit, { dirty = false, count = null } = {}) {
   const target = parse(nextPatch(base));
   const sha = String(commit || '').trim().toLowerCase();
 
@@ -112,17 +110,15 @@ function devVersion(base, commit, { dirty = false, count = null } = {}) {
  *
  * @returns {{ok: true, version: string} | {ok: false, reason: string}}
  */
-function checkTag(ref, packageVersion) {
+export function checkTag(ref, packageVersion) {
   const tagged = versionFromTag(ref);
   if (!tagged) return { ok: false, reason: `ref ${ref} does not name a version (want refs/tags/vX.Y.Z)` };
   if (tagged !== packageVersion) {
     return {
       ok: false,
-      reason: `tag says ${tagged} but package.json says ${packageVersion} — `
+      reason: `tag says ${tagged} but package.json says ${packageVersion}, `
         + 'the installers would be named for the wrong version. Bump with `npm run release`, which does both.',
     };
   }
   return { ok: true, version: tagged };
 }
-
-module.exports = { parse, format, versionFromTag, nextPatch, devVersion, checkTag };

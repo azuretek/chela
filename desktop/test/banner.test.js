@@ -1,5 +1,3 @@
-'use strict';
-
 // The banner page.
 //
 // src/ui/banner.js is a browser script, so it is loaded here against a minimal
@@ -12,12 +10,15 @@
 //
 // Run with: npm test
 
-const test = require('node:test');
-const assert = require('node:assert');
-const fs = require('node:fs');
-const path = require('node:path');
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import assert from 'node:assert';
+import fs from 'node:fs';
+import path from 'node:path';
 
-const SOURCE = path.join(__dirname, '..', 'src', 'ui', 'banner.js');
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+
+const SOURCE = path.join(HERE, '..', 'src', 'ui', 'banner.js');
 
 function makeNode(tag) {
   return {
