@@ -1,0 +1,92 @@
+# The Xcode project, described once and generated.
+#
+# `Claw.xcodeproj` is build output, not source. This file is the single source of
+# truth for the project's shape: xcodegen renders the project from it, and the
+# rendered copy is gitignored, so there is exactly one owner. A committed
+# project file would drift the first time someone changed a setting in the Xcode
+# UI, and the drift would not show up in review, because a `pbxproj` diff is
+# unreadable in either direction.
+#
+# Regenerate after anything that changes the project's shape, meaning this file
+# or the layout of the sources:
+#
+#     cd mobile && xcodegen generate
+
+name: Claw
+
+options:
+  bundleIdPrefix: com.azuretek
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+  generateEmptyDirectories: false
+
+settings:
+  base:
+    # Swift 6 language mode: the concurrency checking is worth having from the
+    # first file rather than retrofitting onto a shell that already has four
+    # delegate surfaces in it.
+    SWIFT_VERSION: "6.0"
+
+targets:
+  Claw:
+    type: application
+    platform: iOS
+    sources:
+      - path: Claw
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.azuretek.claw-mobile
+        # Blank on purpose: Xcode fills this from the Apple ID that signs in, so
+        # a team id committed here would be a second place to keep in step with
+        # the account, and a wrong one fails in a way nobody reads.
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: "1.0"
+        # The plist is a file in the repo rather than generated, because Phase 3
+        # and 4 add entitlement-adjacent keys (Keychain access groups, ATS
+        # notes) that are easier to review as a diff than as build settings.
+        INFOPLIST_FILE: Claw/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # iPhone only. The Control UI is responsive, so an iPad build is
+        # possible, but nothing in this project has been designed for a tablet
+        # and claiming support would mean supporting it.
+        TARGETED_DEVICE_FAMILY: "1"
+
+  ClawTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ClawTests
+    dependencies:
+      - target: Claw
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.azuretek.claw-mobile.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  Claw:
+    build:
+      targets:
+        Claw: all
+        # Built for the test action only: the verify step builds the app, and
+        # pulling the test bundle in would make that build do work no one asked
+        # for.
+        ClawTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - ClawTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
