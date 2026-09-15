@@ -1,0 +1,67 @@
+#!/bin/sh
+# pre-push: the half of the gate that CI cannot be.
+#
+# The split, and why it is a split at all.
+#
+# CI covers the headless half on every push: the unit tests, the import audit
+# (scripts/check-imports.js) and the packaged-artifact audit
+# (scripts/check-package.js). What CI cannot run is the GUI boot smoke, because
+# GitHub's macOS runners have no session to launch Electron into. That is the
+# check that catches the fault which actually shipped: a build that passed every
+# test and still opened a fatal "A JavaScript error occurred in the main
+# process" dialog. A green unit-test run is not evidence the app starts.
+#
+# So the smoke is gated here, at the push, because a push to main IS the merge
+# in this repo. Running it on every push rather than only on main keeps the rule
+# simple: the push either passed the local gate or it did not.
+#
+# ★ This hook is ADVISORY, and do not mistake it for the gate. `git push
+# --no-verify` skips it, and a fresh clone has no hook until
+# `npm run hooks:install` points core.hooksPath here. The unskippable gate is
+# the CI run on the commit you pushed. Treat a green hook as the fast local
+# signal, never as the only one.
+
+set -e
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root/desktop"
+
+fail() {
+  cat >&2 <<EOF
+
+pre-push: ${1}
+
+The local gate is:
+  npm test            unit tests
+  check:imports       static import audit over the source
+  smoke               boot the real app and require a positive signal
+  check:package       audit the packaged artifact, when one exists
+
+The smoke needs a real desktop session, which is why it lives here and not in
+CI. Fix the failure and push again, or deliberately skip the gate with:
+
+    git push --no-verify
+
+Skipping is sometimes right (a docs-only push, a headless host). It is never
+free: the smoke is the only check that proves the app still starts.
+EOF
+  exit 1
+}
+
+echo "pre-push: local gate (unit tests, import audit, GUI boot smoke)"
+if ! npm run verify; then
+  fail "the verification suite failed."
+fi
+
+# A packaged build, if one is sitting there, is worth auditing on the way out:
+# this is the check that catches a module the packer never copied, which is a
+# fault the source tree cannot show. CI does this on the artifact it builds, so
+# this is the local equivalent rather than a duplicate of CI's work.
+if [ -d dist ]; then
+  echo "pre-push: auditing the packaged build in dist/"
+  if ! npm run check:package; then
+    fail "the packaged-artifact audit failed."
+  fi
+fi
+
+echo "pre-push: local gate passed."

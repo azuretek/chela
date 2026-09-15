@@ -24,7 +24,8 @@
     "build:win": "node scripts/build.js --win",
     "build:linux": "node scripts/build.js --linux",
     "release": "release-it",
-    "build:version": "node scripts/build-version.js"
+    "build:version": "node scripts/build-version.js",
+    "hooks:install": "git config core.hooksPath \"$(git rev-parse --show-toplevel)/.githooks\" && echo \"hooks installed: core.hooksPath -> .githooks\""
   },
   "devDependencies": {
     "electron": "^44.1.1",
