@@ -22,7 +22,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as version from './version.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -143,4 +143,10 @@ function main(argv) {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main(process.argv.slice(2));
+// True when this file is the entry point, on every platform. See scripts/build.js
+// for why the naive `file://${process.argv[1]}` comparison is POSIX-only.
+function isEntry() {
+  return Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
+}
+
+if (isEntry()) main(process.argv.slice(2));
