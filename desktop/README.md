@@ -481,6 +481,43 @@ the CLI flag. Use `gh repo clone`, not `git clone git@…`: Git for Windows ship
 its own `ssh` that cannot see keys held by the Windows OpenSSH agent. Install a
 built installer silently with `/S`.
 
+## The local gate (pre-push hook)
+
+The checks split in two, because one of them cannot run in CI.
+
+**CI runs the headless half on every push**: `npm test`, `check:imports`, and
+`check:package`. All three work with no display, so they run on every runner.
+
+**The GUI boot smoke cannot run in CI.** GitHub's macOS runners have no session
+to launch Electron into, so `npm run smoke` is gated locally by a `pre-push`
+hook instead. That is the check that catches the fault which actually shipped: a
+build that passed every unit test and still opened a fatal "A JavaScript error
+occurred in the main process" dialog. A green unit-test run is not evidence the
+app starts.
+
+Install the hook once per clone:
+
+```sh
+cd desktop && npm run hooks:install
+```
+
+That sets `core.hooksPath` to this repo's `.githooks` directory, so the hook is
+version-controlled rather than a hand-written file in `.git/hooks`, which git
+does not track and a fresh clone never receives.
+
+What the gate runs, at the push:
+
+- `npm run verify`, meaning the unit tests, the import audit, and the GUI boot
+  smoke.
+- `check:package`, if a packaged build is sitting in `dist/`, which audits the
+  artifact the source tree cannot show.
+
+**This hook is advisory, and it is not the gate.** `git push --no-verify` skips
+it, and a clone without `hooks:install` has no hook at all. The unskippable gate
+is the CI run on the commit you pushed. Skipping is sometimes right, a docs-only
+push or a headless host, but it is never free: the smoke is the only check that
+proves the app still starts.
+
 ## Builds and releases
 
 Every build, local or CI, is named for what it actually is. `scripts/build.js`
