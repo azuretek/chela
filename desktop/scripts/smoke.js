@@ -115,7 +115,12 @@ async function run() {
   // ignored, so the app quietly uses the real profile and no signal ever appears
   // in the temp one (measured). The switch goes first so it is never mistaken
   // for the app path.
-  const args = [`--user-data-dir=${profile}`, ...(appArg ? [appArg] : [])];
+  //
+  // --no-sandbox is opt-in because Chromium's setuid sandbox is unavailable in
+  // most containers and on the Linux CI image, where the app aborts with SIGTRAP
+  // the moment it starts. Pass it where the sandbox is not set up.
+  const noSandbox = process.argv.includes('--no-sandbox') ? ['--no-sandbox'] : [];
+  const args = [`--user-data-dir=${profile}`, ...noSandbox, ...(appArg ? [appArg] : [])];
   console.log(`smoke[${instance}]: launching ${label}`);
   const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
