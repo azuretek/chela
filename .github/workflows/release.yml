@@ -125,6 +125,22 @@ jobs:
 
       - run: npm ci
 
+      # Electron's Windows postinstall has intermittently left its dist/ incomplete
+      # ("failed to create directory ...\dist\locales: ... os error 183"), after
+      # which every test that imports electron throws "Electron failed to install
+      # correctly". That failed a release run once and passed on a plain re-run.
+      # Repair it here rather than fail a release on an install flake, and keep a
+      # hard check after the repair so a genuinely broken install still fails.
+      - name: Ensure Electron is usable
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          if ! node -e "require('electron')" 2>/dev/null; then
+            echo "electron install incomplete; rebuilding"
+            npm rebuild electron
+          fi
+          node -e "require('electron')" >/dev/null && echo "electron loads"
+
       - name: Test
         run: npm test
 
