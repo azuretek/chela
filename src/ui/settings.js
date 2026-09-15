@@ -26,6 +26,7 @@ let editing = null;
 // drawn before the answer arrives says nothing has ever gone wrong, and that is
 // a claim this page has no business making until it has looked.
 let history = null;
+let gatewayFilterText = '';
 
 /* Build DOM nodes rather than assigning innerHTML: labels and URLs are
    user-supplied strings, and this page has no business parsing them as HTML. */
@@ -184,12 +185,35 @@ function renderGateways() {
     host.append(el('div', { className: 'card' }, el('div', { className: 'result err', textContent: state.secretsError })));
   }
 
-  if (!state.gateways.length) {
-    host.append(el('div', { className: 'card empty', textContent: 'No gateways yet — add one below.' }));
+  const all = state.gateways || [];
+  const q = gatewayFilterText.trim().toLowerCase();
+  const clearDisabled = q.length === 0;
+  if (clearFilter) clearFilter.disabled = clearDisabled;
+  const match = (gw) => {
+    if (!q) return true;
+    const label = String(gw.label || '').toLowerCase();
+    const url = String(gw.url || '').toLowerCase();
+    return label.includes(q) || url.includes(q);
+  };
+  const activeGw = state.activeGatewayId ? all.find((g) => g.id === state.activeGatewayId) : null;
+  const filtered = q ? all.filter(match) : all;
+  // Keep the active gateway visible so "Reconnect" and its editor are still accessible
+  // even when it doesn't match the current filter.
+  const shown = (q && activeGw && !filtered.some((g) => g.id === activeGw.id))
+    ? [activeGw, ...filtered]
+    : filtered;
+
+  if (!all.length) {
+    host.append(el('div', { className: 'card empty', textContent: 'No gateways yet. Add one below.' }));
     return;
   }
 
-  for (const gw of state.gateways) {
+  if (!shown.length) {
+    host.append(el('div', { className: 'card empty', textContent: 'No gateways match your filter.' }));
+    return;
+  }
+
+  for (const gw of shown) {
     const active = gw.id === state.activeGatewayId;
     const open = editing === gw.id;
     const creds = gw.credentials || { hasToken: false, hasPassword: false, headers: [] };
@@ -585,6 +609,30 @@ $('add').addEventListener('click', async () => {
   setResult($('test-result'), 'Added. Use Edit to save its token, password, or headers.', 'ok');
   render();
 });
+
+/* ---------------------------------------------------------------- gateway filter */
+
+const gatewayFilter = $('gatewayFilter');
+const clearFilter = $('clearFilter');
+if (gatewayFilter) {
+  // Seed from the in-memory value (always empty on normal entry, but keeps
+  // renderGateways consistent even if we later add URL param support).
+  gatewayFilter.value = gatewayFilterText;
+
+  gatewayFilter.addEventListener('input', () => {
+    gatewayFilterText = gatewayFilter.value;
+    renderGateways();
+  });
+
+  if (clearFilter) {
+    clearFilter.addEventListener('click', () => {
+      gatewayFilterText = '';
+      gatewayFilter.value = '';
+      renderGateways();
+      gatewayFilter.focus();
+    });
+  }
+}
 
 $('save').addEventListener('click', async () => {
   const patch = {

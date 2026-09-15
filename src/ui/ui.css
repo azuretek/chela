@@ -56,7 +56,7 @@
   /* Ours: the Control UI has no equivalent, so these are never overridden. */
   --ok: #3ddc84;
   --warn: #ffb020;
-  --scrim: rgba(0, 0, 0, .55);
+  --scrim: color-mix(in srgb, var(--bg) 70%, transparent);
 }
 
 /* Warm neutrals rather than pure white, to sit beside the Control UI's light
@@ -89,7 +89,6 @@
     --ok: #1d7a45;
     --warn: #8a5a00;
     --shadow-lg: 0 24px 60px rgba(60, 50, 30, .22);
-    --scrim: rgba(31, 29, 26, .38);
   }
 }
 
@@ -227,16 +226,20 @@ a  { color: var(--accent); }
    tab labels carry the wording the <h2>s used to, so the type here matches
    them rather than inventing a second heading style. */
 .tabs {
-  display: flex; flex-wrap: wrap; gap: 2px;
-  margin: 22px 0 18px; border-bottom: 1px solid var(--border);
+  display: flex; flex-wrap: wrap; gap: 8px;
+  /* A quiet track at 60% border, the way the Control UI's hub-tabs draw it,
+     rather than a solid rule. The flat accent indicator below sits on this
+     same line, so both share one edge. */
+  margin: 18px 0 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
 }
 .tab {
   appearance: none; background: transparent; border: 0;
   border-bottom: 2px solid transparent; margin-bottom: -1px;
-  padding: 8px 12px; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 7px;
-  font: inherit; font-size: 12px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
+  padding: 4px 8px 8px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+  font: inherit; font-size: 12px; font-weight: 550;
+  text-transform: none; letter-spacing: 0; color: var(--muted);
 }
 .tab:hover { color: var(--text); }
 .tab[aria-selected="true"] { color: var(--text-strong); border-bottom-color: var(--accent); }
@@ -248,9 +251,15 @@ a  { color: var(--accent); }
    it, tabs would hide a live failure behind the tab you are not looking at,
    which is the one thing this page cannot afford to do. */
 .tab__count {
-  font-size: 10px; font-weight: 700; line-height: 1; letter-spacing: 0;
-  background: var(--primary); color: var(--primary-foreground);
-  border-radius: var(--radius-full); padding: 3px 6px; min-width: 7px; text-align: center;
+  display: inline-flex; align-items: center; min-height: 16px;
+  font-size: 10px; font-weight: 700; line-height: 1;
+  background: var(--bg-hover); color: var(--muted);
+  border-radius: var(--radius-full); padding: 0 5px; min-width: 7px; text-align: center;
+}
+/* The active tab's badge tints to accent, matching hub-tabs, so the tab you
+   are on and the count it carries read as one selected object. */
+.tab[aria-selected="true"] .tab__count {
+  background: var(--accent-subtle); color: var(--accent);
 }
 
 .panel[hidden] { display: none; }
@@ -558,6 +567,58 @@ label.check .stack span:last-child { color: var(--muted); font-size: 12px; }
 .result.ok   { color: var(--ok); }
 .result.warn { color: var(--warn); }
 .result.err  { color: var(--destructive); }
+
+/* --------------------------------------------------------------- gateway search */
+
+.gateway-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+
+.gateway-filter__icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  position: relative;
+  opacity: .85;
+}
+
+/* Magnifier drawn in CSS so it matches the theme without needing assets. */
+.gateway-filter__icon::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--muted);
+  border-radius: 50%;
+}
+.gateway-filter__icon::after {
+  content: '';
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 6px;
+  height: 2px;
+  background: var(--muted);
+  border-radius: 999px;
+  transform: rotate(45deg);
+  transform-origin: right center;
+}
+
+.gateway-filter input {
+  flex: 1;
+  width: auto;
+  height: 32px;
+  padding: 0 10px;
+}
+
+.gateway-filter button {
+  padding: 7px 10px;
+}
 
 .muted-sm { color: var(--muted); font-size: 11.5px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
