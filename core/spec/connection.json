@@ -1,0 +1,19 @@
+{
+  "phases": {
+    "idle": "idle",
+    "connecting": "connecting",
+    "connected": "connected",
+    "failed": "failed"
+  },
+  "errAborted": -3,
+  "hints": {
+    "-105": "The hostname did not resolve. Check that Tailscale is connected and MagicDNS is on.",
+    "-106": "This machine appears to be offline.",
+    "-109": "The host is unreachable, are you on the same tailnet or LAN?",
+    "-102": "The connection was refused. The gateway may not be running.",
+    "-118": "The connection timed out. The gateway may be asleep or unreachable from this network.",
+    "-200": "The certificate was rejected, so the connection was not made.",
+    "-201": "The certificate has expired.",
+    "-501": "The connection is not secure and was blocked."
+  }
+}

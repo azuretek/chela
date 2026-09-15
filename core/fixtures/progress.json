@@ -1,0 +1,294 @@
+{
+  "description": "percent() golden pairs. Regenerate is manual; these pin the curve for the Swift port.",
+  "cases": [
+    {
+      "input": {
+        "milestone": "start",
+        "sinceMs": 0
+      },
+      "output": 2
+    },
+    {
+      "input": {
+        "milestone": "start",
+        "sinceMs": 500
+      },
+      "output": 8
+    },
+    {
+      "input": {
+        "milestone": "start",
+        "sinceMs": 1100
+      },
+      "output": 14
+    },
+    {
+      "input": {
+        "milestone": "start",
+        "sinceMs": 2200
+      },
+      "output": 21
+    },
+    {
+      "input": {
+        "milestone": "start",
+        "sinceMs": 4400
+      },
+      "output": 28
+    },
+    {
+      "input": {
+        "milestone": "start",
+        "sinceMs": 8800
+      },
+      "output": 31
+    },
+    {
+      "input": {
+        "milestone": "start",
+        "sinceMs": 20000
+      },
+      "output": 32
+    },
+    {
+      "input": {
+        "milestone": "start",
+        "sinceMs": 5000,
+        "failed": true
+      },
+      "output": 2
+    },
+    {
+      "input": {
+        "milestone": "navigated",
+        "sinceMs": 0
+      },
+      "output": 42
+    },
+    {
+      "input": {
+        "milestone": "navigated",
+        "sinceMs": 500
+      },
+      "output": 47
+    },
+    {
+      "input": {
+        "milestone": "navigated",
+        "sinceMs": 1100
+      },
+      "output": 53
+    },
+    {
+      "input": {
+        "milestone": "navigated",
+        "sinceMs": 2200
+      },
+      "output": 59
+    },
+    {
+      "input": {
+        "milestone": "navigated",
+        "sinceMs": 4400
+      },
+      "output": 65
+    },
+    {
+      "input": {
+        "milestone": "navigated",
+        "sinceMs": 8800
+      },
+      "output": 69
+    },
+    {
+      "input": {
+        "milestone": "navigated",
+        "sinceMs": 20000
+      },
+      "output": 69
+    },
+    {
+      "input": {
+        "milestone": "navigated",
+        "sinceMs": 5000,
+        "failed": true
+      },
+      "output": 42
+    },
+    {
+      "input": {
+        "milestone": "dom",
+        "sinceMs": 0
+      },
+      "output": 78
+    },
+    {
+      "input": {
+        "milestone": "dom",
+        "sinceMs": 500
+      },
+      "output": 81
+    },
+    {
+      "input": {
+        "milestone": "dom",
+        "sinceMs": 1100
+      },
+      "output": 84
+    },
+    {
+      "input": {
+        "milestone": "dom",
+        "sinceMs": 2200
+      },
+      "output": 88
+    },
+    {
+      "input": {
+        "milestone": "dom",
+        "sinceMs": 4400
+      },
+      "output": 92
+    },
+    {
+      "input": {
+        "milestone": "dom",
+        "sinceMs": 8800
+      },
+      "output": 94
+    },
+    {
+      "input": {
+        "milestone": "dom",
+        "sinceMs": 20000
+      },
+      "output": 94
+    },
+    {
+      "input": {
+        "milestone": "dom",
+        "sinceMs": 5000,
+        "failed": true
+      },
+      "output": 78
+    },
+    {
+      "input": {
+        "milestone": "done",
+        "sinceMs": 0
+      },
+      "output": 100
+    },
+    {
+      "input": {
+        "milestone": "done",
+        "sinceMs": 500
+      },
+      "output": 100
+    },
+    {
+      "input": {
+        "milestone": "done",
+        "sinceMs": 1100
+      },
+      "output": 100
+    },
+    {
+      "input": {
+        "milestone": "done",
+        "sinceMs": 2200
+      },
+      "output": 100
+    },
+    {
+      "input": {
+        "milestone": "done",
+        "sinceMs": 4400
+      },
+      "output": 100
+    },
+    {
+      "input": {
+        "milestone": "done",
+        "sinceMs": 8800
+      },
+      "output": 100
+    },
+    {
+      "input": {
+        "milestone": "done",
+        "sinceMs": 20000
+      },
+      "output": 100
+    },
+    {
+      "input": {
+        "milestone": "done",
+        "sinceMs": 5000,
+        "failed": true
+      },
+      "output": 100
+    },
+    {
+      "input": {
+        "milestone": "unknown-stage",
+        "sinceMs": 0
+      },
+      "output": 2
+    },
+    {
+      "input": {
+        "milestone": "unknown-stage",
+        "sinceMs": 500
+      },
+      "output": 8
+    },
+    {
+      "input": {
+        "milestone": "unknown-stage",
+        "sinceMs": 1100
+      },
+      "output": 14
+    },
+    {
+      "input": {
+        "milestone": "unknown-stage",
+        "sinceMs": 2200
+      },
+      "output": 21
+    },
+    {
+      "input": {
+        "milestone": "unknown-stage",
+        "sinceMs": 4400
+      },
+      "output": 28
+    },
+    {
+      "input": {
+        "milestone": "unknown-stage",
+        "sinceMs": 8800
+      },
+      "output": 31
+    },
+    {
+      "input": {
+        "milestone": "unknown-stage",
+        "sinceMs": 20000
+      },
+      "output": 32
+    },
+    {
+      "input": {
+        "milestone": "unknown-stage",
+        "sinceMs": 5000,
+        "failed": true
+      },
+      "output": 2
+    },
+    {
+      "input": {},
+      "output": 2
+    }
+  ]
+}

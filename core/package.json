@@ -1,0 +1,20 @@
+{
+  "name": "claw-core",
+  "version": "1.0.0",
+  "description": "Platform-agnostic rules shared by every Claw client: gateway config model, token handoff, connection state, loading progress, notices.",
+  "type": "module",
+  "private": true,
+  "author": "Abi Renhart",
+  "license": "MIT",
+  "exports": {
+    "./quips.js": "./quips.js",
+    "./progress.js": "./progress.js",
+    "./connection.js": "./connection.js",
+    "./notices.js": "./notices.js",
+    "./config-model.js": "./config-model.js",
+    "./gateway-url.js": "./gateway-url.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

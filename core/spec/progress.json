@@ -1,0 +1,6 @@
+{
+  "order": ["start", "navigated", "dom", "done"],
+  "floor": { "start": 2, "navigated": 42, "dom": 78, "done": 100 },
+  "tauMs": 2200,
+  "creep": 0.75
+}

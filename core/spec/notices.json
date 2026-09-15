@@ -1,0 +1,9 @@
+{
+  "tones": {
+    "error": "error",
+    "warn": "warn",
+    "info": "info",
+    "ok": "ok"
+  },
+  "rank": { "error": 0, "warn": 1, "info": 2, "ok": 3 }
+}
