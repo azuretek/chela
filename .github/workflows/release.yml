@@ -14,14 +14,14 @@ name: Claw Desktop release
 #   push to main       a dev build of whatever just landed, versioned
 #                      `X.Y.Z-dev.<count>.<sha>`, published as a GitHub
 #                      PRE-release on the `dev` update channel.
-#   tag `v*`           a release. The tag must equal package.json — checked
-#                      before anything is built — and the installers are
+#   tag `v*`           a release. The tag must equal package.json, checked
+#                      before anything is built, and the installers are
 #                      published as a full GitHub Release on `latest`.
 #   workflow_dispatch  a dev build of any ref, on demand.
 #
 # Both kinds publish, because a GitHub Release is the only way to hand someone a
 # raw `.dmg` or `.exe`: workflow artifacts are always zipped by GitHub and that
-# is not configurable. The two are kept apart by channel, not by trust — see the
+# is not configurable. The two are kept apart by channel, not by trust, see the
 # `prerelease` input below and `channelOf()` in src/updates.js.
 #
 # `paths-ignore` skips docs-only pushes. It is safe to combine with the tag
@@ -138,7 +138,7 @@ jobs:
       # between "not configured" and "configured with nothing".
       #
       # Each is written only when it has a value, so a fork with no secrets
-      # produces an unsigned build instead of failing — the same rule the mac
+      # produces an unsigned build instead of failing, the same rule the mac
       # block in electron-builder.yml follows.
       #
       # notarytool takes a key *file*, not a key value, so the .p8 is written to
@@ -148,7 +148,7 @@ jobs:
       # and CSC_LINK is deliberately not exported. Given CSC_LINK, macPackager
       # calls macCodeSign.createKeychain, which makes a temporary keychain with a
       # random password of its own and then runs `security set-key-partition-list`
-      # against it — and that intermittently fails with "SecKeychainUnlock: The
+      # against it, and that intermittently fails with "SecKeychainUnlock: The
       # user name or passphrase you entered is not correct". Its own password, on
       # its own keychain, rejected at random: the same commit with the same
       # secrets passed on a rerun. Given CSC_KEYCHAIN and no CSC_LINK it takes the
@@ -156,7 +156,7 @@ jobs:
       # keychain at all, so the flake has nowhere to happen.
       #
       # That branch also skips electron-builder's bundled root_certs keychain,
-      # which is where the Apple intermediates would have come from — so the G2
+      # which is where the Apple intermediates would have come from, so the G2
       # intermediate is imported here too. Without it codesign fails "unable to
       # build chain to self-signed root", and note that `security verify-cert`
       # passes anyway, so only a real signing attempt proves this one.
@@ -182,7 +182,7 @@ jobs:
             if [ -n "$value" ]; then echo "$name=$value" >> "$GITHUB_ENV"; fi
           done
 
-          # A fork with no secrets builds unsigned rather than failing — the same
+          # A fork with no secrets builds unsigned rather than failing, the same
           # rule the mac block in electron-builder.yml follows.
           if [ -z "$CSC_LINK" ]; then
             echo "no signing certificate configured; this build will be unsigned"
@@ -213,7 +213,7 @@ jobs:
 
           # "filename will not be searched to resolve the signing identity's
           # certificate chain unless it is also on the user's keychain search
-          # list" — and `list-keychains -s` REPLACES that list, so the existing
+          # list", and `list-keychains -s` REPLACES that list, so the existing
           # entries are read back and passed through rather than dropped.
           existing=()
           while IFS= read -r line; do
@@ -236,7 +236,7 @@ jobs:
 
       # scripts/build.js owns "what version is this build" for local builds and
       # CI alike. CLAW_BUILD_VERSION is the override it honours, so the version
-      # job stays the authority here without CI needing its own flag — and a
+      # job stays the authority here without CI needing its own flag, and a
       # developer running `npm run build:mac` gets the same naming scheme.
       #
       # CSC_IDENTITY_AUTO_DISCOVERY is deliberately not set false any more. It
@@ -251,7 +251,7 @@ jobs:
         with:
           name: claw-${{ matrix.artifact }}-${{ needs.version.outputs.version }}
           # Every build now publishes a Release, so these exist only to carry
-          # files from the two build runners to the release job below — the
+          # files from the two build runners to the release job below, the
           # Release is the durable copy. They expire as fast as GitHub allows.
           # Retention here is age-only: GitHub offers no count-based limit for
           # artifacts, unlike the releases, which the prune step keeps to 10.
@@ -294,7 +294,7 @@ jobs:
           # electron-updater resolves a release through its TAG, not through the
           # release title: GitHubProvider walks the releases feed, skips any tag
           # that fails `semver.valid`, and reads the channel from
-          # `semver.prerelease(tag)[0]`. So the tag has to be `v<version>` — a
+          # `semver.prerelease(tag)[0]`. So the tag has to be `v<version>`, a
           # `dev-<version>` tag would be skipped by every updater, silently.
           #
           # For a dev build no such tag exists yet; the API creates it at
@@ -316,8 +316,8 @@ jobs:
       # A prerelease per merge accumulates fast, and each carries four installers,
       # so this keeps the newest 10 and deletes the rest along with their tags.
       #
-      # The filter is deliberately narrow — prerelease AND a `-dev.` identifier in
-      # the tag — because this deletes published releases: a stable release, or a
+      # The filter is deliberately narrow, prerelease AND a `-dev.` identifier in
+      # the tag, because this deletes published releases: a stable release, or a
       # hand-made prerelease that is not one of ours, must never be reachable by
       # it. The run that just published is the newest, so it is always kept.
       - name: Prune old dev releases

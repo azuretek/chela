@@ -1,21 +1,19 @@
-'use strict';
-
-// Plain `node --test` — no Electron. src/cache.js keeps its two decisions
+// Plain `node --test`, no Electron. src/cache.js keeps its two decisions
 // (what the build id is, and whether it moved) free of Electron for exactly
 // this reason; `clear` is exercised against a stub session.
 //
 // Run with: npm test
 
-const test = require('node:test');
-const assert = require('node:assert');
+import test from 'node:test';
+import assert from 'node:assert';
 
-const cache = require('../src/cache');
+import * as cache from '../src/cache.js';
 
 /* ------------------------------------------------ parseServiceWorkerVersion */
 
 // A real excerpt, kept verbatim: the point of this parser is that it matches
 // what the gateway actually serves, so a paraphrase would prove nothing.
-const REAL_SW = `// OpenClaw Control – Service Worker
+const REAL_SW = `// OpenClaw Control, Service Worker
 const CACHE_PREFIX = "openclaw-control-";
 const EMBEDDED_CACHE_VERSION = "2026.8.2-0965053fe6b9-2026-09-01T09-44-31.342Z";
 const URL_CACHE_VERSION = new URL(self.location.href).searchParams.get("v");

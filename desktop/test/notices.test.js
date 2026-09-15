@@ -1,21 +1,22 @@
-'use strict';
-
 // The banner's store.
 //
 // The property that makes "stays until it resolves" true rather than decorative
 // is that a notice is keyed by *condition* and not by occurrence: raising the
 // same one twice replaces it, and the raiser clears it when the condition
-// passes. Without that it is a log with a slide animation — three copies of the
+// passes. Without that it is a log with a slide animation, three copies of the
 // same warning stacking up while the thing they describe is still broken.
 //
 // Run with: npm test
 
-const test = require('node:test');
-const assert = require('node:assert');
-const { readFileSync } = require('node:fs');
-const path = require('node:path');
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import assert from 'node:assert';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
-const notices = require('../src/notices');
+import * as notices from '../src/notices.js';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 test('the same condition raised twice is one banner, not two', () => {
   const n = notices.create();
@@ -82,7 +83,7 @@ test('a detail line reads as a sentence even when the OS string does not', () =>
   assert.equal(notices.sentence('Already ends.'), 'Already ends.');
   assert.equal(notices.sentence('So does this!'), 'So does this!');
   assert.equal(notices.sentence('  padded  '), 'Padded.');
-  assert.equal(notices.sentence(''), '', 'nothing in, nothing out — not a lone full stop');
+  assert.equal(notices.sentence(''), '', 'nothing in, nothing out, not a lone full stop');
   assert.equal(notices.sentence(null), '');
 });
 
@@ -142,7 +143,7 @@ test('every notice id is a literal, so the banner has a ceiling', () => {
   // limit. Nothing would fail, the banner would just grow. So this reads the
   // call sites rather than the store, because the store cannot see the
   // difference.
-  const main = readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8');
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
   const ids = [...main.matchAll(/(?<!function )setNotice\(\s*([^,]+),/g)].map((m) => m[1].trim());
 
   assert.ok(ids.length >= 7, `expected every call site, found ${ids.length}`);

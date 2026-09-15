@@ -1,6 +1,4 @@
-'use strict';
-
-// Plain `node --test` — no Electron, no git. scripts/version.js is pure and
+// Plain `node --test`, no Electron, no git. scripts/version.js is pure and
 // scripts/build-version.js takes its inputs as an object for exactly this
 // reason, so the release decisions can be exercised without cutting one.
 //
@@ -11,12 +9,18 @@
 //
 // Run with: npm test
 
-const test = require('node:test');
-const assert = require('node:assert');
+import test from 'node:test';
+import assert from 'node:assert';
+import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 
-const version = require('../scripts/version');
-const buildVersion = require('../scripts/build-version');
-const build = require('../scripts/build');
+import * as version from '../scripts/version.js';
+import * as buildVersion from '../scripts/build-version.js';
+import * as build from '../scripts/build.js';
+
+// .release-it.cjs stays CommonJS on purpose (release-it loads it as such), so it
+// is read here through createRequire rather than an ESM import.
+const require = createRequire(import.meta.url);
 
 const SHA = '758853d6569b8acc491a7dc6ab5db4eb3b0639d0';
 
@@ -48,7 +52,7 @@ test('the parser reads exactly the tag release-it is configured to write', () =>
   // Two owners, one format: .release-it.cjs writes the tag, versionFromTag
   // reads it, and nothing else connects them. If someone changes tagName to
   // `release-${version}` this fails here rather than in CI on a real release.
-  const { tagName } = require('../.release-it.cjs').git;
+  const { tagName } = require('../.release-it.cjs').git;  // eslint-disable-line
   const produced = tagName.replace('${version}', '1.2.3');
   assert.equal(version.versionFromTag(produced), '1.2.3', `release-it writes "${tagName}"`);
 });
@@ -94,7 +98,7 @@ test('a dev build sorts ABOVE the release it follows and below the next', () => 
   // Asserted structurally, because semver ordering is NOT string ordering:
   // lexically '1.0.1-dev.148' < '1.0.1', which here happens to agree, but
   // '1.0.0' < '1.0.0-dev.x' is the exact opposite of the truth. Semver §11 is
-  // what makes the claim hold — a higher patch outranks, and a prerelease has
+  // what makes the claim hold, a higher patch outranks, and a prerelease has
   // lower precedence than its associated normal version.
   const dev = version.parse(version.devVersion('1.0.0', SHA, { count: 148 }));
   assert.deepEqual([dev.major, dev.minor, dev.patch], [1, 0, 1], 'must name the NEXT patch');
@@ -123,7 +127,7 @@ test('two commits give two different installer names', () => {
 test('the sha follows the count, so it never decides the ordering', () => {
   // The sha is there to name the exact code, not to sort. It sits after the
   // count, which differs for any two distinct commits, so it is only ever
-  // reached on a tie — and a tie means the same commit, hence the same sha.
+  // reached on a tie, and a tie means the same commit, hence the same sha.
   const parts = version.parse(version.devVersion('1.0.0', SHA, { count: 148 })).prerelease.split('.');
   assert.deepEqual(parts.slice(0, 2), ['dev', '148']);
   assert.match(parts[2], /^[0-9a-f]{10}$/);
@@ -181,12 +185,12 @@ test('resolveVersion always returns something buildable', () => {
 test('electron-builder is launched as a script, not as a command on PATH', () => {
   // This is the shape that fixed a Windows-only failure. Looking for an
   // `electron-builder` command means npm's `.cmd` shim, which spawnSync cannot
-  // execute without a shell — and prepending to PATH by hand needs
+  // execute without a shell, and prepending to PATH by hand needs
   // path.delimiter, which is `;` on Windows. Hardcoding `:` corrupted PATH and
   // the build died one line after printing its version.
   const entry = build.builderEntry();
   assert.match(entry, /electron-builder[/\\]cli\.js$/);
-  assert.ok(require('node:fs').existsSync(entry), `${entry} does not exist`);
+  assert.ok(existsSync(entry), `${entry} does not exist`);
 });
 
 // An explicit env on every call: these assert an exact argument list, and
@@ -385,7 +389,7 @@ test('a tag build always builds', () => {
 test('the branch half of a release push stands down', () => {
   // `git push --follow-tags` raises a branch event AND a tag event for the same
   // commit. Without this, every release builds twice and uploads two artifact
-  // sets for identical code — the dev one named misleadingly.
+  // sets for identical code, the dev one named misleadingly.
   const r = buildVersion.decide({
     ref: 'refs/heads/main', sha: SHA, packageVersion: '1.0.1', headTags: ['v1.0.1'],
   });

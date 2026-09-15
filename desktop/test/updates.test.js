@@ -1,6 +1,4 @@
-'use strict';
-
-// Plain `node --test` — no Electron. src/updates.js takes `platform` and
+// Plain `node --test`, no Electron. src/updates.js takes `platform` and
 // `packaged` as arguments for exactly this reason, so every platform's policy
 // is exercised from one run on one machine.
 //
@@ -10,13 +8,13 @@
 //
 // Run with: npm test
 
-const test = require('node:test');
-const assert = require('node:assert');
+import test from 'node:test';
+import assert from 'node:assert';
 
-const updates = require('../src/updates');
+import updates from '../src/updates.js';
 
 // appImage is pinned rather than left to default, so a stray APPIMAGE in the
-// environment — or a test run from inside one — cannot change what these assert.
+// environment, or a test run from inside one, cannot change what these assert.
 const packaged = (platform, macSigned) => updates.policy({ platform, packaged: true, macSigned, appImage: false });
 
 /* ------------------------------------------------------------------ Windows */
@@ -66,7 +64,7 @@ const linux = (appImage) => updates.policy({ platform: 'linux', packaged: true, 
 
 test('an AppImage installs updates, like Windows', () => {
   // AppImageUpdater overwrites the file the process was started from. No
-  // signature, no package manager, no root — the one Linux path that installs
+  // signature, no package manager, no root, the one Linux path that installs
   // without a privilege prompt.
   const p = linux(true);
   assert.equal(p.action, updates.INSTALL);
@@ -77,7 +75,7 @@ test('an AppImage installs updates, like Windows', () => {
 test('Linux outside an AppImage does not check at all', () => {
   // The distinction that matters: not "cannot install" but "cannot answer".
   // AppImageUpdater.isUpdaterActive() is false without APPIMAGE, so
-  // checkForUpdates() resolves to null having emitted no event — neither
+  // checkForUpdates() resolves to null having emitted no event, neither
   // 'error' nor 'update-not-available'. Left checking, a manual check would
   // hang silently and About would say "no check yet this run" forever.
   const p = linux(false);

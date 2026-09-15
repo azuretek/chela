@@ -1,5 +1,3 @@
-'use strict';
-
 // Decide the version a CI build should carry, and refuse the build if a tag
 // disagrees with package.json.
 //
@@ -7,7 +5,7 @@
 // of a tag:
 //
 //   tag build       the tag IS the version. It must already equal package.json,
-//                   because `artifactName` interpolates package.json -- so a
+//                   because `artifactName` interpolates package.json, so a
 //                   mismatch publishes a release whose files are named for
 //                   another version, invisibly and permanently.
 //   untagged build  there is no version, so one is derived from the commit.
@@ -15,19 +13,20 @@
 //                   package.json last said, and three different installers
 //                   arrive called ClawDesktop-Setup-1.0.0-x64.exe.
 //
-// Prints a GitHub Actions output line (`version=…`) plus a human line, and
+// Prints a GitHub Actions output line (`version=...`) plus a human line, and
 // exits non-zero with an explanation when a tag build is inconsistent.
 //
 //   node scripts/build-version.js               # reads GITHUB_REF / GITHUB_SHA
 //   node scripts/build-version.js --ref refs/tags/v1.2.0 --sha abc1234
 
-const { execFileSync } = require('node:child_process');
-const fs = require('node:fs');
-const path = require('node:path');
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import * as version from './version.js';
 
-const version = require('./version');
-
-const ROOT = path.join(__dirname, '..');
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.join(HERE, '..');
 const PKG = path.join(ROOT, 'package.json');
 
 function arg(argv, name, fallback) {
@@ -39,7 +38,7 @@ function arg(argv, name, fallback) {
  * @returns {{ok: true, version: string, tagged: boolean, build: boolean, note: string}
  *          | {ok: false, reason: string}}
  */
-function decide({ ref, sha, packageVersion, eventName = 'push', headTags = [], count = null }) {
+export function decide({ ref, sha, packageVersion, eventName = 'push', headTags = [], count = null }) {
   const tagged = version.versionFromTag(ref);
   if (tagged) {
     const check = version.checkTag(ref, packageVersion);
@@ -58,12 +57,12 @@ function decide({ ref, sha, packageVersion, eventName = 'push', headTags = [], c
     // able in ordering, which is the whole property this version exists for.
     note: count
       ? 'untagged build named for its commit count and sha'
-      : 'untagged build with NO COMMIT COUNT — is the checkout shallow? (needs fetch-depth: 0)',
+      : 'untagged build with NO COMMIT COUNT, is the checkout shallow? (needs fetch-depth: 0)',
   };
 
   // `git push --follow-tags` pushes the release commit and its tag together, and
   // GitHub raises a separate event for each. Without this, every release builds
-  // the same commit twice — once as a release and once as a dev build — and
+  // the same commit twice, once as a release and once as a dev build, and
   // uploads two artifact sets for identical code, the dev one named misleadingly.
   //
   // The tag run is the one that matters, so the branch run stands down. A manual
@@ -72,8 +71,8 @@ function decide({ ref, sha, packageVersion, eventName = 'push', headTags = [], c
   // Only a STABLE tag counts. Every dev build now publishes a prerelease, and a
   // GitHub release needs a tag, so `v1.0.1-dev.39.a1b2c3d4e5` ends up pointing
   // at the commit it was built from. That tag names no release and can start no
-  // build — GitHub raises no workflow event for anything pushed with
-  // GITHUB_TOKEN — so treating it as one would stand down every rerun and
+  // build, GitHub raises no workflow event for anything pushed with
+  // GITHUB_TOKEN, so treating it as one would stand down every rerun and
   // dispatch of a commit that has already had a dev build, claiming a tag build
   // will publish it when nothing will.
   const releaseTag = headTags
@@ -90,7 +89,7 @@ function decide({ ref, sha, packageVersion, eventName = 'push', headTags = [], c
  * Commits reachable from HEAD, or null if git cannot say.
  *
  * This is what makes a dev version increase, so a shallow checkout returning 1
- * for every build is the failure to watch for — `actions/checkout` is depth 1
+ * for every build is the failure to watch for, `actions/checkout` is depth 1
  * unless told otherwise. decide() reports a missing count rather than hiding it.
  */
 function commitCount() {
@@ -105,7 +104,7 @@ function commitCount() {
   }
 }
 
-/** Tags pointing at HEAD. Empty if git has nothing to say — never throws. */
+/** Tags pointing at HEAD. Empty if git has nothing to say, never throws. */
 function headTags() {
   try {
     const out = execFileSync('git', ['tag', '--points-at', 'HEAD'], {
@@ -144,6 +143,4 @@ function main(argv) {
   }
 }
 
-if (require.main === module) main(process.argv.slice(2));
-
-module.exports = { decide };
+if (import.meta.url === `file://${process.argv[1]}`) main(process.argv.slice(2));

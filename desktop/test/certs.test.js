@@ -1,8 +1,6 @@
-'use strict';
-
 // Certificate pinning, minus Electron.
 //
-// The interesting part is not that a bad certificate is refused — everything
+// The interesting part is not that a bad certificate is refused, everything
 // refuses it, including doing nothing. It is that "a host we have never seen"
 // and "a host that was trusted and has changed its certificate" stay *different
 // answers*, because one is routine on a self-signed gateway listener and the
@@ -11,10 +9,10 @@
 //
 // Run with: npm test
 
-const test = require('node:test');
-const assert = require('node:assert');
+import test from 'node:test';
+import assert from 'node:assert';
 
-const certs = require('../src/certs');
+import * as certs from '../src/certs.js';
 
 /* ------------------------------------------------------------------ decide */
 

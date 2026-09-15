@@ -1,14 +1,12 @@
-'use strict';
-
 // The menu bar's shape, for every platform, with no Electron in it.
 //
 // It lives in its own module for the same reason updates.js does: so one
 // `node --test` run can assert something about all three platforms at once. What
-// it asserts is the rule this file exists to hold — every command this app has
+// it asserts is the rule this file exists to hold, every command this app has
 // is on every platform it runs on, in the same menu, under the same label.
 //
 // That rule is easy to break by accident and impossible to notice, because the
-// person adding a menu item is looking at one platform. "Check for updates…"
+// person adding a menu item is looking at one platform. "Check for updates..."
 // spent its whole life in File on Windows and in the application menu on macOS,
 // which is how a build with a working updater came to look like one with no
 // updater in it.
@@ -30,7 +28,7 @@
 //                     platform convention points at.
 
 /** Every command the menu bar offers. The caller supplies label and click. */
-const COMMANDS = [
+export const COMMANDS = [
   'about',
   'checkUpdates',
   'releaseNotes',
@@ -48,10 +46,10 @@ const COMMANDS = [
 /**
  * The menus every platform has, in order.
  *
- * macOS adds one in front of these — see the application menu note above — and
+ * macOS adds one in front of these, see the application menu note above, and
  * that is the only menu any platform does not share.
  */
-const SHARED_MENUS = ['File', 'Edit', 'View', 'Window', 'Help'];
+export const SHARED_MENUS = ['File', 'Edit', 'View', 'Window', 'Help'];
 
 /**
  * The menu template, ready for Menu.buildFromTemplate.
@@ -61,7 +59,7 @@ const SHARED_MENUS = ['File', 'Edit', 'View', 'Window', 'Help'];
  * @param {string} opts.appName   app.name, which macOS shows as the first menu
  * @param {Record<string, {label: string, click: Function}>} opts.commands
  */
-function template({ platform, appName, commands }) {
+export function template({ platform, appName, commands }) {
   const isMac = platform === 'darwin';
 
   // A command, optionally carrying its accelerator. `key` is passed only to the
@@ -137,12 +135,12 @@ function template({ platform, appName, commands }) {
 /**
  * Every label in a template, as `Menu > Item`.
  *
- * Only our own items have labels — an Electron role renders the OS's own string
- * — so this is exactly the set of commands we put on a platform, which is the
+ * Only our own items have labels, an Electron role renders the OS's own string,
+ * so this is exactly the set of commands we put on a platform, which is the
  * thing that must not differ between them. The menu name is included because a
  * command moving between menus is the drift that actually happened.
  */
-function labelsOf(menuTemplate) {
+export function labelsOf(menuTemplate) {
   const out = [];
   for (const menu of menuTemplate) {
     for (const item of menu.submenu || []) {
@@ -151,5 +149,3 @@ function labelsOf(menuTemplate) {
   }
   return out;
 }
-
-module.exports = { COMMANDS, SHARED_MENUS, template, labelsOf };

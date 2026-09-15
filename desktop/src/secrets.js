@@ -1,8 +1,6 @@
-'use strict';
-
-const { app, safeStorage } = require('electron');
-const fs = require('node:fs');
-const path = require('node:path');
+import { app, safeStorage } from 'electron';
+import fs from 'node:fs';
+import path from 'node:path';
 
 // Per-gateway credentials: the gateway token, the gateway password, and any
 // extra HTTP headers the gateway sits behind (Cloudflare Access, an auth proxy,
@@ -13,8 +11,8 @@ const path = require('node:path');
 //   1. These live in their own file, NOT config.json. config.json is meant to be
 //      readable and hand-editable; the moment it carries a token, it stops being
 //      safe to open in a screen-share or paste into an issue.
-//   2. Values are encrypted with Electron safeStorage — the macOS Keychain and
-//      Windows DPAPI — so the file on disk is useless to another local account.
+//   2. Values are encrypted with Electron safeStorage, the macOS Keychain and
+//      Windows DPAPI, so the file on disk is useless to another local account.
 //
 // The renderer can WRITE these and can ask whether one is set. It can never read
 // one back. That mirrors OpenClaw's own secret store, where values are
@@ -32,7 +30,7 @@ function file() {
 // safeStorage reports "available" on Linux even when it has fallen back to the
 // `basic_text` backend, which is obfuscation rather than encryption. Treat that
 // as unavailable: refusing to store is honest, quietly pretending is not.
-function available() {
+export function available() {
   try {
     if (!safeStorage.isEncryptionAvailable()) return false;
     if (process.platform === 'linux' && typeof safeStorage.getSelectedStorageBackend === 'function') {
@@ -44,7 +42,7 @@ function available() {
   }
 }
 
-function unavailableReason() {
+export function unavailableReason() {
   if (available()) return null;
   return process.platform === 'linux'
     ? 'No OS keyring is available (install gnome-keyring or kwallet), so credentials cannot be stored encrypted.'
@@ -88,8 +86,8 @@ function normaliseHeaders(list) {
     .map((h) => ({ name: h.name.trim(), value: h.value }));
 }
 
-/** Decrypted credentials for one gateway. Main process only — never sent to a renderer. */
-function load(id) {
+/** Decrypted credentials for one gateway. Main process only, never sent to a renderer. */
+export function load(id) {
   const raw = readStore().entries[id];
   if (typeof raw !== 'string' || !raw) return blank();
   try {
@@ -116,7 +114,7 @@ function persist(id, creds) {
 }
 
 /** What the settings page is allowed to know: whether something is set, never what. */
-function summary(id) {
+export function summary(id) {
   const creds = load(id);
   return {
     hasToken: Boolean(creds.token),
@@ -131,7 +129,7 @@ function guard() {
 }
 
 /** Write-only. An omitted field is left alone; an empty string clears it. */
-function set(id, patch = {}) {
+export function set(id, patch = {}) {
   const blocked = guard();
   if (blocked) return blocked;
   const next = load(id);
@@ -141,7 +139,7 @@ function set(id, patch = {}) {
   return { ok: true };
 }
 
-function addHeader(id, name, value) {
+export function addHeader(id, name, value) {
   const blocked = guard();
   if (blocked) return blocked;
   const clean = String(name || '').trim();
@@ -158,7 +156,7 @@ function addHeader(id, name, value) {
   return { ok: true };
 }
 
-function removeHeader(id, name) {
+export function removeHeader(id, name) {
   const blocked = guard();
   if (blocked) return blocked;
   const next = load(id);
@@ -167,7 +165,7 @@ function removeHeader(id, name) {
   return { ok: true };
 }
 
-function forget(id) {
+export function forget(id) {
   const store = readStore();
   if (!(id in store.entries)) return { ok: true };
   const entries = { ...store.entries };
@@ -176,7 +174,7 @@ function forget(id) {
   return { ok: true };
 }
 
-module.exports = {
+export default {
   path: file,
   available,
   unavailableReason,

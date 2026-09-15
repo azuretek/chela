@@ -1,18 +1,16 @@
-'use strict';
-
 // What each gateway row says about itself.
 //
 // The failure worth guarding here is a row that lies. The badge used to read
 // "Connected" for whichever gateway was *selected*, which was wrong for the
-// whole time a connection was failing — the exact state in which someone is
+// whole time a connection was failing, the exact state in which someone is
 // reading it, since a failure is now what puts this page on screen.
 //
 // Run with: npm test
 
-const test = require('node:test');
-const assert = require('node:assert');
+import test from 'node:test';
+import assert from 'node:assert';
 
-const connection = require('../src/connection');
+import * as connection from '../src/connection.js';
 
 const active = (over = {}) => connection.status({ isActive: true, ...over });
 
@@ -84,7 +82,7 @@ test('a certificate problem shows on an inactive gateway too', () => {
 
 test('a subframe failure is not a connection failure', () => {
   // Otherwise an ad, a font or a failed websocket in a working session throws
-  // the user out to Settings — far worse than the thing that failed.
+  // the user out to Settings, far worse than the thing that failed.
   assert.equal(connection.isRealFailure({ code: -105, isMainFrame: false }), false);
 });
 

@@ -1,11 +1,11 @@
-'use strict';
+
 
 // Prove the banner: that it appears for a real condition, that it is exactly as
 // tall as it claims, and that it goes away when the condition does.
 //
 // The height is the part worth testing rather than eyeballing. The banner lives
 // in a view sized to whatever the page reports, and a view swallows every mouse
-// event inside its bounds no matter what is drawn there — so a wrong number is
+// event inside its bounds no matter what is drawn there, so a wrong number is
 // not a cosmetic slip, it is an invisible strip across the top of the Control UI
 // that eats clicks. Nothing on screen would explain it.
 //
@@ -15,10 +15,10 @@
 // global shortcut the OS cannot possibly register, which is one of the four
 // things that genuinely raise a notice.
 
-const path = require('node:path');
-const fs = require('node:fs');
-const os = require('node:os');
-const { app, webContents } = require('electron');
+import path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
+import { app, webContents } from 'electron';
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-banner-'));
 app.setPath('userData', TMP);
@@ -34,7 +34,10 @@ const shotIndex = process.argv.indexOf('--shots');
 const SHOTS = shotIndex === -1 ? null : process.argv[shotIndex + 1];
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 
-require('../src/main.js');
+// Imported dynamically, and after this harness sets up its throwaway profile,
+// because a static import would be hoisted and run main before the profile was
+// prepared.
+await import('../src/main.js');
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -76,7 +79,7 @@ app.whenReady().then(async () => {
     Math.abs(stackHeight - viewHeight) <= 1, `stack ${stackHeight} vs view ${viewHeight}`);
   check('and that is a real height, not zero', stackHeight > 20, `${stackHeight}px`);
 
-  // It slid, and — more importantly — it is where it should be. The animation
+  // It slid, and, more importantly, it is where it should be. The animation
   // fills `both`, so a banner whose animation never ran still sits at its
   // ordinary position rather than parked above the viewport, invisible.
   const [animation, offset] = await banner.executeJavaScript(
@@ -96,7 +99,7 @@ app.whenReady().then(async () => {
   }
 
   // Dismissing is the user saying "I have read it", and it must take the view
-  // with it — a zero-height view left behind is the same invisible strip.
+  // with it, a zero-height view left behind is the same invisible strip.
   //
   // Every card, not just the first: this profile also points at a port with
   // nothing listening, so the connection failure raises a notice of its own

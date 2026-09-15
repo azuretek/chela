@@ -1,10 +1,8 @@
-'use strict';
-
 // Supervision for a view layered over the main window.
 //
 // The settings overlay is a transparent WebContentsView covering the whole
 // window. That means it swallows every mouse event that lands on it, and both
-// of its ordinary exits -- the Escape key and the close button -- run *inside*
+// of its ordinary exits, the Escape key and the close button, run *inside*
 // its own renderer. A renderer that crashes, fails to load, or simply never
 // finishes therefore leaves an invisible sheet over the entire app: the window
 // still drags by the title strip, which is a separate view and stays alive, and
@@ -15,18 +13,18 @@
 // permanently. This module is the watchdog that guarantees the difference.
 //
 // It lives outside main.js, and takes its collaborators as arguments, so the
-// decision can be tested against a stub emitter with no Electron in the room --
+// decision can be tested against a stub emitter with no Electron in the room,
 // the same shape as `cache.clear`.
 
 // How long the overlay may be a blank sheet over the window before it is
 // assumed wedged. It is a local `file://` page with one stylesheet, so it loads
 // in single-digit milliseconds; anything approaching this is already broken,
 // and every second past it is a second the app cannot be used.
-const LOAD_TIMEOUT_MS = 5000;
+export const LOAD_TIMEOUT_MS = 5000;
 
 // ERR_ABORTED. Fires on ordinary navigation away from a page and means nothing
 // went wrong, so it must not trigger a teardown.
-const ERR_ABORTED = -3;
+export const ERR_ABORTED = -3;
 
 /**
  * Watch an overlay's WebContents and tear the overlay down when its renderer
@@ -42,12 +40,12 @@ const ERR_ABORTED = -3;
  * @param {(msg: string) => void} [opts.log]
  * @returns {() => void} Cancels the watchdog. Idempotent.
  */
-function supervise(wc, { isCurrent, close, timeoutMs = LOAD_TIMEOUT_MS, log = () => {} }) {
+export function supervise(wc, { isCurrent, close, timeoutMs = LOAD_TIMEOUT_MS, log = () => {} }) {
   let done = false;
 
   const bail = (why) => {
-    // `done` guards against a second reason arriving after teardown -- a crash
-    // typically emits `did-fail-load` as well -- which would otherwise close a
+    // `done` guards against a second reason arriving after teardown, a crash
+    // typically emits `did-fail-load` as well, which would otherwise close a
     // *later* overlay that had already taken this one's place.
     if (done || !isCurrent()) return;
     done = true;
@@ -81,5 +79,3 @@ function supervise(wc, { isCurrent, close, timeoutMs = LOAD_TIMEOUT_MS, log = ()
 
   return stop;
 }
-
-module.exports = { supervise, LOAD_TIMEOUT_MS, ERR_ABORTED };

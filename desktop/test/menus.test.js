@@ -1,6 +1,4 @@
-'use strict';
-
-// Plain `node --test` — no Electron. src/menus.js takes `platform` as a
+// Plain `node --test`, no Electron. src/menus.js takes `platform` as a
 // parameter for exactly this reason, so all three menu bars are built and
 // compared in one run on one machine.
 //
@@ -11,10 +9,10 @@
 //
 // Run with: npm test
 
-const test = require('node:test');
-const assert = require('node:assert');
+import test from 'node:test';
+import assert from 'node:assert';
 
-const menus = require('../src/menus');
+import * as menus from '../src/menus.js';
 
 const PLATFORMS = ['darwin', 'win32', 'linux'];
 
@@ -89,7 +87,7 @@ test('the application menu repeats commands rather than owning them', () => {
 
 test('a command in two menus carries its accelerator in exactly one', () => {
   // Two menu items sharing an accelerator is not an error in Electron, it is
-  // just undefined which one fires — worth catching rather than shipping.
+  // just undefined which one fires, worth catching rather than shipping.
   for (const platform of PLATFORMS) {
     const seen = new Map();
     for (const menu of build(platform)) {

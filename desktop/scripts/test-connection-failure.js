@@ -1,4 +1,4 @@
-'use strict';
+
 
 // Prove what connecting looks like, and what a failure does now: it stays put.
 //
@@ -14,16 +14,16 @@
 //
 // Every state is reached through a real socket rather than injected. The
 // connecting state needs a server that accepts and then says nothing, which is
-// the only way to hold it still long enough to look at — a refused port fails
+// the only way to hold it still long enough to look at, a refused port fails
 // in under a millisecond and there is nothing to photograph.
 //
 //   npx electron scripts/test-connection-failure.js [--shots DIR]
 
-const path = require('node:path');
-const fs = require('node:fs');
-const os = require('node:os');
-const http = require('node:http');
-const { app, webContents, nativeTheme } = require('electron');
+import path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
+import http from 'node:http';
+import { app, webContents, nativeTheme } from 'electron';
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-connfail-'));
 app.setPath('userData', TMP);
@@ -42,13 +42,16 @@ if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 // Accepts the connection and then never answers, so the app sits in its
 // connecting state for as long as this is up. Sockets are held rather than left
 // to the server, because closing a listener does not disturb a connection that
-// is already open — and the one already open is the one being tested.
+// is already open, and the one already open is the one being tested.
 const held = new Set();
 const blackhole = http.createServer(() => { /* deliberately no response */ });
 blackhole.on('connection', (socket) => { held.add(socket); socket.on('close', () => held.delete(socket)); });
 blackhole.listen(18791, '127.0.0.1');
 
-require('../src/main.js');
+// Imported dynamically, and after this harness sets up its throwaway profile,
+// because a static import would be hoisted and run main before the profile was
+// prepared.
+await import('../src/main.js');
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 const live = () => webContents.getAllWebContents().filter((wc) => !wc.isDestroyed());
@@ -102,7 +105,7 @@ app.whenReady().then(async () => {
 
     // The light palette is half of ui.css and nothing else here exercises it.
     // Forced through nativeTheme, which is what main drives from the Control
-    // UI's own theme — safe to move while no gateway has reported one.
+    // UI's own theme, safe to move while no gateway has reported one.
     nativeTheme.themeSource = 'light';
     await delay(600);
     const light = await connecting.executeJavaScript(
@@ -220,7 +223,7 @@ app.whenReady().then(async () => {
 
   check('a successful reconnect takes the cover away', !pageNamed('loading.html'), 'the cover is still up');
   // The failure notice is gone, but the banner itself is not: the connect
-  // landed with Settings open, so the app now has something else to say there —
+  // landed with Settings open, so the app now has something else to say there,
   // "loaded and waiting behind this page", checked further down. So this asks
   // what is *in* the banner rather than whether it exists.
   const afterRecovery = pageNamed('banner.html');

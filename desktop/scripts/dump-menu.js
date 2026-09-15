@@ -8,15 +8,13 @@
  * therefore pass the template test and still come out shorter on Linux.
  *
  * This runs the real Electron, builds the real Menu, and prints what the OS
- * resolved — including the labels Electron supplies for roles. Run it on each
+ * resolved, including the labels Electron supplies for roles. Run it on each
  * platform and diff the output; that difference is the user-visible one.
  *
  * Usage:  electron scripts/dump-menu.js            (needs a display; Xvfb is fine)
  */
-'use strict';
-
-const { app, Menu } = require('electron');
-const menus = require('../src/menus');
+import { app, Menu } from 'electron';
+import * as menus from '../src/menus.js';
 
 /** Every command the template asks for, stubbed with its id as the label. */
 function stubCommands() {

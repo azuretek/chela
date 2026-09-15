@@ -1,12 +1,10 @@
-'use strict';
-
-const config = require('./config');
+import config from './config.js';
 
 // Trust-on-first-use certificate pinning, decided in Settings.
 //
 // Why not just `callback(true)` on every error: the gateway's own listener on
 // :18789 is self-signed (gateway.tls.autoGenerate), so a blanket accept is the
-// only thing that makes the LAN/IP addresses usable -- but a blanket accept also
+// only thing that makes the LAN/IP addresses usable, but a blanket accept also
 // silently trusts *any* bad cert on *any* host, which turns this app into an
 // MITM-friendly browser. So the exact fingerprint is pinned per host, and a
 // later change to that fingerprint is treated as hostile.
@@ -26,7 +24,7 @@ const config = require('./config');
 //
 // So the connection is refused, the app shows its own error page saying which
 // host and why, and the offer is left in Settings beside the certificates
-// already trusted -- with the fingerprint in front of you and nothing waiting
+// already trusted, with the fingerprint in front of you and nothing waiting
 // on the answer. Refusing first also means the default outcome of ignoring it
 // entirely is the safe one.
 
@@ -48,28 +46,28 @@ function hostOf(url) {
  * What to do about a certificate, given what is pinned for its host.
  *
  * Pure, and separated from the event handler so the three outcomes can be
- * tested without Electron -- the distinction between `unknown` and `changed` is
+ * tested without Electron, the distinction between `unknown` and `changed` is
  * the whole security value here, and it is one `===` away from being lost.
  *
  * @returns {'accept'|'unknown'|'changed'|'reject'}
  */
-function decide({ pinned, fingerprint }) {
+export function decide({ pinned, fingerprint }) {
   if (!fingerprint) return 'reject';
   if (pinned === fingerprint) return 'accept';
   return pinned ? 'changed' : 'unknown';
 }
 
 /** Everything currently waiting for a decision, newest first. */
-function pendingOffers() {
+export function pendingOffers() {
   return [...offers.values()].sort((a, b) => b.at - a.at);
 }
 
-function offerFor(host) {
+export function offerFor(host) {
   return offers.get(host) || null;
 }
 
 /** Pin the offered fingerprint. Returns the offer, or null if there was none. */
-function trust(host) {
+export function trust(host) {
   const offer = offers.get(host);
   if (!offer) return null;
   config.trustCert(host, offer.fingerprint);
@@ -78,12 +76,12 @@ function trust(host) {
 }
 
 /** Refuse it and stop showing it. The pin store is untouched. */
-function dismiss(host) {
+export function dismiss(host) {
   return offers.delete(host);
 }
 
 /** Test seam. Offers are session state, so a fresh run starts with none. */
-function reset() {
+export function reset() {
   offers.clear();
 }
 
@@ -96,7 +94,7 @@ function reset() {
  * @param {object} app
  * @param {{onOffer?: (offer: object) => void}} [hooks]
  */
-function install(app, { onOffer = () => {} } = {}) {
+export function install(app, { onOffer = () => {} } = {}) {
   app.on('certificate-error', (event, _webContents, url, error, certificate, callback) => {
     const host = hostOf(url);
     const fingerprint = certificate && certificate.fingerprint;
@@ -129,5 +127,3 @@ function install(app, { onOffer = () => {} } = {}) {
     if (!previous || previous.fingerprint !== fingerprint) onOffer(offer);
   });
 }
-
-module.exports = { install, decide, pendingOffers, offerFor, trust, dismiss, reset };

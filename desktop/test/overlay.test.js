@@ -1,6 +1,4 @@
-'use strict';
-
-// Plain `node --test` — no Electron. src/overlay.js takes its collaborators as
+// Plain `node --test`, no Electron. src/overlay.js takes its collaborators as
 // arguments for exactly this reason, so the watchdog can be driven against a
 // stub WebContents.
 //
@@ -13,10 +11,10 @@
 //
 // Run with: npm test
 
-const test = require('node:test');
-const assert = require('node:assert');
+import test from 'node:test';
+import assert from 'node:assert';
 
-const overlay = require('../src/overlay');
+import * as overlay from '../src/overlay.js';
 
 /** Minimal stand-in for a WebContents: the four members `supervise` touches. */
 function stubContents({ loading = true, destroyed = false } = {}) {
@@ -115,7 +113,7 @@ test('a page that loaded in time is never touched by the watchdog', async () => 
 
 test('a destroyed contents is not probed after the fact', async () => {
   // isLoading() on destroyed contents throws in Electron, so the destroyed
-  // check has to come first — the watchdog must not itself become the crash.
+  // check has to come first, the watchdog must not itself become the crash.
   const s = supervised({ contents: { loading: true } });
   s.wc.destroyed = true;
   s.wc.isLoading = () => { throw new Error('called on destroyed contents'); };
@@ -135,7 +133,7 @@ test('an idle-but-unfinished page is left alone', async () => {
 
 test('a crash that also reports a load failure closes only once', () => {
   // Chromium emits both. Closing twice would tear down whatever overlay had
-  // since replaced this one — the bug the fix would have introduced.
+  // since replaced this one, the bug the fix would have introduced.
   const s = supervised();
   s.wc.emit('render-process-gone', { reason: 'crashed' });
   s.wc.emit('did-fail-load', -6, 'ERR_FAILED', 'file:///settings.html', true);

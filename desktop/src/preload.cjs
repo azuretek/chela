@@ -4,7 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 // This preload is attached to the same window that later loads the remote
 // Control UI, so gate the bridge on the page being one of *our* local pages.
-// Remote gateway content gets no API surface at all — it is a website, and it
+// Remote gateway content gets no API surface at all, it is a website, and it
 // should not be able to rewrite gateway settings or read pinned fingerprints.
 const isLocalPage = location.protocol === 'file:';
 
@@ -43,7 +43,7 @@ if (isLocalPage) {
     onStateChanged: (fn) => ipcRenderer.on('app:state-changed', () => fn()),
 
     /* The banner: conditions that stay until they are fixed. `bannerHeight` is
-       the page telling main how tall to make its view — see ui/banner.js. */
+       the page telling main how tall to make its view, see ui/banner.js. */
     // Unread only: the banner draws what has not been acknowledged. Everything
     // still true, read or not, is liveNotices.
     notices: () => ipcRenderer.invoke('app:notices'),
@@ -63,7 +63,7 @@ if (isLocalPage) {
     noticeHistory: () => ipcRenderer.invoke('app:notice-history'),
     openNoticeLog: () => ipcRenderer.invoke('app:open-notice-log'),
     // The loading cover, shown while connecting and after a failure. The bar and
-    // its line are computed in main and pushed — see the progress section in
+    // its line are computed in main and pushed, see the progress section in
     // src/main.js for why the page is not given the curve to run itself.
     reconnect: () => ipcRenderer.invoke('app:reconnect'),
     progress: () => ipcRenderer.invoke('app:progress'),
@@ -75,11 +75,11 @@ if (isLocalPage) {
 
 // Runs for remote pages too, and deliberately so: this reads colours OUT of the
 // page and sends them to the main process. It adds nothing to `window`, so the
-// gate above still holds — the page cannot call this, only be measured by it.
+// gate above still holds, the page cannot call this, only be measured by it.
 //
 // Worth stating the trust boundary plainly: a hostile gateway could report any
 // colour it liked and repaint our caption strip. That is the whole blast radius
-// — main parses every value into `#rrggbb` before it reaches an Electron API
+// main parses every value into `#rrggbb` before it reaches an Electron API
 // (see chrome.js `normalizeColor`), so the worst case is an ugly title bar.
 
 // Ask the page to resolve `var(--bg)` for us rather than reading the custom
@@ -90,7 +90,7 @@ if (isLocalPage) {
 // conversion, and it always answers in a resolved form.
 
 // Which CSS property each token type is resolved through, and the fallback that
-// proves absence. A token the theme does not define makes `var()` fall back —
+// proves absence. A token the theme does not define makes `var()` fall back, 
 // and without a sentinel the property would quietly land on its inherited or
 // initial value, which for a colour is a perfectly plausible-looking answer
 // that is not the token. Anything coming back equal to the sentinel is dropped.
@@ -162,7 +162,7 @@ function reportTheme() {
 window.addEventListener('DOMContentLoaded', () => {
   reportTheme();
   // The theme picker rewrites `data-theme` in place with no navigation, so
-  // there is no load event to hang this off — the attribute IS the event.
+  // there is no load event to hang this off, the attribute IS the event.
   new MutationObserver(reportTheme).observe(document.documentElement, {
     attributes: true,
     attributeFilter: ['data-theme', 'data-theme-mode', 'style', 'class'],

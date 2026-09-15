@@ -1,20 +1,18 @@
-'use strict';
-
-// Plain `node --test` — no Electron, no real filesystem. src/autostart.js takes
+// Plain `node --test`, no Electron, no real filesystem. src/autostart.js takes
 // its environment, execPath and fs as arguments so the Linux behaviour is
 // exercised from any machine, which is the only way this gets tested at all:
 // the platform it exists for is the one nobody here develops on.
 //
 // What matters is that "Launch at login" either works or reports why. The bug
-// this module replaces was the third option — Electron's setLoginItemSettings
+// this module replaces was the third option, Electron's setLoginItemSettings
 // is darwin/win32 only and on Linux neither works nor throws, so the setting
 // saved, the checkbox stayed ticked, and nothing ever launched.
 
-const test = require('node:test');
-const assert = require('node:assert');
-const path = require('node:path');
+import test from 'node:test';
+import assert from 'node:assert';
+import path from 'node:path';
 
-const autostart = require('../src/autostart');
+import * as autostart from '../src/autostart.js';
 
 /* --------------------------------------------------------------- where */
 
@@ -41,7 +39,7 @@ test('a relative XDG_CONFIG_HOME is ignored, as the spec requires', () => {
 test('inside an AppImage the entry points at the AppImage, not execPath', () => {
   // The whole reason this function exists. Within a running AppImage,
   // execPath is inside the runtime's temporary mount, which is unmounted when
-  // the app exits — so an entry written from it names a path that no longer
+  // the app exits, so an entry written from it names a path that no longer
   // exists by the time the next login reads it, and fails silently forever.
   const cmd = autostart.launchCommand({
     env: { APPIMAGE: '/home/example-user/Apps/ClawDesktop-1.0.1-x86_64.AppImage' },

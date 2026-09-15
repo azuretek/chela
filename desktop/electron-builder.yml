@@ -6,7 +6,7 @@ directories:
   output: dist
   buildResources: build
 
-# Writes src/build-info.json — the commit being packaged — before the app is
+# Writes src/build-info.json, the commit being packaged, before the app is
 # assembled, so every build carries its own identity and Settings can show it.
 # One hook covers `pack`, all three `build:*` scripts, and CI.
 beforePack: scripts/build-info.js
@@ -15,6 +15,20 @@ files:
   - src/**/*
   - package.json
   - "!**/*.map"
+  # The shared core lives one level up, at <repo>/core, and desktop imports it as
+  # `../../core/<mod>.js` from src/main.js. That specifier resolves to <repo>/core
+  # in a source checkout and, inside the packaged asar, to /core at the archive
+  # root (src/main.js climbs two levels, clamped at the root). So core is mapped
+  # to `core` here, which places it at the asar root and makes the one import
+  # path correct in both layouts. Its spec/ and fixtures/ come with it; its tests
+  # do not need to ship but cost nothing and are covered by the glob.
+  - from: ../core
+    to: core
+    filter:
+      - "**/*.js"
+      - "**/*.json"
+      - "!test/**"
+      - "!node_modules/**"
 
 # Declared so electron-builder emits update metadata during the build:
 # `latest.yml`, `latest-mac.yml` and the `.blockmap` files. Those are what
@@ -32,7 +46,7 @@ publish:
 # Signing is credential-driven, not configured here.
 #
 # There is deliberately no `identity: null`. That key *forces* an unsigned build
-# and would have to be deleted the day a certificate exists — a code change to
+# and would have to be deleted the day a certificate exists, a code change to
 # turn on something that should be a credential change. Instead the standard
 # electron-builder behaviour applies: sign if an identity is discoverable, warn
 # and continue unsigned if not.
@@ -49,10 +63,10 @@ publish:
 # an upload to Apple that fails outright without credentials, so hard-enabling it
 # would break every build that has none. scripts/build.js passes
 # `--config.mac.notarize=true` for a single run when APPLE_API_KEY,
-# APPLE_API_KEY_ID and APPLE_API_ISSUER are all set — an App Store Connect *Team*
+# APPLE_API_KEY_ID and APPLE_API_ISSUER are all set, an App Store Connect *Team*
 # key, since Apple's own docs say individual keys cannot use notarytool.
 #
-# While a build is unsigned, macOS quarantines the downloaded .dmg — see README
+# While a build is unsigned, macOS quarantines the downloaded .dmg, see README
 # for the fix, and src/updates.js for why macOS cannot auto-update without this.
 mac:
   category: public.app-category.productivity
@@ -81,8 +95,8 @@ mac:
 # and the keychain lookup that electron-builder already does here, to sign a file
 # it just produced. (It used to be flatly impossible: with CSC_LINK,
 # electron-builder built a temporary keychain and destroyed it on finish, so no
-# identity survived the build. CI now owns the keychain — see the release
-# workflow — so the certificate outlives the build; the duplication is the reason
+# identity survived the build. CI now owns the keychain, see the release
+# workflow, so the certificate outlives the build; the duplication is the reason
 # that stands.)
 #
 # electron-builder's own note calls DMG signing unnecessary and warns it causes
@@ -104,14 +118,14 @@ win:
     - target: nsis
       arch: [x64, arm64]
   # Default is "${productName} Setup ${version}.exe". Spaces make the file painful
-  # to script against — notably over the Windows node exec, which splits argv
+  # to script against, notably over the Windows node exec, which splits argv
   # without honouring quotes.
   artifactName: ClawDesktop-Setup-${version}-${arch}.${ext}
 
 nsis:
   # Without this every release carried THREE installers: one per architecture,
   # plus a 216 MB universal one holding both. `${arch}` in artifactName does not
-  # prevent that, which is what the comment here used to claim — read
+  # prevent that, which is what the comment here used to claim, read
   # NsisTarget.finishBuild and it is the opposite. With a universal installer
   # wanted (the default), a pattern containing `${arch}` makes electron-builder
   # build the per-arch installers *in addition to* it.
@@ -136,7 +150,7 @@ nsis:
 # the only one that installs without a privilege prompt, because it overwrites
 # the single file the app is running from. The .deb and .rpm updaters shell out
 # to dpkg or rpm through pkexec, so every background update would raise a
-# password dialog — see src/updates.js.
+# password dialog, see src/updates.js.
 #
 # `arch` is explicit for the same reason as win: without it electron-builder
 # builds only the host architecture, so an x64 CI runner would quietly publish a
@@ -152,7 +166,7 @@ nsis:
 # this app than for most. Electron sets WM_CLASS from the desktop entry name, and
 # that is how a desktop environment links a running window back to its .desktop
 # file. Without the pair, GNOME and KDE show Claw Desktop under a generic Electron
-# icon in the dock and in alt-tab — for an app that lives in the tray for weeks,
+# icon in the dock and in alt-tab, for an app that lives in the tray for weeks,
 # the icon is most of what anyone sees of it.
 linux:
   icon: build/icon.png

@@ -1,15 +1,13 @@
-'use strict';
-
-// Plain `node --test` — no Electron, no chance of touching a real profile.
+// Plain `node --test`, no Electron, no chance of touching a real profile.
 // Run with: npm test
 
-const test = require('node:test');
-const assert = require('node:assert');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+import test from 'node:test';
+import assert from 'node:assert';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-const profile = require('../src/profile');
+import * as profile from '../src/profile.js';
 
 function tmpAppData() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'claw-profile-'));
@@ -53,13 +51,13 @@ test('is a no-op on a fresh install', () => {
   assert.equal(fs.existsSync(path.join(base, 'Claw Desktop')), false);
 });
 
-test('runs only once — a second call is a no-op', () => {
+test('runs only once, a second call is a no-op', () => {
   const base = tmpAppData();
   seed(base, 'OpenClaw', { 'config.json': '{"marker":1}' });
 
   assert.equal(profile.migrate(base).status, 'migrated');
   // The second call sees the target it just created, so it declines rather than
-  // reporting "nothing to migrate" — either way it must not touch anything.
+  // reporting "nothing to migrate", either way it must not touch anything.
   assert.equal(profile.migrate(base).status, 'already-current');
   assert.equal(fs.readFileSync(path.join(base, 'Claw Desktop', 'config.json'), 'utf8'), '{"marker":1}');
 });

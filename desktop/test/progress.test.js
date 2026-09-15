@@ -1,16 +1,14 @@
-'use strict';
-
 // The loading bar's number. Worth testing rather than eyeballing, because the
-// failure that matters is not "the bar looks wrong" — it is the bar claiming a
+// failure that matters is not "the bar looks wrong", it is the bar claiming a
 // stage the load never reached, at the one moment someone is staring at it
 // trying to work out why their app will not open.
 //
 // Run with: npm test
 
-const test = require('node:test');
-const assert = require('node:assert');
+import test from 'node:test';
+import assert from 'node:assert';
 
-const progress = require('../src/progress');
+import * as progress from '../src/progress.js';
 
 test('the bar starts near zero and never opens on a lie', () => {
   assert.equal(progress.percent({ milestone: progress.START, sinceMs: 0 }), 2);

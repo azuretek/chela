@@ -1,21 +1,22 @@
-'use strict';
-
 // Reading the stamp that scripts/build-info.js leaves behind.
 //
 // Everything here is pure except `read`, so the formatting can be tested
-// without Electron and without a packaged app — same split as src/cache.js.
+// without Electron and without a packaged app, same split as src/cache.js.
 //
 // The file is absent in a source run (`npm start`, `node --test`), and that is
 // a normal state rather than an error: an app running from the working tree has
 // no single commit to claim. It says so instead of guessing.
 
-const fs = require('node:fs');
-const path = require('node:path');
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 // Ten hex digits. Seven is git's traditional abbreviation and GitHub's display
 // width, but it is short enough to collide in a repo of any size, and this
 // string's whole job is to identify one build unambiguously.
-const SHORT_LENGTH = 10;
+export const SHORT_LENGTH = 10;
 
 const UNKNOWN = { commit: null, shortCommit: null, branch: null, dirty: false, builtAt: null };
 
@@ -29,10 +30,10 @@ const UNKNOWN = { commit: null, shortCommit: null, branch: null, dirty: false, b
  * @param {unknown} raw
  * @returns {{commit: string|null, shortCommit: string|null, branch: string|null, dirty: boolean, builtAt: string|null}}
  */
-function normalize(raw) {
+export function normalize(raw) {
   if (!raw || typeof raw !== 'object') return { ...UNKNOWN };
-  // A commit is 40 hex characters. Anything else — a branch name, a truncated
-  // write, a placeholder — is not one, and half a hash is worse than none.
+  // A commit is 40 hex characters. Anything else, a branch name, a truncated
+  // write, a placeholder, is not one, and half a hash is worse than none.
   const commit = typeof raw.commit === 'string' && /^[0-9a-f]{40}$/i.test(raw.commit)
     ? raw.commit.toLowerCase()
     : null;
@@ -50,7 +51,7 @@ function normalize(raw) {
  *
  * @param {string} [file]  Override, for tests.
  */
-function read(file = path.join(__dirname, 'build-info.json')) {
+export function read(file = path.join(HERE, 'build-info.json')) {
   try {
     return normalize(JSON.parse(fs.readFileSync(file, 'utf8')));
   } catch {
@@ -59,7 +60,7 @@ function read(file = path.join(__dirname, 'build-info.json')) {
 }
 
 /** `2026-09-02T08:41:07Z` -> `2026-09-02 08:41Z`, or null for anything else. */
-function formatBuiltAt(builtAt) {
+export function formatBuiltAt(builtAt) {
   const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(builtAt || '');
   return match ? `${match[1]} ${match[2]}Z` : null;
 }
@@ -80,7 +81,7 @@ function formatBuiltAt(builtAt) {
  * @param {string} version
  * @param {ReturnType<typeof normalize>} info
  */
-function describe(version, info) {
+export function describe(version, info) {
   const stamp = normalize(info);
   if (!stamp.shortCommit) return `${version} (source build)`;
 
@@ -98,7 +99,7 @@ function describe(version, info) {
  * during exactly the work most likely to need them; the caller falls back to
  * the bundle's size and mtime, which do move. See cache.buildFingerprint.
  */
-function buildId(info) {
+export function buildId(info) {
   const stamp = normalize(info);
   return stamp.commit && !stamp.dirty ? stamp.commit : null;
 }
@@ -121,7 +122,7 @@ const PLATFORM_NAMES = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
  * rendering bug is usually blamed on.
  *
  * Formatted here rather than handed to Electron's own `role: 'about'` panel,
- * which shows a fixed name/version/copyright and has no room for any of it —
+ * which shows a fixed name/version/copyright and has no room for any of it,
  * nor for the buttons an About box is opened for. See showAbout() in main.js.
  *
  * Pure, so the wording is testable without launching Electron, the same split
@@ -136,7 +137,7 @@ const PLATFORM_NAMES = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
  * @param {string} [opts.platform]
  * @param {string} [opts.arch]
  */
-function about({ version, info, updateStatus, electron, chrome, platform, arch }) {
+export function about({ version, info, updateStatus, electron, chrome, platform, arch }) {
   const detail = [
     describe(version, info),
     ...(updateStatus ? [updateStatus] : []),
@@ -145,5 +146,3 @@ function about({ version, info, updateStatus, electron, chrome, platform, arch }
   ].join('\n');
   return { message: 'Claw Desktop', detail };
 }
-
-module.exports = { SHORT_LENGTH, normalize, read, describe, buildId, formatBuiltAt, about };

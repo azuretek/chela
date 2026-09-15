@@ -1,11 +1,9 @@
-'use strict';
-
 // Stamp the commit a build was made from into the app bundle.
 //
-// The version in package.json is hand-maintained and in practice does not move
-// — every build so far is `1.0.0` — so it cannot answer the one question that
-// actually comes up: *is the thing installed on that machine the thing I just
-// built?* Working that out has meant stat-ing `app.asar` and comparing its
+// The version in package.json is hand-maintained and in practice does not move,
+// every build so far is `1.0.0`, so it cannot answer the one question that
+// actually comes up: is the thing installed on that machine the thing I just
+// built? Working that out has meant stat-ing `app.asar` and comparing its
 // mtime against a commit timestamp, which is guesswork dressed up as evidence.
 //
 // This runs as electron-builder's `beforePack` hook, so it covers `npm run
@@ -17,12 +15,14 @@
 // the tests run with no file at all, which src/build-info.js reports as a
 // source build rather than inventing an identity.
 
-const { execFileSync } = require('node:child_process');
-const fs = require('node:fs');
-const path = require('node:path');
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = path.join(__dirname, '..');
-const OUT = path.join(ROOT, 'src', 'build-info.json');
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.join(HERE, '..');
+export const OUT = path.join(ROOT, 'src', 'build-info.json');
 
 /** A git command, or null if git has nothing to say. Never throws. */
 function git(...args) {
@@ -39,12 +39,12 @@ function git(...args) {
  *
  * Git is asked first and the environment second, because git describes the
  * source that is actually being compiled while `GITHUB_SHA` describes what the
- * workflow was triggered for. In CI they cannot disagree — the workflow pins
- * both checkouts to `github.sha` for exactly this reason — so the fallback is
+ * workflow was triggered for. In CI they cannot disagree, the workflow pins
+ * both checkouts to `github.sha` for exactly this reason, so the fallback is
  * for a checkout with no git at all. Where they could differ, the compiled tree
  * is the honest answer.
  */
-function collect(env = process.env) {
+export function collect(env = process.env) {
   const commit = git('rev-parse', 'HEAD') || env.GITHUB_SHA || null;
 
   // `--porcelain` prints one line per modified path and nothing at all for a
@@ -53,8 +53,8 @@ function collect(env = process.env) {
   const status = git('status', '--porcelain');
   const dirty = status !== null && status !== '';
 
-  // Detached HEAD — which is how actions/checkout leaves every CI build, since
-  // the workflow pins `ref` to a sha — reports the branch as the literal
+  // Detached HEAD, which is how actions/checkout leaves every CI build, since
+  // the workflow pins `ref` to a sha, reports the branch as the literal
   // "HEAD", which names nothing. GITHUB_REF_NAME still carries the branch.
   const head = git('rev-parse', '--abbrev-ref', 'HEAD');
   const branch = (head && head !== 'HEAD' ? head : null) || env.GITHUB_REF_NAME || null;
@@ -69,7 +69,7 @@ function collect(env = process.env) {
   };
 }
 
-function write(info = collect(), file = OUT) {
+export function write(info = collect(), file = OUT) {
   fs.writeFileSync(file, `${JSON.stringify(info, null, 2)}\n`);
   return info;
 }
@@ -77,21 +77,17 @@ function write(info = collect(), file = OUT) {
 // electron-builder awaits the default export before packing. Logging the stamp
 // is deliberate: a CI log that does not say which commit it built is the same
 // hole this file exists to close.
-module.exports = async function beforePack() {
+export default async function beforePack() {
   const info = write();
   const label = info.commit ? info.commit.slice(0, 10) : 'unknown';
-  console.log(`  • stamping build  commit=${label}${info.dirty ? ' (dirty)' : ''} branch=${info.branch || '-'}`);
-};
-
-module.exports.collect = collect;
-module.exports.write = write;
-module.exports.OUT = OUT;
+  console.log(`  \u2022 stamping build  commit=${label}${info.dirty ? ' (dirty)' : ''} branch=${info.branch || '-'}`);
+}
 
 // `--clear` runs as `prestart`. A local `npm run pack` leaves a stamp on disk,
 // and without this the next `npm start` would report that commit as though it
-// had been packaged — quietly stale the moment anything else is committed.
+// had been packaged, quietly stale the moment anything else is committed.
 // Removing it restores the documented behaviour: a source run claims no commit.
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   if (process.argv.includes('--clear')) {
     fs.rmSync(OUT, { force: true });
     process.exit(0);

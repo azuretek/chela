@@ -1,5 +1,3 @@
-'use strict';
-
 // The project's rule: every dialog is one of the app's own overlay pages, never
 // a native one.
 //
@@ -8,22 +6,25 @@
 // looks approximately right on the machine of whoever added it, and only
 // afterwards turns out to be a different dialog on each platform, in the
 // system's colours rather than the Control UI's, with no room for anything but
-// a line of text — which is how the About box ended up native in the first
+// a line of text, which is how the About box ended up native in the first
 // place. Nothing at runtime objects to it, so nothing but this would notice.
 //
 // Run with: npm test
 
-const test = require('node:test');
-const assert = require('node:assert');
-const fs = require('node:fs');
-const path = require('node:path');
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import assert from 'node:assert';
+import fs from 'node:fs';
+import path from 'node:path';
 
-const SRC = path.join(__dirname, '..', 'src');
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+
+const SRC = path.join(HERE, '..', 'src');
 const UI = path.join(SRC, 'ui');
 
 // There are no exceptions. The last one was the certificate prompt, and it went
 // because the failed handshake means there is often no page to lay a dialog
-// over — and because a yes/no box in front of someone waiting for their app to
+// over, and because a yes/no box in front of someone waiting for their app to
 // open is the worst place to put a security decision. It is refused on the spot
 // and settled in Settings instead; see src/certs.js.
 
@@ -67,7 +68,7 @@ test('nothing imports Electron’s dialog module at all', () => {
 
 test('nothing uses the built-in About panel', () => {
   // Electron's `role: 'about'` cannot show the build commit, cannot say
-  // anything about updating, and cannot carry a button — the two things people
+  // anything about updating, and cannot carry a button, the two things people
   // open About to do. On Windows it did not exist before Electron 15.
   for (const file of sourceFiles) {
     assert.doesNotMatch(code(path.join(SRC, file)), /role:\s*['"]about['"]/, `${file} uses the native About panel`);
@@ -115,7 +116,7 @@ test('the app has no modal message dialog left to reach for', () => {
   // Stronger than "not a native dialog", and a separate rule: every message the
   // app used to interrupt with is now a notice in the banner. The queue, the
   // page and the IPC pair that carried them are gone, so this guards the
-  // regression of adding one back rather than raising a notice — which would
+  // regression of adding one back rather than raising a notice, which would
   // read as reasonable in review and quietly reintroduce a modal that steals
   // focus to say "you are up to date".
   const main = code(path.join(SRC, 'main.js'));
@@ -126,7 +127,7 @@ test('the app has no modal message dialog left to reach for', () => {
 test('every command a notice can name is one main knows how to run', () => {
   // A notice's button is a *string* main looks up, because the banner is a
   // sandboxed page and cannot be handed a callback. An unknown name resolves to
-  // nothing on purpose — a renderer must not be able to invent commands — so a
+  // nothing on purpose, a renderer must not be able to invent commands, so a
   // typo here is not an error anywhere. It is a button that does nothing, which
   // on the "Restart now" of a downloaded update is the whole feature failing in
   // silence.
@@ -146,7 +147,7 @@ test('every command a notice can name is one main knows how to run', () => {
 
 test('the notice banner draws above the overlays', () => {
   // The banner is the app's only way of saying anything now, so it has to be
-  // visible from everywhere — including over Settings, which is exactly where
+  // visible from everywhere, including over Settings, which is exactly where
   // "the gateway is up, here is the way through" has to appear. Stacked under
   // the overlays it is drawn behind them: the notice is raised, the store says
   // so, and nothing is on screen.
