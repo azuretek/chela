@@ -50,6 +50,19 @@
   </nav>
 
   <section class="panel" id="panel-gateways" role="tabpanel" aria-labelledby="tab-gateways" tabindex="0">
+    <div class="gateway-filter" role="search">
+      <div class="gateway-filter__icon" aria-hidden="true"></div>
+      <input
+        type="text"
+        id="gatewayFilter"
+        placeholder="Search gateways by name or URL"
+        autocomplete="off"
+        spellcheck="false"
+        aria-label="Search gateways"
+      >
+      <button id="clearFilter" class="ghost" type="button">Clear</button>
+    </div>
+
     <div id="gateways"></div>
 
     <div class="card">
