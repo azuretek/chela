@@ -13,8 +13,8 @@
 // The unit tests cannot see any of them: they run under Node against the source
 // tree, so a path that is wrong only once the app is packaged, or an import the
 // runtime refuses to link, is invisible. This check reads the source the way the
-// runtime will, and fails loudly on 1 and 2. (3 is a packaging fault, caught by
-// scripts/smoke.js, which runs the built app.)
+// runtime will, and fails loudly on 1 and 2. (3 is a packaging fault, and
+// scripts/check-package.js audits the built artifact for it.)
 //
 // It deliberately does not import the modules: importing them would execute the
 // app's top-level code and need Electron. It parses the import statements.
@@ -24,7 +24,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { builtinModules } from 'node:module';
+import { importsIn, isRelative, isBuiltin, packageNameOf } from './lib/imports.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DESKTOP = path.join(HERE, '..');
@@ -60,42 +60,11 @@ function moduleFiles() {
   return out;
 }
 
-// import <clause> from '<spec>'   |   export <clause> from '<spec>'
-// import '<spec>'                (side effect only)
-const IMPORT_RE = /^[ \t]*(?:import|export)\s+([^'"]*?)\s*from\s*['"]([^'"]+)['"]/gm;
-const SIDE_EFFECT_RE = /^[ \t]*import\s*['"]([^'"]+)['"]/gm;
-
-/** Every static import specifier in one file, with its clause and line number. */
-function importsIn(source) {
-  const found = [];
-  for (const re of [IMPORT_RE, SIDE_EFFECT_RE]) {
-    re.lastIndex = 0;
-    let m;
-    while ((m = re.exec(source)) !== null) {
-      const clause = re === SIDE_EFFECT_RE ? '' : m[1].trim();
-      const spec = re === SIDE_EFFECT_RE ? m[1] : m[2];
-      const line = source.slice(0, m.index).split('\n').length;
-      found.push({ clause, spec, line });
-    }
-  }
-  return found;
-}
-
-const isRelative = (spec) => spec.startsWith('./') || spec.startsWith('../');
-
-// The real builtin list, not "any bare name with no slash": that shortcut would
-// treat a single-segment package like `electron-updater` as a builtin and skip
-// it, which is precisely the CommonJS-named-import fault this check exists to
-// catch.
-const BUILTINS = new Set([...builtinModules, ...builtinModules.map((m) => `node:${m}`)]);
-const isBuiltin = (spec) => BUILTINS.has(spec);
-
 /** A package is ESM if it declares type: module, a `module` field, or an
  *  `exports` map with an `import` condition; otherwise importing it by name is
  *  unsafe. */
 function packageIsEsm(spec) {
-  const parts = spec.split('/');
-  const name = spec.startsWith('@') ? `${parts[0]}/${parts[1]}` : parts[0];
+  const name = packageNameOf(spec);
   const dirs = [
     path.join(DESKTOP, 'node_modules', name),
     path.join(DESKTOP, '..', 'node_modules', name),
@@ -122,9 +91,7 @@ function suggestFor(file, spec) {
     const prefix = '../'.repeat(up);
     for (const rest of [spec.replace(/^(\.\.\/)+/, ''), `core/${base}`, base]) {
       const candidate = path.resolve(dir, prefix + rest);
-      if (fs.existsSync(candidate)) {
-        return `${prefix}${rest}`;
-      }
+      if (fs.existsSync(candidate)) return `${prefix}${rest}`;
     }
   }
   return null;
@@ -150,9 +117,7 @@ for (const file of files) {
     }
     if (isBuiltin(spec)) continue;
 
-    const named = clause.includes('{');
-    if (!named) continue;
-
+    if (!clause.includes('{')) continue;
     const pkg = packageIsEsm(spec);
     if (pkg.unknown) {
       problems.push({ file: rel, line, spec, message: 'package not found in node_modules' });
@@ -160,7 +125,7 @@ for (const file of files) {
       problems.push({
         file: rel, line, spec,
         message: `'${pkg.name}' is CommonJS and exposes no named ESM export; `
-          + `use a default import and destructure, or require() it at point of use`,
+          + 'use a default import and destructure, or require() it at point of use',
       });
     }
   }

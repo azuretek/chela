@@ -12,6 +12,7 @@
   "scripts": {
     "test": "node --test test/*.test.js",
     "check:imports": "node scripts/check-imports.js",
+    "check:package": "node scripts/check-package.js",
     "smoke": "node scripts/smoke.js --instance source",
     "smoke:packed": "node scripts/smoke.js --instance packed",
     "verify": "npm test && npm run check:imports && npm run smoke",
