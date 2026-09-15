@@ -11,6 +11,10 @@
   "private": true,
   "scripts": {
     "test": "node --test test/*.test.js",
+    "check:imports": "node scripts/check-imports.js",
+    "smoke": "node scripts/smoke.js --instance source",
+    "smoke:packed": "node scripts/smoke.js --instance packed",
+    "verify": "npm test && npm run check:imports && npm run smoke",
     "prestart": "node scripts/build-info.js --clear",
     "start": "electron .",
     "icons": "node scripts/make-icons.mjs",

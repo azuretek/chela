@@ -247,6 +247,27 @@ jobs:
         env:
           CLAW_BUILD_VERSION: ${{ needs.version.outputs.version }}
 
+      # The unit tests above run under Node against the source tree, so they
+      # cannot see a fault that only appears once the app is packaged: a module
+      # the packer never copied, a shared file at a path the relative import
+      # does not reach, an entry Electron refuses to load. Each of those shipped
+      # a build that passed every test and then opened a fatal dialog on launch.
+      # check:imports is the static half (relative paths and CommonJS packages
+      # imported by name); smoke:packed boots the artifact built two steps up and
+      # waits for a positive signal, not the absence of an error.
+      #
+      # bash on every runner, Windows included, so the platform branch is one
+      # script. The Linux runner has no display, so Electron runs under xvfb.
+      - name: Smoke test the built app
+        shell: bash
+        run: |
+          npm run check:imports
+          if [ "${{ matrix.artifact }}" = "linux" ]; then
+            xvfb-run -a npm run smoke:packed
+          else
+            npm run smoke:packed
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: claw-${{ matrix.artifact }}-${{ needs.version.outputs.version }}
