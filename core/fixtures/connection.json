@@ -1,0 +1,263 @@
+{
+  "description": "reason() and status() golden pairs. These pin the error mapping and row state for the Swift port.",
+  "reason": [
+    {
+      "input": {
+        "error": {
+          "code": -105,
+          "description": "ERR_-105"
+        }
+      },
+      "output": "The hostname did not resolve. Check that Tailscale is connected and MagicDNS is on. (ERR_-105)"
+    },
+    {
+      "input": {
+        "error": {
+          "code": -106,
+          "description": "ERR_-106"
+        }
+      },
+      "output": "This machine appears to be offline. (ERR_-106)"
+    },
+    {
+      "input": {
+        "error": {
+          "code": -109,
+          "description": "ERR_-109"
+        }
+      },
+      "output": "The host is unreachable, are you on the same tailnet or LAN? (ERR_-109)"
+    },
+    {
+      "input": {
+        "error": {
+          "code": -102,
+          "description": "ERR_-102"
+        }
+      },
+      "output": "The connection was refused. The gateway may not be running. (ERR_-102)"
+    },
+    {
+      "input": {
+        "error": {
+          "code": -118,
+          "description": "ERR_-118"
+        }
+      },
+      "output": "The connection timed out. The gateway may be asleep or unreachable from this network. (ERR_-118)"
+    },
+    {
+      "input": {
+        "error": {
+          "code": -200,
+          "description": "ERR_-200"
+        }
+      },
+      "output": "The certificate was rejected, so the connection was not made. (ERR_-200)"
+    },
+    {
+      "input": {
+        "error": {
+          "code": -201,
+          "description": "ERR_-201"
+        }
+      },
+      "output": "The certificate has expired. (ERR_-201)"
+    },
+    {
+      "input": {
+        "error": {
+          "code": -501,
+          "description": "ERR_-501"
+        }
+      },
+      "output": "The connection is not secure and was blocked. (ERR_-501)"
+    },
+    {
+      "input": {
+        "error": null
+      },
+      "output": "The gateway did not respond."
+    },
+    {
+      "input": {
+        "error": {
+          "code": -999,
+          "description": "ERR_UNKNOWN_THING"
+        }
+      },
+      "output": "ERR_UNKNOWN_THING"
+    },
+    {
+      "input": {
+        "error": {
+          "code": -999
+        }
+      },
+      "output": "The gateway did not respond."
+    },
+    {
+      "input": {
+        "error": {
+          "code": -105,
+          "description": "ERR_NAME_NOT_RESOLVED"
+        }
+      },
+      "output": "The hostname did not resolve. Check that Tailscale is connected and MagicDNS is on. (ERR_NAME_NOT_RESOLVED)"
+    }
+  ],
+  "status": [
+    {
+      "input": {
+        "isActive": true,
+        "phase": "idle"
+      },
+      "output": {
+        "tone": "muted",
+        "label": "Not connected",
+        "detail": null
+      }
+    },
+    {
+      "input": {
+        "isActive": false,
+        "phase": "idle"
+      },
+      "output": {
+        "tone": "muted",
+        "label": "Not connected",
+        "detail": null
+      }
+    },
+    {
+      "input": {
+        "isActive": true,
+        "phase": "connecting"
+      },
+      "output": {
+        "tone": "muted",
+        "label": "Connecting...",
+        "detail": null
+      }
+    },
+    {
+      "input": {
+        "isActive": false,
+        "phase": "connecting"
+      },
+      "output": {
+        "tone": "muted",
+        "label": "Not connected",
+        "detail": null
+      }
+    },
+    {
+      "input": {
+        "isActive": true,
+        "phase": "connected"
+      },
+      "output": {
+        "tone": "ok",
+        "label": "Connected",
+        "detail": null
+      }
+    },
+    {
+      "input": {
+        "isActive": false,
+        "phase": "connected"
+      },
+      "output": {
+        "tone": "muted",
+        "label": "Not connected",
+        "detail": null
+      }
+    },
+    {
+      "input": {
+        "isActive": true,
+        "phase": "failed"
+      },
+      "output": {
+        "tone": "err",
+        "label": "Cannot connect",
+        "detail": null
+      }
+    },
+    {
+      "input": {
+        "isActive": false,
+        "phase": "failed"
+      },
+      "output": {
+        "tone": "muted",
+        "label": "Not connected",
+        "detail": null
+      }
+    },
+    {
+      "input": {
+        "isActive": true,
+        "phase": "unknown-phase"
+      },
+      "output": {
+        "tone": "muted",
+        "label": "Not connected",
+        "detail": null
+      }
+    },
+    {
+      "input": {
+        "isActive": false,
+        "phase": "unknown-phase"
+      },
+      "output": {
+        "tone": "muted",
+        "label": "Not connected",
+        "detail": null
+      }
+    },
+    {
+      "input": {
+        "isActive": true,
+        "phase": "connected",
+        "certOffer": {
+          "changed": false
+        }
+      },
+      "output": {
+        "tone": "warn",
+        "label": "Certificate not trusted",
+        "detail": "Review the certificate above to connect to this gateway."
+      }
+    },
+    {
+      "input": {
+        "isActive": true,
+        "phase": "failed",
+        "certOffer": {
+          "changed": true
+        }
+      },
+      "output": {
+        "tone": "err",
+        "label": "Certificate changed",
+        "detail": "This host is presenting a different certificate than the one that was trusted. Review it above."
+      }
+    },
+    {
+      "input": {
+        "isActive": false,
+        "phase": "idle",
+        "certOffer": {
+          "changed": false
+        }
+      },
+      "output": {
+        "tone": "warn",
+        "label": "Certificate not trusted",
+        "detail": "Review the certificate above to connect to this gateway."
+      }
+    }
+  ]
+}
