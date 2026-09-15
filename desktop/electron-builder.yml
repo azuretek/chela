@@ -16,12 +16,24 @@ files:
   - package.json
   - "!**/*.map"
   # The shared core lives one level up, at <repo>/core, and desktop imports it as
-  # `../../core/<mod>.js` from src/main.js. That specifier resolves to <repo>/core
-  # in a source checkout and, inside the packaged asar, to /core at the archive
-  # root (src/main.js climbs two levels, clamped at the root). So core is mapped
-  # to `core` here, which places it at the asar root and makes the one import
-  # path correct in both layouts. Its spec/ and fixtures/ come with it; its tests
-  # do not need to ship but cost nothing and are covered by the glob.
+  # `../../core/<mod>.js` from src/*.js. In a source checkout that resolves to
+  # <repo>/core. In the packed app the target depends on which side of the archive
+  # boundary the runtime resolves against, and the two do not agree: the shipped
+  # build's own ERR_MODULE_NOT_FOUND looked in `Contents/Resources/core`, while
+  # Electron's ESM resolver, asked from `app.asar/src/`, clamps the climb at the
+  # archive root and lands on `app.asar/core`. Because they disagree, core ships
+  # in BOTH places. It is ~50 KB of plain JS, and a boot that works is worth far
+  # more than the duplicate. `npm run smoke:packed` is what keeps this honest.
+  - from: ../core
+    to: core
+    filter:
+      - "**/*.js"
+      - "**/*.json"
+      - "!test/**"
+      - "!node_modules/**"
+
+# The same core, at the path an unpacked app resolves `../../core` to.
+extraResources:
   - from: ../core
     to: core
     filter:
