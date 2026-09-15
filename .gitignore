@@ -16,3 +16,13 @@ desktop/src/build-info.json
 # way. Rebuild it with `cd mobile && xcodegen generate`.
 mobile/*.xcodeproj/
 xcuserdata/
+
+# The Apple team id that signs device builds. It is personal to the signing
+# account, so it stays local and reaches the build as an env var or as
+# mobile/.team; mobile/build-device.sh is the only reader. Keeping it out of
+# project.yml means there is no committed copy to drift from the account.
+mobile/.team
+
+# Device build output from mobile/build-device.sh. Regenerated on every run, so
+# a committed copy would be pure drift, and it is large.
+mobile/build-device/
