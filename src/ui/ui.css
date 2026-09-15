@@ -235,13 +235,22 @@ a  { color: var(--accent); }
 }
 .tab {
   appearance: none; background: transparent; border: 0;
+  /* border-radius is zeroed on purpose: the global `button` rule sets one, and
+     `button:hover:not(:disabled)` (specificity 0-2-1) outweighs this class
+     (0-1-0), so without this a hovered or active tab paints the rounded button
+     background and reads as a pill instead of an underlined tab. */
+  border-radius: 0;
   border-bottom: 2px solid transparent; margin-bottom: -1px;
   padding: 4px 8px 8px; cursor: pointer;
   display: inline-flex; align-items: center; gap: 6px;
   font: inherit; font-size: 12px; font-weight: 550;
   text-transform: none; letter-spacing: 0; color: var(--muted);
 }
-.tab:hover { color: var(--text); }
+/* Beat `button:hover:not(:disabled)` on its own terms: a tab hover changes the
+   label colour only, never the background, so the flat indicator is all there
+   is to see. */
+.tab:hover:not(:disabled) { color: var(--text); background: transparent; border-color: transparent; border-bottom-color: transparent; }
+.tab[aria-selected="true"]:hover:not(:disabled) { border-bottom-color: var(--accent); }
 .tab[aria-selected="true"] { color: var(--text-strong); border-bottom-color: var(--accent); }
 /* Inset, because the underline sits on the container's own border and an
    outline drawn outside the button is clipped by it. */
