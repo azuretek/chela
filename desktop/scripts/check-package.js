@@ -116,7 +116,19 @@ function candidatesFor(fromKey, spec) {
 
 // Every packaged module, re-resolved against the package layout.
 for (const key of [...entries].filter((k) => /^\/src\/.*\.js$/.test(k))) {
-  const source = asar.extractFile(asarPath, key.replace(/^\//, '')).toString('utf8');
+  // @electron/asar walks the header with Node's path functions, which split on
+  // path.sep, so the lookup must use the platform separator. Handing it the
+  // '/'-form key works on POSIX and throws "was not found in this archive" on
+  // Windows (measured: it failed a CI run with `"src/ui/about.js" was not found
+  // in this archive`). path.normalize converts only on the platform that needs it.
+  const lookup = path.normalize(key.replace(/^[/\\]/, ''));
+  let source;
+  try {
+    source = asar.extractFile(asarPath, lookup).toString('utf8');
+  } catch (err) {
+    problems.push(`cannot read ${key} from the package: ${err.message}`);
+    continue;
+  }
   for (const { spec, line } of importsIn(source)) {
     if (!isRelative(spec) || isBuiltin(spec)) continue;
     const ok = candidatesFor(key, spec).find((c) => (c.key ? entries.has(c.key) : fs.existsSync(c.file)));
