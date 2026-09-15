@@ -27,7 +27,7 @@ files:
 publish:
   provider: github
   owner: azuretek
-  repo: claw-desktop
+  repo: claw
 
 # Signing is credential-driven, not configured here.
 #

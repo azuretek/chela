@@ -1,5 +1,10 @@
 name: Claw Desktop release
 
+# The Electron app lives in desktop/ since the repo became the product monorepo
+# (core/ shared, desktop/ this app, mobile/ the iOS client). Every npm/script
+# step runs inside desktop/ via defaults.run.working-directory on each job that
+# builds; the release job runs at the repo root because it only moves artifacts.
+
 # Builds each platform on its own runner. Cross-building the Windows installer
 # from macOS needs Wine for resource editing, so a native Windows runner is the
 # supported path rather than a local convenience.
@@ -30,6 +35,10 @@ on:
       - '**.md'
       - 'LICENSE'
       - '.gitignore'
+    # This workflow builds only the desktop app. A change confined to core/ still
+    # affects it (desktop consumes core), so core is not ignored; but a change
+    # confined to mobile/ must not trigger a desktop release.
+      - 'mobile/**'
   workflow_dispatch:
 
 # Pushing three commits in a minute should build the last one, not all three.
@@ -46,6 +55,9 @@ jobs:
   # installers.
   version:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
     outputs:
       version: ${{ steps.decide.outputs.version }}
       build: ${{ steps.decide.outputs.build }}
@@ -85,6 +97,9 @@ jobs:
             script: build:linux
             artifact: linux
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
     steps:
       # Pinned to the commit this run was triggered for, not left to resolve a
       # branch name. Without it each job checks out whatever the tip happens to
@@ -106,7 +121,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: desktop/package-lock.json
 
       - run: npm ci
 
@@ -234,18 +249,20 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: claw-desktop-${{ matrix.artifact }}-${{ needs.version.outputs.version }}
+          name: claw-${{ matrix.artifact }}-${{ needs.version.outputs.version }}
           # Every build now publishes a Release, so these exist only to carry
           # files from the two build runners to the release job below — the
           # Release is the durable copy. They expire as fast as GitHub allows.
           # Retention here is age-only: GitHub offers no count-based limit for
           # artifacts, unlike the releases, which the prune step keeps to 10.
           retention-days: 1
+          # Paths are relative to the repo, not to working-directory, so the
+          # desktop/ prefix is required here even though the build ran in it.
           path: |
-            dist/*.dmg
-            dist/*.zip
-            dist/*.exe
-            dist/*.AppImage
+            desktop/dist/*.dmg
+            desktop/dist/*.zip
+            desktop/dist/*.exe
+            desktop/dist/*.AppImage
             # Update metadata, emitted because electron-builder.yml declares a
             # `publish` provider. An updater reads these to learn a release's
             # version, size and checksum; without them the release is just files.
@@ -255,9 +272,9 @@ jobs:
             # build writes dev-mac.yml / dev.yml / dev-linux.yml, while the build
             # also drops builder-debug.yml in dist/, which has no business in a
             # release.
-            dist/latest*.yml
-            dist/dev*.yml
-            dist/*.blockmap
+            desktop/dist/latest*.yml
+            desktop/dist/dev*.yml
+            desktop/dist/*.blockmap
 
   release:
     needs: [version, build]

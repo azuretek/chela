@@ -1,0 +1,574 @@
+# Claw Desktop
+
+A standalone desktop window for the OpenClaw Control UI: its own icon, its own
+Dock/taskbar entry, a tray icon and a global shortcut. Electron, one codebase,
+builds for macOS, Windows and Linux.
+
+**Viewer only.** It does not run a gateway, pair as a node, or offer remote
+control. An opt-in setting can add a bounded description of this computer to
+chat prompts; it is off by default.
+
+## Do you actually need this?
+
+| Option | What you get | Cost |
+|---|---|---|
+| **Install the PWA** (Chrome/Edge, *Install app*) | Own icon and window, **plus Web Push that wakes it when closed** | Zero. The Control UI already ships a manifest and service worker |
+| **[Windows Hub](https://github.com/openclaw/openclaw-windows-node/releases/latest)** / macOS menu-bar app | Native chat, tray, Command Center, **and node mode** (screen, camera, `system.run`) | Turns the machine into a paired node, a much larger security surface |
+| **This app** | Own window, tray, close-to-tray, global hotkey, multiple gateway profiles, no browser dependency | A build step |
+
+Pick the PWA for push notifications. Pick Windows Hub to make the machine a
+node. Pick this for the Control UI as a plain app that is always one keystroke
+away.
+
+---
+
+# Setup
+
+## 1. Get the app
+
+**From a release.** Take the installer for your platform from
+[Releases](https://github.com/azuretek/claw-desktop/releases):
+
+- **Windows.** `ClawDesktop-Setup-<version>-<arch>.exe`. Per-user, no admin.
+- **macOS.** Open the `.dmg` and drag to Applications.
+- **Linux.** `ClawDesktop-<version>-<arch>.AppImage`. `chmod +x` it and run it;
+  there is nothing to install. Keep it somewhere writable, because that file is
+  what an update replaces in place.
+
+**Or build it.** Needed if no release covers your platform, and how the app is
+kept current on a machine you already develop on:
+
+```sh
+git clone https://github.com/azuretek/claw-desktop.git
+cd claw-desktop
+npm ci
+npm run build:mac        # or build:win / build:linux
+```
+
+The installer lands in `dist/`. Build on the platform you are targeting. Windows
+installers need Wine to cross-build, and an AppImage needs the Linux `mksquashfs`
+electron-builder downloads, so `build:linux` fails on macOS with `spawn Unknown
+system error -86`, a Linux binary refused by the wrong kernel rather than a
+misconfiguration. Each platform's release is built on its own runner for this
+reason. Both architectures of a given platform do cross-build fine.
+
+### After installing
+
+- **macOS.** Nothing to do. Releases are signed with a Developer ID and
+  notarized by Apple, and both the app and the `.dmg` carry a stapled
+  notarization ticket, so Gatekeeper opens them without a warning and without
+  needing a network check.
+
+- **Windows.** SmartScreen will warn, because Windows builds are still
+  unsigned. *More info, Run anyway.* Installs to
+  `%LOCALAPPDATA%\Programs\Claw Desktop`.
+
+- **Linux.** Nothing to do, and nothing installed. An AppImage is one
+  self-contained executable; it appears in the applications menu only if you add
+  it there yourself.
+
+- **First launch after moving to a signed build.** macOS asks for your login
+  keychain password once, for *Claw Desktop Safe Storage*. Saved gateway
+  credentials are encrypted with Electron `safeStorage`, and that keychain item's
+  access control is bound to the **code identity that created it**. A locally
+  built app is ad-hoc signed (`TeamIdentifier=not set`); a release is signed with
+  a Developer ID, so it is a different identity and macOS asks whether to let it
+  through. Click **Always Allow** once. Later signed releases share the same
+  identity and never ask again.
+
+- **Upgrading from the old *OpenClaw*-named build.** Quit it first, then
+  uninstall it: the `appId` changed, so the installer will not replace it. Your
+  profile, credentials and paired device identity move across automatically on
+  first launch ([src/profile.js](src/profile.js)).
+
+## 2. Connect to a gateway
+
+The setup window opens on first launch.
+
+1. Pick a suggested gateway, or **Add** your own. **Test connection** checks
+   reachability before you commit to it.
+2. Press **Edit** on that gateway and save its token. Get one on the gateway
+   host with:
+
+   ```sh
+   openclaw gateway auth-token --show
+   ```
+
+   The app supplies it on every connect, so the Control UI never asks you to
+   paste anything.
+
+3. Press **Connect**. Settings stays where it is. The button reads
+   *Connecting…* while the gateway loads behind the page, and when it lands a
+   green strip appears at the top saying the Control UI is ready, with **Open
+   it**. If it fails instead, the row says why. Leaving the page is always a
+   second, deliberate press, never something that happens to you.
+
+**Which address to use.** Prefer the tailnet name
+(`https://<host>.<tailnet>.ts.net`, no port): Tailscale Serve terminates a real
+certificate and it simply works. A `:18789` address talks to the gateway's own
+listener, which is self-signed, so the first connection is **refused**, and a
+refused connection raises a notice with a link to Settings, where the
+certificate is waiting at the top. Trusting it pins **that exact fingerprint for
+that host alone** and reconnects.
+
+There is no prompt, deliberately. A yes/no box in front of someone waiting for
+their app to open gets answered by whichever button makes it go away, the same
+button an attacker would want pressed, and it cannot be shown reliably anyway,
+since a failed handshake often means there is no page to put it over. Refusing
+first also makes ignoring it entirely the safe outcome. A pinned host that later
+presents a *different* certificate is called out as changed, with both
+fingerprints shown side by side, and the old pin stays in force until you say
+otherwise.
+
+## 3. Set your preferences
+
+**Settings** is one window: **Cmd/Ctrl+,**, or the tray menu.
+
+- **Gateways.** Add, remove, edit, test, switch. Switching is also on the tray.
+- **Keep running when the window is closed.** On by default; closing hides to
+  the tray and you quit from there.
+- **Open at login** / **Start hidden in the tray.** Together, the app is
+  waiting in the tray from boot.
+- **Install updates automatically.** On by default. Off, the app still checks
+  and still tells you a release exists; it just offers to install it rather than
+  downloading it unasked. Disabled, with the reason shown, on a build that could
+  not install one anyway.
+- **Include this computer's context in prompts** is off by default. When enabled,
+  ordinary chat prompts include the hostname, operating system and architecture,
+  user, home folder, locale, time zone, and Claw Desktop version. It never sends
+  network addresses, environment variables, credentials, or device identifiers.
+- **Global shortcut.** `CommandOrControl+Shift+O` by default, shows or hides
+  the window from anywhere. Clear the field to disable.
+- **Certificates.** Pinned fingerprints, and anything refused this session
+  waiting for a decision.
+
+## 4. Know where your data lives
+
+| Platform | Directory |
+|---|---|
+| macOS | `~/Library/Application Support/Claw Desktop/` |
+| Windows | `%APPDATA%\Claw Desktop\` |
+| Linux | `~/.config/Claw Desktop/` |
+
+- `config.json`: gateway list, window bounds, preferences, pinned certificate
+  fingerprints. Written atomically, and **holds no secrets**, so it is safe to
+  open, copy or paste.
+- `credentials.json`: tokens, passwords and headers, encrypted with Electron
+  `safeStorage` (macOS Keychain, Windows DPAPI).
+
+On Linux `safeStorage` degrades to plain obfuscation rather than encryption; the
+app treats that as unavailable and refuses to store, rather than pretending.
+Install `gnome-keyring` or `kwallet` first.
+
+---
+
+# Features
+
+## Saved credentials
+
+Set per gateway under **Settings, Gateways, Edit**, so you never hand-paste a
+token or keep one in a password manager you have to open first.
+
+| Field | How it is applied |
+|---|---|
+| **Gateway token** | Handed to the Control UI on the URL fragment as `#token=…`, the [documented handoff](https://docs.openclaw.ai/web/urls). Reapplied on every connect, so it also repairs a stale stored token. |
+| **Gateway password** | No URL handoff exists for passwords, so the app fills the sign-in form. Best-effort: it reads the login gate's markup, which is not an API, and fails soft. Prefer token mode. |
+| **Extra headers** | Sent to that gateway's origin only, for Cloudflare Access, a shared secret, or an authenticating proxy. |
+
+The settings page is **write-only**: it can set or clear a credential and ask
+whether one exists, but no IPC channel returns a value, so a bug there cannot
+become a disclosure.
+
+## Window chrome
+
+Frameless on macOS and Windows: the app's colour runs to the top edge, and the
+window buttons sit on a 36px strip the app draws for itself, carrying the
+current session's name. They are the OS's real buttons (traffic lights, Windows
+caption buttons), so snap layouts and tooltips keep working and the window can
+never become unclosable.
+
+The page loads into a view that *starts below* the strip, so nothing it draws
+can land under the buttons, and **the app injects no layout or chrome into the
+gateway page**: no marker classes, drag regions, or insets, and so no
+dependency on upstream markup. Linux keeps its normal frame.
+
+Colours are read back off the page rather than assumed, so the caption strip,
+window background and the app's own pages follow whichever Control UI theme is
+active, light or dark. The mode is remembered, so a cold start opens in the
+right palette instead of flashing the wrong one. Both mechanisms are documented
+at length in [src/chrome.js](src/chrome.js).
+
+## When something goes wrong
+
+**A connection failure slides a notice down from the top and leaves you where
+you are.** It names the gateway, gives the reason in words with Chromium's error
+string beside it, and carries one link, *Open Settings*, which opens Settings
+as a modal over the window. Nothing navigates on its own.
+
+Two screens held this job before, a dedicated error page and then Settings
+itself, and both had the same flaw: they turned a failure into a *place*, one
+you then had to get back out of, when it is a condition that is either true or
+not. The notice stays until the gateway answers or you dismiss it.
+
+**Behind it the window shows the loading screen** it was already showing while
+the connect was in flight: the app's mark, the gateway it is reaching for, a
+progress bar with a percentage, and a ring that stops and turns red when the
+attempt does, with a **Try again**. It is a view of its own laid over the page,
+so the gateway's document loads, or fails, underneath it untouched, and a
+successful connect is that view going away. The reason for the failure appears
+only in the notice: saying it in both places would be two wordings of one
+failure, free to drift apart.
+
+**The progress bar reports stages, not guesses.** Chromium will say that a
+navigation committed and that the document parsed, and nothing at all about the
+distance between them, so a bar driven only by those events sits still for four
+seconds and then jumps, which reads as frozen. Each stage instead sets a floor,
+and time eases the number toward the next one without ever reaching it: the
+event moves it on, the clock only stops it looking dead. So the number can be
+behind and it can crawl, but it cannot claim a stage the load has not reached,
+and **100% is reserved for a load that finished**, which is also the moment the
+screen goes away. A failure freezes it where it got to, because "the host never
+answered" and "the page loaded and then died" are different problems and the bar
+is the only thing on screen that tells them apart.
+
+The line beside it is a joke, rotating every few seconds. It is there because
+the wait is the honest problem (a sleeping tailnet gateway can hold this screen
+for the better part of a minute) and a line that changes says the app is still
+running. [test/quips.test.js](test/quips.test.js) asserts that none of them
+reads as a status message: a fake "Verifying certificates…" next to a real
+progress bar is a lie told in the one place someone is looking for a reason
+their app will not open.
+
+Every gateway row still carries its own status: **Connected**, **Connecting…**,
+**Cannot connect** with the reason in words and Chromium's error string beside
+it, or **Certificate not trusted**. The badge used to read "Connected" for
+whichever gateway was merely *selected*, which was wrong for exactly as long as
+a connection was failing.
+
+**Everything else slides down from the top too, and stays until it is fixed.**
+Credentials that cannot be stored on this machine, a global shortcut the OS
+refused, an update waiting to be installed, the answer to a **Check for
+updates**, and the "loaded and waiting behind this page" that follows a
+**Connect** pressed in Settings. None of them is a question, so none of them is
+a dialog: a dialog interrupts, gets dismissed, and the condition is still true
+afterwards with nothing on screen to say so. A notice is keyed by condition
+rather than by occurrence, so raising it twice does not stack it, and whatever
+raised it clears it when it passes.
+
+The stripe down the left says which kind it is: red for a failure, amber for a
+warning, green for good news, grey for the rest. Green is a tone of its own
+rather than "info" because this app's accent colour *is* red: an accent-edged
+notice is indistinguishable from a failure at the glance the stripe exists for.
+
+The banner draws **above the modals**, and that is what lets it be the app's one
+voice. Underneath them, anything raised while Settings was open was drawn behind
+it, which is why those messages used to be two dialogs and a card on the Settings
+page: three shapes for one job, because the one shape did not work from
+everywhere. It costs the top of a modal while a notice is up, which is the right
+way round: the modal is a page you opened, the notice is the app telling you
+something changed underneath it.
+
+The banner lives in a view sized to exactly the height the page reports, because
+an Electron view swallows every mouse event inside its bounds no matter what is
+drawn there: an over-tall banner would be an invisible strip eating clicks on
+the Control UI underneath. [scripts/test-banner.js](scripts/test-banner.js)
+raises a real condition and asserts those two numbers agree.
+
+## Recovering a stale UI
+
+The Control UI is a PWA whose service worker serves `/assets/` cache-first. This
+app closes to the tray rather than quitting, so a document can sit for weeks
+without the navigation that would re-check `sw.js`, leaving the app showing an
+older Control UI than the gateway is serving. Three ways out:
+
+- **Gateway upgraded.** The app compares the build id in `sw.js` against the
+  one recorded for that gateway and, if it moved, drops the caches and reloads
+  once, automatically.
+- **App upgraded.** The first run after a new build clears them before
+  anything loads.
+- **Neither.** **File, Clear cache and reload**, also on the tray menu
+  (Windows auto-hides the menu bar behind Alt, exactly when you want this).
+  Every command is in both places, on every platform, for that reason.
+
+All three drop the service worker, its Cache Storage, and the HTTP and
+compiled-code caches, and **never** cookies, localStorage or IndexedDB. That
+boundary is load-bearing: the paired device identity lives in origin storage, so
+clearing it would make the Gateway report a login from an unrecognised device.
+[src/cache.js](src/cache.js) keeps the two apart and `test/cache.test.js`
+asserts it.
+
+## Which build am I running?
+
+The line at the bottom of Settings names the commit the app was packaged from,
+during first-run setup as well as afterwards:
+
+```
+Claw Desktop 1.0.0 (a1b2c3d4e5, built 2026-09-02 08:41Z) · Electron 44.1.1 · …
+```
+
+| Shown | Means |
+|---|---|
+| `1.0.0 (a1b2c3d4e5, …)` | packaged from that commit on `main` |
+| `1.0.0 (fix-clicks a1b2c3d4e5, …)` | built from a branch, named because that is the surprising case |
+| `1.0.0 (a1b2c3d4e5-dirty, …)` | uncommitted changes; the hash does **not** describe what shipped |
+| `1.0.1-dev.148.a1b2c3d4e5 (…)` | a dev build: the 148th commit, `a1b2c3d4e5`, heading towards 1.0.1 |
+| `1.0.0 (source build)` | `npm start`, which has no single commit to claim |
+
+A dev version reads `NEXT-dev.COUNT.SHA`. The count is what makes it *increase*:
+a commit hash does not order, because semver compares prerelease identifiers
+ASCII-lexically, so `dev.f3a1…` and `dev.a92b…` would sort by whichever hash
+happened to be smaller. The sha names the exact code and costs nothing to
+ordering: it sits after the count, which already differs for any two distinct
+commits. The version targets the *next* patch so a dev build sorts above the
+release it follows rather than below it.
+
+## Known limits
+
+- **No Web Push.** Electron has no push service, so notifications arrive only
+  while the app runs. Install the PWA alongside if you need waking when closed.
+- **Unsigned Windows builds.** No Windows signing certificate yet, hence the
+  SmartScreen warning. macOS is signed and notarized.
+- **Linux auto-update needs the AppImage.** Unpacked or repackaged any other
+  way, the app says so rather than checking. AppImage is the only Linux target
+  built for that reason: the `.deb` and `.rpm` updaters install through `pkexec`,
+  so each background update would raise a password prompt.
+- **Not a node.** No screen, camera, or `system.run`. That is Windows Hub's job.
+
+## Updates
+
+The app checks for a new release a minute after launch and every six hours
+after, and on demand from **Check for updates…** in **Help**, on the tray
+menu, and on macOS in the application menu as well. **About Claw Desktop**, in
+those same places, says which channel this build follows, what it does about a
+new version, and when it last looked. Updating is otherwise invisible, which is
+a fair reason to doubt it is happening at all.
+
+The app opens no message dialogs at all, native or otherwise. Everything it
+once interrupted with ("up to date", "a new version is available", "restart to
+finish updating") is a notice in the banner, because none of them was ever a
+question: a release that exists carries on existing after the box is dismissed.
+The two overlay pages left are Settings and About, both of them places you go
+rather than things that appear in front of you.
+
+Neither is a native panel: never `dialog.showMessageBox`, never Electron's
+`role: 'about'`. A native box is a different dialog on each platform, takes its
+colours from the OS rather than from the Control UI theme the rest of the app
+tracks, and has room for nothing but a line of text and a row of buttons, not
+the commit a build came from, not a word about updating.
+[test/dialogs.test.js](test/dialogs.test.js) fails the build if either comes
+back: it checks for the `dialog` import rather than the call, and for the
+message queue that used to serialise them.
+
+What it does with a release depends on the platform:
+
+| Platform | Behaviour | Why |
+|---|---|---|
+| **Windows** | Downloads in the background, then offers **Restart to update** in the banner and on the tray menu | `NsisUpdater` skips signature verification when the build has no `publisherName`, so an unsigned build updates normally |
+| **macOS** | Same as Windows | `MacUpdater` hands off to native Squirrel.Mac, which requires a valid signature on the running bundle. Releases are signed with a Developer ID, so it can install |
+| **Linux**, run as an AppImage | Same as Windows | `AppImageUpdater` overwrites the `.AppImage` the process was started from: no signature, no package manager, no root |
+| **Linux**, run any other way | Does not check, and says why | Without `APPIMAGE` in the environment there is no file to replace, and `isUpdaterActive()` returns false: every check would resolve to nothing, silently |
+
+**Install updates automatically** in Settings turns the downloading half off
+without turning the app blind. The check still runs on the same schedule, so a
+new version is still announced; it simply offers **Download and install**
+instead of arriving unasked. Nothing is ever applied without the restart being
+offered either way. On a build that could never install one, the checkbox is
+disabled and says which of the reasons in the table above applies to it.
+
+Automatic checks are silent unless there is something to act on; a manual check
+always answers, including "you are up to date". A failed check (offline, proxy,
+rate limit) is logged and never interrupts you.
+
+That silence is the reason for
+[scripts/test-appimage-update.sh](scripts/test-appimage-update.sh): an app that
+quietly keeps itself current and one whose update check has been broken for a
+month look exactly alike from outside. It runs a released AppImage under Xvfb on
+any headless Linux box, lets it find the newer release, accepts the restart
+prompt, and passes only if the file on disk ends up hashing to the published
+artifact. `v1.0.1-dev.44` to `dev.45` was verified that way.
+
+`MAC_SIGNED` in [src/updates.js](src/updates.js) is what tells macOS it may
+install. It is compiled in, so it has to track what the release workflow really
+produces: if signing is ever removed, that constant goes back to `false` in the
+same commit, or updates fail inside Squirrel with no explanation.
+
+### Signing
+
+Nothing in the repo forces an unsigned build: there is no `identity: null`, and
+`notarize` is turned on per run rather than hardcoded. The rule both follow is
+that signing is a credential, not a configuration: sign and notarize when the
+credentials are there, build unsigned when they are not. A fork with no secrets
+still builds.
+
+- **macOS.** Signed and notarized. An
+  [Apple Developer Program](https://developer.apple.com/programs/) membership
+  ($99/year) provides the *Developer ID Application* certificate. CI reads
+  `CSC_LINK` + `CSC_KEY_PASSWORD` for the certificate, and `APPLE_API_KEY`,
+  `APPLE_API_KEY_ID` + `APPLE_API_ISSUER` for notarization. The API key must be
+  an App Store Connect **Team** key: Apple documents that individual keys cannot
+  use `notarytool`. `hardenedRuntime` is already electron-builder's default,
+  and notarization requires it.
+  - electron-builder notarizes the `.app` and then wraps it in a DMG, so the DMG
+    itself is never submitted: Gatekeeper accepts the app and rejects the
+    container a user actually downloads. `dmg.sign` signs it and
+    `scripts/build.js` submits and staples each one afterwards: sign, notarize,
+    staple, in that order. The signature is not optional, because a ticket
+    staples *to* a signature, so stapling an unsigned DMG changes nothing while
+    still reporting success, since `stapler validate` falls back to fetching the
+    ticket from Apple. Because stapling rewrites the file,
+    `dmg.writeUpdateInfo` is `false` so no stale checksum is left behind; macOS
+    updates read the zip, never the DMG.
+- **Windows.** Only removes the SmartScreen warning; it is **not** needed for
+  auto-update. [Azure Artifact Signing](https://azure.microsoft.com/en-us/pricing/details/artifact-signing/)
+  (formerly Trusted Signing) is $9.99/month and open to individual developers,
+  though identity validation is currently US/Canada only. A traditional OV
+  certificate costs more and requires a hardware token.
+
+---
+
+# Contributing
+
+```sh
+npm install
+npm test                 # unit tests, no Electron needed
+npm start                # run from source
+npm run pack             # unpacked build into dist/, no installer
+npm run build:mac        # dmg + zip (arm64, x64)
+npm run build:win        # nsis installer (x64, arm64)
+npm run icons            # regenerate PNGs from src/assets/claw*.svg
+npm run release          # bump, tag, push; CI publishes (see .release-it.cjs)
+```
+
+Icons are committed so a clean clone builds without `sharp`; re-run `npm run
+icons` only when the artwork changes. The artwork is original: neither file is
+derived from OpenClaw's mascot or any other upstream brand asset.
+
+## Testing UI changes
+
+`npm test` runs unit tests only. It does not launch Electron and it renders no
+UI, so it cannot catch a visual regression: CSS that computes cleanly, a hover
+state that paints the wrong background, a tab that reads as a pill instead of an
+underline. Anything touching `src/ui/*.css`, `src/ui/*.html`, or the renderer
+JS in `src/ui/*.js` has to be run and looked at before it ships.
+
+The process for any UI-affecting change:
+
+1. `npm test` for the logic, as always.
+2. `npm start` to launch the app from source against a real gateway.
+3. Open the surface you changed (Settings via the tray or the menu bar, the
+   About box, a connection banner) and check it in **both light and dark**, by
+   switching the Control UI theme so the app's injected tokens flip with it.
+4. Exercise the interaction, not just the resting state. Hover it, focus it with
+   the keyboard, click through the tabs. The bugs that unit tests miss live in
+   `:hover`, `:focus-visible`, and the global `button` rule bleeding into
+   elements that are also `<button>` (tabs are, which is how a tab picked up a
+   rounded button background once).
+
+The app serves `src/ui/` raw, so `npm start` reflects an edit on the next window
+open with no build step. A packaged build (`npm run pack`) is only needed to
+verify something the dev run cannot show, such as code signing or the updater.
+
+**Verifying a hosted widget preview.** Widget previews render in a sandboxed
+iframe served from a separate origin than the Control UI. Over a Tailscale
+tunnel that origin must be routed explicitly, or the preview fails with "Widget
+sandbox host is unavailable". See [docs/sandbox-origin.md](docs/sandbox-origin.md)
+for the setup this machine uses.
+
+**Building for Windows** takes roughly half an hour on a recent laptop, and must
+happen on Windows (cross-building needs Wine for resource editing). `--x64` does
+not shorten it: the per-target `arch` list in `electron-builder.yml` wins over
+the CLI flag. Use `gh repo clone`, not `git clone git@…`: Git for Windows ships
+its own `ssh` that cannot see keys held by the Windows OpenSSH agent. Install a
+built installer silently with `/S`.
+
+## Builds and releases
+
+Every build, local or CI, is named for what it actually is. `scripts/build.js`
+works that out and hands it to electron-builder, so the filename, the version in
+Settings, and what an updater sees are always the same string:
+
+| Tree state | Version |
+|---|---|
+| On a `v1.0.1` tag, clean | `1.0.1` |
+| Any other commit, clean | `1.0.1-dev.a1b2c3d4e5` |
+| Uncommitted changes | `1.0.1-dev.a1b2c3d4e5.dirty` |
+
+The `.dirty` marker exists for the same reason `build-info.json` records it: a
+commit hash on a build made from a modified tree names something that was never
+committed. A tag on a modified tree is demoted to a dev version too, because
+building "1.0.1" from a dirty checkout would produce something that is not 1.0.1.
+
+CI builds on three triggers, and they mean different things:
+
+| Trigger | Produces | Where it goes |
+|---|---|---|
+| **Push to `main`** | Dev build, `1.0.0-dev.<sha>` | Actions artifacts, 7 days |
+| **Tag `v*`** | Release, `1.0.0` | Published to [Releases](https://github.com/azuretek/claw-desktop/releases), permanent |
+| **Manual dispatch** | Dev build of any ref | Actions artifacts, 7 days |
+
+CI passes its decision down as `CLAW_BUILD_VERSION`, which `scripts/build.js`
+honours over anything git says, so the workflow's `version` job stays the
+authority there without CI needing a separate mechanism from the one you use.
+
+Docs-only pushes are skipped (`paths-ignore`), and pushing several commits in a
+row cancels the superseded runs, except tag builds, which are never cancelled.
+
+**Cutting a release** is `npm run release [patch|minor|major]`. It bumps
+`package.json` and the lockfile, commits, tags, and pushes; CI does the rest. It
+refuses, with nothing written, off `main`, on a dirty tree, without an upstream,
+or on failing tests.
+
+**Never bump the version by hand.** `artifactName` interpolates it, so a
+hand-pushed tag can publish a release named `v1.1.0` full of
+`…-1.0.0-x64.exe`. CI's `version` job refuses that before either build starts.
+
+That same job also decides *whether* to build. `git push --follow-tags` sends
+the release commit and its tag together, and GitHub raises a separate event for
+each, so the branch run stands down and lets the tag run publish, rather than
+building identical code twice and uploading a misleadingly named dev copy
+beside the release. A manual dispatch is always honoured.
+
+## Layout
+
+```
+src/main.js          app lifecycle, window, tray, navigation guards
+src/menus.js         the menu bar, identical on every platform (asserted in test)
+src/chrome.js        title strip geometry + theme adopted from the page
+src/autostart.js     launch at login on Linux, which Electron does not implement
+src/cache.js         drops the Control UI's cached copy of itself, never its storage
+src/certs.js         certificate pinning; refuses, then offers the choice in Settings
+src/secrets.js       per-gateway token/password/headers, safeStorage-encrypted
+src/config.js        atomic JSON config store (no secrets)
+src/overlay.js       supervises an overlay so a broken one cannot wedge the window
+src/updates.js       per-platform update policy + the automatic-updates preference
+src/build-info.js    reads the packed-in commit; formats the Settings build line
+src/profile.js       one-time profile move for the OpenClaw to Claw Desktop rename
+src/defaults.js      suggested gateways and defaults  <- edit for a new machine
+src/preload.js       narrow IPC bridge, exposed to local pages only
+src/connection.js    what each gateway row says: phase, error, certificate
+src/notices.js       the banner's store: conditions that stay until they resolve
+src/progress.js      the loading bar's curve: milestones, eased between
+src/quips.js         the rotating line under the loading bar
+src/ui/              the app's own pages: settings, about, banner, loading
+scripts/build-info.js    stamps the commit in at pack time (beforePack hook)
+scripts/version.js       CI build versioning + tag/package.json agreement
+scripts/build-version.js decides the version a CI build carries
+scripts/build.js         runs a build under the version the tree deserves
+scripts/make-icons.mjs   regenerates the icon PNGs from the SVG artwork
+scripts/dump-menu.js     dumps the resolved menu bar, to diff across platforms
+scripts/dump-overlays.js opens each of the app's own pages and checks it rendered
+scripts/test-banner.js   raises a real condition and checks the banner's geometry
+scripts/test-cert-trust.js runs the refuse, Settings, trust, connected loop for real
+scripts/test-connection-failure.js walks connecting, failed, recovered against real sockets
+```
+
+## Status and licence
+
+A personal project, shared because it might be useful, not a product. No
+support commitment, no release schedule, unsigned Windows builds. Issues and
+pull requests are welcome; slow replies are likely.
+
+**Not affiliated with the OpenClaw project.** This is an independent client for
+its Control UI.
+
+MIT, see [LICENSE](LICENSE).

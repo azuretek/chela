@@ -5,5 +5,6 @@ dist/
 
 # Generated at pack time by scripts/build-info.js. A commit cannot contain its
 # own hash, so a checked-in copy would be wrong by construction; its absence is
-# what makes a source run report itself as one.
-src/build-info.json
+# what makes a source run report itself as one. Under desktop/ since the repo
+# became the product monorepo.
+desktop/src/build-info.json
