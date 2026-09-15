@@ -3,8 +3,14 @@ import {
   globalShortcut, nativeImage, ipcMain, screen, session,
 } from 'electron';
 import http from 'node:http';
-import { autoUpdater } from 'electron-updater';
+import { createRequire } from 'node:module';
 import { clipboard } from 'electron';
+
+// electron-updater is CommonJS and exposes no named ESM export, so it is pulled
+// in with require at the point of use (createRequire is how an ESM file gets
+// require back). This also keeps the original behaviour of loading it lazily,
+// only when an update check actually runs.
+const require = createRequire(import.meta.url);
 // No `dialog` here on purpose. Everything this app says to the user is one of
 // its own overlay pages, see the overlay section below. The one exception in
 // the project is src/certs.js, which has to be able to ask about a certificate
@@ -1435,6 +1441,7 @@ function initUpdates() {
   console.log(`[claw] updates: ${plan.action} (${plan.reason})`);
   if (!plan.check) return;
 
+  const { autoUpdater } = require('electron-updater');
   updater = autoUpdater;
   updater.autoDownload = plan.autoDownload;
   // Same channel only: a dev build follows dev releases, a stable build follows
