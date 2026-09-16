@@ -10,8 +10,13 @@
 
 import test from 'node:test';
 import assert from 'node:assert';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
 import updates from '../src/updates.js';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 // appImage is pinned rather than left to default, so a stray APPIMAGE in the
 // environment, or a test run from inside one, cannot change what these assert.
@@ -346,4 +351,48 @@ test('the transfer line says what arrived and how fast, and drops what it cannot
     updates.transferDetail({ transferred: 2.5 * 1024 ** 3, total: 3 * 1024 ** 3 }),
     '2.50 GB of 3.00 GB',
   );
+});
+
+/* ------------------------------------------ what a press on the button means */
+
+/*
+ * The wiring half of "a control that appears to work and reports nothing".
+ *
+ * `core/test/updates.test.js` proves what the shared composition says in each
+ * direction. What it cannot see is whether main.js ever asks it: the answer is
+ * composed in core and raised here, so a handler that still composes its own
+ * sentence, or that answers one direction and returns early on the other, would
+ * pass every test in core and leave the button silent. These read the file the
+ * way test/notices.test.js reads it, because main.js needs Electron and the
+ * alternative is not testing the wiring at all.
+ */
+test('both directions of a manual check are answered through the shared composition', () => {
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+
+  // The event the updater emits when there is nothing newer must reach an
+  // answer. This is the direction the report was about: pressing the button on a
+  // build that is current said nothing at all.
+  const notAvailable = /updater\.on\('update-not-available',[\s\S]*?\n  \}\);/.exec(main);
+  assert.ok(notAvailable, 'the update-not-available handler was not found');
+  assert.match(notAvailable[0], /updates\.checkAnswer\(/, 'the up-to-date case must go through the shared answer');
+  assert.match(notAvailable[0], /outcome: updates\.CURRENT/, 'and it must answer as CURRENT');
+  assert.match(notAvailable[0], /pendingManualCheck/, 'and it must still be gated on a check someone asked for');
+
+  // The available direction, which the banner draws either as a download or as
+  // an offer, and which must name the version. It goes through the same
+  // composition so the two clients cannot word one case differently.
+  const available = /if \(plan\.action === updates\.INSTALL\) \{[\s\S]*?const \{ message, detail \} = updates\.checkAnswer\(\{[\s\S]*?outcome: updates\.AVAILABLE,[\s\S]*?version: info\.version,/.exec(main);
+  assert.ok(available, 'the update-available wording must come from the shared answer');
+});
+
+test('a build with no updater answers the press rather than swallowing it', () => {
+  // A source run, and a Linux build that is not an AppImage, both reach
+  // checkForUpdates with no updater. That used to be a sentence written in
+  // main.js and is now the shared UNAVAILABLE answer, which is why this asserts
+  // the call rather than the words.
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+  const guard = /if \(!updater\) \{[\s\S]*?return;\n  \}/.exec(main);
+  assert.ok(guard, 'the no-updater branch of checkForUpdates was not found');
+  assert.match(guard[0], /outcome: updates\.UNAVAILABLE/, 'and it answers as UNAVAILABLE');
+  assert.doesNotMatch(guard[0], /shouldReportNoUpdate/, 'the silence for a background check belongs in the shared answer');
 });

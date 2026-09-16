@@ -1857,21 +1857,25 @@ function initUpdates() {
     setLastCheck('check failed');
     if (!pendingManualCheck) return;
     pendingManualCheck = false;
-    setNotice(UPDATE_ANSWER, {
-      tone: noticeStore.WARN,
-      message: 'Could not check for updates.',
-      detail: noticeStore.sentence((err && err.message) || err),
-    }, ANSWER_TTL_MS);
+    // The one exception to the line above, and the point of the shared
+    // composition: someone who pressed the button is owed an answer even when
+    // the answer is that the check could not finish.
+    raiseAnswer(updates.checkAnswer({
+      outcome: updates.FAILED,
+      trigger: 'manual',
+      current: app.getVersion(),
+      error: (err && err.message) || err,
+    }));
   });
   updater.on('update-not-available', () => {
     setLastCheck('up to date');
     if (!pendingManualCheck) return;
     pendingManualCheck = false;
-    setNotice(UPDATE_ANSWER, {
-      tone: noticeStore.OK,
-      message: `${chrome.APP_NAME} is up to date.`,
-      detail: `You are on ${app.getVersion()}.`,
-    }, ANSWER_TTL_MS);
+    raiseAnswer(updates.checkAnswer({
+      outcome: updates.CURRENT,
+      trigger: 'manual',
+      current: app.getVersion(),
+    }));
   });
 
   const every = updates.checkIntervalMs(app.getVersion());
@@ -1893,6 +1897,35 @@ const UPDATE_ANSWER = 'update-answer';
 // question nobody is still asking takes itself away. Only ever used for a reply
 // to something the user pressed; a real problem has no timeout.
 const ANSWER_TTL_MS = 9000;
+
+/**
+ * Raise the answer a check owes the person who pressed the button.
+ *
+ * The sentence itself is composed in `core/updates.js` (`checkAnswer`), because
+ * both clients answer the same question and the phone has to say the same thing
+ * about the same outcome. What stays here is everything that is a fact about
+ * THIS surface: the id every answer shares so a second check replaces the first,
+ * the tone the notice model draws it in, and the lifetime.
+ *
+ * `null` is a legitimate answer and not a failure: the shared composition
+ * returns null for a background check that found nothing, which is the silence a
+ * scheduled check must keep. Returning early rather than raising something empty
+ * is what makes "never silently do nothing" true only for a check a person
+ * asked for, which is the only case it is owed in.
+ */
+function raiseAnswer(answer, ttlMs = ANSWER_TTL_MS) {
+  if (!answer) return;
+  setNotice(UPDATE_ANSWER, { tone: answer.tone, message: answer.message, detail: answer.detail }, ttlMs);
+  // The About box is where the button was pressed, so it is owed the refresh as
+  // well, and this is the one place that guarantees it: every ending of a manual
+  // check either calls setLastCheck (which notifies) or lands here, and the
+  // ending that only lands here is the one where the build cannot check at all.
+  // Without it the card sat on "Checking..." for its own 15-second fallback after
+  // an answer had already been drawn on the banner above it, which reads as a
+  // button that did nothing. Measured 2026-09-16 by
+  // scripts/test-notice-layers.js, which asserts the card stops saying it.
+  notifyAboutChanged();
+}
 
 /**
  * The banner half of a refused certificate.
@@ -1949,14 +1982,16 @@ function setLastCheck(result) {
 
 async function checkForUpdates(trigger = 'manual') {
   if (!updater) {
-    if (updates.shouldReportNoUpdate(trigger)) {
-      const plan = updatePolicy();
-      setNotice(UPDATE_ANSWER, {
-        tone: noticeStore.INFO,
-        message: 'Updates are not available in this build.',
-        detail: noticeStore.sentence(plan.reason),
-      }, ANSWER_TTL_MS);
-    }
+    // A build with no updater is the one case where pressing the button used to
+    // be answered by a sentence written here. It comes from the shared
+    // composition now, so the phone says the same thing about the same outcome
+    // and this is one owner rather than two sentences that drift.
+    raiseAnswer(updates.checkAnswer({
+      outcome: updates.UNAVAILABLE,
+      trigger,
+      current: app.getVersion(),
+      reason: updatePolicy().reason,
+    }));
     return;
   }
   pendingManualCheck = updates.shouldReportNoUpdate(trigger);
@@ -1964,7 +1999,8 @@ async function checkForUpdates(trigger = 'manual') {
     await updater.checkForUpdates();
   } catch {
     // Deliberately silent. electron-updater emits 'error' *and* rejects for the
-    // same failure, so logging here too prints every update failure twice, // which is exactly what a first run against a repo with no releases did.
+    // same failure, so logging here too prints every update failure twice, which
+    // is exactly what a first run against a repo with no releases did.
     // This catch exists only to stop the rejection going unhandled.
   }
 }
@@ -1998,8 +2034,16 @@ function onUpdateAvailable(info) {
     return;
   }
 
-  const { message, detail } = updates.availableMessage({
-    action: plan.action, version: info.version, current: app.getVersion(), reason: plan.reason,
+  // The wording comes from the shared composition, so the sentence the desktop
+  // puts in its banner is the one the phone puts in its own. `checkAnswer`
+  // always answers for an available outcome: it gates one direction only, the
+  // background check that found nothing, which is why there is no fallback here.
+  const { message, detail } = updates.checkAnswer({
+    outcome: updates.AVAILABLE,
+    version: info.version,
+    current: app.getVersion(),
+    action: plan.action,
+    reason: plan.reason,
   });
 
   // Two different offers, and making the wrong one is worse than making none:

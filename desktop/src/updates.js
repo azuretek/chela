@@ -17,14 +17,16 @@
 // from the core it sits on top of.
 
 import {
-  capability, policy, availableMessage, shouldReportNoUpdate, channelOf, allowPrerelease,
+  capability, policy, availableMessage, checkAnswer, shouldReportNoUpdate, channelOf, allowPrerelease,
   checkIntervalMs, ago, INSTALL, MANUAL, NOTIFY, NONE, MAC_SIGNED,
+  AVAILABLE, CURRENT, UNAVAILABLE, FAILED,
   STABLE_INTERVAL_MS, PRERELEASE_INTERVAL_MS,
 } from '../../core/updates.js';
 
 export {
-  capability, policy, availableMessage, shouldReportNoUpdate, channelOf, allowPrerelease,
+  capability, policy, availableMessage, checkAnswer, shouldReportNoUpdate, channelOf, allowPrerelease,
   checkIntervalMs, ago, INSTALL, MANUAL, NOTIFY, NONE, MAC_SIGNED,
+  AVAILABLE, CURRENT, UNAVAILABLE, FAILED,
   STABLE_INTERVAL_MS, PRERELEASE_INTERVAL_MS,
 };
 
@@ -116,7 +118,8 @@ export function transferDetail(info) {
 }
 
 export default {
-  capability, policy, availableMessage, shouldReportNoUpdate, channelOf, allowPrerelease,
+  capability, policy, availableMessage, checkAnswer, shouldReportNoUpdate, channelOf, allowPrerelease,
   checkIntervalMs, ago, statusLine, downloadProgress, transferDetail,
   INSTALL, MANUAL, NOTIFY, NONE, MAC_SIGNED, STABLE_INTERVAL_MS, PRERELEASE_INTERVAL_MS,
+  AVAILABLE, CURRENT, UNAVAILABLE, FAILED,
 };
