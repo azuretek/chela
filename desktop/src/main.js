@@ -35,6 +35,7 @@ import * as profile from './profile.js';
 import * as progress from './progress.js';
 import * as promptMetadata from './prompt-metadata.js';
 import * as quips from './quips.js';
+import * as tokens from './tokens.js';
 import updates from './updates.js';
 import secrets from './secrets.js';
 import defaults from './defaults.js';
@@ -85,6 +86,10 @@ let saveTimer = null;
 // Inserted-stylesheet keys, per WebContents id, so a theme change can replace
 // the sheet it wrote rather than stacking a second one on top.
 const themeCssKeys = new Map();
+// The same bookkeeping for our own design tokens, kept in its own map: this
+// sheet is the fallback the live theme overrides, so it is inserted on a page
+// loading rather than on a theme change.
+const tokenCssKeys = new Map();
 
 // The colours the app paints for itself, tracking whichever theme the Control
 // UI is in. Seeded from the last run so a cold start opens in the right ones
@@ -1256,6 +1261,7 @@ function refreshBanner() {
       try { mainWindow.contentView.removeChildView(bannerView); } catch { /* window gone */ }
       try { if (!bannerView.webContents.isDestroyed()) bannerView.webContents.close(); } catch { /* gone */ }
       themeCssKeys.delete(bannerView.webContents.id);
+      tokenCssKeys.delete(bannerView.webContents.id);
       bannerView = null;
       bannerHeight = 0;
     }
@@ -1277,7 +1283,7 @@ function refreshBanner() {
     // Over the cover, under any modal that is already open.
     restackViews();
     wc.loadFile(path.join(UI_DIR, 'banner.html'), { search: overlaySearch() });
-    wc.once('did-finish-load', () => applyThemeCss(wc));
+    wc.once('did-finish-load', () => { void applyTokenCss(wc).then(() => applyThemeCss(wc)); });
     layoutViews();
     return;
   }
@@ -1353,6 +1359,32 @@ async function applyThemeCss(wc) {
       await wc.removeInsertedCSS(previous);
     }
     if (css) themeCssKeys.set(wc.id, await wc.insertCSS(css));
+  } catch { /* the page keeps ui.css's own palette */ }
+}
+
+/**
+ * Give one of our pages the shared design tokens as its fallback palette.
+ *
+ * Inserted *before* applyThemeCss, deliberately, and always on a page load
+ * rather than on a theme change: these are the values the Control UI resolves
+ * to, and the live theme's declarations are the more specific answer for the
+ * names the UI publishes. Both are inserted with `!important`, so the later one
+ * is the one that wins, and the order here is what makes a loaded gateway theme
+ * beat the fallback rather than lose to it.
+ *
+ * Only the banner takes this today. ui.css keeps its own palette for Settings,
+ * About and the loading cover on purpose: those pages already get the live theme
+ * over the top, and repainting them would move surfaces nobody asked about.
+ */
+async function applyTokenCss(wc) {
+  if (!wc || wc.isDestroyed()) return;
+  try {
+    const previous = tokenCssKeys.get(wc.id);
+    if (previous) {
+      tokenCssKeys.delete(wc.id);
+      await wc.removeInsertedCSS(previous);
+    }
+    tokenCssKeys.set(wc.id, await wc.insertCSS(tokens.stylesheet()));
   } catch { /* the page keeps ui.css's own palette */ }
 }
 

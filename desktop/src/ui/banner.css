@@ -1,0 +1,205 @@
+/* The notice banner, in the Control UI's own card.
+ *
+ * Loaded by banner.html after ui.css. ui.css is what the app's other pages use
+ * and carries their palette; this file carries only the banner, and it names no
+ * colour of its own. Every colour and every piece of the card's geometry comes
+ * from a custom property core/tokens.js derives from core/spec/tokens.json,
+ * which holds the values the Control UI resolves to and the file each came from.
+ * So the way to change how a banner looks is to change that spec, not this file,
+ * and the same spec is what the iOS banner is proven against.
+ *
+ * What is left as a literal here is only what the Control UI has no equivalent
+ * for: the stack's own gaps, and the progress bar's height, which is an element
+ * the Control UI does not have at all.
+ *
+ * Two things about the page this styles:
+ *
+ * - It lives in a view sized to exactly its own height (see refreshBanner in
+ *   src/main.js), so the body must add nothing of its own. A stray margin here
+ *   becomes a transparent strip that eats clicks on the UI underneath.
+ * - It runs under `style-src 'self'`, so no style attribute may be written
+ *   through the DOM. Everything an element needs is a class or a property set
+ *   from a stylesheet.
+ */
+
+body.banner-body { background: transparent; overflow: hidden; }
+
+.banner-stack { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
+
+/* The card. Surface, hairline, radius, shadow and blur are the Control UI's
+   floating attention card, taken from sidebar-issues.css and
+   sidebar-attention-floating.css. The surface and the hairline are mixed with
+   transparency at the fractions those two files use, which is what makes the
+   blur behind them do anything at all: an opaque surface over a backdrop filter
+   is a surface, and the glass is the point of a card that floats over someone
+   else's page.
+
+   The tone stripe on the leading edge is ours: the Control UI's card is a list
+   row whose tone shows in its icon, and a floating bar over the Control UI's own
+   page has no icon column to show it in, so the edge carries it instead. That is
+   why the stripe width is the one card measurement the spec marks as ours rather
+   than lifted. */
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--notice-gap);
+  padding: var(--notice-padding);
+  border: 1px solid color-mix(in srgb, var(--notice-border) var(--notice-border-alpha), transparent);
+  border-left: var(--notice-edge-width) solid var(--notice-tone-edge, var(--muted));
+  border-radius: var(--notice-radius);
+  background: color-mix(in srgb, var(--notice-surface) var(--notice-surface-alpha), transparent);
+  box-shadow: var(--notice-shadow);
+  backdrop-filter: blur(var(--notice-blur));
+  -webkit-backdrop-filter: blur(var(--notice-blur));
+  color: var(--text);
+  font-family: var(--font-body);
+  line-height: var(--notice-leading-card);
+}
+
+/* One rule per tone, and each names a tone rather than a colour: which token a
+   tone resolves to is stated once, in spec/tokens.json, and arrives here as
+   these two properties. A tone added to the spec without a rule here falls back
+   to --muted above rather than to nothing, so a missing rule is visible and not
+   a card with no stripe at all. */
+.banner--error { --notice-tone-edge: var(--notice-tone-error-edge); --notice-tone-tint: var(--notice-tone-error-tint); }
+.banner--warn  { --notice-tone-edge: var(--notice-tone-warn-edge);  --notice-tone-tint: var(--notice-tone-warn-tint); }
+.banner--info  { --notice-tone-edge: var(--notice-tone-info-edge);  --notice-tone-tint: var(--notice-tone-info-tint); }
+.banner--ok    { --notice-tone-edge: var(--notice-tone-ok-edge);    --notice-tone-tint: var(--notice-tone-ok-tint); }
+
+/* The slide, as a keyframe animation rather than a class toggled on the next
+   frame. `transform` and `opacity` only, so layout height is final on the
+   first frame and the view is never resized mid-animation.
+
+   The reason it is not a transition: a transition needs a start state and a
+   second frame to animate away from, and the frame never arrives if the view
+   has not painted yet, which is exactly the state a brand new banner view is
+   in. That left the card parked above the viewport, permanently invisible, in a
+   view that was still eating clicks. An animation with `both` fill runs from its
+   own keyframes and, if it never runs at all, leaves the element at its ordinary
+   un-transformed position. Visible is the failure mode.
+
+   It is on this class rather than on `.banner` because a card is rebuilt
+   whenever anything about it changes, and a download's progress changes once a
+   percent: animating every rebuild replayed the slide on each one, which reads
+   as a flicker. Only a card that is new to the stack slides. */
+.banner--enter {
+  animation: banner-in var(--duration-normal) var(--ease-out) both;
+}
+@keyframes banner-in {
+  from { transform: translateY(-140%); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .banner--enter { animation: none; }
+}
+
+/* The headline, on the Control UI's card heading: --text-strong at the weight
+   sidebar-issues.css gives .sidebar-issues-panel__heading. */
+.banner__message {
+  font-size: var(--control-ui-text-sm);
+  font-weight: var(--notice-weight-headline);
+  color: var(--text-strong);
+}
+
+/* The subject line under it: --muted at the card's own text size, the pairing
+   .sidebar-issues-panel__state uses. */
+.banner__detail {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+/* The download bar. `appearance: none` and the two pseudo-elements are the
+   Electron-only way to draw it here: this page is Chromium's, so the WebKit and
+   Firefox spellings would be dead weight. The percentage sits beside the bar
+   rather than inside it, because a number over a filled track is unreadable at
+   the midpoint and this banner is 11px of type.
+
+   Height and radius are ours: the Control UI has no progress bar to take them
+   from, and the tokens it does publish for a bar belong to the loading cover. */
+.banner__progress { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.banner__bar {
+  flex: 1;
+  height: 4px;
+  min-width: 0;
+  appearance: none;
+  border: 0;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  background: var(--border-strong);
+}
+.banner__bar::-webkit-progress-bar { background: var(--border-strong); border-radius: var(--radius-full); }
+.banner__bar::-webkit-progress-value { background: var(--notice-tone-edge); border-radius: var(--radius-full); transition: width var(--duration-normal) linear; }
+.banner__percent { flex: none; color: var(--muted); font-size: var(--control-ui-text-xs); font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) {
+  .banner__bar::-webkit-progress-value { transition: none; }
+}
+
+/* The one offer a notice makes. Styled as a link rather than a button because
+   it navigates rather than acts: pressing it does not resolve the condition, so
+   it must not look like the button that would. Geometry and colours are the
+   Control UI's .sidebar-issues-panel__action. `flex: none` and the centring
+   keep it on the message's line while the detail wraps under both. */
+.banner__action {
+  flex: none;
+  align-self: center;
+  min-height: var(--notice-action-min-height);
+  padding: var(--notice-action-padding);
+  background: var(--notice-action-surface);
+  border: 1px solid var(--notice-action-border);
+  border-radius: var(--notice-action-radius);
+  color: var(--notice-action-colour);
+  font-size: var(--control-ui-text-xs);
+  font-weight: var(--notice-weight-action);
+}
+.banner__action:hover:not(:disabled) {
+  background: var(--notice-tone-tint, var(--notice-action-hover-surface));
+  border-color: var(--border-strong);
+  color: var(--notice-action-hover-colour);
+}
+
+/* The dismiss X. Same shape as the Control UI's .sidebar-issues-panel__dismiss:
+   24px, --radius-sm, --muted, on --bg-hover when hovered. It marks the condition
+   read, so the control is drawn at the card's quiet end rather than as a
+   primary action it is not. */
+.banner__close {
+  flex: none;
+  width: var(--notice-dismiss-size);
+  height: var(--notice-dismiss-size);
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: var(--notice-dismiss-glyph);
+  line-height: 1;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--notice-dismiss-radius);
+  color: var(--notice-dismiss-colour);
+  cursor: pointer;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+.banner__close:hover { background: var(--notice-dismiss-hover-surface); color: var(--notice-dismiss-hover-colour); }
+
+/* Closing the whole bar. Right-aligned under the cards and deliberately quiet:
+   it is the way out, not the point, and the notices above it are. */
+.banner-actions { display: flex; justify-content: flex-end; }
+.banner__readall {
+  min-height: var(--notice-action-min-height);
+  padding: var(--notice-action-padding);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--notice-dismiss-radius);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  cursor: pointer;
+}
+.banner__readall:hover { background: var(--notice-dismiss-hover-surface); border-color: var(--notice-action-border); color: var(--notice-dismiss-hover-colour); }
+
+/* Keyboard focus, on the card's own controls. Keyboard-only, so a mouse press
+   never paints a ring, and drawn inside the card with the Control UI's focus
+   ring rather than the platform's default outline. */
+.banner__close:focus-visible,
+.banner__action:focus-visible,
+.banner__readall:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--notice-surface), 0 0 0 3px color-mix(in srgb, var(--ring) 80%, transparent);
+}
