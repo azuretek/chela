@@ -608,6 +608,19 @@ function renderPrefs() {
 // and a Chromium version, the phone says its iOS version, and neither is a fact
 // this page should have been asked to know. A part a client has no answer for is
 // left out rather than printed as `undefined`.
+// The "looking for the gateway's own settings?" card, on the Gateways tab.
+//
+// Shown only when there is a Control UI behind this to return to: a gateway is
+// configured (so this is not a first run) and the client can step out of the
+// way (`closeSettings`, which every client answers). On a first run there is no
+// page behind these settings, so the card would point at nothing and stays
+// hidden. The action itself is wired once in the listeners below.
+function renderControlUiSettingsLink() {
+  const card = $('control-ui-settings');
+  if (!card) return;
+  card.hidden = firstRun || !hasCommand('closeSettings');
+}
+
 function renderAbout() {
   const head = [state.appName, state.build].filter(Boolean).join(' ');
   const tail = [state.runtime, state.configPath].filter(Boolean);
@@ -715,6 +728,7 @@ function renderHeading() {
 
 function render() {
   renderHeading();
+  renderControlUiSettingsLink();
   renderGateways();
   renderAbout();
   // Certificates renders on a first run too: its panel is reachable then, and a
@@ -731,6 +745,19 @@ function setResult(node, text, kind) {
 }
 
 /* --------------------------------------------------------------- listeners */
+
+// Steps out of the way of the Control UI, which is where the gateway's own
+// settings live. `closeSettings` is what returns there on both clients: the
+// desktop hides the overlay it opened this page in, iOS dismisses the sheet, and
+// the Control UI is what is left on screen. Guarded so a client without the
+// command does not throw; the card that carries this button is hidden in the
+// same case.
+const openControlUiSettings = $('open-control-ui-settings');
+if (openControlUiSettings) {
+  openControlUiSettings.addEventListener('click', () => {
+    if (hasCommand('closeSettings')) call('closeSettings');
+  });
+}
 
 $('test').addEventListener('click', async () => {
   const url = $('new-url').value.trim();
