@@ -12,6 +12,11 @@
 //   rule behind it arrives as a card with no stripe at all, which reads as a
 //   styling choice rather than as a missing rule.
 //
+// The same two claims are made about the LOADING cover at the end of this file,
+// for the same reason and one more: it is the first surface the app ever paints,
+// so a palette of its own there is not a slow repaint somewhere, it is the app
+// changing colour as it starts.
+//
 // Run with: npm test
 
 import test from 'node:test';
@@ -26,6 +31,8 @@ import * as chrome from '../src/chrome.js';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const UI = path.join(HERE, '..', '..', 'core', 'ui');
 const BANNER_CSS = fs.readFileSync(path.join(UI, 'banner.css'), 'utf8');
+const UI_CSS = fs.readFileSync(path.join(UI, 'ui.css'), 'utf8');
+const MAIN_JS = fs.readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
 const NOTICES_SPEC = JSON.parse(fs.readFileSync(
   path.join(HERE, '..', '..', 'core', 'spec', 'notices.json'), 'utf8',
 ));
@@ -162,4 +169,78 @@ test('the card geometry names tokens rather than repeating their values', () => 
   assert.match(cssBlock(sheet, ':root'), /--notice-radius: var\(--radius-lg\)/);
   assert.match(cssBlock(sheet, ':root'), /--notice-surface: var\(--bg-elevated\)/);
   assert.match(cssBlock(sheet, ':root'), /--notice-blur: 10px/);
+});
+
+/* ------------------------------------------------------- the loading cover */
+
+/** The loading cover's slice of ui.css, from its own rule to the next section. */
+function loadingSection() {
+  const start = UI_CSS.indexOf('--------------------------------------------------------------- loading */');
+  assert.notStrictEqual(start, -1, 'ui.css has no loading section');
+  const end = UI_CSS.indexOf('--------------------------------------------------------------- pairing */', start);
+  assert.notStrictEqual(end, -1, 'the loading section has no end marker');
+  return UI_CSS.slice(start, end);
+}
+
+test('the loading cover hardcodes no colour of its own', () => {
+  // This is the colour flip Abi reported: the cover is the FIRST thing painted,
+  // so a literal here is not a slow repaint somewhere, it is the app starting
+  // in one appearance and arriving in another. Every colour it draws with has
+  // to be a token the shared layer owns, which is what lets the host resolve the
+  // appearance for it instead of the stylesheet deciding one.
+  const section = loadingSection();
+  const literals = [...section.matchAll(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(\s*[\d.]/gi)].map((m) => m[0]);
+  assert.deepStrictEqual(literals, [], `ui.css's loading section holds colours of its own: ${literals.join(', ')}`);
+});
+
+test('every token the loading cover reads is one the token layer emits', () => {
+  // The cover is handed BOTH sheets now (the token layer, then the live theme),
+  // so a name it reads that neither defines renders as an unstyled cover rather
+  // than as a loud error: CSS reports nothing for a custom property that does
+  // not exist. The body rule is included because that is what paints the whole
+  // surface behind the cover.
+  const live = new Set(chrome.THEME_TOKENS.map(([name]) => name));
+  const read = new Set([...referenced(loadingSection()), ...referenced(cssBlock(UI_CSS, 'html, body'))]);
+  assert.ok(read.size > 4, `expected the cover to draw from several tokens, found ${read.size}`);
+  for (const name of read) {
+    assert.ok(
+      EMITTED.has(name) || live.has(name),
+      `${name} is read by the loading cover but emitted by neither the token layer nor the live theme`,
+    );
+  }
+});
+
+test('the cover is styled before the window is revealed, and revealed even if styling fails', () => {
+  // The sequencing IS the fix, and it is invisible in every other check: an
+  // async insert that lands after the reveal looks exactly like one that landed
+  // before it in any screenshot taken once the app has settled. So the wiring is
+  // asserted here, by name, the way the overlay paths are in dialogs.test.js.
+  const style = /async function styleLoadingCover\(wc\) \{([\s\S]*?)\n\}/.exec(MAIN_JS);
+  assert.ok(style, 'styleLoadingCover is not in main.js');
+  const body = style[1];
+  assert.ok(
+    body.indexOf('applyTokenCss(wc)') !== -1 && body.indexOf('applyTokenCss(wc)') < body.indexOf('applyThemeCss(wc)'),
+    'the token layer must be inserted before the live theme',
+  );
+  // Awaiting both, and outside the try, so a throw inside cannot skip the
+  // reveal: a cover nobody reveals is an app that never appears.
+  assert.match(body, /\n\s*coverStyled = true;\n\s*revealMainWindow\(\);/, 'the reveal must follow the styling');
+  assert.ok(/try \{[\s\S]*\} catch \{[\s\S]*\}\s*coverStyled = true;/.test(body),
+    'a failed insert must still reach the reveal');
+
+  // And the cover is wired to that path, on the event that precedes the first
+  // paint, rather than to did-finish-load, which is after it.
+  const cover = /wc\.once\('dom-ready', \(\) => \{ void styleLoadingCover\(wc\); \}\)/.test(MAIN_JS);
+  assert.ok(cover, 'the loading view is not styled on dom-ready');
+  assert.ok(!/wc\.once\('did-finish-load', \(\) => applyThemeCss\(wc\)\);\n\s*\/\/ The cover is usually/.test(MAIN_JS),
+    "the cover still themes itself on did-finish-load, which is after its first paint");
+
+  // The reveal waits, and the wait cannot outlive the cover: a guard with no
+  // exit is a window that never opens.
+  const reveal = /function revealMainWindow\(\) \{([\s\S]*?)\n\}/.exec(MAIN_JS);
+  assert.ok(reveal, 'revealMainWindow is not in main.js');
+  assert.match(reveal[1], /if \(loadingView && !coverStyled\) return;/, 'the reveal does not wait for the cover');
+  const hide = /function hideLoadingCover\(\) \{([\s\S]*?)\n\}/.exec(MAIN_JS);
+  assert.ok(hide, 'hideLoadingCover is not in main.js');
+  assert.match(hide[1], /loadingView = null;\s*\n\s*coverStyled = true;/, 'hiding the cover must release the reveal');
 });
