@@ -65,34 +65,26 @@ team once in Xcode's Signing & Capabilities pane before building for a device.
 
 ## The gateway the app loads
 
-The address is not in the source. This repository is public, so a client that
-compiled in its author's own gateway would ship that machine's name to every
-reader, which is the same leak as a real hostname in a fixture. Instead the
-address reaches the app at build time and is read out of the bundle at runtime:
+No address is in this repository, and none is compiled into the app. It is this
+device's own configuration: entered on the phone, stored on the phone, and read
+from there at launch. The reason is the same one that keeps real hostnames out
+of the fixtures. This repository is public, so a gateway baked into it would be
+one machine's own address shipped to everyone who builds the repo, and wrong for
+all of them anyway.
 
-| Where | What it holds |
+Where it lives:
+
+| Where | What it does |
 |---|---|
-| `Config/Local.private.xcconfig` | Your own gateway address. Git ignores it. |
-| `Config/Local.xcconfig` | The placeholder default, and the `#include?` that picks the file above up when it exists. |
-| `CLAW_GATEWAY_URL` | The build setting those two files define. |
-| `ClawGatewayURL` in `Info.plist` | That setting, substituted into the built bundle. |
-| `Gateway.swift` | Reads the plist key, falls back to the placeholder when it is missing or did not substitute. |
+| `Claw/GatewaySetupView.swift` | Asks for the address, once, on first run. |
+| `Claw/GatewayStore.swift` | Validates it and stores it in `UserDefaults`, and is the only reader and writer of the key. |
+| `Claw/Gateway.swift` | Turns what someone typed into the address the web view loads, or refuses it. |
 
-So a fresh clone loads `https://your-host.your-tailnet.ts.net` and reports that
-it cannot connect, which is honest about having no gateway configured. To point
-a local build at a real one, write the address into `Config/Local.private.xcconfig`
-once:
-
-```
-CLAW_GATEWAY_URL = https:/$()/your-host.your-tailnet.ts.net
-```
-
-The `$()` between the two slashes is required rather than decoration: `//`
-starts a comment in an xcconfig file, so a URL written literally is truncated at
-`https:`. Last assignment wins, so this file overrides the placeholder beside
-it. Nothing else is needed, and both an Xcode build and a `xcodebuild` one pick
-it up, because the value arrives through the generated project rather than
-through a command line flag.
+A bare host is accepted and given `https`, because that is what a phone keyboard
+makes easy to type. When a load fails the connection notice offers **Open
+Settings**, which brings the same surface back with the current address in it,
+so a typo is recoverable without reinstalling the app. Phase 6 replaces this
+single value with a list and a picker.
 
 ## The app icon
 
@@ -226,7 +218,6 @@ app record alone.
 | Path | What it is |
 |---|---|
 | `project.yml` | The xcodegen spec, and the project's only source of truth. |
-| `Config/` | The local xcconfig pair behind the gateway address the app loads, one of which is gitignored. |
 | `Claw/` | The app: the SwiftUI shell, the web view host, and the Swift port of the pieces of `core/` the client needs. |
 | `ClawTests/` | Parity tests, run against `core/fixtures/`. |
 

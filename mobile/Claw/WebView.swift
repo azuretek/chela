@@ -13,7 +13,9 @@ import WebKit
 /// attaches to the same two methods, so it joins a surface that already has a job
 /// rather than inventing one.
 struct WebView: UIViewRepresentable {
-    let url: URL
+    /// The gateway to load. The address and the name travel together, because a
+    /// failure has to name the gateway it was about.
+    let gateway: Gateway
 
     /// The page's own background, so the strips the safe area leaves above and
     /// below it are painted with the page's colour rather than the window's.
@@ -41,10 +43,16 @@ struct WebView: UIViewRepresentable {
         var requested: URL?
         private let themeColour: Binding<Color>
         private let notices: NoticeBoard
+        /// The gateway's name, for the notice a failed load raises. Carried
+        /// rather than read from `Gateway`, which no longer has a default to
+        /// read, and rather than re-derived from a URL that a provisional
+        /// failure may not have delivered yet.
+        private let gatewayName: String
 
-        init(themeColour: Binding<Color>, notices: NoticeBoard) {
+        init(themeColour: Binding<Color>, notices: NoticeBoard, gatewayName: String) {
             self.themeColour = themeColour
             self.notices = notices
+            self.gatewayName = gatewayName
         }
 
         func userContentController(
@@ -95,7 +103,7 @@ struct WebView: UIViewRepresentable {
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
             Task { @MainActor in
                 notices.connectionFailed(
-                    label: Gateway.default.name,
+                    label: gatewayName,
                     description: "The page stopped responding and will be reloaded."
                 )
                 webView.reload()
@@ -107,7 +115,7 @@ struct WebView: UIViewRepresentable {
             if urlError?.code == .cancelled { return }
             let description = urlError?.localizedDescription ?? error.localizedDescription
             Task { @MainActor in
-                notices.connectionFailed(label: Gateway.default.name, description: description)
+                notices.connectionFailed(label: gatewayName, description: description)
             }
         }
     }
@@ -148,7 +156,7 @@ struct WebView: UIViewRepresentable {
     """
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(themeColour: $themeColour, notices: notices)
+        Coordinator(themeColour: $themeColour, notices: notices, gatewayName: gateway.name)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -212,8 +220,8 @@ struct WebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        guard context.coordinator.requested != url else { return }
-        context.coordinator.requested = url
-        webView.load(URLRequest(url: url))
+        guard context.coordinator.requested != gateway.url else { return }
+        context.coordinator.requested = gateway.url
+        webView.load(URLRequest(url: gateway.url))
     }
 }

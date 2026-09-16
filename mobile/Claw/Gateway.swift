@@ -15,56 +15,47 @@ struct Gateway: Equatable {
 }
 
 extension Gateway {
-    /// The gateway loaded until Phase 6 offers a choice.
+    /// A gateway from what someone typed, or nil when it is not an address this
+    /// app can load.
     ///
-    /// The Tailscale Serve address rather than a LAN address or the gateway's
-    /// own `:18789` listener. Serve terminates a real certificate for
-    /// `<host>.<tailnet>.ts.net`, so this loads as ordinary HTTPS: no trust
-    /// prompt, and in Phase 4 a real chain to check instead of a self-signed
-    /// one. It is also why `Info.plist` carries no ATS exception (see the note
-    /// there). Same reasoning as `desktop/src/defaults.js`, which lists the
-    /// Serve form first for the same reason.
+    /// ## Why there is no default address here
     ///
-    /// ## Why no address is written here
+    /// There used to be one, and there is deliberately not now. This repository
+    /// is public, so an address compiled into this file is one machine's own
+    /// gateway shipped to everyone who builds the repository, and wrong for all
+    /// of them. The address is this device's own configuration instead: entered
+    /// on the device, stored on the device, and read from there. See
+    /// `GatewayStore`.
     ///
-    /// This repository is public. A client that compiled in its author's own
-    /// gateway address would ship that address to everyone who reads the
-    /// source, which is the same leak as a real hostname in a fixture and has
-    /// the same fix: the address must not be a constant in the repo.
+    /// `Info.plist` carries no gateway key and `project.yml` defines no build
+    /// setting for one either, for the same reason at one remove: a value that
+    /// arrives at build time is still a value baked into an artifact, and the
+    /// client is supposed to be the only place the address exists.
     ///
-    /// So it arrives in the bundle's `ClawGatewayURL`, which `project.yml`
-    /// feeds from the `CLAW_GATEWAY_URL` build setting. That setting's neutral
-    /// default is in `Config/Local.xcconfig`, and a build that should reach a
-    /// real gateway takes its value from `Config/Local.private.xcconfig` beside
-    /// it, which git ignores. It is the same shape `build-device.sh` uses for
-    /// the Apple team id: a value personal to one machine arrives from outside
-    /// the repo, and the repo keeps only what is true for everyone.
+    /// ## The rule, and what it deliberately does not do
     ///
-    /// The name is the address's own host, which is what tells two gateways on
-    /// one tailnet apart, so it is derived rather than written down a second
-    /// time.
-    static let `default` = Gateway(
-        name: configuredURL.host ?? configuredURL.absoluteString,
-        url: configuredURL
-    )
-
-    /// The address a fresh clone suggests, and the one the desktop's own
-    /// suggested list carries (`desktop/src/defaults.js`). Obviously an example
-    /// rather than somebody's machine, which is the whole point of it.
-    private static let placeholderURL = URL(string: "https://your-host.your-tailnet.ts.net")!
-
-    /// The address this build was compiled with, or the placeholder when it
-    /// carries none, which is the state of a fresh clone.
+    /// A scheme of `http` or `https`, and a host. Nothing else is required and
+    /// no hostname is validated, because a typo is answered by the load itself
+    /// with the real reason for it, where a guess here would refuse an address
+    /// the device could actually reach.
     ///
-    /// A value that did not substitute, which is what an unset build setting
-    /// would leave in the plist, has no host and so falls back here as well:
-    /// the placeholder is a better failure than loading a literal `$(...)`.
-    private static var configuredURL: URL {
-        let raw = Bundle.main.object(forInfoDictionaryKey: "ClawGatewayURL") as? String ?? ""
+    /// A bare host is accepted and given `https`, because that is what someone
+    /// types on a phone keyboard and the address these clients are designed
+    /// around is a Tailscale Serve one: it terminates a real certificate for
+    /// `<host>.<tailnet>.ts.net`, so it loads as ordinary HTTPS with no trust
+    /// prompt, which is also why `Info.plist` carries no ATS exception. `http`
+    /// stays reachable for the gateway's own `:18789` listener, whose
+    /// self-signed certificate is Phase 4's problem rather than this function's.
+    static func parse(_ raw: String) -> Gateway? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let url = URL(string: trimmed), url.host != nil else {
-            return placeholderURL
-        }
-        return url
+        guard !trimmed.isEmpty else { return nil }
+        let candidate = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+        guard let url = URL(string: candidate),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "https" || scheme == "http",
+              let host = url.host,
+              !host.isEmpty
+        else { return nil }
+        return Gateway(name: host, url: url)
     }
 }

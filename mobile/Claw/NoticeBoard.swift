@@ -30,6 +30,15 @@ final class NoticeBoard: ObservableObject {
     /// thing so a log from either client reads the same way.
     static let connectionId = "connection"
 
+    /// The one notice command this client answers: bring the gateway setup
+    /// surface up. The same name and label the desktop's `failureNotice()` uses,
+    /// so the two clients offer the same way out of the same condition.
+    static let settingsCommand = "settings"
+
+    /// How a notice's action reaches the surface that can act on it. Set by
+    /// `ContentView`, because the board holds no view of its own.
+    var onCommand: ((String) -> Void)?
+
     var all: [Notice] { store.list() }
 
     // MARK: Raising
@@ -44,7 +53,8 @@ final class NoticeBoard: ObservableObject {
         raise(Self.connectionId, NoticeRaise(
             tone: NoticeTone.error,
             message: "Cannot connect to \(label ?? "the gateway")",
-            detail: noticeSentence(description)
+            detail: noticeSentence(description),
+            action: NoticeAction(label: "Open Settings", command: Self.settingsCommand)
         ))
     }
 
@@ -73,12 +83,18 @@ final class NoticeBoard: ObservableObject {
 
     /// Run a notice's action.
     ///
-    /// A command name rather than a callback, matching the shared model. There is
-    /// no command vocabulary on this client yet, so nothing raises a notice with an
-    /// action: a button that did nothing would be worse than no button, and the
-    /// field is here because the model has it, not because something invents one.
+    /// A command name rather than a callback, matching the shared model: the
+    /// surface that draws a notice is on the other side of a boundary, so
+    /// anything it can invoke has to be a name the host already answers. One
+    /// command exists today, the connection notice's, and `onCommand` is what
+    /// answers it. A name nobody handles is logged rather than ignored, because
+    /// a button that does nothing is the failure this shape exists to avoid.
     func run(_ command: String) {
-        NSLog("[claw] notice action with no handler on this client: %@", command)
+        guard let onCommand else {
+            NSLog("[claw] notice action with no handler on this client: %@", command)
+            return
+        }
+        onCommand(command)
     }
 
     private func refresh() {

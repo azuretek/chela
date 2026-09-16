@@ -23,12 +23,6 @@ xcuserdata/
 # project.yml means there is no committed copy to drift from the account.
 mobile/.team
 
-# The gateway address a local build points at. Personal to whoever's machine it
-# is, so it stays out of the repo exactly as the team id does. Config/
-# Local.xcconfig carries the placeholder default and includes this file when it
-# exists; the app reads the value out of its own Info.plist at runtime.
-mobile/Config/Local.private.xcconfig
-
 # Device build output from mobile/build-device.sh. Regenerated on every run, so
 # a committed copy would be pure drift, and it is large.
 mobile/build-device/
