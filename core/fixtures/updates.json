@@ -81,5 +81,62 @@
       "input": { "platform": "win32", "packaged": false, "autoUpdate": false },
       "output": { "action": "none", "check": false, "autoDownload": false, "canInstall": false }
     }
+  ],
+  "answers": [
+    {
+      "name": "a newer build on a build that installs its own updates",
+      "input": { "outcome": "available", "trigger": "manual", "version": "1.0.2", "current": "1.0.1", "action": "install" },
+      "output": { "tone": "info", "message": "Claw Control UI 1.0.2 is available.", "detail": "You are on 1.0.1. It will download in the background, and you can restart to apply it." }
+    },
+    {
+      "name": "a newer build on a build that can only announce it",
+      "input": { "outcome": "available", "trigger": "manual", "version": "1.0.2", "current": "1.0.1", "action": "notify", "reason": "unsigned: Squirrel.Mac cannot install an update over an unsigned bundle" },
+      "output": { "tone": "info", "message": "Claw Control UI 1.0.2 is available.", "detail": "You are on 1.0.1. This build cannot update itself, because unsigned: Squirrel.Mac cannot install an update over an unsigned bundle, download the new version and replace the app to upgrade." }
+    },
+    {
+      "name": "a newer build on a build whose automatic updates are off",
+      "input": { "outcome": "available", "trigger": "manual", "version": "1.0.2", "current": "1.0.1", "action": "manual", "reason": "automatic updates are turned off in Settings" },
+      "output": { "tone": "info", "message": "Claw Control UI 1.0.2 is available.", "detail": "You are on 1.0.1. Automatic updates are off, so nothing has been downloaded yet, install it now, or turn them back on in Settings." }
+    },
+    {
+      "name": "a newer build on the phone, which points at where the build is",
+      "input": { "outcome": "available", "trigger": "manual", "version": "1.0.1-dev.150.abc1234567", "current": "1.0.1-dev.148.abc1234567", "action": "notify", "reason": "iOS does not let an app install its own update, so it can only say a release exists and offer an install link", "pointer": "Open TestFlight to update." },
+      "output": { "tone": "info", "message": "Claw Control UI 1.0.1-dev.150.abc1234567 is available.", "detail": "You are on 1.0.1-dev.148.abc1234567. Open TestFlight to update." }
+    },
+    {
+      "name": "nothing newer, and someone pressed the button",
+      "input": { "outcome": "current", "trigger": "manual", "current": "1.0.1" },
+      "output": { "tone": "ok", "message": "Claw Control UI is up to date.", "detail": "You are on 1.0.1." }
+    },
+    {
+      "name": "nothing newer from a scheduled check: silence",
+      "input": { "outcome": "current", "trigger": "scheduled", "current": "1.0.1" },
+      "output": null
+    },
+    {
+      "name": "nothing newer from the startup check: silence",
+      "input": { "outcome": "current", "trigger": "startup", "current": "1.0.1" },
+      "output": null
+    },
+    {
+      "name": "a build with no way to ask at all, after a press",
+      "input": { "outcome": "unavailable", "trigger": "manual", "current": "1.0.1", "reason": "running from source" },
+      "output": { "tone": "info", "message": "Updates are not available in this build.", "detail": "Running from source." }
+    },
+    {
+      "name": "a build with no way to ask, from a background check: silence",
+      "input": { "outcome": "unavailable", "trigger": "startup", "current": "1.0.1", "reason": "not running as an AppImage, so there is no file an update could replace" },
+      "output": null
+    },
+    {
+      "name": "a check that ran and could not finish",
+      "input": { "outcome": "error", "trigger": "manual", "current": "1.0.1", "error": "net::ERR_INTERNET_DISCONNECTED" },
+      "output": { "tone": "warn", "message": "Could not check for updates.", "detail": "Net::ERR_INTERNET_DISCONNECTED." }
+    },
+    {
+      "name": "a check that failed from a background check: silence",
+      "input": { "outcome": "error", "trigger": "startup", "current": "1.0.1", "error": "The Internet connection appears to be offline." },
+      "output": null
+    }
   ]
 }

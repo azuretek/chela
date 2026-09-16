@@ -8,5 +8,11 @@
   "intervals": {
     "stableMs": 21600000,
     "prereleaseMs": 300000
+  },
+  "outcomes": {
+    "available": "available",
+    "current": "current",
+    "unavailable": "unavailable",
+    "error": "error"
   }
 }

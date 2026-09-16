@@ -13,7 +13,14 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { capability, policy, INSTALL, NOTIFY, NONE, MANUAL } from '../updates.js';
+import {
+  capability, policy, checkAnswer, INSTALL, NOTIFY, NONE, MANUAL,
+  AVAILABLE, CURRENT, UNAVAILABLE, FAILED,
+} from '../updates.js';
+// The tones the answers are drawn in, imported from the notice model rather than
+// written as literals: what a tone IS belongs to that module, and a test naming
+// 'ok' by hand would pass while the two drifted.
+import { INFO, WARN, OK } from '../notices.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(HERE, '..', 'fixtures');
@@ -108,5 +115,83 @@ test('the action names come from the spec, not from string literals', () => {
   assert.deepStrictEqual(
     [INSTALL, MANUAL, NOTIFY, NONE],
     [spec.actions.install, spec.actions.manual, spec.actions.notify, spec.actions.none],
+  );
+});
+
+/*
+ * What a check says when someone presses the button.
+ *
+ * The bug these exist for: a control that appears to work and reports nothing.
+ * The check ran, compared, and found a release, and no surface said so. So the
+ * two directions are asserted here rather than one, because a proof that only
+ * covers "an update is found" is exactly the shape that let the silent half
+ * through, and the silent half is the harder one: it is the outcome where the
+ * code has nothing to draw and is most likely to draw it.
+ */
+test('a check that finds a newer version names it', () => {
+  const answer = checkAnswer({
+    outcome: AVAILABLE, trigger: 'manual', version: '1.0.2', current: '1.0.1', action: INSTALL,
+  });
+  assert.ok(answer, 'a manual check that finds a release must say something');
+  assert.match(answer.message, /1\.0\.2/, 'the headline must name the version found');
+  assert.equal(answer.tone, INFO);
+});
+
+test('a check that finds nothing still says so, to the person who asked', () => {
+  const answer = checkAnswer({ outcome: CURRENT, trigger: 'manual', current: '1.0.1' });
+  assert.ok(answer, 'a manual check owes an answer in both directions');
+  assert.equal(answer.tone, OK);
+  assert.match(answer.message, /up to date/i);
+  assert.match(answer.detail, /1\.0\.1/, 'and it names the build you are on');
+});
+
+test('a background check that finds nothing keeps its silence', () => {
+  for (const trigger of ['startup', 'scheduled']) {
+    assert.equal(checkAnswer({ outcome: CURRENT, trigger, current: '1.0.1' }), null, `${trigger} must be silent`);
+    assert.equal(checkAnswer({ outcome: UNAVAILABLE, trigger, current: '1.0.1', reason: 'running from source' }), null,
+      `${trigger} must not announce that it cannot check`);
+    // And a background check that FAILED says nothing either. A dev build checks
+    // every five minutes, so a warning per flaky network is the noise this rule is
+    // for; the press is the case that is owed the bad news.
+    assert.equal(checkAnswer({ outcome: FAILED, trigger, current: '1.0.1', error: 'offline' }), null,
+      `${trigger} must not announce a failed check`);
+  }
+});
+
+test('a check that cannot run at all answers the press, and only the press', () => {
+  const pressed = checkAnswer({
+    outcome: UNAVAILABLE, trigger: 'manual', current: '1.0.1', reason: 'running from source',
+  });
+  assert.ok(pressed, 'pressing the button in a build that cannot check must not do nothing');
+  assert.match(pressed.detail, /Running from source/, 'the reason stands alone as a sentence');
+});
+
+test('a failed check says so rather than looking like a check that found nothing', () => {
+  const answer = checkAnswer({ outcome: FAILED, trigger: 'manual', current: '1.0.1', error: 'net down' });
+  assert.equal(answer.tone, WARN, 'a check that could not finish is not good news');
+  assert.equal(answer.detail, 'Net down.');
+});
+
+test('the phone points at where the build is, and core names no channel of its own', () => {
+  // iOS cannot install its own update, so its last sentence is the client's. The
+  // shared default must not name a distribution channel, which is the same rule
+  // capability() follows for the ios reason.
+  const shared = checkAnswer({
+    outcome: AVAILABLE, trigger: 'manual', version: '1.0.2', current: '1.0.1', action: NOTIFY, reason: 'it cannot install its own update',
+  });
+  const phone = checkAnswer({
+    outcome: AVAILABLE, trigger: 'manual', version: '1.0.2', current: '1.0.1', action: NOTIFY,
+    reason: 'it cannot install its own update', pointer: 'Open TestFlight to update.',
+  });
+  assert.doesNotMatch(shared.detail.toLowerCase(), /testflight|app store/, 'core names no distribution channel');
+  assert.match(phone.detail, /Open TestFlight to update\.$/);
+  assert.match(phone.detail, /1\.0\.1/, 'and it still says which build you are on');
+});
+
+test('the outcome names come from the spec, like the action names', () => {
+  const spec = load('../spec/updates.json');
+  assert.deepStrictEqual(
+    [AVAILABLE, CURRENT, UNAVAILABLE, FAILED],
+    [spec.outcomes.available, spec.outcomes.current, spec.outcomes.unavailable, spec.outcomes.error],
   );
 });

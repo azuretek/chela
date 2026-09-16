@@ -55,6 +55,13 @@
 
 import spec from './spec/updates.json' with { type: 'json' };
 import { product } from './naming.js';
+// The tones a check's answer is drawn in. Imported rather than spelled here,
+// because the notice model owns what a tone IS and a second copy of the four
+// names is the drift this module exists to avoid. It is a value import and not a
+// dependency on the store: `checkAnswer` below composes what a notice says and
+// never raises one, so the notice path itself stays with the client that owns
+// the live store.
+import { INFO, WARN, OK, sentence } from './notices.js';
 
 // Flip to true when macOS builds are signed with a Developer ID and notarized.
 // It is a constant rather than a runtime probe on purpose: asking the OS whether
@@ -82,6 +89,29 @@ export const INSTALL = spec.actions.install; // download it and offer to restart
 export const MANUAL = spec.actions.manual; // could install, but only when the user asks for it
 export const NOTIFY = spec.actions.notify; // tell the user, link to the release, install by hand
 export const NONE = spec.actions.none; // do not even check
+
+/**
+ * How a check ended, which is the other half of an answer.
+ *
+ * An action says what this build may DO about a newer version; an outcome says
+ * what a check FOUND. The two are different axes and the checks below read both:
+ * an update can be available on a build that can install it (INSTALL, download
+ * it) or on one that cannot (NOTIFY, go and get it), and the same sentence has to
+ * be true in both cases.
+ *
+ *   available    there is a newer version on this build's channel
+ *   current      there is not: this build is the newest one the channel names
+ *   unavailable  this build has no way to ask at all, so the answer is why
+ *   error        the check ran and could not finish
+ *
+ * They mirror `outcomes` in spec/updates.json, which is what the Swift port is
+ * proven against, so renaming one is a fixture change rather than a silent
+ * divergence between the two clients.
+ */
+export const AVAILABLE = spec.outcomes.available;
+export const CURRENT = spec.outcomes.current;
+export const UNAVAILABLE = spec.outcomes.unavailable;
+export const FAILED = spec.outcomes.error;
 
 /**
  * What the *platform* allows, ignoring what the user has asked for.
@@ -235,6 +265,102 @@ export function availableMessage({ action, version, current, reason = null }) {
     message: headline,
     detail: `You are on ${current}. This build cannot update itself${because}, `
       + 'download the new version and replace the app to upgrade.',
+  };
+}
+
+/**
+ * What a check owes the person who pressed the button, in both directions.
+ *
+ * This is the answer to the class of bug this app keeps producing: a control that
+ * appears to work and reports nothing. A check that finds a release, and a check
+ * that finds none, are both answers, and the person who pressed "Check for
+ * updates" is owed one either way. Composing it here rather than in each client
+ * is what stops the two drifting into saying different things about the same
+ * outcome, and it is why the phone and the desktop answer identically.
+ *
+ * The shape returned is a notice, not a notice store: `{ tone, message, detail }`
+ * and nothing else. Which id it is raised under, whether it is dismissible and
+ * how long it lives are the client's, because those are facts about a surface
+ * rather than about the answer, and because a notice CAN offer an action (the
+ * desktop's "Download and install", the phone's "Open TestFlight") that this
+ * layer must not name.
+ *
+ * `pointer` is the one thing a caller may add, and it exists because the honest
+ * last sentence differs by platform: the phone cannot install anything, so it
+ * says where the build is, while a desktop that cannot install for itself says
+ * to go and replace the app. Naming a distribution channel in this file is
+ * exactly what the iOS branch of capability() refuses to do, so the sentence
+ * comes from the client that has one to name and the default stays channel-free.
+ *
+ * A NON-answer is possible and is part of the contract: a background check
+ * returns null for every outcome except a release that exists. "Nothing newer",
+ * "this build cannot ask" and "the check could not finish" are things a scheduled
+ * check keeps to its log, because a dev build checks every five minutes and an
+ * announcement per flaky network is the noise this shape exists to avoid. What is
+ * never silent is an answer to something a person pressed.
+ *
+ * @param {object} opts
+ * @param {string} opts.outcome     AVAILABLE, CURRENT, UNAVAILABLE or FAILED
+ * @param {string} [opts.trigger]   'manual', 'startup' or 'scheduled'
+ * @param {string} [opts.version]   the version a check found, for AVAILABLE
+ * @param {string} opts.current     the running build's own version
+ * @param {string} [opts.action]    from policy(), so the available sentence is true here
+ * @param {string} [opts.reason]    from policy(): why this build cannot check, or cannot install
+ * @param {string} [opts.error]     what a failed check said
+ * @param {string} [opts.pointer]   the client's own sentence for where a new build is
+ * @returns {{tone: string, message: string, detail: string}|null}
+ */
+export function checkAnswer({
+  outcome,
+  trigger = 'manual',
+  version = null,
+  current,
+  action = null,
+  reason = null,
+  error = null,
+  pointer = null,
+}) {
+  // An answer is owed only to someone who asked. Every outcome but one is gated
+  // on that, and the exception is the point of the rule: a release that exists is
+  // news whatever started the check, while "nothing newer", "this build cannot
+  // ask" and "the check could not finish" are all things a background check must
+  // keep to its log. A scheduled check that announced a flaky network every five
+  // minutes would be the noise this whole shape exists to avoid, and a manual
+  // press is owed an answer even when the answer is that it failed.
+  if (outcome !== AVAILABLE && !shouldReportNoUpdate(trigger)) return null;
+
+  if (outcome === AVAILABLE) {
+    const { message, detail } = availableMessage({ action, version, current, reason });
+    return {
+      tone: INFO,
+      message,
+      // The version is in the headline either way, which is the half that must
+      // never be lost: "an update exists" without naming it is the report that
+      // sent us here.
+      detail: pointer ? `You are on ${current}. ${pointer}` : detail,
+    };
+  }
+
+  if (outcome === CURRENT) {
+    return {
+      tone: OK,
+      message: `${product} is up to date.`,
+      detail: `You are on ${current}.`,
+    };
+  }
+
+  if (outcome === UNAVAILABLE) {
+    return {
+      tone: INFO,
+      message: 'Updates are not available in this build.',
+      detail: sentence(reason),
+    };
+  }
+
+  return {
+    tone: WARN,
+    message: 'Could not check for updates.',
+    detail: sentence(error),
   };
 }
 
