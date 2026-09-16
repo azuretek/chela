@@ -461,6 +461,34 @@ jobs:
               exit 1 ;;
           esac
 
+      # Why an export failed is written to a distribution log and not to the
+      # failure itself. A bundle id that does not exist, a certificate Apple will
+      # not issue and a key that lacks a permission all produce the same two
+      # sentences, "Cloud signing permission error" and "No profiles for ...
+      # were found", neither of which names a cause, and each of the three has a
+      # different fix. Apple's own answer, with its status and its wording, is in
+      # the log, and the runner is torn down with it: without this step the one
+      # useful line is discarded and the failure reads as a mystery. Measured on
+      # 2026-09-15, where it was the difference between "a permission error" and
+      # "this account has not been granted cloud-managed distribution
+      # certificates, and an Account Holder or Admin has to grant it".
+      - name: Show Xcode's export log
+        if: failure()
+        run: |
+          set -eo pipefail
+          found=0
+          for log in "${TMPDIR:-/tmp}"/Claw_*.xcdistributionlogs; do
+            [ -d "$log" ] || continue
+            found=1
+            echo "== $log"
+            find "$log" -type f -print | while IFS= read -r file; do
+              echo "-- $file"
+              cat "$file" || true
+              echo
+            done
+          done
+          [ "$found" = 1 ] || echo "no distribution log was written, so the failure was not in the export"
+
       # The only proof that the build reached TestFlight. The upload command's
       # exit code says Apple's delivery service took the bytes; this asks the
       # API for the build record, prints each processing state it moves through,

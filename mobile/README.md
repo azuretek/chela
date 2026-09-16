@@ -91,16 +91,43 @@ integers, and a build number that increases. The commit count is already the
 leading part of the dev version, so a build number and a version name are one
 number rather than two that can drift.
 
-Signing needs no certificate export. The `ASC_*` secrets are an App Store
-Connect key with the App Manager role, and `-allowProvisioningUpdates` lets
-Apple issue the certificates and profiles itself. The archive carries a
-development identity, which is what an automatically signed archive is: the
-App Store export is the step that re-signs it with an Apple Distribution
-certificate, and that export either produces a distribution build or fails.
-The key is written to a file with mode 600 for the length of the job and
-removed by its last step. The app record in App Store Connect is the one thing
-CI cannot create; the workflow checks for it before building and stops with
-Apple's own message if it is missing.
+Signing needs no certificate export, for the archive. The `ASC_*` secrets are an
+App Store Connect key with the App Manager role, and `-allowProvisioningUpdates`
+lets Apple issue the certificate and the profile itself: a run that starts with
+an empty keychain archives successfully, signed by an `Apple Development`
+certificate the service mints on the spot, which is what "Created via API" in
+its name records. The archive therefore carries a development identity, which is
+what an automatically signed archive is; the App Store export is the step that
+re-signs it with an Apple Distribution certificate.
+
+That export is where cloud signing stops, and it stops for a reason in the
+account rather than in this workflow. Xcode asks Apple for a cloud-managed
+distribution certificate and Apple refuses with a 403:
+
+    You haven't been given access to cloud-managed distribution certificates.
+    Please contact your team's Account Holder or an Admin to give you access.
+
+Measured on 2026-09-15 (run 35045131182), and the refusal is specifically about
+the managed certificate Xcode wants rather than about the key's reach: the same
+key registers bundle ids and issues an Apple Distribution certificate through
+the App Store Connect API when it is asked directly. So the export cannot
+succeed until somebody with the Account Holder or Admin role grants access to
+cloud-managed distribution certificates. Until then the run gets past the
+archive and dies in the export with "Cloud signing permission error" and "No
+profiles for 'com.azuretek.claw-mobile' were found", neither of which names a
+cause, which is why the step after the export reads Apple's own answer back out
+of Xcode's distribution log.
+
+One consequence of signing this way is worth knowing: the development
+certificate is minted per run, because every runner starts with an empty
+keychain and no private key that matches one already in the account, so each run
+leaves a certificate behind that can never sign anything again. They are issued
+to a key that died with its runner, and they accumulate in the account.
+
+The app record in App Store Connect is the other thing CI cannot create. The
+workflow checks for it before building and stops with Apple's own message if it
+is missing, and the bundle id itself is registered, so that check fails on the
+app record alone.
 
 ## Layout
 
