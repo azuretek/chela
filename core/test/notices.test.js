@@ -52,11 +52,30 @@ test('a change re-raises a read notice as unread', () => {
 
 test('markAllRead skips a non-dismissible notice', () => {
   const store = create();
-  store.set('update', { tone: OK, message: 'ready', dismissible: false });
+  store.set('update', { tone: OK, message: 'Downloading', progress: 0.4, dismissible: false });
   store.set('conn', { tone: ERROR, message: 'down' });
   store.markAllRead();
-  assert.equal(store.get('update').read, false, 'the update notice stays unread');
+  assert.equal(store.get('update').read, false, 'the download in flight stays unread');
   assert.equal(store.get('conn').read, true);
+});
+
+test('progress is part of the notice, and a move in it is a change', () => {
+  // The bar and the sentence above it describe one condition, so they travel
+  // together. Two channels to the banner could disagree about which phase a
+  // download is in, and it would draw a bar over a notice saying it had
+  // finished.
+  const store = create();
+  store.set('update-available', { tone: OK, message: 'Downloading', progress: 0.25 });
+  assert.equal(store.get('update-available').progress, 0.25);
+  assert.equal(
+    store.set('update-available', { tone: OK, message: 'Downloading', progress: 0.25 }), false,
+    'the same percent twice is not news',
+  );
+  assert.equal(store.set('update-available', { tone: OK, message: 'Downloading', progress: 0.5 }), true);
+  // And it defaults to null, so a notice that is not about something arriving
+  // draws no bar rather than one sitting at zero.
+  store.set('conn', { tone: ERROR, message: 'down' });
+  assert.equal(store.get('conn').progress, null);
 });
 
 test('sentence capitalises the front and closes the back, once', () => {

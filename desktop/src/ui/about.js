@@ -32,7 +32,7 @@ function render(state) {
   // The status line says what is happening. This says what to do about it,
   // which is the part someone opening About while suspicious is looking for.
   const hint = state.updateReady
-    ? `Version ${state.updateReady} is downloaded, restart from the tray or the menu bar to apply it.`
+    ? `Version ${state.updateReady} is downloaded, install it from the tray or the menu bar.`
     : (state.canInstall && !state.autoUpdate
       ? 'Automatic updates are off. Turn on “Install updates automatically” in Settings to have new versions applied without asking.'
       : '');

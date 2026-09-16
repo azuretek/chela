@@ -63,10 +63,21 @@ function card(notice) {
     onclick: () => { void api.noticeAction(notice.action.command); },
   }) : null;
 
+  // How far a download has got. A native `<progress>` rather than a div with an
+  // inline width, because this page runs under `style-src 'self'`: a style
+  // attribute written through the DOM is refused, and the bar would sit at zero
+  // forever while looking exactly like a download that had stalled.
+  const percent = typeof notice.progress === 'number' ? Math.round(notice.progress * 100) : null;
+  const progress = percent === null ? null : el('div', { className: 'banner__progress' }, [
+    el('progress', { className: 'banner__bar', max: 100, value: percent }),
+    el('span', { className: 'banner__percent', textContent: `${percent}%` }),
+  ]);
+
   return el('div', { className: `banner banner--${notice.tone}`, id: `n-${notice.id}` }, [
     el('div', { className: 'stack grow' }, [
       el('span', { className: 'banner__message', textContent: notice.message }),
       notice.detail ? el('span', { className: 'banner__detail', textContent: notice.detail }) : null,
+      progress,
     ]),
     action,
     dismiss,
@@ -109,8 +120,17 @@ async function render() {
   for (const notice of notices) {
     const existing = document.getElementById(`n-${notice.id}`);
     const next = card(notice);
-    if (existing) existing.replaceWith(next);
-    else stack.append(next);
+    if (existing) {
+      existing.replaceWith(next);
+    } else {
+      // The slide belongs to a card arriving, not to a card changing. A card is
+      // rebuilt whenever its text, its offer or its progress moves, and
+      // animating every one of those replayed the slide on each download
+      // percent, which reads as the banner flickering rather than as something
+      // arriving.
+      next.classList.add('banner--enter');
+      stack.append(next);
+    }
   }
 
   // Rebuilt last every time, so it stays at the bottom as cards come and go,

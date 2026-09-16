@@ -129,8 +129,8 @@ test('every command a notice can name is one main knows how to run', () => {
   // sandboxed page and cannot be handed a callback. An unknown name resolves to
   // nothing on purpose, a renderer must not be able to invent commands, so a
   // typo here is not an error anywhere. It is a button that does nothing, which
-  // on the "Restart now" of a downloaded update is the whole feature failing in
-  // silence.
+  // on the "Install update" of a downloaded update is the whole feature failing
+  // in silence.
   const main = code(path.join(SRC, 'main.js'));
 
   const lookup = /const commands = \{([\s\S]*?)\n {4}\};/.exec(main);
