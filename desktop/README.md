@@ -466,8 +466,12 @@ brand asset.
 `npm test` runs unit tests only. It does not launch Electron and it renders no
 UI, so it cannot catch a visual regression: CSS that computes cleanly, a hover
 state that paints the wrong background, a tab that reads as a pill instead of an
-underline. Anything touching `src/ui/*.css`, `src/ui/*.html`, or the renderer
-JS in `src/ui/*.js` has to be run and looked at before it ships.
+underline. Anything touching `core/ui/*.css`, `core/ui/*.html`, or the renderer
+JS in `core/ui/*.js` has to be run and looked at before it ships. Those pages are
+in the shared tree rather than under `src/` for two reasons: the settings surface
+is rendered by the iOS app as well, from this same file, and a page in
+`desktop/src` cannot reach a stylesheet in the repo root by a relative href that
+is correct in both the checkout and the packaged app.
 
 The process for any UI-affecting change:
 
@@ -482,7 +486,7 @@ The process for any UI-affecting change:
    elements that are also `<button>` (tabs are, which is how a tab picked up a
    rounded button background once).
 
-The app serves `src/ui/` raw, so `npm start` reflects an edit on the next window
+The app serves `core/ui/` raw, so `npm start` reflects an edit on the next window
 open with no build step. A packaged build (`npm run pack`) is only needed to
 verify something the dev run cannot show, such as code signing or the updater.
 
@@ -604,7 +608,8 @@ src/connection.js    what each gateway row says: phase, error, certificate
 src/notices.js       the banner's store: conditions that stay until they resolve
 src/progress.js      the loading bar's curve: milestones, eased between
 src/quips.js         the rotating line under the loading bar
-src/ui/              the app's own pages: settings, about, banner, loading
+../core/ui/         the app's own pages: settings (shared with iOS), about, banner, loading
+                     and the stylesheet and artwork they draw from
 scripts/build-info.js    stamps the commit in at pack time (beforePack hook)
 scripts/version.js       CI build versioning + tag/package.json agreement
 scripts/build-version.js decides the version a CI build carries

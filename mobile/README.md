@@ -89,7 +89,7 @@ single value with a list and a picker.
 ## The app icon
 
 The icon is **the desktop app's mark**, and there is exactly one of it. The
-artwork is `desktop/src/assets/claw.svg`, the same file the desktop icon is
+artwork is `core/ui/assets/claw.svg`, the same file the desktop icon is
 rasterised from, and `desktop/scripts/make-icons.mjs` emits every platform's
 icon from it with one command, from the repo root:
 

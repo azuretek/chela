@@ -1,6 +1,18 @@
-/* Styles for the app's own pages: Settings, About, the message modal and the
- * loading cover. The notice banner has its own stylesheet now, banner.css,
- * which draws from the shared design tokens instead of from this palette.
+/* Styles for the app's own pages.
+ *
+ * It lives in core/ui/ with those pages rather than beside the desktop's source,
+ * and both halves of that are load-bearing. The settings surface is shared:
+ * core/ui/settings.html is loaded by the desktop AND by the iOS app, so the two
+ * clients must draw from one stylesheet rather than from two that agree until
+ * somebody edits one. And the desktop's own pages are here with it because a page
+ * in desktop/src/ cannot reach a stylesheet in core/ by a relative href that is
+ * correct in both the checkout and the build: packing flattens `desktop/` into
+ * the archive's root, so the same page sits one directory deeper here than it
+ * does there, and no one relative path is right in both. desktop/test/dialogs.test.js
+ * asserts every href in every page resolves.
+ *
+ * The notice banner has its own stylesheet, banner.css, which draws from the
+ * shared design tokens (core/spec/tokens.json) instead of from this palette.
  *
  * Every token below is named exactly as the Control UI names it, because the
  * main process injects the UI's *live* values over the top (see themeCss in

@@ -197,13 +197,16 @@ test('the desktop gathers this machine with Node and renders it as the block', (
 
 test('the settings toggle is wired from the page through main to the gateway page', () => {
   const root = path.join(HERE, '..');
-  const html = fs.readFileSync(path.join(root, 'src', 'ui', 'settings.html'), 'utf8');
-  const settings = fs.readFileSync(path.join(root, 'src', 'ui', 'settings.js'), 'utf8');
+  // The settings page is the shared one now: the desktop and the iOS client load
+  // this same file, so a break in this chain is a break on both.
+  const shared = path.join(root, '..', 'core', 'ui');
+  const html = fs.readFileSync(path.join(shared, 'settings.html'), 'utf8');
+  const settings = fs.readFileSync(path.join(shared, 'settings.js'), 'utf8');
   const main = fs.readFileSync(path.join(root, 'src', 'main.js'), 'utf8');
 
   assert.match(html, /<input type="checkbox" id="promptMetadata">/);
-  assert.match(settings, /\$\('promptMetadata'\)\.checked = s\.promptMetadata/);
-  assert.match(settings, /promptMetadata: \$\('promptMetadata'\)\.checked/);
+  assert.match(settings, /\$\('promptMetadata'\)\.checked = Boolean\(s\.promptMetadata\)/);
+  assert.match(settings, /patch\.promptMetadata = \$\('promptMetadata'\)\.checked/);
   assert.match(main, /promptMetadata\.clientScript\(promptMetadataConfig\(\)\)/);
   assert.match(main, /dom-ready[\s\S]*?installPromptMetadata\(wc\)/);
   assert.match(main, /app:save-settings[\s\S]*?installPromptMetadata\(page\(\)\)/);

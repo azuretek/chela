@@ -1,0 +1,154 @@
+{
+  "description": "The settings surface every Claw client renders: which tabs exist, which settings live on them, and which client each one applies to. This file is the ONE owner of that split. The desktop reads it in its main process and hands it to the page inside the state it already sends; the iOS client bundles it and hands over the same bytes. So ONE page renders both clients, and neither client has a settings screen of its own. That page is core/ui/settings.html with core/ui/settings.js and core/ui/ui.css, and it is not copied anywhere: it marks each tab and each setting with the id used here, and the tests on both sides assert that the markup and this file agree, in both directions.",
+  "why": [
+    "Both clients are web views, so the settings surface can be one HTML page with one stylesheet rather than a native screen reimplemented per client. What genuinely differs is which parts apply, and that difference is data here rather than a branch buried in the page.",
+    "Only IDS are here, deliberately. A label, a hint or a subtitle is copy that the page already carries in its own markup and script, and the page cannot read this file at runtime (it is a file:// document with `default-src 'none'`, so there is no fetch). A label in both places would be two owners of one string with nothing able to import the other, which is exactly the drift this file exists to prevent. So this file answers what exists where, and the page keeps the words.",
+    "A setting absent on a client is absent because the platform has no equivalent, never because it is unfinished. The reason is recorded beside it so those two cases can be told apart without reading a client's source, and work that is merely queued lives under `queued` instead. That distinction is the whole point of the file: the two lists must not come to mean the same thing.",
+    "Nothing here is a default value. This is the shape of the surface; the values are each client's own state, which the page reads through its host.",
+    "The commands are listed for the same reason. A page can only reach what its host implements, and a host that implements more than its client's surface is work nobody asked for, so the vocabulary is declared once and both sides assert against it."
+  ],
+
+  "clients": {
+    "desktop": {
+      "host": "window.clawSettings, installed by desktop/src/preload.cjs over IPC"
+    },
+    "ios": {
+      "host": "window.clawSettings, installed by mobile/Claw/SettingsHost.swift over a WKScriptMessageHandler"
+    }
+  },
+
+  "tabs": [
+    {
+      "id": "gateways",
+      "clients": ["desktop", "ios"],
+      "note": "The gateway configuration itself, and the one tab that is on both clients in full: the list, add, edit, remove, connect, test connection, and the token and password."
+    },
+    {
+      "id": "behaviour",
+      "clients": ["desktop", "ios"],
+      "note": "The app's own configuration rather than the gateway's. Both clients show the tab; only one setting on it means the same thing on both, so the rest is listed under `settings` below and is absent on iOS."
+    },
+    {
+      "id": "certificates",
+      "clients": ["desktop"],
+      "absent": {
+        "ios": "Pinning is decided where the handshake is refused, which on the desktop is Electron's certificate-error event and on iOS is the web view's navigation delegate. That delegate does not evaluate trust yet, so the tab would list an empty pin store and offer a decision nothing reads: present and doing nothing, which is worse than absent. The pin store's rules are already shared and already ported (trustCert in core/config-model.js and mobile/Claw/ConfigModel.swift), so turning this on is the delegate's work plus `ios` in this list."
+      }
+    },
+    {
+      "id": "problems",
+      "clients": ["desktop"],
+      "absent": {
+        "ios": "This tab is the on-disk record: a raise and its clear paired into one row, a file per month, three months kept, with the folder offered for the rest. iOS has the live conditions (NoticeBoard, the same keyed store the desktop raises into) but nothing writes them down, so the tab would either show live conditions under a heading that promises three months of history or show nothing at all. The live half is already shared, and `liveNotices` is declared below, because it is the tab that is absent here rather than the data."
+      }
+    }
+  ],
+
+  "settings": [
+    {
+      "id": "gatewayHeaders",
+      "tab": "gateways",
+      "clients": ["desktop"],
+      "absent": {
+        "ios": "Headers have to be added to every request the gateway's page makes, not only the first. The desktop does that in the session, before each request leaves. A WKWebView exposes no such hook: the top-level load can carry headers and every subresource the page then fetches cannot, so a proxy header would work for the first request and silently fail for the rest. A setting that half works is the case this list exists to keep off the screen."
+      }
+    },
+    {
+      "id": "closeToTray",
+      "tab": "behaviour",
+      "clients": ["desktop"],
+      "absent": {
+        "ios": "There is no window to keep running behind and no tray to hide into. iOS suspends an app when it leaves the screen, and that is the operating system's decision rather than a preference."
+      }
+    },
+    {
+      "id": "launchAtLogin",
+      "tab": "behaviour",
+      "clients": ["desktop"],
+      "absent": {
+        "ios": "iOS does not start an app when the device starts. An app is opened by the person using it, or woken by the system for the system's own reasons, and neither is something a setting can ask for."
+      }
+    },
+    {
+      "id": "startHidden",
+      "tab": "behaviour",
+      "clients": ["desktop"],
+      "absent": {
+        "ios": "There is no tray to start into, so the state this setting describes cannot exist on iOS."
+      }
+    },
+    {
+      "id": "autoUpdate",
+      "tab": "behaviour",
+      "clients": ["desktop"],
+      "absent": {
+        "ios": "iOS installs its own apps. UpdatePolicy already answers `notify` with `canInstall: false` on this platform, so there is nothing for this switch to switch on, and the one thing the client may do about a release, say that it exists, is not a preference."
+      }
+    },
+    {
+      "id": "globalShortcut",
+      "tab": "behaviour",
+      "clients": ["desktop"],
+      "absent": {
+        "ios": "iOS gives an app no global keyboard shortcut. Hardware keys belong to the system, and the on-screen keyboard exists only while something is being typed into."
+      }
+    },
+    {
+      "id": "promptMetadata",
+      "tab": "behaviour",
+      "clients": ["desktop", "ios"],
+      "note": "The one Behaviour setting that means the same thing on both clients, and therefore the one they have in common there. The facts gathered differ (a phone has no home folder worth naming and no global shortcut), and that difference belongs to core/spec/prompt-metadata.json rather than to this tab."
+    }
+  ],
+
+  "firstRunTabs": ["gateways", "certificates"],
+
+  "commands": [
+    { "id": "state", "clients": ["desktop", "ios"], "note": "Everything the page renders from, including `client` and the copy of this file that client is reading." },
+    { "id": "testGateway", "clients": ["desktop", "ios"] },
+    { "id": "addGateway", "clients": ["desktop", "ios"] },
+    { "id": "updateGateway", "clients": ["desktop", "ios"] },
+    { "id": "removeGateway", "clients": ["desktop", "ios"] },
+    { "id": "setCredentials", "clients": ["desktop", "ios"], "note": "Write-only on both clients: the page can set or clear a credential and learn whether one exists, and can never read one back." },
+    { "id": "connect", "clients": ["desktop", "ios"] },
+    { "id": "saveSettings", "clients": ["desktop", "ios"] },
+    { "id": "closeSettings", "clients": ["desktop", "ios"], "note": "Where the sheet goes. The desktop closes the overlay it opened the page in; iOS dismisses the sheet." },
+    { "id": "addHeader", "clients": ["desktop"] },
+    { "id": "removeHeader", "clients": ["desktop"] },
+    { "id": "trustCert", "clients": ["desktop"] },
+    { "id": "dismissCertOffer", "clients": ["desktop"] },
+    { "id": "forgetCert", "clients": ["desktop"] },
+    { "id": "liveNotices", "clients": ["desktop"] },
+    { "id": "noticeHistory", "clients": ["desktop"] },
+    { "id": "openNoticeLog", "clients": ["desktop"] }
+  ],
+
+  "events": [
+    { "id": "state", "clients": ["desktop", "ios"], "note": "The app's state changed: a connect finished, a credential was stored, a certificate was refused. A host that never raises this leaves the page showing whatever it read at load." },
+    { "id": "notices", "clients": ["desktop", "ios"], "note": "A notice went up or came down. The Problems tab re-reads its log on this, so a host that never raises it leaves that tab stale rather than wrong." }
+  ],
+
+  "queued": [
+    {
+      "id": "appearance",
+      "clients": ["desktop", "ios"],
+      "what": "The appearance setting (light, dark, system). It is not built on either client yet.",
+      "hook": "state.appearance.mode, and that is deliberately the ONLY place it is to be read from. It already has a native owner on the way in on each client, the desktop's cfg.themeMode and the iOS theme relay in mobile/Claw/WebView.swift, and the queued work turns that relay two-way so the value can be chosen as well as observed. A host getter and a row in this file are all it should take; nothing about the split above should have to move.",
+      "why": "Recorded here so that this file stays the complete answer to what exists where. It also guards the flip the `absent` reasons exist to close: a setting the phone does not have looks exactly like one waiting to be built."
+    },
+    {
+      "id": "updateBanner",
+      "clients": ["ios"],
+      "what": "A notice when a newer build exists. The policy is already shared (core/updates.js, mirrored in mobile/Claw/UpdatePolicy.swift) and already answers notify for iOS, and the banner that would draw it is built and has been looked at under the -claw-seed-notices launch argument.",
+      "hook": "Nothing invokes the check yet. The host that lands it is mobile/Claw/SettingsHost.swift, which already holds the NoticeBoard the page and the banner share, and, if the check should have a button, one command in the list above.",
+      "why": "Named here because it is the one queued item that adds no setting, so nothing else in this file would record it."
+    },
+    {
+      "id": "iosCertificatePinning",
+      "clients": ["ios"],
+      "what": "Deciding a refused certificate on the phone, which is what turns the Certificates tab on for iOS.",
+      "hook": "The rules are already shared and already ported, so the work is the navigation delegate that refuses, offers and pins. When it lands, `ios` joins the certificates tab's clients and the three certificate commands join its host.",
+      "why": "Listed so that the absence above is not read as a decision that iOS should never have it."
+    }
+  ]
+}

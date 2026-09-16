@@ -68,6 +68,66 @@ if (isLocalPage) {
     reconnect: () => ipcRenderer.invoke('app:reconnect'),
     progress: () => ipcRenderer.invoke('app:progress'),
     onProgress: (fn) => ipcRenderer.on('app:progress', (_event, value) => fn(value)),
+
+  });
+
+  /* The settings page's own door, and the desktop's half of a contract the
+       iOS client implements too.
+
+       core/ui/settings.js is loaded by both clients, so it cannot call
+       `clawDesktop.invoke('app:state')`, which only exists here. It calls
+       `invoke(command, args)` and `on(event, handler)` instead, and this is the
+       desktop's implementation of that: one table from the shared vocabulary to
+       the channels above, all of which already existed. Names, not callbacks,
+       because the same page runs against a WKScriptMessageHandler on the phone
+       and a name is the only thing both can carry.
+
+       Unknown command is an error rather than nothing. The notice-action lookup
+       in src/main.js resolves an unknown name to nothing on purpose, because a
+       renderer must not be able to invent commands; this is the other case, a
+       page asking for a command its own client was supposed to implement, and a
+       silent `undefined` there is a button that does nothing.
+
+       Its own global rather than one more property of the bridge above, which is
+       where it was first written and where it did nothing: the shared page reads
+       `window.clawSettings` and nothing else, so a nested object is simply
+       absent, and a page whose host is absent throws while loading and renders
+       nothing at all. That is the whole page, tabs included, with no error on
+       screen to say why. Measured 2026-09-15. */
+  contextBridge.exposeInMainWorld('clawSettings', {
+      invoke: (command, args = []) => {
+        const table = {
+          state: () => ipcRenderer.invoke('app:state'),
+          testGateway: ([url]) => ipcRenderer.invoke('app:test-gateway', url),
+          addGateway: ([entry]) => ipcRenderer.invoke('app:add-gateway', entry),
+          updateGateway: ([id, patch]) => ipcRenderer.invoke('app:update-gateway', id, patch),
+          removeGateway: ([id]) => ipcRenderer.invoke('app:remove-gateway', id),
+          setCredentials: ([id, patch]) => ipcRenderer.invoke('app:set-credentials', id, patch),
+          addHeader: ([id, name, value]) => ipcRenderer.invoke('app:add-header', id, name, value),
+          removeHeader: ([id, name]) => ipcRenderer.invoke('app:remove-header', id, name),
+          trustCert: ([host]) => ipcRenderer.invoke('app:trust-cert', host),
+          dismissCertOffer: ([host]) => ipcRenderer.invoke('app:dismiss-cert-offer', host),
+          forgetCert: ([host]) => ipcRenderer.invoke('app:forget-cert', host),
+          connect: ([id]) => ipcRenderer.invoke('app:connect', id),
+          saveSettings: ([patch]) => ipcRenderer.invoke('app:save-settings', patch),
+          closeSettings: () => ipcRenderer.invoke('app:close-settings'),
+          liveNotices: () => ipcRenderer.invoke('app:live-notices'),
+          noticeHistory: () => ipcRenderer.invoke('app:notice-history'),
+          openNoticeLog: () => ipcRenderer.invoke('app:open-notice-log'),
+        };
+        const run = table[String(command)];
+        if (!run) return Promise.reject(new Error(`clawSettings: no such command on this client: ${command}`));
+        return run(args);
+      },
+      on: (event, fn) => {
+        const table = {
+          state: () => ipcRenderer.on('app:state-changed', () => fn()),
+          notices: () => ipcRenderer.on('app:notices-changed', () => fn()),
+        };
+        const run = table[String(event)];
+        if (!run) throw new Error(`clawSettings: no such event on this client: ${event}`);
+        return run();
+      },
   });
 }
 

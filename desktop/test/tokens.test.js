@@ -24,7 +24,7 @@ import { MODES, TONES, stylesheet, values, resolve, toneColours } from '../src/t
 import * as chrome from '../src/chrome.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const UI = path.join(HERE, '..', 'src', 'ui');
+const UI = path.join(HERE, '..', '..', 'core', 'ui');
 const BANNER_CSS = fs.readFileSync(path.join(UI, 'banner.css'), 'utf8');
 const NOTICES_SPEC = JSON.parse(fs.readFileSync(
   path.join(HERE, '..', '..', 'core', 'spec', 'notices.json'), 'utf8',

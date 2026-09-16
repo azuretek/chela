@@ -8,6 +8,16 @@
   <link rel="stylesheet" href="ui.css">
 </head>
 <body>
+  <!-- The settings surface, and the ONE copy of it. Both clients render this
+       page: the desktop loads it from core/ui/ in an overlay view, and the iOS
+       app ships it in its bundle and loads it in a sheet. Nothing here is
+       duplicated per client, and nothing here branches on which client it is.
+
+       What differs between them is which tabs and which settings apply, and that
+       is data: core/spec/settings.json lists the ids per client, the host hands
+       it over in the state, and settings.js hides whatever this client does not
+       have. So a row carries `data-setting="<id>"` when its id is in that file,
+       and the tests assert the two agree in both directions. -->
   <!-- The page fills the window in both of its homes: as a transparent overlay
        view on top of the Control UI, and as the main window's own content on a
        first run, when there is no gateway to overlay. The scrim renders as a
@@ -101,21 +111,21 @@
   <section id="prefs" hidden>
   <div class="panel" id="panel-behaviour" role="tabpanel" aria-labelledby="tab-behaviour" tabindex="0" hidden>
     <div class="card">
-      <label class="check">
+      <label class="check" data-setting="closeToTray">
         <input type="checkbox" id="closeToTray">
         <span class="stack">
           <span>Keep running when the window is closed</span>
           <span>Closing hides the window instead of quitting. Quit from the tray or menu bar.</span>
         </span>
       </label>
-      <label class="check">
+      <label class="check" data-setting="launchAtLogin">
         <input type="checkbox" id="launchAtLogin">
         <span class="stack">
           <span>Open at login</span>
           <span>Start Claw Control UI automatically when you sign in.</span>
         </span>
       </label>
-      <label class="check">
+      <label class="check" data-setting="startHidden">
         <input type="checkbox" id="startHidden">
         <span class="stack">
           <span>Start hidden in the tray</span>
@@ -125,31 +135,45 @@
       <!-- The hint is rewritten by settings.js on a build that cannot install
            an update at all, where the checkbox is disabled and the reason
            matters more than the description. -->
-      <label class="check" id="autoUpdate-row">
+      <label class="check" id="autoUpdate-row" data-setting="autoUpdate">
         <input type="checkbox" id="autoUpdate">
         <span class="stack">
           <span>Install updates automatically</span>
           <span id="autoUpdate-hint">Download new versions in the background and offer to restart. Off, the app still tells you when one exists and can install it on request.</span>
         </span>
       </label>
-      <label class="check">
+      <label class="check" data-setting="promptMetadata">
         <input type="checkbox" id="promptMetadata">
         <span class="stack">
           <span>Include this computer's context in prompts</span>
-          <span>Send the hostname, operating system, user, home folder, locale, time zone, and Claw Control UI version with ordinary chat prompts. Off by default.</span>
+          <!-- The one hint on this page that both clients read, so it names no
+               field that only one of them sends. The exact facts are the
+               client's, and core/spec/prompt-metadata.json owns them: a phone
+               sends fewer of these than a desktop does, and a list here would
+               be wrong on one of the two. -->
+          <span>Send facts about this device, such as its name and operating system, with ordinary chat prompts, so Claw Control UI knows which machine is talking. Off by default.</span>
         </span>
       </label>
-      <div class="field">
+      <div class="field" data-setting="globalShortcut">
         <span>Global shortcut</span>
         <input type="text" id="globalShortcut" placeholder="CommandOrControl+Shift+O" spellcheck="false">
-        <div class="muted-sm" style="margin-top:6px">
+        <!-- `.hint`, not a style attribute: this page's own CSP sets
+             `style-src 'self'`, which the browser applies to style ATTRIBUTES
+             too, so the margin this used to ask for in one was dropped without a
+             word. `.hint` is the same 6px from the stylesheet. -->
+        <div class="muted-sm hint">
           Shows or hides the window from anywhere. Use Electron accelerator syntax, or clear it to disable.
         </div>
-        <div class="result" id="shortcut-result"></div>
       </div>
+      <!-- The answer to Save, and it belongs to the button rather than to any
+           one setting. It used to sit under the shortcut field, which is on one
+           client only: the phone has no shortcut, so "Saved." would have been
+           written into a hidden element and the button would have looked like it
+           did nothing at all. -->
       <div class="actions">
         <button id="save" class="primary">Save preferences</button>
       </div>
+      <div class="result" id="save-result"></div>
     </div>
   </div>
 

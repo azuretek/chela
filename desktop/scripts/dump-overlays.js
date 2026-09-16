@@ -34,8 +34,20 @@ import { app, Menu, webContents } from 'electron';
 
 // A throwaway profile, so a run cannot disturb the gateways, pinned
 // certificates or preferences of the app someone actually uses on this machine.
+//
+// Both lines are needed, and the second is the one that was missing. `setPath`
+// is what this harness reads back when it asserts against `config.json`, but
+// main.js decides whether a run is isolated from the `--user-data-dir` SWITCH
+// rather than from the path, and on a run without the switch it migrates the
+// profile and calls `setPath` again over this one. So a harness that set only
+// the path ran on the real profile: measured 2026-09-15, it connected to the
+// gateway in the author's own config and would have raised a certificate offer,
+// written notice-log lines and asserted against the wrong gateway list. With the
+// switch set, main.js sees an isolated run, leaves the directory alone, and the
+// throwaway profile above is the one every read and write goes to.
 const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-overlays-'));
 app.setPath('userData', PROFILE);
+app.commandLine.appendSwitch('user-data-dir', PROFILE);
 
 // A real server that accepts the connection and then sits on it before
 // answering. It is what makes the loading cover's progress bar observable at
@@ -51,14 +63,41 @@ const slowGateway = http.createServer((_req, res) => {
   }, HOLD_MS);
 });
 
+// A port nothing is listening on, so connecting to it is refused.
+//
+// Both ports below are allocated rather than written down, and the reason is
+// measured rather than theoretical. 18789 and 18790 are the gateway's own two
+// listeners, so on the machine this app is actually developed on the harness was
+// wrong twice over: the slow gateway could not bind 18790, because the gateway's
+// sandbox listener holds it, and the gateway seeded as "cannot answer" answered,
+// because 18789 served the real Control UI. That run connected to a live
+// gateway, which the harness's own log recorded while its assertions waited for
+// a failure that was never going to happen. Ports that are taken on one machine
+// and free on the next are also the reason this harness could pass in CI and
+// fail on a desk.
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const probe = http.createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
+const REFUSED_PORT = await freePort();
+await new Promise((resolve) => slowGateway.listen(0, '127.0.0.1', resolve));
+const SLOW_PORT = slowGateway.address().port;
+
 // Seeded with a gateway that cannot answer, which is the state being aimed for
 // rather than a shortcut. An empty profile is a *first run*, and on a first run
 // Settings is the window's own content rather than a modal over it, so the
 // overlay path, the one being checked, is the one that never runs.
 fs.writeFileSync(path.join(PROFILE, 'config.json'), `${JSON.stringify({
   gateways: [
-    { id: 'harness', label: 'Harness', url: 'http://127.0.0.1:18789/' },
-    { id: 'slow', label: 'Slow gateway', url: 'http://127.0.0.1:18790/' },
+    { id: 'harness', label: 'Harness', url: `http://127.0.0.1:${REFUSED_PORT}/` },
+    { id: 'slow', label: 'Slow gateway', url: `http://127.0.0.1:${SLOW_PORT}/` },
   ],
   activeGatewayId: 'harness',
 }, null, 2)}\n`);
@@ -110,7 +149,19 @@ async function capture(file, name) {
   try {
     // Transparent outside the card, because the overlay is a sheet over the
     // window rather than a page of its own. Alpha is kept.
-    const shot = await wc.capturePage();
+    //
+    // Bounded by a clock, because `capturePage()` does not reject when it cannot
+    // take a shot: on a window with no display surface it never settles at all,
+    // and the bare `await` used to stop the whole harness dead after the first
+    // step, silently, printing no OK and no FAIL. Measured 2026-09-15 on a run
+    // started from a background shell, where four renderers were up and the log
+    // had stopped after the connect line. The rule this file states is that the
+    // text is the assertion and the image is the bonus, so a screenshot must
+    // never be able to stop the assertions running.
+    const shot = await Promise.race([
+      wc.capturePage(),
+      delay(4000).then(() => { throw new Error('no display surface, timed out'); }),
+    ]);
     image = path.join(OUT, `${name}.png`);
     fs.writeFileSync(image, shot.toPNG());
   } catch (err) {
@@ -121,7 +172,8 @@ async function capture(file, name) {
 
 app.whenReady().then(async () => {
   fs.mkdirSync(OUT, { recursive: true });
-  slowGateway.listen(18790, '127.0.0.1');
+  // Already listening, on the port allotted and seeded above; binding here would
+  // be the collision this file now avoids.
   // Long enough for the window, its child views and the first (failing) gateway
   // load to settle, so a capture is never racing a page that is still painting.
   await delay(6000);
@@ -156,19 +208,32 @@ app.whenReady().then(async () => {
       file: 'settings.html',
       // Uppercase because ui.css text-transforms the section headings, and
       // innerText reports what is rendered rather than what is in the markup.
-      expect: [/GATEWAYS/i, /Install updates automatically/],
+      // Only what the landing tab shows: the tab walk below does the rest.
+      expect: [/GATEWAYS/i, /Add a gateway/],
     },
   ];
 
   let failed = false;
   for (const step of steps) {
+    // Printed before the click rather than after the capture, so a run that
+    // stops here names the step it stopped on. Without it the whole harness used
+    // to die mute: `item.click()` sits outside the try below, so a click that
+    // threw rejected the whenReady callback and the run ended with no OK, no
+    // FAIL and a process that stayed up. Measured 2026-09-15.
+    console.log(`-- ${step.name}: opening ${step.file}`);
     const item = menuItem(step.click);
     if (!item) {
       console.error(`FAIL ${step.name}: no menu item "${step.click}"`);
       failed = true;
       continue;
     }
-    item.click();
+    try {
+      item.click();
+    } catch (err) {
+      console.error(`FAIL ${step.name}: clicking "${step.click}" threw ${err.message}`);
+      failed = true;
+      continue;
+    }
     await delay(1500);
     try {
       const { image, text } = await capture(step.file, step.name);
@@ -183,6 +248,52 @@ app.whenReady().then(async () => {
     } catch (err) {
       console.error(`FAIL ${step.name}: ${err.message}`);
       failed = true;
+    }
+  }
+
+  // Every tab of the settings page, not only the one it opens on.
+  //
+  // This is what the settings step's own expectation used to be, and it could
+  // never pass: it looked for "Install updates automatically" while the page was
+  // showing the Gateways tab, and `innerText` does not include a hidden element,
+  // so the Behaviour panel was never in the text. A check that cannot pass is a
+  // check nobody reads, which is worse than not having it. Walking the tabs also
+  // asserts each PANEL renders, and a panel that renders nothing is what a
+  // mistyped element id, a blocked script or a restructure actually produces.
+  {
+    const wc = overlayContents('settings.html');
+    if (!wc) {
+      console.error('FAIL settings-tabs: the settings overlay is not up');
+      failed = true;
+    } else {
+      const tabs = [
+        { id: 'gateways', expect: [/Add a gateway/, /Harness/], shot: 'settings-gateways' },
+        { id: 'behaviour', expect: [/Install updates automatically/, /Global shortcut/], shot: 'settings-behaviour' },
+        { id: 'certificates', expect: [/certificate|No certificates/i], shot: 'settings-certificates' },
+        { id: 'problems', expect: [/Error|Warning|nothing has gone wrong/i], shot: 'settings-problems' },
+      ];
+      for (const tab of tabs) {
+        try {
+          // The page's own tab button, pressed the way a person presses it, so
+          // the roving tabindex and the click handler are both exercised.
+          await wc.executeJavaScript(`document.getElementById('tab-${tab.id}').click()`);
+          await delay(500);
+          const shown = await wc.executeJavaScript('document.body.innerText');
+          const text = shown.replace(/\s*\n+\s*/g, ' | ').trim();
+          const missing = tab.expect.filter((re) => !re.test(text));
+          const img = await capture('settings.html', tab.shot).then((r) => r.image).catch((err) => `no screenshot (${err.message})`);
+          if (missing.length) {
+            console.error(`FAIL settings-tabs: the ${tab.id} tab rendered without ${missing.join(', ')}`);
+            failed = true;
+          } else {
+            console.log(`OK   settings-tabs -> ${tab.id} (${img})`);
+          }
+          console.log(`     ${text.slice(0, 400)}`);
+        } catch (err) {
+          console.error(`FAIL settings-tabs: the ${tab.id} tab threw ${err.message}`);
+          failed = true;
+        }
+      }
     }
   }
 
@@ -321,4 +432,10 @@ app.whenReady().then(async () => {
   slowGateway.close();
   fs.rmSync(PROFILE, { recursive: true, force: true });
   app.exit(failed ? 1 : 0);
+}).catch((err) => {
+  // A rejection anywhere in this body used to end the run in silence: the
+  // callback's promise is not awaited by anything, so an unhandled rejection left
+  // the app up, the log stopped, and nothing said which step it was on.
+  console.error(`FAIL harness: ${err && err.stack ? err.stack : err}`);
+  app.exit(1);
 });

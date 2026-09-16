@@ -29,16 +29,29 @@ files:
     filter:
       - "**/*.js"
       - "**/*.json"
+      # The shared web surface, which is not only JavaScript: core/ui holds the
+      # pages our own chrome is drawn from, one of which (settings.html) the iOS
+      # app renders as well, plus the stylesheet they all load and the artwork two
+      # of them draw. Without these the packaged app opens a page whose stylesheet
+      # and logo are missing: it renders unstyled and reports no error anywhere.
+      # desktop/scripts/check-package.js requires them to be present.
+      - "**/*.html"
+      - "**/*.css"
+      - "**/*.svg"
       - "!test/**"
       - "!node_modules/**"
 
-# The same core, at the path an unpacked app resolves `../../core` to.
+# The same core, at the path an unpacked app resolves `../../core` to. The same
+# filters, for the same reason: one tree, and it has to arrive complete.
 extraResources:
   - from: ../core
     to: core
     filter:
       - "**/*.js"
       - "**/*.json"
+      - "**/*.html"
+      - "**/*.css"
+      - "**/*.svg"
       - "!test/**"
       - "!node_modules/**"
 
