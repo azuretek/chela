@@ -55,6 +55,17 @@ targets:
         CODE_SIGN_STYLE: Automatic
         CURRENT_PROJECT_VERSION: 1
         MARKETING_VERSION: "1.0"
+        # The app's full identity, which is a different thing from a version a
+        # bundle may carry: `X.Y.Z-dev.<count>.<sha>` is what the client knows
+        # itself as and what its update check compares against a feed, and it
+        # cannot be CFBundleShortVersionString because App Store Connect
+        # accepts only three dot separated integers there.
+        #
+        # A local build reports its marketing version, which is honest about
+        # what it is; the release workflow overrides this setting with the
+        # version it derived from the commit, so the value has one owner and
+        # there is no second copy of it to keep in step.
+        CLAW_BUILD_VERSION: "$(MARKETING_VERSION)"
         # The plist is a file in the repo rather than generated, because Phase 3
         # and 4 add entitlement-adjacent keys (Keychain access groups, ATS
         # notes) that are easier to review as a diff than as build settings.

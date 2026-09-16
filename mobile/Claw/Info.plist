@@ -20,6 +20,22 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- The app's own identity, `X.Y.Z-dev.<count>.<sha>` on a dev build and
+	     `X.Y.Z` on a release. CFBundleShortVersionString cannot hold it: App
+	     Store Connect accepts only three dot separated integers there, so a dev
+	     build and the release it precedes would otherwise be indistinguishable
+	     to the app itself. The release workflow supplies the value; a local
+	     build reports its marketing version instead. -->
+	<key>ClawBuildVersion</key>
+	<string>$(CLAW_BUILD_VERSION)</string>
+	<!-- Export compliance, answered here so a build does not sit in TestFlight
+	     asking for it. `false` means the app uses no encryption that is not
+	     exempt, which is the case: the only cryptography in the app is what
+	     WebKit and the operating system provide for HTTPS and the Keychain, and
+	     neither is something we implemented. Adding a bundled cryptographic
+	     implementation would make this answer wrong, not stale. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 

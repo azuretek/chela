@@ -59,10 +59,21 @@ struct WebView: UIViewRepresentable {
         webView.load(URLRequest(url: url))
     }
 
-    /// The app's own version, so the token stays true across releases. Read from
-    /// the bundle rather than written twice: `MARKETING_VERSION` in
-    /// `project.yml` is already the source of it.
+    /// The app's own identity, so the token stays true across releases. Read
+    /// from the bundle rather than written twice: the release workflow derives
+    /// the value and `project.yml` names the setting it arrives in.
+    ///
+    /// The full identity rather than `CFBundleShortVersionString`, because that
+    /// one is trimmed to the three integers App Store Connect accepts and so
+    /// cannot name a dev build: every build of a patch cycle carries the same
+    /// `1.0.1`. This is what lets a gateway's own logs tell one build of the
+    /// app from the next, and it is the value the update check will compare
+    /// against a feed. The fallback is for a build the workflow did not stamp.
     private static var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        if let identity = Bundle.main.object(forInfoDictionaryKey: "ClawBuildVersion") as? String,
+           !identity.isEmpty {
+            return identity
+        }
+        return Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 }

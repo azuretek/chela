@@ -1,0 +1,462 @@
+name: Claw mobile release
+
+# The publish half of the mobile pipeline: the iOS client, built for a real
+# device, signed with the account's distribution certificate, and uploaded to
+# TestFlight.
+#
+# mobile.yml is the compile-and-test half and is deliberately credential-free,
+# so the boundary between "builds it" and "signs and ships it" is a file
+# boundary rather than a step boundary: nothing in mobile.yml may need the
+# Apple account, and nothing here has to reason about a matrix of iOS versions.
+#
+# Three ways in, mirroring release.yml because they mean the same things there:
+#
+#   push to main       a dev build of whatever just landed, uploaded to
+#                      internal TestFlight testing.
+#   tag `v*`           a release. The tag must equal package.json, checked
+#                      before anything is built, and the same upload runs with
+#                      the build available to external testing as well.
+#   workflow_dispatch  a dev build of any ref, on demand.
+#
+# TestFlight is the channel for BOTH, which is Abi's decision, and the reason a
+# dev build here is a real distribution build rather than an ad-hoc or
+# development-signed one: the only difference between the two kinds of run is
+# the version they carry and whether the resulting build may leave internal
+# testing. Nothing about how it is signed or uploaded changes.
+#
+# `paths` names what this workflow depends on rather than what it ignores, the
+# same shape mobile.yml uses. `core/**` is the non-obvious entry: the client
+# compiles the shared library in, so a change confined to core/ produces a
+# different app. GitHub does not evaluate path filters for tag pushes, so a
+# release can never be skipped by one.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'mobile/**'
+      - 'core/**'
+      # A workflow that cannot run on its own change is one nobody can fix.
+      - '.github/workflows/mobile-release.yml'
+  workflow_dispatch:
+
+# Pushing three commits in a minute should upload the last one, not all three.
+# Tag builds are exempt: a release run must never be cancelled by anything.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  # Runs once, on the cheapest runner, before the build. It settles what version
+  # this build carries and whether it should happen at all, and the answer is
+  # Apple's problem as much as ours: a bundle version has to be three integers
+  # and a monotonically increasing build number, or the upload is rejected after
+  # the archive has already been paid for.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      # The app's full identity, `X.Y.Z-dev.<count>.<sha>` for a dev build.
+      # This is what the app reports internally and what its update banner will
+      # compare against a feed, and it cannot be the bundle version because a
+      # bundle version may only be three integers.
+      version: ${{ steps.decide.outputs.version }}
+      # The first three of those, which IS the bundle version Apple accepts.
+      marketing: ${{ steps.decide.outputs.marketing }}
+      # The commit count, which IS the monotonically increasing integer Apple
+      # accepts as CFBundleVersion. It is already the leading orderable part of
+      # the dev version, so the two are one number rather than two that can
+      # disagree.
+      build-number: ${{ steps.decide.outputs.count }}
+      build: ${{ steps.decide.outputs.build }}
+      tagged: ${{ steps.decide.outputs.tagged }}
+    steps:
+      # Full history, because both halves of the version depend on it: the count
+      # is `git rev-list --count HEAD` and a release build is recognised by the
+      # tag on HEAD. A shallow checkout yields no count, which the check after
+      # the next step treats as a failure rather than a version.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      # desktop/scripts/build-version.js already owns "what version is this
+      # build" for local builds and CI: the dev form, the tag check against
+      # package.json, and the stand-down when a commit is covered by its own tag
+      # build. Reused rather than reimplemented so the phone and the desktop
+      # cannot disagree about what the next version is, and so there is one
+      # place to change if the scheme ever moves. It appends version, build and
+      # tagged to $GITHUB_OUTPUT itself, and `count` alongside them.
+      - name: Decide the version
+        id: decide
+        working-directory: desktop
+        run: |
+          set -eo pipefail
+          node scripts/build-version.js
+
+          # Read back out of the output file the script just wrote, rather than
+          # deriving the same numbers a second time here: the bundle version
+          # must be the count the dev version was named from, not a count that
+          # happens to agree with it.
+          version="$(sed -n 's/^version=//p' "$GITHUB_OUTPUT" | tail -1)"
+          count="$(sed -n 's/^count=//p' "$GITHUB_OUTPUT" | tail -1)"
+
+          # No count means a shallow checkout, and then every build would carry
+          # the same bundle version, which Apple accepts once and rejects after
+          # that. An empty CFBundleVersion is rejected too, so this stops rather
+          # than producing either.
+          if [ -z "$count" ]; then
+            echo "::error::no commit count, so there is no bundle version to derive. The checkout must be full history (fetch-depth: 0)."
+            exit 1
+          fi
+
+          # The three-integer form Apple requires: everything before the
+          # prerelease, and the prerelease is the only thing stripped.
+          marketing="${version%%-*}"
+          if ! printf '%s' "$marketing" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::$version does not start with three dot separated integers, so Apple would reject it"
+            exit 1
+          fi
+
+          echo "marketing=$marketing" >> "$GITHUB_OUTPUT"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "bundle version will be $marketing ($count)"
+
+  ios:
+    needs: version
+    # A push whose commit is already covered by a tag build stands down, the
+    # same rule release.yml follows; a manual dispatch is always honoured.
+    if: needs.version.outputs.build == 'true'
+    # Named rather than `macos-latest`, the same discipline mobile.yml's matrix
+    # uses, so the toolchain is a property of this file. macos-26 carries Xcode
+    # 26, which is the oldest toolchain that can build the iOS 26 deployment
+    # target project.yml declares.
+    runs-on: macos-26
+    # Every xcodebuild step runs in mobile/, where project.yml and the generated
+    # project live.
+    defaults:
+      run:
+        working-directory: mobile
+    # Archive, export and upload are minutes; the wait for the build to appear
+    # in App Store Connect is up to fifteen more. This ceiling is well clear of
+    # all of it, and bounded so a stuck upload cannot hold a runner.
+    timeout-minutes: 60
+    steps:
+      # Pinned to the commit this run was triggered for, so the version the
+      # archive is stamped with names the code that is in it. The version job
+      # reads the same sha, which is what makes the two agree.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      # The newest Xcode the runner has, with a floor of 16 for Swift 6 language
+      # mode. Identical to the selection in mobile.yml, including the reason it
+      # is not pinned: pinning a version the image does not carry fails every
+      # run, and pinning one it does carry fails the day the image rolls
+      # forward.
+      - name: Select Xcode
+        run: |
+          set -eo pipefail
+
+          chosen_line="$(
+            for bundle in /Applications/Xcode*.app; do
+              [ -d "$bundle" ] || continue
+              version="$(DEVELOPER_DIR="$bundle/Contents/Developer" xcodebuild -version 2>/dev/null | head -1 | sed 's/^Xcode //' || true)"
+              [ -n "$version" ] || continue
+              printf '%s %s\n' "$version" "$bundle"
+            done | sort -V | tail -1
+          )"
+
+          if [ -z "$chosen_line" ]; then
+            echo "::error::no usable Xcode found under /Applications"
+            exit 1
+          fi
+
+          version="${chosen_line%% *}"
+          bundle="${chosen_line#* }"
+          if [ "${version%%.*}" -lt 16 ]; then
+            echo "::error::newest Xcode is $version, and the project needs the Xcode 16 toolchain or newer for Swift 6 language mode"
+            exit 1
+          fi
+
+          echo "DEVELOPER_DIR=$bundle/Contents/Developer" >> "$GITHUB_ENV"
+          echo "using $bundle (Xcode $version)"
+
+      # The project is generated output, not source, and the checkout has no
+      # Claw.xcodeproj in it at all. Regenerating here means a stale copy can
+      # never be what gets signed and uploaded.
+      - name: Install xcodegen
+        run: |
+          set -eo pipefail
+          if ! command -v xcodegen >/dev/null; then
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      # The App Store Connect key, written to a file because every consumer of
+      # it takes a path, and with a restrictive mode because it is a private
+      # key: the same shape release.yml uses for its notarization key.
+      #
+      # The path is exported rather than the value, so the key itself never
+      # appears in a later step's environment or in the argument list of
+      # anything. The two identifiers that DO travel on a command line
+      # (ASC_KEY_ID and ASC_ISSUER_ID) are not credentials: they name the key
+      # and the account, and both are visible in the App Store Connect UI. The
+      # file is removed by the last step of this job, which runs even when an
+      # earlier one fails.
+      - name: Install the App Store Connect key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          set -eo pipefail
+          if [ -z "$ASC_KEY_P8" ]; then
+            echo "::error::ASC_KEY_P8 is not set. This workflow cannot build anything without the App Store Connect key: set ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 as repository secrets."
+            exit 1
+          fi
+          key="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$ASC_KEY_P8" > "$key"
+          chmod 600 "$key"
+          ls -l "$key"
+          echo "ASC_KEY_PATH=$key" >> "$GITHUB_ENV"
+
+      # Everything that must be true before an archive is worth building, and
+      # every one of these fails in seconds what would otherwise fail minutes
+      # later inside toolchain output: the app record (which no API can create),
+      # the team id (which project.yml deliberately does not carry), and whether
+      # this commit's build is already up, which Apple treats as a duplicate
+      # rather than a replacement.
+      - name: Check the account and the version
+        id: preflight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          MARKETING_VERSION: ${{ needs.version.outputs.marketing }}
+          BUILD_NUMBER: ${{ needs.version.outputs.build-number }}
+        run: python3 scripts/asc.py preflight
+
+      # Cloud managed signing: the API key authenticates to Apple, and Apple
+      # issues the Apple Distribution certificate and the App Store provisioning
+      # profile itself. That is what makes this step free of a certificate
+      # export, a base64 secret and a keychain, which is most of what a signing
+      # pipeline normally is.
+      #
+      # `-allowProvisioningUpdates` is what permits it. Without an Apple
+      # Distribution certificate in the account the key can create one; if it
+      # cannot, this fails here and deliberately does not fall back to a
+      # development or ad-hoc build, because the only thing an unsigned archive
+      # could produce is an upload Apple will reject.
+      #
+      # The three version overrides are the whole of the stamping. project.yml
+      # keeps a value for each so a local build still reports something, and CI
+      # supplies the real ones here rather than having a second copy of them
+      # written into the project spec. CLAW_BUILD_VERSION is the full identity
+      # (`X.Y.Z-dev.<count>.<sha>`) that the bundle cannot carry as its version
+      # and that the app's own update check needs.
+      - name: Archive
+        if: steps.preflight.outputs.already-uploaded != 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          MARKETING_VERSION: ${{ needs.version.outputs.marketing }}
+          BUILD_NUMBER: ${{ needs.version.outputs.build-number }}
+          BUILD_VERSION: ${{ needs.version.outputs.version }}
+          TEAM_ID: ${{ steps.preflight.outputs.team-id }}
+        run: |
+          set -eo pipefail
+          archive="$RUNNER_TEMP/Claw.xcarchive"
+          echo "ARCHIVE_PATH=$archive" >> "$GITHUB_ENV"
+
+          xcodebuild archive \
+            -project Claw.xcodeproj \
+            -scheme Claw \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$archive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            MARKETING_VERSION="$MARKETING_VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            CLAW_BUILD_VERSION="$BUILD_VERSION"
+
+          if [ ! -d "$archive" ]; then
+            echo "::error::xcodebuild reported success but no archive exists at $archive"
+            exit 1
+          fi
+          echo "archived to $archive"
+
+      # The archive is read back rather than trusted, and both things it proves
+      # are invisible in an exit code.
+      #
+      # The versions, because Apple rejects an upload whose bundle short version
+      # is not exactly three integers or whose build number is not greater than
+      # the last one, and the rejection arrives after the upload has been paid
+      # for. The values in the built bundle are the only witness that the
+      # overrides reached the plist at all, and a build setting that silently
+      # did not apply looks exactly like one that did.
+      #
+      # The signature, because the promise is a distribution build rather than
+      # merely a signed one. A development-signed archive exports and uploads
+      # far enough to be confusing, and it is never what we meant to ship.
+      - name: Verify the archive
+        if: steps.preflight.outputs.already-uploaded != 'true'
+        env:
+          MARKETING_VERSION: ${{ needs.version.outputs.marketing }}
+          BUILD_NUMBER: ${{ needs.version.outputs.build-number }}
+          BUILD_VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -eo pipefail
+          app="$ARCHIVE_PATH/Products/Applications/Claw.app"
+          if [ ! -d "$app" ]; then
+            echo "::error::the archive has no app in it at $app"
+            find "$ARCHIVE_PATH/Products" -maxdepth 3 || true
+            exit 1
+          fi
+
+          read_key() {
+            plutil -extract "$1" raw -o - "$app/Info.plist"
+          }
+
+          short="$(read_key CFBundleShortVersionString)"
+          bundle="$(read_key CFBundleVersion)"
+          identity="$(read_key ClawBuildVersion)"
+          echo "CFBundleShortVersionString: $short"
+          echo "CFBundleVersion:            $bundle"
+          echo "ClawBuildVersion:           $identity"
+
+          failed=0
+          [ "$short" = "$MARKETING_VERSION" ] || { echo "::error::bundle short version is '$short', expected '$MARKETING_VERSION'"; failed=1; }
+          [ "$bundle" = "$BUILD_NUMBER" ] || { echo "::error::bundle version is '$bundle', expected '$BUILD_NUMBER'"; failed=1; }
+          [ "$identity" = "$BUILD_VERSION" ] || { echo "::error::the app's own build identity is '$identity', expected '$BUILD_VERSION'"; failed=1; }
+          if ! printf '%s' "$short" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::'$short' is not three dot separated integers, which App Store Connect requires"
+            failed=1
+          fi
+          if ! printf '%s' "$bundle" | grep -Eq '^[0-9]+$'; then
+            echo "::error::'$bundle' is not numeric, which App Store Connect requires"
+            failed=1
+          fi
+          [ "$failed" = 0 ] || exit 1
+
+          authority="$(codesign -dv --verbose=2 "$app" 2>&1 | sed -n 's/^Authority=//p' | head -1)"
+          case "$authority" in
+            Apple\ Distribution:*) echo "signed by $authority" ;;
+            *) echo "::error::the archive is signed with '${authority:-no identity}', not an Apple Distribution certificate, so it is not a distribution build and must not be uploaded. Nothing was uploaded."; exit 1 ;;
+          esac
+
+      # The export options are built with plutil rather than written as XML, so
+      # the file cannot be malformed by indentation and each value carries its
+      # own type: `manageAppVersionAndBuildNumber` being a real boolean is the
+      # difference between Xcode honouring it and Xcode ignoring it.
+      - name: Write the export options
+        if: steps.preflight.outputs.already-uploaded != 'true'
+        env:
+          TEAM_ID: ${{ steps.preflight.outputs.team-id }}
+          TAGGED: ${{ needs.version.outputs.tagged }}
+        run: |
+          set -eo pipefail
+          options="$RUNNER_TEMP/ExportOptions.plist"
+          echo "EXPORT_OPTIONS=$options" >> "$GITHUB_ENV"
+
+          plutil -create xml1 "$options"
+          # `app-store-connect` is the method Xcode 15.3 and newer take; the
+          # older `app-store` still resolves but is deprecated, and this
+          # toolchain is Xcode 26 or newer.
+          plutil -insert method -string app-store-connect "$options"
+          # The upload, not an export: this hands the bundle to App Store
+          # Connect through the same service Xcode itself uses.
+          plutil -insert destination -string upload "$options"
+          plutil -insert teamID -string "$TEAM_ID" "$options"
+          plutil -insert signingStyle -string automatic "$options"
+          # Off, and it defaults on: on means Xcode may substitute a version of
+          # its own for the one the archive was stamped with, which would make
+          # the two disagree after the check above has already passed.
+          plutil -insert manageAppVersionAndBuildNumber -bool NO "$options"
+
+          # A dev build is internal-testing-only so it cannot be handed to
+          # external testers by accident; a tag build leaves that off, which is
+          # the difference between the two kinds of run.
+          if [ "$TAGGED" != "true" ]; then
+            plutil -insert testFlightInternalTestingOnly -bool YES "$options"
+          fi
+
+          plutil -lint "$options"
+          cat "$options"
+
+      # The upload, through Xcode's own export rather than `altool`.
+      #
+      # `xcrun altool --upload-app` is deprecated and prints a deprecation
+      # warning on every run; Apple's supported path is `xcodebuild
+      # -exportArchive` with `destination: upload`, which validates the bundle,
+      # applies the export options and hands it to App Store Connect through the
+      # same content delivery service Xcode uses. It also takes the same
+      # authentication key as the archive, so the account is named once.
+      #
+      # Success here means App Store Connect accepted the bytes, which is NOT
+      # the same as the build existing: the next step is what checks that.
+      - name: Export and upload to TestFlight
+        if: steps.preflight.outputs.already-uploaded != 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -eo pipefail
+          export_dir="$RUNNER_TEMP/export"
+
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportPath "$export_dir" \
+            -exportOptionsPlist "$EXPORT_OPTIONS" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+          echo "export and upload finished"
+
+          # Written out when Xcode produced one, which it does not always for an
+          # upload destination. The archive is the durable copy either way.
+          find "$export_dir" -maxdepth 2 -type f -print || true
+
+      # The only proof that the build reached TestFlight. The upload command's
+      # exit code says Apple's delivery service took the bytes; this asks the
+      # API for the build record, prints each processing state it moves through,
+      # and fails if it never appears or arrives as INVALID.
+      - name: Confirm the build arrived
+        if: steps.preflight.outputs.already-uploaded != 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APP_ID: ${{ steps.preflight.outputs.app-id }}
+          MARKETING_VERSION: ${{ needs.version.outputs.marketing }}
+          BUILD_NUMBER: ${{ needs.version.outputs.build-number }}
+          WAIT_SECONDS: "900"
+        run: python3 scripts/asc.py wait
+
+      # What happened when this commit was built before, which is not a failure:
+      # Apple accepts one build per version and build number, so a re-run of a
+      # commit that is already up has nothing to upload, and pushing a
+      # different app for the same version would be the only way to make it
+      # meaningful. Said out loud rather than silently skipped.
+      - name: Nothing to upload
+        if: steps.preflight.outputs.already-uploaded == 'true'
+        run: |
+          echo "::notice::this commit's build (${{ needs.version.outputs.marketing }} / ${{ needs.version.outputs.build-number }}) is already in App Store Connect, so there is nothing to upload. Land a commit to make a new build number."
+
+      # The key is a private key sitting in a temp directory, so it goes even
+      # when everything above failed, and the removal is checked rather than
+      # assumed: `rm -f` reports success for a file that was never there.
+      - name: Remove the App Store Connect key
+        if: always()
+        run: |
+          key="$RUNNER_TEMP/AuthKey.p8"
+          rm -f "$key"
+          if [ -e "$key" ]; then
+            echo "::error::the App Store Connect key is still at $key"
+            exit 1
+          fi
+          echo "removed $key"
