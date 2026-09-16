@@ -1,5 +1,5 @@
 {
-  "description": "reason() and status() golden pairs. These pin the error mapping and row state for the Swift port.",
+  "description": "reason(), status() and nextPhase() golden pairs. These pin the error mapping, the row state and the phase moves for the Swift port, including the pending state a gateway holds an unapproved device in and the anti-flicker rule that a retry must not move off it.",
   "reason": [
     {
       "input": {
@@ -258,6 +258,135 @@
         "label": "Certificate not trusted",
         "detail": "Review the certificate above to connect to this gateway."
       }
+    },
+    {
+      "input": {
+        "isActive": true,
+        "phase": "pending"
+      },
+      "output": {
+        "tone": "warn",
+        "label": "Needs approval",
+        "detail": "Approve this device on the gateway host, then it reconnects on its own."
+      }
+    },
+    {
+      "input": {
+        "isActive": false,
+        "phase": "pending"
+      },
+      "output": {
+        "tone": "muted",
+        "label": "Not connected",
+        "detail": null
+      }
+    },
+    {
+      "input": {
+        "isActive": true,
+        "phase": "pending",
+        "certOffer": {
+          "changed": false
+        }
+      },
+      "output": {
+        "tone": "warn",
+        "label": "Certificate not trusted",
+        "detail": "Review the certificate above to connect to this gateway."
+      }
+    }
+  ],
+  "phase": [
+    {
+      "name": "connect from idle is connecting",
+      "from": "idle",
+      "event": { "type": "connect" },
+      "to": "connecting"
+    },
+    {
+      "name": "connected from connecting is connected",
+      "from": "connecting",
+      "event": { "type": "connected" },
+      "to": "connected"
+    },
+    {
+      "name": "a failed load is failed",
+      "from": "connecting",
+      "event": { "type": "failed" },
+      "to": "failed"
+    },
+    {
+      "name": "an unapproved device moves the row to pending",
+      "from": "connected",
+      "event": { "type": "pending" },
+      "to": "pending"
+    },
+    {
+      "name": "a retry while pending HOLDS pending, it does not drop to connecting",
+      "from": "pending",
+      "event": { "type": "connect" },
+      "to": "pending"
+    },
+    {
+      "name": "a page that loads while pending HOLDS pending, the socket has not been accepted",
+      "from": "pending",
+      "event": { "type": "connected" },
+      "to": "pending"
+    },
+    {
+      "name": "a socket that survives the settle window confirms, so pending becomes connected",
+      "from": "pending",
+      "event": { "type": "confirm" },
+      "to": "connected"
+    },
+    {
+      "name": "a gateway that closes the session for a non-pairing reason is failed, not pending",
+      "from": "pending",
+      "event": { "type": "failed" },
+      "to": "failed"
+    },
+    {
+      "name": "confirm without a held open changes nothing",
+      "from": "connected",
+      "event": { "type": "confirm" },
+      "to": "connected"
+    },
+    {
+      "name": "an unknown event leaves the phase unchanged",
+      "from": "pending",
+      "event": { "type": "tick" },
+      "to": "pending"
+    }
+  ],
+  "sequence": [
+    {
+      "name": "an unapproved device's row does not flicker or flap across repeated retries",
+      "from": "connected",
+      "events": [
+        { "type": "pending" },
+        { "type": "connect" },
+        { "type": "connected" },
+        { "type": "connect" },
+        { "type": "connected" },
+        { "type": "connect" },
+        { "type": "connected" }
+      ],
+      "phases": ["pending", "pending", "pending", "pending", "pending", "pending", "pending"],
+      "never": ["connecting", "connected", "idle"]
+    },
+    {
+      "name": "the retry after an approval lands confirms, and only then is the row connected",
+      "from": "connecting",
+      "events": [
+        { "type": "pending" },
+        { "type": "connect" },
+        { "type": "connected" },
+        { "type": "connect" },
+        { "type": "connected" },
+        { "type": "confirm" }
+      ],
+      "phases": ["pending", "pending", "pending", "pending", "pending", "connected"],
+      "never": ["connecting", "failed"]
     }
   ]
 }

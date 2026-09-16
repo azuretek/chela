@@ -44,11 +44,23 @@
     <div class="dragbar"></div>
     <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="title">
       <header class="modal__header">
+        <!-- The way back to the Control UI, drawn as a back arrow rather than a
+             dismissal cross, and placed FIRST in the header because that is what
+             an arrow means: a leading-edge arrow is "go back", and the same glyph
+             on the trailing edge is a dismissal with a badly chosen symbol. Both
+             controls close this surface; only this one says where they go.
+
+             It is hidden outright when the page IS the window (a first run, or a
+             phone with no gateway yet, where there is nothing to go back to), so
+             every case it appears in is one where going back is what pressing it
+             does. The id stays `close`, because that is the id the page's own
+             script wires and the id the tests name, so this is a change of glyph,
+             wording and position rather than a second control. -->
+        <button class="modal__close modal__back" id="close" type="button" aria-label="Back" title="Back">&#8592;</button>
         <div class="stack">
           <h1 id="title">Settings</h1>
           <p class="sub" id="subtitle">Choose which gateway this app connects to.</p>
         </div>
-        <button class="modal__close" id="close" type="button" aria-label="Close settings" title="Close (Esc)">&#10005;</button>
       </header>
       <div class="modal__body">
 
@@ -266,7 +278,17 @@
        the Control-UI card uses. The macOS menu route to About is untouched; this
        is a route, not a replacement for one. -->
   <footer class="settings-footer" id="about-footer" hidden>
-    <button class="about-footer__link" id="open-about" type="button">About Claw Control UI</button>
+    <!-- A bordered control rather than a line of quiet text, because it is the
+         only route to About on a client with no menu bar, and a person who wants
+         to check for updates has to be able to find it. NOT a banner: it stays a
+         footer under the panels, at the weight of the buttons around it, and it
+         carries the build beside the name so the version is readable without
+         opening anything. The version is written by settings.js out of the state
+         the host already sends, so the string has one owner. -->
+    <button class="about-footer__link" id="open-about" type="button">
+      <span id="about-footer-label">About Claw Control UI</span>
+      <span class="about-footer__build" id="about-footer-build"></span>
+    </button>
   </footer>
 
       </div>

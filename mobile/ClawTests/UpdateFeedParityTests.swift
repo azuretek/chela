@@ -19,6 +19,13 @@ import XCTest
 final class UpdateFeedParityTests: XCTestCase {
     private struct Fixture: Decodable {
         let cases: [Case]
+        let releaseNotes: [ReleaseNotesCase]
+    }
+
+    private struct ReleaseNotesCase: Decodable {
+        let name: String
+        let version: String?
+        let output: String
     }
 
     private struct Case: Decodable {
@@ -44,6 +51,37 @@ final class UpdateFeedParityTests: XCTestCase {
             let result = try UpdateFeed.newerVersion(in: testCase.document, current: testCase.current)
             XCTAssertEqual(result, testCase.newer, testCase.name)
         }
+    }
+
+    /// The Release notes link, against the same cases the JS asserts.
+    ///
+    /// This is the one that shipped wrong: the phone's Release notes button
+    /// opened TestFlight, which is where a build waits rather than where its notes
+    /// are, so a person asking what changed got somewhere to install a build.
+    func testReleaseNotesURLReproducesEveryFixture() throws {
+        let fixture = try Fixtures.load("feed", as: Fixture.self)
+        XCTAssertFalse(fixture.releaseNotes.isEmpty, "expected release-notes fixtures")
+        for testCase in fixture.releaseNotes {
+            XCTAssertEqual(
+                UpdateFeed.releaseNotesURL(version: testCase.version)?.absoluteString,
+                testCase.output,
+                testCase.name
+            )
+        }
+    }
+
+    /// The URL is built from the repo slug and one path, and the path is the
+    /// spec's rather than a literal here.
+    func testTheReleaseNotesPathMirrorsTheSpec() throws {
+        struct FeedSpec: Decodable {
+            let releasesPath: String
+            let releaseNotesPath: String
+        }
+        let spec: FeedSpec = try Fixtures.loadSpec("feed")
+        XCTAssertEqual(UpdateFeed.releaseNotesPath, spec.releaseNotesPath)
+        let url = try XCTUnwrap(UpdateFeed.releaseNotesURL(version: "1.0.1-dev.149.abc1234567"))
+        XCTAssertEqual(url.absoluteString, "https://github.com/\(Naming.repoOwner)/\(Naming.repoName)/\(spec.releaseNotesPath)1.0.1-dev.149.abc1234567")
+        XCTAssertFalse(url.absoluteString.contains("testflight"), "a release-notes link must not point at a distribution channel")
     }
 
     /// The values mirrored from `spec/feed.json`. The phone builds the releases

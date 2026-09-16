@@ -134,6 +134,22 @@ enum SettingsSpec {
         ProcessInfo.processInfo.arguments.contains("-claw-seed-pairing")
     }
 
+    /// Whether this run should drive the REVOCATION path rather than a first
+    /// connection, from `-claw-seed-revocation`.
+    ///
+    /// The same reasoning as `screenshotSeedsPairing`, one state further on: a
+    /// device whose approval is revoked mid-session is refused with the same 1008
+    /// close, but the app routes it differently (the gateway list rather than the
+    /// pairing screen alone), and that route is reached only from an established
+    /// session, which a screenshot run cannot otherwise be in. This drives the
+    /// real `PairingState` into an authenticated session and then refuses it, so
+    /// what a screenshot proves is the real route and the real screen rather than
+    /// a mock. Compiled out of a release build, inert without the argument, and it
+    /// needs a gateway to draw over, from `-claw-gateway-url`.
+    static var screenshotSeedsRevocation: Bool {
+        ProcessInfo.processInfo.arguments.contains("-claw-seed-revocation")
+    }
+
     /// The sample refusal the seeded pairing screen shows: an example requestId of
     /// the shape the gateway emits, read through the same parser a live close is,
     /// so the command and the identity on screen are built the real way. The id is
@@ -155,6 +171,7 @@ enum SettingsSpec {
     static var screenshotSeedsUpdateFeed: Bool { false }
     static var screenshotUpdateFeedVersion: String? { nil }
     static var screenshotSeedsPairing: Bool { false }
+    static var screenshotSeedsRevocation: Bool { false }
     #endif
 
     /// The split of the settings surface, read from the bundled spec.

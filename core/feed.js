@@ -29,6 +29,9 @@
 import spec from './spec/feed.json' with { type: 'json' };
 import { isNewer, parse } from './version.js';
 import { channelOf } from './updates.js';
+// The releases LIST, which naming.js already owns because the desktop's menu
+// links to it: the no-version case below is that same page, not a second one.
+import { releasesUrl } from './naming.js';
 
 /** The channel a build reads, as its spec name. `dev` today; `latest` later. */
 export const DEV_CHANNEL = spec.channels.dev;
@@ -53,6 +56,29 @@ export const STABLE_CHANNEL = spec.channels.stable;
  */
 export function feedUrl({ owner, name }) {
   return `https://github.com/${owner}/${name}/${spec.releasesPath}`;
+}
+
+/**
+ * The real release notes for a version, or for the channel when there is no
+ * version to name.
+ *
+ * NOT `releasesUrl` from naming.js, which is the list, and deliberately not a
+ * store page either: the notes for a release are the release's own page, which
+ * is where the tag, the commit and whatever was written about the build are. A
+ * link that says "release notes" and lands somewhere else is worse than no link,
+ * because it spends a click to answer a question it never read.
+ *
+ * Built from the repo slug and `releaseNotesPath` so a rename moves it with
+ * everything else, and shared so both clients land on the same page for the same
+ * version rather than each building the URL in its own client.
+ *
+ * @param {string} repo  the `owner/name` slug, from naming.js
+ * @param {string|null} [version]  the release to read; omit for the channel's list
+ */
+export function releaseNotesUrl(repo, version = null) {
+  const base = `https://github.com/${repo}`;
+  const trimmed = typeof version === 'string' ? version.trim() : '';
+  return trimmed ? `${base}/${spec.releaseNotesPath}${trimmed}` : releasesUrl;
 }
 
 /**

@@ -46,14 +46,18 @@ import { withTokenHandoff } from '../../core/gateway-url.js';
 // than written down here: the screen the desktop shows and the screen the phone
 // shows say the same thing because they read the same file. The phase names, the
 // close parser and the reducer come through src/pairing.js.
-import { COPY as PAIRING_COPY } from '../../core/pairing.js';
-import { product, releasesUrl } from '../../core/naming.js';
+import { COPY as PAIRING_COPY, ROUTE_SETTINGS_GATEWAYS, ROUTE_SETTINGS_TAB } from '../../core/pairing.js';
+import { product, repo, releasesUrl } from '../../core/naming.js';
 // The shared "App settings" affordance: the ONE injected script that adds a
 // control to the Control UI's sidebar footer and calls a host bridge to open our
 // own settings surface. Installed into the gateway page here, answered by the
 // bridge in preload.cjs; the iOS client installs the same script through a
 // WKUserScript. See core/app-settings-affordance.js.
 import * as appSettingsAffordance from '../../core/app-settings-affordance.js';
+// The URL shape of a release's own notes. Shared rather than built here, because
+// the phone puts the same link behind the same button and a link that says
+// "release notes" has to land where the notes are.
+import { releaseNotesUrl } from '../../core/feed.js';
 // The settings surface's spec, read here rather than by the page: the page is a
 // file:// document with `default-src 'none'`, so it cannot fetch a JSON file, and
 // the spec has to arrive inside the state this process already pushes. The iOS
@@ -453,7 +457,7 @@ function showConnectionFailure(detail) {
   console.warn(`[claw-desktop] cannot reach ${label || 'the gateway'}: ${detail.errorCode} ${detail.errorDescription}`);
   connection = {
     gatewayId: gw ? gw.id : null,
-    phase: connectionState.FAILED,
+    phase: connectionState.nextPhase(connection.phase, { type: 'failed' }),
     error: { code: detail.errorCode, description: detail.errorDescription || '' },
   };
   // A load that never reached a page is a network/host failure, not pairing: the
@@ -471,30 +475,6 @@ function showConnectionFailure(detail) {
   pushProgress();
   stopProgressTicker();
   notifyStateChanged();
-}
-
-/**
- * "The Control UI is loaded and waiting behind this page."
- *
- * A connect that succeeds while Settings is open is otherwise completely silent
- * from in there: the window behind fills with the Control UI, Settings is opaque
- * over the top of it, and the only clue is a badge in a row changing one word.
- * So the result gets said, once, with the way through attached.
- *
- * This used to be a card on the Settings page itself, on the reasoning that an
- * answer to something asked on a page has to appear on that page. It is a notice
- * now, with the rest of them -- which is only possible because the banner's view
- * moved above the overlays. See restackViews().
- */
-function announceConnected() {
-  if (!overlayAlive('settings') && !settingsIsPage) return;
-  const gw = config.activeGateway();
-  setNotice('connected', {
-    tone: noticeStore.OK,
-    message: `Connected to ${gw ? gw.label || gw.url : 'the gateway'}`,
-    detail: 'The Control UI is loaded and waiting behind this page.',
-    action: { label: 'Open it', command: 'open-ui' },
-  });
 }
 
 /* -------------------------------------------------------------- main window */
@@ -520,13 +500,15 @@ function loadActiveGateway() {
   // The previous failure is over the moment a new attempt starts. Leaving it up
   // would have the banner reporting a dead error against a live connect.
   clearNotice('connection');
-  // Whatever the last connect ended up saying is about a connection that is over.
-  clearNotice('connected');
   // Back to the start of the bar. A retry that inherited the last attempt's
   // milestone would open at 78% and go nowhere.
   setConnection({
     gatewayId: gw.id,
-    phase: connectionState.CONNECTING,
+    // Through the shared reducer rather than straight to CONNECTING, so an
+    // attempt issued while the device is unapproved HOLDS the pending phase: the
+    // pairing cadence reissues this every few seconds, and a row that dropped to
+    // "Connecting..." on each beat and back again is the flicker this prevents.
+    phase: connectionState.nextPhase(connection.phase, { type: 'connect' }),
     error: null,
     milestone: progress.START,
     milestoneAt: Date.now(),
@@ -878,9 +860,31 @@ function pairingSnapshot() {
  */
 function syncPairing() {
   const snap = pairingState.snapshot();
+  const wasPairing = pairingWasUp;
+
+  // The gateway row's phase follows the same state the screen does, which is what
+  // keeps the two from describing one connection differently: an unapproved device
+  // is `pending` (the page loaded, the gateway is holding the session), and a
+  // socket that survived its settle window CONFIRMS the connect. Both moves are
+  // core/connection.js's, and only a real change is pushed, so a retry that moved
+  // nothing cannot re-render the row.
+  const next = connectionState.nextPhase(connection.phase, { type: snap.pairing ? 'pending' : 'confirm' });
+  if (next !== connection.phase) setConnection({ phase: next });
+
   if (snap.pairing) {
     if (!overlayAlive('pairing')) openOverlay('pairing');
     else notifyPairingChanged();
+    // A REVOCATION is not a setup problem, so it does not stop at the pairing
+    // screen: a session that was working and has had its approval withdrawn needs
+    // the gateway row that now says the device needs approval, and the address it
+    // is pointed at, which is what the settings surface is for. Routed ONCE, on
+    // the entry, so closing settings while still revoked does not drag it back;
+    // the rule and the tab come from the shared contract, and the pairing screen
+    // is still there behind this for the approve command.
+    if (!wasPairing && snap.route === ROUTE_SETTINGS_GATEWAYS) {
+      console.warn('[claw-desktop] this device has had its approval revoked; opening settings on the gateway list');
+      openSettings({ tab: ROUTE_SETTINGS_TAB });
+    }
     return;
   }
   if (overlayAlive('pairing')) closeOverlay('pairing');
@@ -1119,13 +1123,23 @@ function createMainWindow() {
     // document for a failed main frame and that fires this too, so the phase
     // decides; see shouldMarkConnected in src/connection.js.
     if (connectionState.shouldMarkConnected({ phase: connection.phase, url: wc.getURL() })) {
-      setConnection({ phase: connectionState.CONNECTED, error: null, milestone: progress.DONE, milestoneAt: Date.now() });
+      // Through the reducer, and the pending case is why: a page that loaded is
+      // NOT the same as a gateway that accepted this device. An unapproved device
+      // is served the page and then has its socket closed 1008, so this holds
+      // `pending` rather than claiming Connected, which is what the row did while
+      // the gateway was refusing the session. Only the socket surviving its
+      // settle window confirms the connect; see syncPairing.
+      setConnection({
+        phase: connectionState.nextPhase(connection.phase, { type: 'connected' }),
+        error: null,
+        milestone: progress.DONE,
+        milestoneAt: Date.now(),
+      });
       // The gateway is on screen behind the cover, so the cover comes down and
       // any failure it was reporting is over. Both are keyed to the one event
       // that proves it -- a load that finished on a page that is not ours.
       clearNotice('connection');
       hideLoadingCover();
-      announceConnected();
     }
     maybeAutofill(wc);
     void maybeRefreshForNewBuild(wc);
@@ -1363,9 +1377,6 @@ function closeOverlay(name) {
   const remaining = [...overlayViews.values()].filter((v) => !v.webContents.isDestroyed());
   if (remaining.length) remaining[remaining.length - 1].webContents.focus();
   else page()?.focus();
-  // Nobody is behind Settings waiting to be told the gateway is up any more, so
-  // the offer to go and look at it is over.
-  if (name === 'settings') clearNotice('connected');
 }
 
 function openSettings(opts = {}) {
@@ -1380,6 +1391,32 @@ function openSettings(opts = {}) {
 
 function closeSettings() {
   closeOverlay('settings');
+}
+
+/**
+ * Close our settings surface and take the reader to the CONTROL UI's own settings.
+ *
+ * Two halves of one action, which is why this is one function: closing is what
+ * gets this surface out of the way, and the Control UI's own footer control is
+ * what puts the reader where the button promised. The pressing is the shared
+ * affordance script's (core/spec/app-settings-affordance.json), so the phone runs
+ * the same bytes against the same Control UI rather than building a URL of its
+ * own, and the route stays the Control UI's to own.
+ *
+ * Deliberately not a URL: loading the Control UI's settings path ourselves would
+ * be a second copy of a decision that is not ours, it would be a full reload of a
+ * page that is already loaded behind this one, and it would have to know the path
+ * for the app's settings to land beside the gateway's.
+ */
+function openControlUiSettings() {
+  closeSettings();
+  const wc = page();
+  if (!wc) return;
+  wc.executeJavaScript(appSettingsAffordance.controlUiSettingsSource(), true)
+    .then((pressed) => {
+      if (!pressed) console.warn('[claw-desktop] the Control UI has no footer settings control to press; the reader stays on the page');
+    })
+    .catch((err) => console.warn(`[claw-desktop] could not open the Control UI settings: ${err.message}`));
 }
 
 /* ------------------------------------------------------------- first paint */
@@ -2291,7 +2328,11 @@ function registerShortcut() {
     setNotice('shortcut', {
       tone: noticeStore.WARN,
       message: 'The global shortcut is not active.',
-      detail: `${config.get().globalShortcut} could not be registered. ${noticeStore.sentence(result.error)} Change it in Settings.`,
+      detail: `${config.get().globalShortcut} could not be registered. ${noticeStore.sentence(result.error)}`,
+      // The fix is a field on Settings, so the notice takes you to it rather than
+      // telling you to go: every notice here must be actionable, or it is a
+      // paragraph charging rent on the top of the window.
+      action: { label: 'Open Settings', command: 'settings' },
     });
   }
   return result;
@@ -2323,6 +2364,7 @@ function reportLaunchAtLogin() {
       tone: noticeStore.WARN,
       message: `${chrome.APP_NAME} will not open at login.`,
       detail: `${noticeStore.sentence(result.error)} The setting is saved, but the system refused it.`,
+      action: { label: 'Open Settings', command: 'settings' },
     });
   }
   return result;
@@ -2589,6 +2631,15 @@ function registerIpc() {
   });
   ipcMain.handle('app:open-settings', () => { openSettings(); });
   ipcMain.handle('app:close-settings', () => { closeSettings(); });
+  // The settings page's "Go to the Control UI": close OUR surface, then press the
+  // Control UI's own footer control so the reader lands on the Control UI's
+  // settings rather than on whatever the page happened to be showing. One
+  // command, because both halves belong to one action, and the pressing itself is
+  // the shared affordance script's job so the phone does the same thing with the
+  // same bytes. Fail-soft but loud: a footer control that is not there leaves the
+  // reader on the page and says so in the app's own stdout, rather than silently
+  // doing nothing.
+  ipcMain.handle('app:open-control-ui-settings', () => { openControlUiSettings(); });
   // The About page, reached from inside Settings rather than from the menu bar.
   // showAbout() is the same overlay path the menu and tray already open, so this
   // adds a route to About without a second way of opening it: About shown over
@@ -2651,14 +2702,13 @@ function registerIpc() {
       // Straight to the tab holding the two fingerprints and the two answers.
       certificates: () => openSettings({ tab: 'certificates' }),
       reconnect: () => loadActiveGateway(),
-      // Get out of the way and show what is already loaded behind. Also clears
-      // the notice: unlike every other one here, this condition is *answered* by
-      // taking the offer rather than merely acted on.
-      'open-ui': () => { closeSettings(); clearNotice('connected'); },
       'update-download': () => { void downloadOfferedUpdate(); },
       'update-release-page': () => {
-        const v = offeredUpdate && offeredUpdate.version;
-        void shell.openExternal(v ? `${RELEASES_URL}/tag/v${v}` : RELEASES_URL);
+        // The offered release's own notes, not the list: this notice is about one
+        // version, so the link that answers it is that version's page. The URL
+        // shape is shared with the phone, which puts the same link behind its own
+        // Release notes button.
+        void shell.openExternal(releaseNotesUrl(repo, offeredUpdate && offeredUpdate.version));
       },
       'update-restart': () => restartForUpdate(),
     };
@@ -2727,6 +2777,9 @@ if (!app.requestSingleInstanceLock()) {
         tone: noticeStore.WARN,
         message: 'Gateway credentials cannot be saved on this machine.',
         detail: noticeStore.sentence(secrets.unavailableReason()),
+        // Where the token and password fields live, so the reader can see what
+        // still works instead of only being told what does not.
+        action: { label: 'Open Settings', command: 'settings' },
       });
     }
     registerIpc();

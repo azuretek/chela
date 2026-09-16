@@ -63,6 +63,11 @@ struct WebView: UIViewRepresentable {
     /// `AppSettingsAffordance` and `AppSettingsBridge`.
     let onOpenAppSettings: () -> Void
 
+    /// The handle on this page, so a settings action can ask the Control UI to do
+    /// something the Control UI owns: today, open its own settings. Filled in
+    /// here because this view is what makes the web view; see `GatewayPage`.
+    let pageControl: GatewayPage
+
     /// Remembers what has been asked for, so a SwiftUI update cannot reload the
     /// page under the user. `updateUIView` runs on every layout pass, and the
     /// web view's own `url` is not a usable guard for that: it stays nil until
@@ -486,6 +491,10 @@ struct WebView: UIViewRepresentable {
         // swiping through, and a swipe that moved the whole app off the page
         // with no visible back button would strand someone in it.
         webView.navigationDelegate = context.coordinator
+        // Published before the first load, so the handle is there the moment a
+        // settings sheet can ask for it. Weak on the other side, so this is not a
+        // reference the page outlives.
+        pageControl.webView = webView
         return webView
     }
 

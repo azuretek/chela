@@ -1,10 +1,19 @@
 {
+  "description": "The connection phases and their error-code hints, shared by every Claw client. core/connection.js imports this for the phase names, the pending state's own copy, the reducer's moves and the hint table, so a Swift (and a later Android) client shares the exact same source of truth.",
+  "why": [
+    "`pending` is the phase for a gateway that ANSWERED but has not accepted this client yet: the page loaded, so nothing is broken, and the gateway is refusing the session until an operator approves the device. It is a phase of its own rather than a reuse of `connecting` or `connected`, because both of those are untrue there, and a row that says either one while the device is unapproved is the UI claiming something that is not the case.",
+    "It is ENTERED from the pairing contract and LEFT the same way: a client that has learned it is awaiting approval says so, and only a socket that survives its settle window moves the phase on to `connected`. `nextPhase` in core/connection.js owns the moves, including the one that matters on screen: an attempt issued while the phase is `pending` HOLDS it, so the row does not flicker through `connecting` and `connected` once per retry. Those retries are the pairing cadence, and core/pairing.js is where that lives.",
+    "The two sentences a pending row shows are here rather than in the client that draws the row, for the same reason the phase names and the hints are: a value both clients must word identically has one owner."
+  ],
   "phases": {
     "idle": "idle",
     "connecting": "connecting",
     "connected": "connected",
-    "failed": "failed"
+    "failed": "failed",
+    "pending": "pending"
   },
+  "pendingLabel": "Needs approval",
+  "pendingDetail": "Approve this device on the gateway host, then it reconnects on its own.",
   "errAborted": -3,
   "hints": {
     "-105": "The hostname did not resolve. Check that Tailscale is connected and MagicDNS is on.",

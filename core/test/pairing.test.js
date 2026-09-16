@@ -28,6 +28,9 @@ import {
   observerScript,
   OBSERVER_GLOBAL,
   OBSERVER_MESSAGE_NAME,
+  ROUTE_PAIRING_SCREEN,
+  ROUTE_SETTINGS_GATEWAYS,
+  pairingRoute,
 } from '../pairing.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -177,6 +180,30 @@ test('the pairing screen does not flicker or flap across repeated retries (seque
       assert.ok(!seen.includes(banned), `${name}: passed through ${banned}, which is a visible churn`);
     }
   }
+});
+
+/*
+ * Where a pairing close sends the reader, which is not the same answer for both
+ * of the ways in. A first connection is a setup problem and the pairing screen
+ * is the whole answer; the same close arriving at a session that was already
+ * approved and working is a revocation, and that reader needs the settings
+ * surface with the gateway row saying so, because the first question is which
+ * gateway this client is pointed at.
+ */
+test('pairingRoute() reproduces every fixture', () => {
+  const { routing } = load('pairing.json');
+  assert.ok(routing.length > 0, 'expected routing fixtures');
+  for (const { name, from, to, output } of routing) {
+    assert.strictEqual(pairingRoute({ fromPhase: from, toPhase: to }), output, name);
+  }
+});
+
+test('a revocation routes to the settings surface rather than only the pairing screen', () => {
+  assert.strictEqual(pairingRoute({ fromPhase: AUTHENTICATED }), ROUTE_SETTINGS_GATEWAYS);
+  assert.strictEqual(pairingRoute({ fromPhase: CONNECTING }), ROUTE_PAIRING_SCREEN);
+  assert.strictEqual(pairingRoute({ fromPhase: FAILED }), ROUTE_PAIRING_SCREEN);
+  // Not a pairing entry at all, so nothing routes.
+  assert.strictEqual(pairingRoute({ fromPhase: AUTHENTICATED, toPhase: AUTHENTICATED }), null);
 });
 
 test('approveCommand() reproduces every fixture', () => {

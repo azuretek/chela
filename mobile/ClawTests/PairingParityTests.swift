@@ -62,17 +62,43 @@ final class PairingParityTests: XCTestCase {
         let never: [String]
     }
 
+    private struct RoutingCase: Decodable {
+        let name: String
+        let from: String
+        let to: String
+        let output: String?
+    }
+
     private struct Fixture: Decodable {
         let policyCloseCode: Int
         let close: [CloseCase]
         let requestId: [RequestIdCase]
         let phase: [PhaseCase]
         let sequence: [SequenceCase]
+        let routing: [RoutingCase]
         let command: [CommandCase]
     }
 
     private func fixture() throws -> Fixture {
         try Fixtures.load("pairing")
+    }
+
+    /// The routing half of `core/spec/pairing.json`, read from the repository.
+    /// The client reads the bundled copy at runtime for the script and the copy
+    /// the screen shows; this is the one place the route names are compared
+    /// against the file they came from.
+    private enum PairingSpecFile {
+        struct Routing: Decodable {
+            let pairingScreen: String
+            let settingsGateways: String
+            let settingsTab: String
+        }
+        struct Spec: Decodable {
+            let routing: Routing
+        }
+        static func load() throws -> Spec {
+            try Fixtures.loadSpec("pairing")
+        }
     }
 
     func testReadPairingCloseReproducesEveryFixture() throws {
@@ -305,6 +331,54 @@ final class PairingParityTests: XCTestCase {
         // failure that is not pairing.
         XCTAssertEqual(Pairing.nextPhase(.connecting, .fail), .failed)
         XCTAssertEqual(Pairing.nextPhase(.connecting, .close(nil)), .failed)
+    }
+
+    /// Where a pairing close sends the reader, which is not one answer: a first
+    /// connection is a setup problem and the pairing screen is it, and the same
+    /// close on a session that was working is a revocation that wants the gateway
+    /// list. Proven against the shared fixture so this client cannot route one
+    /// event one way while the desktop routes it the other.
+    func testPairingRouteReproducesEveryFixture() throws {
+        let fixture = try fixture()
+        XCTAssertFalse(fixture.routing.isEmpty, "expected routing fixtures")
+        for c in fixture.routing {
+            let from = try XCTUnwrap(Pairing.Phase(rawValue: c.from), c.name)
+            let to = try XCTUnwrap(Pairing.Phase(rawValue: c.to), c.name)
+            XCTAssertEqual(Pairing.route(fromPhase: from, toPhase: to), c.output, c.name)
+        }
+    }
+
+    /// The two route names are the spec's, not literals of this client's.
+    func testTheRouteNamesComeFromTheSpec() throws {
+        XCTAssertEqual(Pairing.route(fromPhase: .authenticated), Pairing.routeSettingsGateways)
+        XCTAssertEqual(Pairing.route(fromPhase: .connecting), Pairing.routePairingScreen)
+        XCTAssertEqual(Pairing.route(fromPhase: .failed), Pairing.routePairingScreen)
+        XCTAssertNil(Pairing.route(fromPhase: .authenticated, toPhase: .authenticated), "not a pairing entry, so nothing routes")
+
+        let spec = try PairingSpecFile.load()
+        XCTAssertEqual(Pairing.routeSettingsGateways, spec.routing.settingsGateways)
+        XCTAssertEqual(Pairing.routePairingScreen, spec.routing.pairingScreen)
+        XCTAssertEqual(Pairing.routeSettingsTab, spec.routing.settingsTab)
+    }
+
+    /// A live transition, which is the part a fixture cannot show: a session that
+    /// was authenticated and then had its approval revoked publishes the settings
+    /// route, and a first connection publishes the pairing screen.
+    func testARevokedSessionPublishesTheSettingsRoute() {
+        let state = PairingState()
+        state.opened()
+        XCTAssertEqual(state.phase, .authenticated)
+        XCTAssertNil(state.route, "nothing is pairing, so there is nowhere to route")
+
+        state.closed(Pairing.Refusal(reason: "not-paired", requestId: "req-established-1"))
+        XCTAssertEqual(state.phase, .pairingRequired)
+        XCTAssertEqual(state.route, Pairing.routeSettingsGateways)
+
+        // And the retries that follow hold it: a repeat close, or an attempt
+        // starting, must not turn a revocation into a first connection.
+        state.connecting()
+        state.closed(Pairing.Refusal(reason: "not-paired", requestId: "req-established-1"))
+        XCTAssertEqual(state.route, Pairing.routeSettingsGateways)
     }
 
     func testApproveCommandReproducesEveryFixture() throws {

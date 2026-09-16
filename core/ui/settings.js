@@ -603,15 +603,22 @@ function renderPrefs() {
 
 // The "looking for the gateway's own settings?" card, on the Gateways tab.
 //
-// Shown only when there is a Control UI behind this to return to: a gateway is
-// configured (so this is not a first run) and the client can step out of the
-// way (`closeSettings`, which every client answers). On a first run there is no
-// page behind these settings, so the card would point at nothing and stays
-// hidden. The action itself is wired once in the listeners below.
+// Shown only when there is a Control UI behind this to reach: a gateway is
+// configured (so this is not a first run) and the client can take the reader
+// there (`openControlUiSettings`, which both clients answer). On a first run
+// there is no page behind these settings, so the card would point at nothing
+// and stays hidden. The action itself is wired once in the listeners below.
+//
+// The command is `openControlUiSettings` rather than `closeSettings`, and that
+// distinction is the whole point of the card: closing this surface lands the
+// reader on whatever the Control UI was showing, which is not what the card
+// promises. Taking them there is one command on the host (close this surface,
+// then press the Control UI's own footer control) and it is the same command on
+// both clients.
 function renderControlUiSettingsLink() {
   const card = $('control-ui-settings');
   if (!card) return;
-  card.hidden = firstRun || !hasCommand('closeSettings');
+  card.hidden = firstRun || !hasCommand('openControlUiSettings');
 }
 
 // The About footer, under every tab. Shown when this client's host answers
@@ -629,6 +636,12 @@ function renderAboutFooter() {
   const footer = $('about-footer');
   if (!footer) return;
   footer.hidden = !hasCommand('openAbout');
+  // The build beside the name, from the state the host already sends: the
+  // footer's job is to be findable, and "which build is this" is the question
+  // that makes someone go looking for it. Absent rather than invented when the
+  // host has nothing to say.
+  const build = $('about-footer-build');
+  if (build) build.textContent = (state && state.build) ? state.build : '';
 }
 
 /* ---------------------------------------------------------------- the tabs */
@@ -750,16 +763,19 @@ function setResult(node, text, kind) {
 
 /* --------------------------------------------------------------- listeners */
 
-// Steps out of the way of the Control UI, which is where the gateway's own
-// settings live. `closeSettings` is what returns there on both clients: the
-// desktop hides the overlay it opened this page in, iOS dismisses the sheet, and
-// the Control UI is what is left on screen. Guarded so a client without the
-// command does not throw; the card that carries this button is hidden in the
-// same case.
+// Takes the reader to the Control UI's own settings, which is where the
+// gateway's agents, models and channels live. One command, and the HOST owns
+// both halves of it: it closes this surface and then presses the Control UI's
+// own footer control, which is the route the Control UI already has. Nothing
+// here navigates the Control UI or builds a URL for it, so this page cannot
+// disagree with the Control UI about where its settings are.
+//
+// Guarded so a client without the command does not throw; the card that carries
+// this button is hidden in the same case.
 const openControlUiSettings = $('open-control-ui-settings');
 if (openControlUiSettings) {
   openControlUiSettings.addEventListener('click', () => {
-    if (hasCommand('closeSettings')) call('closeSettings');
+    if (hasCommand('openControlUiSettings')) call('openControlUiSettings');
   });
 }
 

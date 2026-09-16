@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { percent } from '../progress.js';
-import { reason, status } from '../connection.js';
+import { nextPhase, reason, status } from '../connection.js';
 import { create, sentence } from '../notices.js';
 import {
   blank, activeGateway, addGateway, updateGateway, removeGateway, trustCert,
@@ -64,6 +64,49 @@ test('connection.status() reproduces every fixture', () => {
       `status(${JSON.stringify(input)}) should be ${JSON.stringify(output)}`,
     );
   }
+});
+
+/*
+ * The phase moves, which are the other half of what a row shows: a phase is
+ * only ever reached through one of these, so a move that is wrong here is a row
+ * that says the wrong thing however good the copy above is.
+ *
+ * The two that matter most are the ones that HOLD `pending`. A device waiting
+ * for approval is reconnected every few seconds on purpose, and each attempt
+ * moves this state twice, so a `connect` or a `connected` that dropped the
+ * phase would make the row flicker once per retry, which is the shape of bug
+ * this reducer exists to prevent.
+ */
+test('connection.nextPhase() reproduces every phase fixture', () => {
+  const { phase: cases } = load('connection.json');
+  assert.ok(cases.length > 0, 'expected phase fixtures');
+  for (const { name, from, event, to } of cases) {
+    assert.strictEqual(nextPhase(from, event), to, name);
+  }
+});
+
+test('a retry while pending never surfaces, in any order it can arrive', () => {
+  const { sequence: cases } = load('connection.json');
+  assert.ok(cases.length > 0, 'expected sequence fixtures');
+  for (const { name, from, events, phases, never } of cases) {
+    let at = from;
+    const seen = [];
+    for (const event of events) {
+      at = nextPhase(at, event);
+      seen.push(at);
+      for (const banned of never || []) {
+        assert.notStrictEqual(at, banned, `${name}: reached ${banned} after ${JSON.stringify(event)}`);
+      }
+    }
+    assert.deepStrictEqual(seen, phases, name);
+  }
+});
+
+test('the pending copy comes from the spec rather than a literal in the row', () => {
+  const spec = JSON.parse(readFileSync(path.join(HERE, '..', 'spec', 'connection.json'), 'utf8'));
+  const row = status({ isActive: true, phase: 'pending' });
+  assert.strictEqual(row.label, spec.pendingLabel);
+  assert.strictEqual(row.detail, spec.pendingDetail);
 });
 
 /*

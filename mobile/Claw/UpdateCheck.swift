@@ -51,6 +51,14 @@ final class UpdateCheck {
     /// offer, rather than in the rule both clients share.
     static let testFlightURL = URL(string: "https://testflight.apple.com/")!
 
+    /// The last version this app told the reader about, for the one other place
+    /// that needs it: the About page's Release notes button, which should open
+    /// the notes for the build that was actually announced rather than the list.
+    /// A last-known value rather than state the About page queries through the
+    /// board, because the board holds a rendered message and re-reading a version
+    /// out of it would be parsing our own copy back.
+    @MainActor private(set) static var announcedVersion: String?
+
     private let board: NoticeBoard
     private let currentVersion: String
     private let fetch: Fetch
@@ -130,6 +138,7 @@ final class UpdateCheck {
     /// restart, which is what keeps it true on the one platform that can do
     /// neither.
     private func announce(_ version: String) {
+        Self.announcedVersion = version
         board.raise(Self.noticeId, NoticeRaise(
             tone: NoticeTone.info,
             message: "\(Naming.product) \(version) is available",

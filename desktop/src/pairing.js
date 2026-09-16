@@ -52,6 +52,7 @@ import {
   RETRY_SECONDS,
   approveCommand,
   nextPhase,
+  pairingRoute,
   observerScript,
   readRequestId,
   requirement,
@@ -192,6 +193,22 @@ export function createState({ schedule = setTimeout, cancel = clearTimeout, onRe
   let refusal = null;
   let retryHandle = null;
   let settleHandle = null;
+  // The phase the CURRENT stay in pairing-required was entered from, kept so the
+  // entry can be routed (core/pairing.js's pairingRoute). A first connection and
+  // a session that was working and had its approval revoked are the same close
+  // and want different surfaces, and the difference is only knowable at the move
+  // that entered the state, so it is recorded there rather than guessed here.
+  let enteredFrom = CONNECTING;
+
+  function move(next) {
+    // Recorded only on an ENTRY into pairing-required. Re-entering from
+    // pairing-required (a retry, or a repeat close) must not overwrite the
+    // phase the wait actually started from, or a revocation would start
+    // reporting itself as a first connection a few seconds in.
+    if (next === PAIRING_REQUIRED && phase !== PAIRING_REQUIRED) enteredFrom = phase;
+    phase = next;
+    return next;
+  }
 
   function stopRetry() {
     if (retryHandle !== null) {
@@ -227,7 +244,7 @@ export function createState({ schedule = setTimeout, cancel = clearTimeout, onRe
       // Guarded on the phase rather than on the handle: a late beat after some
       // other move must do nothing at all.
       if (phase !== PAIRING_REQUIRED) return;
-      phase = nextPhase(phase, { type: 'confirm' });
+      move(nextPhase(phase, { type: 'confirm' }));
       refusal = null;
       stopRetry();
       // The screen comes down here or nowhere: this is the recovery, and it has
@@ -239,8 +256,7 @@ export function createState({ schedule = setTimeout, cancel = clearTimeout, onRe
   return {
     /** A connect attempt is starting. Two cases, and the shared reducer decides. */
     connecting() {
-      const next = nextPhase(phase, { type: 'connect' });
-      phase = next;
+      const next = move(nextPhase(phase, { type: 'connect' }));
       // A first connect invalidates any earlier refusal and stops the cadence:
       // a fresh load is in flight. A retry from the pairing screen HOLDS both,
       // because the device is still unapproved and the command on screen must
@@ -254,8 +270,7 @@ export function createState({ schedule = setTimeout, cancel = clearTimeout, onRe
 
     /** The gateway socket opened: confirmed only if it survives the settle window. */
     opened() {
-      const next = nextPhase(phase, { type: 'open' });
-      phase = next;
+      const next = move(nextPhase(phase, { type: 'open' }));
       if (next === PAIRING_REQUIRED) {
         startSettle();
       } else {
@@ -269,7 +284,7 @@ export function createState({ schedule = setTimeout, cancel = clearTimeout, onRe
     /** The socket closed; `refusal` is the result of readPairingClose. */
     closed(pairing) {
       stopSettle();
-      phase = nextPhase(phase, { type: 'close', pairing });
+      move(nextPhase(phase, { type: 'close', pairing }));
       refusal = pairing;
       if (phase === PAIRING_REQUIRED) startRetry();
       else stopRetry();
@@ -278,7 +293,7 @@ export function createState({ schedule = setTimeout, cancel = clearTimeout, onRe
 
     /** The load itself failed (host unreachable, page did not load). */
     failed() {
-      phase = nextPhase(phase, { type: 'fail' });
+      move(nextPhase(phase, { type: 'fail' }));
       refusal = null;
       stopRetry();
       stopSettle();
@@ -300,6 +315,12 @@ export function createState({ schedule = setTimeout, cancel = clearTimeout, onRe
         requestId: refusal ? refusal.requestId : null,
         requirement: refusal ? requirement(refusal.reason) : requirement(FALLBACK_REASON),
         command: approveCommand(refusal ? refusal.requestId : null),
+        // Where this entry should send the reader, from the shared rule: the
+        // pairing screen for a first connection, the settings surface for a
+        // session that was working and has had its approval revoked. Null
+        // whenever this is not a pairing state at all.
+        route: pairingRoute({ fromPhase: enteredFrom, toPhase: phase }),
+        enteredFrom,
       };
     },
 

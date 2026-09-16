@@ -50,6 +50,12 @@ final class SettingsHost: NSObject, ObservableObject, WKScriptMessageHandler {
     /// answers by presenting `AboutSurface`; this host only carries the request,
     /// the same way `onClose` and `onConnect` do.
     private let onOpenAbout: () -> Void
+    /// Asked to take the reader to the CONTROL UI's own settings, which is where
+    /// the gateway's agents, models and channels live. Two halves and therefore
+    /// one closure: the view dismisses this sheet and then asks the gateway page
+    /// to open its own settings (see `GatewayPage`), and the order between them is
+    /// the whole action.
+    private let onOpenControlUiSettings: () -> Void
 
     /// The page's own web view, for delivering a reply or an event. Weak, because
     /// the view owns the message handler's registration and not the other way
@@ -63,7 +69,8 @@ final class SettingsHost: NSObject, ObservableObject, WKScriptMessageHandler {
         appearance: AppearanceStore,
         onClose: @escaping () -> Void,
         onConnect: @escaping () -> Void,
-        onOpenAbout: @escaping () -> Void
+        onOpenAbout: @escaping () -> Void,
+        onOpenControlUiSettings: @escaping () -> Void
     ) {
         self.store = store
         self.connection = connection
@@ -72,6 +79,7 @@ final class SettingsHost: NSObject, ObservableObject, WKScriptMessageHandler {
         self.onClose = onClose
         self.onConnect = onConnect
         self.onOpenAbout = onOpenAbout
+        self.onOpenControlUiSettings = onOpenControlUiSettings
         super.init()
     }
 
@@ -249,6 +257,16 @@ final class SettingsHost: NSObject, ObservableObject, WKScriptMessageHandler {
 
         case "closeSettings":
             onClose()
+            reply(id, value: NSNull())
+
+        case "openControlUiSettings":
+            // Closes this surface and lets the page open its own settings. The
+            // route stays the Control UI's: this client presses the Control UI's
+            // own footer control with the shared script rather than building a
+            // URL, so app settings and gateway settings cannot come to mean
+            // different pages on the two clients. A failure is logged by the page
+            // driver and leaves the reader on the page, which is where they were.
+            onOpenControlUiSettings()
             reply(id, value: NSNull())
 
         case "openAbout":

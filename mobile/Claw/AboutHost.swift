@@ -148,14 +148,20 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
             emitChanged()
 
         case "openReleases":
-            // Where the newer build waits. TestFlight is the one channel today, so
-            // this is the same destination the update banner's action opens, the
-            // honest offer for a platform that installs its apps through the store
-            // rather than through this app. In this async command handler the
-            // open resolves to the awaitable variant; its Bool result is not
-            // acted on, because the OS chooses whether TestFlight or its store
-            // page answers and either is the right destination.
-            _ = await UIApplication.shared.open(UpdateCheck.testFlightURL)
+            // The REAL release notes, which is what the button says. It used to
+            // open TestFlight, which is where a newer build waits rather than
+            // where its notes are, so the button's whole promise was broken: a
+            // person asking what changed got a build. With a version we have
+            // announced, this is that release's own page; without one it is the
+            // channel's list of releases, which is the honest answer for a build
+            // whose own notes are what a reader most often wants to check.
+            //
+            // In this async command handler the open resolves to the awaitable
+            // variant; its Bool result is not acted on, because the OS decides
+            // whether Safari or an in-app browser answers and either is right.
+            if let url = UpdateFeed.releaseNotesURL(version: UpdateCheck.announcedVersion) {
+                _ = await UIApplication.shared.open(url)
+            }
 
         case "closeOverlay":
             // The name is `about` and there is only one overlay to close, so the

@@ -7,7 +7,8 @@
     "The reason strings the gateway emits are matched by the same substrings the gateway's own reader uses: `pairing required` for the first-connection case, and the upgrade phrasings for the three upgrade reasons. A close that is code 1008 but whose reason is NOT a pairing reason is left as an ordinary failure, because 1008 is a general policy code and not pairing's alone.",
     "The copy lives here so both clients say the same thing, and it reflects the REAL instruction the gateway and the Control UI give (`openclaw devices approve <requestId>`, or `openclaw devices approve --latest` when there is no id), rather than an invented one. The command is shown for the operator to run on the gateway host; the client cannot run it, and says so.",
     "`timing` is here for the same one-owner reason, and it is the one part of the screen that is a cadence rather than a string. Both clients keep the pairing screen up while they wait for an approval, and both must reissue a connect attempt on a sane interval (`retrySeconds`) and take the screen down only once an open has SURVIVED a short settle window (`confirmSeconds`). Two clients with two copies of those numbers drift the first time one is tuned, and the visible symptom is one client flickering where the other does not, so they live here and both read them: core/pairing.js exports them, the Swift port reads them off the bundled spec. The values are a balance, documented where they are used: long enough not to hammer a gateway that is deliberately refusing this device and to outlast the gap between a socket open and the 1008 close that follows it, short enough that an operator's approval reaches the user promptly.",
-    "It is an ARRAY of lines for the script, not one escaped string, for the same reason prompt-metadata's hook is: a maintainable escape is the only kind that survives an edit, each line reads as a line, and the readers join with a newline."
+    "It is an ARRAY of lines for the script, not one escaped string, for the same reason prompt-metadata's hook is: a maintainable escape is the only kind that survives an edit, each line reads as a line, and the readers join with a newline.",
+    "`routing` is here because WHICH state a pairing close puts the reader in depends on where it arrived: a first connection is a setup problem and the pairing screen is the whole answer, while the same close arriving at a session that was already approved and working is a REVOCATION, and that reader needs the settings surface with the gateway row saying the device needs approval, because the first thing to check is which gateway this client is even pointed at. Two clients deciding that separately would drift into two behaviours for one event, so the rule and the surface names live here and both clients route through `pairingRoute()` in core/pairing.js."
   ],
   "phases": {
     "connecting": "connecting",
@@ -19,6 +20,11 @@
   "timing": {
     "retrySeconds": 3,
     "confirmSeconds": 0.6
+  },
+  "routing": {
+    "pairingScreen": "pairing-screen",
+    "settingsGateways": "settings-gateways",
+    "settingsTab": "gateways"
   },
   "reasonSubstrings": {
     "not-paired": "pairing required",

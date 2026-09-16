@@ -56,6 +56,38 @@ export const CONFIRM_SECONDS = spec.timing.confirmSeconds;
 /** The pairing reasons, in the order the parser tries them. */
 export const PAIRING_REASONS = Object.freeze(Object.keys(spec.reasonSubstrings));
 
+/** The two places a pairing close can send a client. Data, so both clients agree. */
+export const ROUTE_PAIRING_SCREEN = spec.routing.pairingScreen;
+export const ROUTE_SETTINGS_GATEWAYS = spec.routing.settingsGateways;
+
+/** The settings tab `ROUTE_SETTINGS_GATEWAYS` names, for a host that has tabs. */
+export const ROUTE_SETTINGS_TAB = spec.routing.settingsTab;
+
+/**
+ * Where a pairing close sends the reader.
+ *
+ * A first connection is a setup problem: nothing was working yet, the pairing
+ * screen says what to run and recovers on its own, and there is nowhere better
+ * to look. The SAME close arriving at a session that had already been approved
+ * and was working is a revocation, which is a different thing to be in: the
+ * device is still pointed at a gateway that no longer accepts it, and the first
+ * question worth answering is which gateway that even is. So a revocation routes
+ * to the settings surface, on the gateways tab, where the row now says the
+ * device needs approval (see core/connection.js's `pending`) and the address
+ * can be checked.
+ *
+ * The rule is a function rather than a flag per client because both clients ask
+ * it about the same event, and two clients deciding this separately is how one
+ * shows the pairing screen and the other shows nothing.
+ *
+ * @param {{fromPhase?: string, toPhase?: string}} [opts]
+ * @returns {string|null} a ROUTE_* value, or null when this is not a pairing entry
+ */
+export function pairingRoute({ fromPhase, toPhase = PAIRING_REQUIRED } = {}) {
+  if (toPhase !== PAIRING_REQUIRED) return null;
+  return fromPhase === AUTHENTICATED ? ROUTE_SETTINGS_GATEWAYS : ROUTE_PAIRING_SCREEN;
+}
+
 const REQUEST_ID_PATTERN = new RegExp(spec.requestIdPattern);
 const REQUEST_ID_IN_REASON = new RegExp(spec.requestIdInReason, 'i');
 
