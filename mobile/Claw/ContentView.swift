@@ -86,6 +86,13 @@ struct ContentView: View {
     /// nobody can otherwise reach are rendered for a screenshot.
     @StateObject private var notices = NoticeBoard.live()
 
+    /// Which appearance the app is in, which is this client's to decide and not
+    /// the Control UI's: the native chrome here is real (a status bar, a sheet,
+    /// the strips the safe area leaves above and below the page) and the page's
+    /// `prefers-color-scheme` resolves against the web view's own traits, so the
+    /// choice has to live somewhere both halves can read it. See `Appearance`.
+    @StateObject private var appearance = AppearanceStore()
+
     /// Whether the settings sheet is up over a gateway. Ignored while there is no
     /// gateway, where the surface is shown without a sheet: see the note above.
     @State private var showingSettings = false
@@ -101,6 +108,7 @@ struct ContentView: View {
             if let gateway = gateways.activeGateway {
                 WebView(
                     gateway: gateway,
+                    appearance: appearance.mode,
                     themeColour: $themeColour,
                     notices: notices,
                     connection: connection
@@ -110,7 +118,7 @@ struct ContentView: View {
                 .overlay(alignment: .topTrailing) { SettingsButton { showingSettings = true } }
                 .sheet(isPresented: $showingSettings) {
                     if let host {
-                        SettingsSurface(host: host)
+                        SettingsSurface(host: host, appearance: appearance.mode)
                             // The page is a settings form inside a sheet, so it is
                             // the surface that carries the safe area rather than the
                             // sheet's own inset: the card's padding is measured from
@@ -122,13 +130,19 @@ struct ContentView: View {
             } else if let host {
                 // No gateway yet, so this IS the app: there is nothing behind it to
                 // go back to, and nothing to draw the sheet over.
-                SettingsSurface(host: host)
+                SettingsSurface(host: host, appearance: appearance.mode)
                     .ignoresSafeArea()
             } else {
                 // One frame, while the host is built in `onAppear`.
                 Color(uiColor: .systemBackground)
             }
         }
+        // The app's own appearance, and it is the whole app rather than the web
+        // view: the status bar, the sheet's background and the strips around the
+        // page are the native half, and a page passed light while they stayed dark
+        // is the disagreement this setting exists to remove. `nil` is `system`,
+        // which leaves every one of them following the device live.
+        .preferredColorScheme(appearance.mode.colorScheme)
         .onAppear(perform: prepare)
         // The page draws a badge per gateway and disables the button under the one
         // already connecting, so it has to be told when the phase moves. Passive
@@ -146,6 +160,7 @@ struct ContentView: View {
                 store: gateways,
                 connection: connection,
                 notices: notices,
+                appearance: appearance,
                 // Closing is only ever a way back to a gateway, so it is refused
                 // while there is none: with an empty list the surface is the app.
                 onClose: { if gateways.hasGateway { showingSettings = false } },
@@ -162,6 +177,9 @@ struct ContentView: View {
         notices.onCommand = { command in
             if command == NoticeBoard.settingsCommand { showingSettings = true }
         }
+        // A screenshot run on a simulator, which cannot press the button above.
+        // Debug only, and inert without the argument. See `SettingsSpec`.
+        if SettingsSpec.screenshotOpensSettings { showingSettings = true }
     }
 }
 

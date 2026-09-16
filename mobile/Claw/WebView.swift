@@ -17,6 +17,18 @@ struct WebView: UIViewRepresentable {
     /// failure has to name the gateway it was about.
     let gateway: Gateway
 
+    /// Which appearance the app is in, so the page can be told.
+    ///
+    /// The relay is two-way: the page reports the colour it is actually painted
+    /// with (see `themeScript`), and the app passes the appearance down in return.
+    /// Down is the web view's own trait collection, which is what a page's
+    /// `prefers-color-scheme` resolves against, so `system` keeps following the
+    /// device live and an explicit light or dark pins the page to the same answer
+    /// the native chrome is wearing. Nothing is written into the page: the hidden
+    /// leg is the platform's own channel, and a page we do not own is not a place
+    /// to inject state. See the note on `WebView.themeScript`.
+    let appearance: AppearanceMode
+
     /// The page's own background, so the strips the safe area leaves above and
     /// below it are painted with the page's colour rather than the window's.
     ///
@@ -48,6 +60,9 @@ struct WebView: UIViewRepresentable {
     /// the navigation delegate a reason to exist.
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         var requested: URL?
+        /// The last appearance pushed down to this web view, so `updateUIView`
+        /// only touches the view and the page when it actually changed.
+        var appliedAppearance: AppearanceMode?
         private let themeColour: Binding<Color>
         private let notices: NoticeBoard
         private let connection: ConnectionState
@@ -147,37 +162,125 @@ struct WebView: UIViewRepresentable {
     /// The name the injected script posts under.
     static let themeMessageName = "clawTheme"
 
-    /// Reports the page's `theme-color` as three channel values.
+    /// The hook the app calls to make the page report again.
     ///
-    /// That meta is the page's own declaration of the colour its surroundings
-    /// should be, and the strips above and below the page are exactly that, so
-    /// this reads a value the page publishes for the purpose rather than
-    /// inspecting the page's styling. It resolves for the appearance in force
-    /// and re-reports when the system appearance changes, so the strips follow
-    /// the page in both.
+    /// The script installs it, and the app calls it whenever the appearance
+    /// changes, so the strips are repainted at the moment of the choice rather
+    /// than at the next trait propagation. Named with the same prefix as the
+    /// message, because both are one relay's two ends.
+    static let themeReportHook = "__clawThemeReport"
+
+    /// Reports the page's own background as three channel values, and re-reports
+    /// whenever the page's theme changes.
     ///
-    /// `WKWebView.themeColor` is the native route to the same value and was
-    /// tried first, on the reasoning that a property beats an injected script.
-    /// Observed through KVO it never delivered a value, and left the strips the
-    /// window's colour while looking like it worked. A mechanism that silently
-    /// does nothing is worse here than no mechanism, so it was replaced rather
-    /// than kept alongside this.
-    private static let themeScript = """
-    (function () {
-      function report() {
-        var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        var meta = document.querySelector('meta[name="theme-color"][media*="' + (dark ? 'dark' : 'light') + '"]')
-                || document.querySelector('meta[name="theme-color"]');
-        if (!meta) { return; }
-        var hex = /^\\s*#([0-9a-fA-F]{6})\\s*$/.exec(meta.getAttribute('content') || '');
-        if (!hex) { return; }
-        var n = parseInt(hex[1], 16);
-        window.webkit.messageHandlers.clawTheme.postMessage([(n >> 16) & 255, (n >> 8) & 255, n & 255]);
-      }
-      report();
-      try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', report); } catch (e) {}
-    })();
-    """
+    /// Two things about this are deliberate, and both were arrived at by getting
+    /// them wrong first.
+    ///
+    /// **It reads the page's background, not its `theme-color` meta.** The meta is
+    /// declared per `prefers-color-scheme`, which is the *device's* appearance, and
+    /// the Control UI's own theme picker is free to disagree with it: set the
+    /// Control UI to light on a phone in dark mode and the page is cream while the
+    /// media query still says dark. Reading the meta then reports a colour the page
+    /// is not painted with, and the strips come out black on a light page. Assigning
+    /// `var(--bg)` to a real property and reading the *computed* value makes the
+    /// engine answer for the page as it is actually styled, whatever the palette was
+    /// authored in, which is also how the desktop's relay reads the same page (see
+    /// readTheme in desktop/src/preload.cjs). The meta stays as the fallback for a
+    /// page that paints itself some other way.
+    ///
+    /// **It watches for changes rather than reading once.** The theme picker
+    /// rewrites `data-theme` and `data-theme-mode` in place with no navigation, so
+    /// there is no load event to hang this off; the attribute IS the event. The same
+    /// observer catches the page repainting after a `prefers-color-scheme` change,
+    /// which is the leg the app drives when the appearance is changed here.
+    ///
+    /// `WKWebView.themeColor` is the native route to the same value and was tried
+    /// first, on the reasoning that a property beats an injected script. Observed
+    /// through KVO it never delivered a value, and left the strips the window's
+    /// colour while looking like it worked. A mechanism that silently does nothing
+    /// is worse here than no mechanism, so it was replaced rather than kept
+    /// alongside this.
+    private static var themeScript: String {
+        """
+        (function () {
+          // A colour as three channels, or null. Anything not fully opaque is a
+          // failure rather than a colour: `rgba(0, 0, 0, 0)` is what a probe
+          // resolves to when the token does not exist at all, and reading it as
+          // black would paint the strips black on precisely the pages that have
+          // no background of their own.
+          function channels(colour) {
+            if (typeof colour !== 'string') { return null; }
+            var text = colour.trim().toLowerCase();
+            var hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/.exec(text);
+            if (hex) {
+              var digits = hex[1];
+              if (digits.length === 3) {
+                digits = digits[0] + digits[0] + digits[1] + digits[1] + digits[2] + digits[2];
+              }
+              return [parseInt(digits.slice(0, 2), 16), parseInt(digits.slice(2, 4), 16), parseInt(digits.slice(4, 6), 16)];
+            }
+            var rgb = /^rgba?\\(\\s*([\\d.]+)[\\s,]+([\\d.]+)[\\s,]+([\\d.]+)\\s*(?:[,/]\\s*([\\d.]+%?)\\s*)?\\)$/.exec(text);
+            if (!rgb) { return null; }
+            if (rgb[4] !== undefined) {
+              var alpha = rgb[4].indexOf('%') >= 0 ? parseFloat(rgb[4]) / 100 : parseFloat(rgb[4]);
+              if (!(alpha > 0.5)) { return null; }
+            }
+            // Held to 0-255 so a page cannot hand the app a colour channel out of
+            // range, the same way the desktop parses every value before it reaches
+            // an API.
+            var out = [];
+            for (var i = 1; i <= 3; i += 1) {
+              var n = Math.round(Number(rgb[i]));
+              if (!isFinite(n)) { return null; }
+              out.push(Math.min(255, Math.max(0, n)));
+            }
+            return out;
+          }
+
+          // The page's background, through a real property so the engine
+          // flattens whatever notation the palette was authored in. The probe is
+          // temporary and changes nothing about the page.
+          function pageBackground() {
+            var probe = document.createElement('span');
+            probe.setAttribute('aria-hidden', 'true');
+            probe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;height:0;pointer-events:none;background-color:var(--bg)';
+            document.documentElement.appendChild(probe);
+            var value = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+            return value;
+          }
+
+          // What the page declares for the appearance in force. Only reached when
+          // the page paints its background some way the probe cannot see.
+          function declaredColour() {
+            var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            var meta = document.querySelector('meta[name="theme-color"][media*="' + (dark ? 'dark' : 'light') + '"]')
+                    || document.querySelector('meta[name="theme-color"]');
+            return meta ? (meta.getAttribute('content') || '') : '';
+          }
+
+          function report() {
+            var rgb = channels(pageBackground()) || channels(declaredColour());
+            if (!rgb) { return; }
+            try { window.webkit.messageHandlers.\(themeMessageName).postMessage(rgb); } catch (e) {}
+          }
+
+          // The app calls this when the appearance changes, which is the one case
+          // the observer cannot see: the trait collection moved before the page
+          // re-resolved its own palette.
+          window.\(themeReportHook) = report;
+
+          report();
+          try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', report); } catch (e) {}
+          try {
+            new MutationObserver(report).observe(document.documentElement, {
+              attributes: true,
+              attributeFilter: ['data-theme', 'data-theme-mode', 'data-theme-resolved', 'style', 'class']
+            });
+          } catch (e) {}
+        })();
+        """
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -234,6 +337,15 @@ struct WebView: UIViewRepresentable {
         webView.backgroundColor = .systemBackground
         webView.scrollView.backgroundColor = .systemBackground
 
+        // The appearance the app is in, applied where the page can see it. A
+        // WKWebView resolves a page's `prefers-color-scheme` from its own trait
+        // collection, so this is the whole of the downward leg: no attribute is
+        // written into a page we do not own, and an explicit light or dark here
+        // is the same answer the native chrome and the settings surface are
+        // wearing. `system` is `.unspecified`, which leaves the trait collection
+        // driven by the device, so a live device change still reaches the page.
+        webView.overrideUserInterfaceStyle = appearance.userInterfaceStyle
+
         // `allowsBackForwardNavigationGestures` is deliberately not set. The
         // Control UI is a single-page app, so there is no history worth
         // swiping through, and a swipe that moved the whole app off the page
@@ -250,6 +362,22 @@ struct WebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
+        // Before the load guard below, because the appearance has to reach a page
+        // that is already on screen: changing it in settings must repaint what is
+        // in front of you rather than wait for the next navigation. Applied only
+        // when it differs from the last one, because this method runs on every
+        // layout pass and a script call per pass would be work nobody asked for.
+        if context.coordinator.appliedAppearance != appearance {
+            context.coordinator.appliedAppearance = appearance
+            webView.overrideUserInterfaceStyle = appearance.userInterfaceStyle
+            // And told to report again, because the trait collection moved before
+            // the page re-resolved its palette: the strips would otherwise keep
+            // the previous appearance's colour until something else repainted
+            // them. The hook is installed by `themeScript`, and the `&&` is what
+            // makes this a no-op on a page that has not run it yet.
+            webView.evaluateJavaScript("window.\(Self.themeReportHook) && window.\(Self.themeReportHook)()")
+        }
+
         guard context.coordinator.requested != gateway.url else { return }
         context.coordinator.requested = gateway.url
         // Recorded before the load rather than after it, because the settings page

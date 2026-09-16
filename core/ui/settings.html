@@ -2,6 +2,21 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <!-- The layout width, and it is here because this page has TWO hosts and one of
+       them is a phone. Without it a web view falls back to the 980px desktop
+       layout viewport and scales the whole document down to fit its own frame,
+       which on a 402pt-wide screen is a factor of about 0.41: the card came out
+       at three quarters of the width with 5px text, on a surface whose own
+       stylesheet says 13px. Measured on an iPhone simulator on 2026-09-16, in
+       both presentations. The desktop is unaffected either way, Chromium ignores
+       this meta outside mobile viewport mode.
+
+       `viewport-fit=cover` is the other half, and the phone needs it for a
+       different reason: the web view is laid out edge to edge there, so the page
+       has to inset its own content (see the safe-area padding on `.scrim` in
+       ui.css) and that only answers a non-zero `env(safe-area-inset-*)` under
+       this value. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;">
   <title>Claw Control UI Settings</title>
@@ -154,6 +169,31 @@
           <span>Send facts about this device, such as its name and operating system, with ordinary chat prompts, so Claw Control UI knows which machine is talking. Off by default.</span>
         </span>
       </label>
+      <!-- Which appearance the app is in, and the one setting on this tab whose
+           owner is the client rather than the Control UI. On the phone the app
+           has a native chrome of its own (the status bar, the safe-area strips, a
+           sheet) and a web view that a page's `prefers-color-scheme` resolves
+           against, so "light", "dark" and "system" have to be decided
+           somewhere the native half can read them. The desktop has no such
+           half: its appearance IS the Control UI's theme, chosen in the Control
+           UI, which the app then follows. So the row is absent there rather than
+           queued, and the reason is recorded in core/spec/settings.json. -->
+      <div class="field" data-setting="appearance">
+        <span>Appearance</span>
+        <select id="appearance" aria-describedby="appearance-hint">
+          <option value="system">Match the system</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+        <div class="muted-sm hint" id="appearance-hint">
+          Which colours the app uses. Match the system follows this device and changes with it while the app is open.
+        </div>
+        <!-- Its own answer, next to its own control. Applying this one on the
+             spot rather than at Save is the point of it: a colour choice nobody
+             can see the effect of until they press something else is a choice
+             they have to take on trust. -->
+        <div class="result" id="appearance-result"></div>
+      </div>
       <div class="field" data-setting="globalShortcut">
         <span>Global shortcut</span>
         <input type="text" id="globalShortcut" placeholder="CommandOrControl+Shift+O" spellcheck="false">
