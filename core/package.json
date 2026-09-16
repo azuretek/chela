@@ -18,7 +18,8 @@
     "./prompt-metadata.js": "./prompt-metadata.js",
     "./app-settings-affordance.js": "./app-settings-affordance.js",
     "./config-model.js": "./config-model.js",
-    "./gateway-url.js": "./gateway-url.js"
+    "./gateway-url.js": "./gateway-url.js",
+    "./native-control-auth.js": "./native-control-auth.js"
   },
   "scripts": {
     "test": "node --test test/*.test.js"

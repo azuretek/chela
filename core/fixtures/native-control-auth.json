@@ -1,0 +1,78 @@
+{
+  "description": "The native token handoff object and its install statement. core/test/native-control-auth.test.js asserts the JS reproduces every case and mobile/ClawTests/NativeControlAuthParityTests.swift asserts the Swift port does, so a client that hands the credential over through the window global hands over the same object as a later client would. The tokens here are examples; a real token is read from the client's own secure store and never appears in the tree.",
+  "why": [
+    "The object is what the Control UI reads at boot (window.__OPENCLAW_NATIVE_CONTROL_AUTH__). The two behaviours a port is most likely to get wrong are pinned: an empty or absent token hands NO credential over rather than an empty-string token, which the page would read as a request to retire shared-owner auth; and a client descriptor is included only when its per-client facts are all present, because a partial one is dropped by the page anyway.",
+    "The install statement is a single assignment, so the fixture also pins that the object is serialized as JSON onto the global exactly once, with no logic around it."
+  ],
+  "global": "__OPENCLAW_NATIVE_CONTROL_AUTH__",
+  "cases": [
+    {
+      "name": "a token and a full client descriptor produce both",
+      "input": { "token": "example-token", "clientId": "openclaw-ios", "platform": "ios", "deviceFamily": "iPhone" },
+      "output": {
+        "token": "example-token",
+        "client": {
+          "id": "openclaw-ios",
+          "mode": "ui",
+          "platform": "ios",
+          "deviceFamily": "iPhone",
+          "scopes": ["operator.admin", "operator.read", "operator.write", "operator.approvals", "operator.questions", "operator.pairing"]
+        }
+      }
+    },
+    {
+      "name": "a token with no client descriptor hands the credential over alone",
+      "input": { "token": "example-token" },
+      "output": { "token": "example-token" }
+    },
+    {
+      "name": "an empty token is no token",
+      "input": { "token": "", "clientId": "openclaw-ios", "platform": "ios", "deviceFamily": "iPhone" },
+      "output": {
+        "client": {
+          "id": "openclaw-ios",
+          "mode": "ui",
+          "platform": "ios",
+          "deviceFamily": "iPhone",
+          "scopes": ["operator.admin", "operator.read", "operator.write", "operator.approvals", "operator.questions", "operator.pairing"]
+        }
+      }
+    },
+    {
+      "name": "no token and no descriptor is an empty object",
+      "input": {},
+      "output": {}
+    },
+    {
+      "name": "a partial client descriptor is left out rather than half sent",
+      "input": { "token": "example-token", "clientId": "openclaw-ios", "platform": "ios" },
+      "output": { "token": "example-token" }
+    },
+    {
+      "name": "the iPad device family survives",
+      "input": { "token": "example-token", "clientId": "openclaw-ios", "platform": "ios", "deviceFamily": "iPad" },
+      "output": {
+        "token": "example-token",
+        "client": {
+          "id": "openclaw-ios",
+          "mode": "ui",
+          "platform": "ios",
+          "deviceFamily": "iPad",
+          "scopes": ["operator.admin", "operator.read", "operator.write", "operator.approvals", "operator.questions", "operator.pairing"]
+        }
+      }
+    }
+  ],
+  "installation": [
+    {
+      "name": "the install statement is one assignment of the JSON object",
+      "input": { "token": "example-token", "clientId": "openclaw-ios", "platform": "ios", "deviceFamily": "iPhone" },
+      "output": "window.__OPENCLAW_NATIVE_CONTROL_AUTH__ = {\"token\":\"example-token\",\"client\":{\"id\":\"openclaw-ios\",\"mode\":\"ui\",\"platform\":\"ios\",\"deviceFamily\":\"iPhone\",\"scopes\":[\"operator.admin\",\"operator.read\",\"operator.write\",\"operator.approvals\",\"operator.questions\",\"operator.pairing\"]}};"
+    },
+    {
+      "name": "no token still installs an object, an empty one, so the page reads a defined global",
+      "input": {},
+      "output": "window.__OPENCLAW_NATIVE_CONTROL_AUTH__ = {};"
+    }
+  ]
+}

@@ -8,6 +8,16 @@ import SwiftUI
 /// scene owns a window and nothing else.
 @main
 struct ClawApp: App {
+    init() {
+        #if DEBUG
+        // A debug run may be launched pointed at a gateway with a token in the
+        // environment, so a simulator can prove a real authenticated connection.
+        // Inert without both, and compiled out of a release build. See
+        // GatewayStore.seedDebugTokenFromEnvironment.
+        GatewayStore.seedDebugTokenFromEnvironment()
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
