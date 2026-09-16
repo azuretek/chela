@@ -93,11 +93,14 @@ number rather than two that can drift.
 
 Signing needs no certificate export. The `ASC_*` secrets are an App Store
 Connect key with the App Manager role, and `-allowProvisioningUpdates` lets
-Apple issue the distribution certificate and profile itself. The key is written
-to a file with mode 600 for the length of the job and removed by its last step.
-The app record in App Store Connect is the one thing CI cannot create; the
-workflow checks for it before building and stops with Apple's own message if it
-is missing.
+Apple issue the certificates and profiles itself. The archive carries a
+development identity, which is what an automatically signed archive is: the
+App Store export is the step that re-signs it with an Apple Distribution
+certificate, and that export either produces a distribution build or fails.
+The key is written to a file with mode 600 for the length of the job and
+removed by its last step. The app record in App Store Connect is the one thing
+CI cannot create; the workflow checks for it before building and stops with
+Apple's own message if it is missing.
 
 ## Layout
 

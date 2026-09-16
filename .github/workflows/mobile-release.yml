@@ -289,8 +289,7 @@ jobs:
           fi
           echo "archived to $archive"
 
-      # The archive is read back rather than trusted, and both things it proves
-      # are invisible in an exit code.
+      # The archive is read back rather than trusted.
       #
       # The versions, because Apple rejects an upload whose bundle short version
       # is not exactly three integers or whose build number is not greater than
@@ -299,9 +298,16 @@ jobs:
       # overrides reached the plist at all, and a build setting that silently
       # did not apply looks exactly like one that did.
       #
-      # The signature, because the promise is a distribution build rather than
-      # merely a signed one. A development-signed archive exports and uploads
-      # far enough to be confusing, and it is never what we meant to ship.
+      # The signing identity, as proof that something Apple issued signed it and
+      # as a record of which identity that was. An archive built with automatic
+      # signing carries a DEVELOPMENT identity, and that is the normal shape
+      # rather than a fault: the App Store export is the step that re-signs the
+      # bundle with an Apple Distribution certificate and an App Store profile,
+      # and it is that step which either produces a distribution build or fails.
+      # Requiring distribution signing here would reject every ordinary archive.
+      # What this does refuse is an archive signed by nothing, or by an ad-hoc
+      # identity, which is the difference between a misconfigured run and a
+      # normal one.
       - name: Verify the archive
         if: steps.preflight.outputs.already-uploaded != 'true'
         env:
@@ -344,8 +350,11 @@ jobs:
 
           authority="$(codesign -dv --verbose=2 "$app" 2>&1 | sed -n 's/^Authority=//p' | head -1)"
           case "$authority" in
-            Apple\ Distribution:*) echo "signed by $authority" ;;
-            *) echo "::error::the archive is signed with '${authority:-no identity}', not an Apple Distribution certificate, so it is not a distribution build and must not be uploaded. Nothing was uploaded."; exit 1 ;;
+            "Apple Development:"*|"Apple Distribution:"*|iPhone\ Developer:*|iPhone\ Distribution:*)
+              echo "archive signed by $authority" ;;
+            *)
+              echo "::error::the archive is signed with '${authority:-no identity}', which is neither an Apple development nor a distribution identity, so nothing here was signed by the account. Nothing was uploaded."
+              exit 1 ;;
           esac
 
       # The export options are built with plutil rather than written as XML, so
@@ -418,9 +427,39 @@ jobs:
 
           echo "export and upload finished"
 
-          # Written out when Xcode produced one, which it does not always for an
-          # upload destination. The archive is the durable copy either way.
-          find "$export_dir" -maxdepth 2 -type f -print || true
+          # The artifact the export produced, read back, because the upload's
+          # exit code does not say what was uploaded. Xcode writes the .ipa as
+          # part of an upload, and when it does, this is the only copy of the
+          # exact bundle that went to Apple: the versions Apple will read, and
+          # the distribution signature the export is supposed to have applied.
+          # An unsigned or development-signed .ipa here means the export did not
+          # do its job, and the build has to be treated as not shipped.
+          ipa="$(find "$export_dir" -maxdepth 2 -name '*.ipa' -print -quit || true)"
+          if [ -z "$ipa" ]; then
+            echo "no .ipa was written to $export_dir, so there is nothing on disk to read; the arrival check below is what proves the build"
+            find "$export_dir" -maxdepth 3 -print || true
+            exit 0
+          fi
+
+          echo "exported $ipa"
+          rm -rf "$RUNNER_TEMP/ipa"
+          unzip -q -o "$ipa" -d "$RUNNER_TEMP/ipa"
+          uploaded_app="$RUNNER_TEMP/ipa/Payload/Claw.app"
+          if [ ! -d "$uploaded_app" ]; then
+            echo "::error::$ipa has no Payload/Claw.app in it"
+            exit 1
+          fi
+
+          echo "uploaded CFBundleShortVersionString: $(plutil -extract CFBundleShortVersionString raw -o - "$uploaded_app/Info.plist")"
+          echo "uploaded CFBundleVersion: $(plutil -extract CFBundleVersion raw -o - "$uploaded_app/Info.plist")"
+          uploaded_authority="$(codesign -dv --verbose=2 "$uploaded_app" 2>&1 | sed -n 's/^Authority=//p' | head -1)"
+          case "$uploaded_authority" in
+            "Apple Distribution:"*|iPhone\ Distribution:*)
+              echo "uploaded build signed by $uploaded_authority" ;;
+            *)
+              echo "::error::the exported build is signed with '${uploaded_authority:-no identity}', not an Apple Distribution certificate, so what reached Apple is not a distribution build. Treat this build as NOT shipped and check the signing setup in App Store Connect."
+              exit 1 ;;
+          esac
 
       # The only proof that the build reached TestFlight. The upload command's
       # exit code says Apple's delivery service took the bytes; this asks the
