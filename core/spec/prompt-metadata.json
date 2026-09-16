@@ -1,0 +1,44 @@
+{
+  "description": "The client-context prompt block and the hook that puts it on every outbound chat.send frame. This file is the ONE owner of the marker, the per-client header, the field order, the value rules and the injected script itself. core/prompt-metadata.js reads it (the desktop reads that module, and core/test asserts it against core/fixtures/prompt-metadata.json); the iOS client bundles THIS FILE and installs its hook through a WKUserScript, so there is one copy of the injected script in the tree rather than one per client.",
+  "why": [
+    "The marker is OpenClaw's own, and adopting it is what makes the gateway hide the block for us: stripInboundMetadata removes a block whose header line ENDS with it, from display text and from replayed past turns, while the active turn keeps its metadata so the model still sees the block on the turn it was sent. Two shapes follow from that stripper and are load-bearing: the header must END with the marker, and the block must be separated from the prompt by a blank line.",
+    "The hook text lives here rather than in a JavaScript module because the two clients cannot import each other. The desktop is ESM and the phone is Swift, so the only thing they can share is data read the way each language reads data: a static import on the desktop, a bundled resource on the phone. Keeping the script in a module would have forced a second copy in Swift, and two copies of the same script is exactly the fork this file exists to prevent.",
+    "It is an ARRAY of lines rather than one escaped string, because a maintainable escape is the only kind that survives an edit: each line here is a line of the script, a diff reads as a diff, and the readers join it with a newline.",
+    "`headers` is per client while the marker is shared, which is the honest split. The label answers 'which client is this block from' in the one place a person or a model reads before the fields, and the phone should not be labelled a desktop. The desktop's label is unchanged from the release before this file, so this refactor alters no prompt the desktop already sends.",
+    "The hook takes its configuration from a global rather than from text spliced into the script, so the script body has no per-platform parts at all. That is what makes it safe to run the identical bytes in two engines: only the values differ, and only the client that gathered them supplies them."
+  ],
+  "marker": "\u27E6openclaw:ctx\u27E7",
+  "headers": {
+    "desktop": "Desktop client context",
+    "mobile": "Mobile client context"
+  },
+  "fields": ["host", "os", "user", "home", "locale", "timezone", "client"],
+  "maxValueLength": 256,
+  "fallback": "unknown",
+  "global": "__clawPromptMetadata",
+  "hook": [
+    "(function () {",
+    "  if (window.__clawPromptMetadataInstalled) return;",
+    "  window.__clawPromptMetadataInstalled = true;",
+    "  var send = WebSocket.prototype.send;",
+    "  WebSocket.prototype.send = function clawSendHook(data) {",
+    "    try {",
+    "      var config = window.__clawPromptMetadata;",
+    "      if (config && config.enabled === true && typeof config.block === 'string' && config.block && typeof data === 'string' && data.charAt(0) === '{') {",
+    "        var frame = JSON.parse(data);",
+    "        var message = frame && frame.method === 'chat.send' && frame.params ? frame.params.message : null;",
+    "        if (typeof message === 'string' && message.trim()) {",
+    "          var start = message.trimStart();",
+    "          var isCommand = start.charAt(0) === '/' && start.length > 1 && !/\\s/.test(start.charAt(1));",
+    "          if (!isCommand && message.indexOf(config.header) === -1) {",
+    "            frame.params.message = config.block + '\\n\\n' + message;",
+    "            data = JSON.stringify(frame);",
+    "          }",
+    "        }",
+    "      }",
+    "    } catch (error) {}",
+    "    return send.call(this, data);",
+    "  };",
+    "})();"
+  ]
+}

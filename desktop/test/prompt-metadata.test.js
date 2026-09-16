@@ -149,6 +149,50 @@ test('the hook rewrites outbound frames only, because the gateway does the hidin
   assert.match(script, /WebSocket\.prototype\.send/);
 });
 
+/* ------------------------------------- one implementation, two clients */
+
+/*
+ * What stayed here and what moved.
+ *
+ * The block, the marker, the value rules, the injected hook and the script that
+ * installs it all moved to core/prompt-metadata.js, because the phone needs the
+ * same ones and can only get them from a shared owner. Gathering THIS machine's
+ * facts did not move, and cannot: it is Node's `os` on a desktop and UIKit on a
+ * phone. A second implementation of the shared half in this file is exactly the
+ * fork the move exists to prevent, so its absence is asserted rather than
+ * assumed.
+ */
+test('the shared rules are re-exported, not reimplemented here', () => {
+  const source = fs.readFileSync(path.join(HERE, '..', 'src', 'prompt-metadata.js'), 'utf8');
+  for (const name of ['clean', 'formatBlock', 'shouldInject', 'inject', 'transformFrame', 'clientScript']) {
+    assert.doesNotMatch(source, new RegExp(`function ${name}\\b`), `${name} is implemented in core, not here`);
+  }
+  assert.match(source, /export \{[\s\S]*?\} from '\.\.\/\.\.\/core\/prompt-metadata\.js'/);
+  assert.match(source, /import os from 'node:os'/);
+  assert.match(source, /export function collectMetadata/);
+});
+
+test('what the desktop installs ends with the hook the spec owns', () => {
+  const script = metadata.clientScript({ enabled: true, block: sampleBlock() });
+  assert.ok(script.endsWith(metadata.hookSource()), 'the injected script is the shared one, unchanged');
+  assert.ok(metadata.hookSource().includes('WebSocket.prototype.send'));
+});
+
+test('the desktop gathers this machine with Node and renders it as the block', () => {
+  const facts = metadata.collectMetadata({ appVersion: '9.9.9' });
+  const block = metadata.formatBlock(facts);
+
+  assert.strictEqual(metadata.CONTEXT_HEADER, metadata.contextHeader('desktop'));
+  assert.ok(block.startsWith(`${metadata.CONTEXT_HEADER}\n`));
+  assert.match(block, /^host: \S+$/m);
+  assert.match(block, /^os: (macOS|Windows|Linux) \S+ \(\S+\)$/m);
+  assert.match(block, /^user: \S+$/m);
+  assert.match(block, /^home: \S+$/m);
+  assert.match(block, /^locale: \S+$/m);
+  assert.match(block, /^timezone: \S+$/m);
+  assert.match(block, /^client: Claw Control UI \(claw-desktop\) 9\.9\.9$/m);
+});
+
 /* -------------------------------------------------------------- settings wiring */
 
 test('the settings toggle is wired from the page through main to the gateway page', () => {

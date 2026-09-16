@@ -15,6 +15,9 @@ import path from 'node:path';
 import { percent } from '../progress.js';
 import { reason, status } from '../connection.js';
 import { create, sentence } from '../notices.js';
+import {
+  clean, clientIdentity, formatBlock, inject, shouldInject, transformFrame,
+} from '../prompt-metadata.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(HERE, '..', 'fixtures');
@@ -95,6 +98,71 @@ function snapshot(store) {
   }
   return { size: store.size(), list: store.list().map((n) => n.id), unread: store.unread().map((n) => n.id), notice };
 }
+
+/*
+ * The client-context block's half of the same contract.
+ *
+ * The block is what every client puts on every outbound prompt, so its shape is
+ * the one thing both clients have to render identically: the same header rule,
+ * the same field order, the same value cleaning, and the same two reasons not to
+ * inject at all. The script itself is not in this fixture, by design; its one
+ * owner is core/spec/prompt-metadata.json, which both clients read.
+ */
+test('prompt-metadata.clean() reproduces every fixture', () => {
+  const { clean: cases } = load('prompt-metadata.json');
+  assert.ok(cases.length > 0, 'expected clean fixtures');
+  for (const { input, output } of cases) {
+    assert.strictEqual(clean(input), output, `clean(${JSON.stringify(input)}) should be ${JSON.stringify(output)}`);
+  }
+});
+
+test('prompt-metadata.formatBlock() reproduces every fixture', () => {
+  const { block: cases } = load('prompt-metadata.json');
+  assert.ok(cases.length > 0, 'expected block fixtures');
+  for (const { name, metadata, client, output } of cases) {
+    assert.strictEqual(
+      formatBlock(metadata, client ?? 'desktop'),
+      output,
+      `${name}: the block disagrees`,
+    );
+  }
+});
+
+test('prompt-metadata.shouldInject() reproduces every fixture', () => {
+  const { shouldInject: cases } = load('prompt-metadata.json');
+  assert.ok(cases.length > 0, 'expected shouldInject fixtures');
+  for (const { input, output } of cases) {
+    assert.strictEqual(shouldInject(input.message), output, `shouldInject(${JSON.stringify(input.message)}) should be ${output}`);
+  }
+});
+
+test('prompt-metadata.inject() reproduces every fixture', () => {
+  const { inject: cases } = load('prompt-metadata.json');
+  assert.ok(cases.length > 0, 'expected inject fixtures');
+  for (const { name, input, output } of cases) {
+    assert.strictEqual(inject(input.message, input.block), output, `${name}: inject disagrees`);
+  }
+});
+
+test('prompt-metadata.transformFrame() reproduces every fixture', () => {
+  const { frame: cases } = load('prompt-metadata.json');
+  assert.ok(cases.length > 0, 'expected frame fixtures');
+  for (const { name, input, output } of cases) {
+    assert.strictEqual(
+      transformFrame(input.data, { enabled: input.enabled, block: input.block, client: input.client ?? 'desktop' }),
+      output,
+      `${name}: the frame disagrees`,
+    );
+  }
+});
+
+test('prompt-metadata.clientIdentity() reproduces every fixture', () => {
+  const { clientIdentity: cases } = load('prompt-metadata.json');
+  assert.ok(cases.length > 0, 'expected clientIdentity fixtures');
+  for (const { input, output } of cases) {
+    assert.strictEqual(clientIdentity(input.label, input.version), output, `clientIdentity(${JSON.stringify(input)}) should be ${JSON.stringify(output)}`);
+  }
+});
 
 test('notices.sentence() reproduces every fixture', () => {
   const { sentence: cases } = load('notices.json');

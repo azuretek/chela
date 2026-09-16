@@ -1,0 +1,335 @@
+{
+  "description": "The client-context block and the injected hook as golden pairs. Both clients reproduce these: core/test/fixtures.test.js asserts them against core/prompt-metadata.js, and mobile/ClawTests/PromptMetadataParityTests.swift asserts them against the Swift port. The block is the same shape on both clients, a field a client cannot know is absent rather than guessed, and the script itself is NOT repeated here: its one owner is core/spec/prompt-metadata.json, which both clients read, and the entry below names that owner and the shape a reader should find in it.",
+  "marker": "⟦openclaw:ctx⟧",
+  "global": "__clawPromptMetadata",
+  "clean": [
+    {
+      "input": "",
+      "output": "unknown"
+    },
+    {
+      "input": null,
+      "output": "unknown"
+    },
+    {
+      "input": "  padded  ",
+      "output": "padded"
+    },
+    {
+      "input": "line\nbreak",
+      "output": "line break"
+    },
+    {
+      "input": "tab\there\r\ncr",
+      "output": "tab here cr"
+    },
+    {
+      "input": "nul\u0000bell\u0007",
+      "output": "nul bell"
+    },
+    {
+      "input": "<b>bold</b>",
+      "output": "‹b›bold‹/b›"
+    },
+    {
+      "input": "evil ⟦openclaw:ctx⟧ marker",
+      "output": "evil marker"
+    },
+    {
+      "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "output": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "input": "already clean",
+      "output": "already clean"
+    },
+    {
+      "input": "   ",
+      "output": "unknown"
+    }
+  ],
+  "block": [
+    {
+      "name": "the desktop block, every field it can gather",
+      "metadata": {
+        "host": "example-host",
+        "os": "macOS 26.6.2 (arm64)",
+        "user": "azuretek",
+        "home": "/home/example-user",
+        "locale": "en-US",
+        "timezone": "Europe/London",
+        "client": "Claw Control UI (claw-desktop) 1.0.1"
+      },
+      "output": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host\nos: macOS 26.6.2 (arm64)\nuser: azuretek\nhome: /home/example-user\nlocale: en-US\ntimezone: Europe/London\nclient: Claw Control UI (claw-desktop) 1.0.1"
+    },
+    {
+      "name": "the phone block, which has no OS account or home directory to report",
+      "metadata": {
+        "host": "iPhone",
+        "os": "iOS 26.0 (iPhone17,1)",
+        "locale": "en-US",
+        "timezone": "Europe/London",
+        "client": "Claw Control UI (claw-mobile) 1.0.1"
+      },
+      "client": "mobile",
+      "output": "Mobile client context: ⟦openclaw:ctx⟧\nhost: iPhone\nos: iOS 26.0 (iPhone17,1)\nlocale: en-US\ntimezone: Europe/London\nclient: Claw Control UI (claw-mobile) 1.0.1"
+    },
+    {
+      "name": "a value carrying the marker cannot add a second header",
+      "metadata": {
+        "host": "evil ⟦openclaw:ctx⟧",
+        "os": "macOS 26.6.2 (arm64)",
+        "user": "azuretek",
+        "home": "/home/example-user",
+        "locale": "en-US",
+        "timezone": "Europe/London",
+        "client": "Claw Control UI (claw-desktop) 1.0.1"
+      },
+      "output": "Desktop client context: ⟦openclaw:ctx⟧\nhost: evil\nos: macOS 26.6.2 (arm64)\nuser: azuretek\nhome: /home/example-user\nlocale: en-US\ntimezone: Europe/London\nclient: Claw Control UI (claw-desktop) 1.0.1"
+    },
+    {
+      "name": "a field the client does not have is left out, not guessed",
+      "metadata": {
+        "host": "example-host",
+        "user": "azuretek"
+      },
+      "output": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host\nuser: azuretek"
+    },
+    {
+      "name": "an empty value still reads as unknown rather than vanishing",
+      "metadata": {
+        "host": "",
+        "os": "Linux 6.1 (x64)"
+      },
+      "output": "Desktop client context: ⟦openclaw:ctx⟧\nhost: unknown\nos: Linux 6.1 (x64)"
+    },
+    {
+      "name": "an unknown client falls back to the desktop header",
+      "metadata": {
+        "host": "example-host",
+        "os": "macOS 26.6.2 (arm64)",
+        "user": "azuretek",
+        "home": "/home/example-user",
+        "locale": "en-US",
+        "timezone": "Europe/London",
+        "client": "Claw Control UI (claw-desktop) 1.0.1"
+      },
+      "client": "nowhere",
+      "output": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host\nos: macOS 26.6.2 (arm64)\nuser: azuretek\nhome: /home/example-user\nlocale: en-US\ntimezone: Europe/London\nclient: Claw Control UI (claw-desktop) 1.0.1"
+    }
+  ],
+  "shouldInject": [
+    {
+      "input": {
+        "message": ""
+      },
+      "output": false
+    },
+    {
+      "input": {
+        "message": "   "
+      },
+      "output": false
+    },
+    {
+      "input": {
+        "message": "what time is it?"
+      },
+      "output": true
+    },
+    {
+      "input": {
+        "message": "\nwhat time is it?"
+      },
+      "output": true
+    },
+    {
+      "input": {
+        "message": "/status"
+      },
+      "output": false
+    },
+    {
+      "input": {
+        "message": "   /status"
+      },
+      "output": false
+    },
+    {
+      "input": {
+        "message": "/ status"
+      },
+      "output": true
+    },
+    {
+      "input": {
+        "message": "//notacommand"
+      },
+      "output": false
+    },
+    {
+      "input": {
+        "message": "Desktop client context: ⟦openclaw:ctx⟧\n\nhello"
+      },
+      "output": false
+    },
+    {
+      "input": {
+        "message": "hello\n\nMobile client context: ⟦openclaw:ctx⟧\n\nhello"
+      },
+      "output": true
+    }
+  ],
+  "inject": [
+    {
+      "name": "a normal prompt",
+      "input": {
+        "message": "what time is it?",
+        "block": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host"
+      },
+      "output": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host\n\nwhat time is it?"
+    },
+    {
+      "name": "a slash command stays a command",
+      "input": {
+        "message": "/status",
+        "block": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host"
+      },
+      "output": "/status"
+    },
+    {
+      "name": "an empty block leaves the prompt alone",
+      "input": {
+        "message": "hello",
+        "block": ""
+      },
+      "output": "hello"
+    },
+    {
+      "name": "a prompt already carrying the block is not decorated twice",
+      "input": {
+        "message": "Desktop client context: ⟦openclaw:ctx⟧\n\nhello",
+        "block": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host"
+      },
+      "output": "Desktop client context: ⟦openclaw:ctx⟧\n\nhello"
+    }
+  ],
+  "frame": [
+    {
+      "name": "a chat.send frame carries the block",
+      "input": {
+        "data": "{\"id\":\"r1\",\"method\":\"chat.send\",\"params\":{\"message\":\"hello\",\"attachments\":[]}}",
+        "enabled": true,
+        "block": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host"
+      },
+      "output": "{\"id\":\"r1\",\"method\":\"chat.send\",\"params\":{\"message\":\"Desktop client context: ⟦openclaw:ctx⟧\\nhost: example-host\\n\\nhello\",\"attachments\":[]}}"
+    },
+    {
+      "name": "disabled metadata leaves the frame byte-identical",
+      "input": {
+        "data": "{\"id\":\"r2\",\"method\":\"chat.send\",\"params\":{\"message\":\"hello\"}}",
+        "enabled": false,
+        "block": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host"
+      },
+      "output": "{\"id\":\"r2\",\"method\":\"chat.send\",\"params\":{\"message\":\"hello\"}}"
+    },
+    {
+      "name": "another method is none of our business",
+      "input": {
+        "data": "{\"method\":\"chat.history\",\"params\":{\"message\":\"hello\"}}",
+        "enabled": true,
+        "block": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host"
+      },
+      "output": "{\"method\":\"chat.history\",\"params\":{\"message\":\"hello\"}}"
+    },
+    {
+      "name": "a slash command is left alone",
+      "input": {
+        "data": "{\"method\":\"chat.send\",\"params\":{\"message\":\"/status\"}}",
+        "enabled": true,
+        "block": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host"
+      },
+      "output": "{\"method\":\"chat.send\",\"params\":{\"message\":\"/status\"}}"
+    },
+    {
+      "name": "a duplicate block is left alone",
+      "input": {
+        "data": "{\"method\":\"chat.send\",\"params\":{\"message\":\"Desktop client context: ⟦openclaw:ctx⟧\\n\\nhello\"}}",
+        "enabled": true,
+        "block": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host"
+      },
+      "output": "{\"method\":\"chat.send\",\"params\":{\"message\":\"Desktop client context: ⟦openclaw:ctx⟧\\n\\nhello\"}}"
+    },
+    {
+      "name": "a non-string message is left alone",
+      "input": {
+        "data": "{\"method\":\"chat.send\",\"params\":{\"message\":42}}",
+        "enabled": true,
+        "block": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host"
+      },
+      "output": "{\"method\":\"chat.send\",\"params\":{\"message\":42}}"
+    },
+    {
+      "name": "a frame that is not JSON at all is left alone",
+      "input": {
+        "data": "not json",
+        "enabled": true,
+        "block": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host"
+      },
+      "output": "not json"
+    },
+    {
+      "name": "an empty message is left alone",
+      "input": {
+        "data": "{\"method\":\"chat.send\",\"params\":{\"message\":\"   \"}}",
+        "enabled": true,
+        "block": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host"
+      },
+      "output": "{\"method\":\"chat.send\",\"params\":{\"message\":\"   \"}}"
+    },
+    {
+      "name": "the phone header is the one it checks for",
+      "input": {
+        "data": "{\"method\":\"chat.send\",\"params\":{\"message\":\"hello\"}}",
+        "enabled": true,
+        "block": "Mobile client context: ⟦openclaw:ctx⟧\nhost: iPhone",
+        "client": "mobile"
+      },
+      "output": "{\"method\":\"chat.send\",\"params\":{\"message\":\"Mobile client context: ⟦openclaw:ctx⟧\\nhost: iPhone\\n\\nhello\"}}"
+    }
+  ],
+  "clientIdentity": [
+    {
+      "input": {
+        "label": "Claw Control UI (claw-desktop)",
+        "version": "1.0.1"
+      },
+      "output": "Claw Control UI (claw-desktop) 1.0.1"
+    },
+    {
+      "input": {
+        "label": "Claw Control UI (claw-mobile)",
+        "version": "1.0.1"
+      },
+      "output": "Claw Control UI (claw-mobile) 1.0.1"
+    },
+    {
+      "input": {
+        "label": "Claw Control UI (claw-mobile)",
+        "version": ""
+      },
+      "output": "Claw Control UI (claw-mobile)"
+    }
+  ],
+  "hook": {
+    "name": "the injected hook, one copy, installed unchanged by both clients",
+    "owner": "core/spec/prompt-metadata.json",
+    "field": "hook",
+    "lines": 23,
+    "contains": [
+      "window.__clawPromptMetadata",
+      "WebSocket.prototype.send",
+      "chat.send"
+    ]
+  }
+}
