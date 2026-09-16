@@ -89,11 +89,20 @@ test('nextPhase() reproduces every fixture', () => {
   }
 });
 
-test('an approval that lands while pairing wins immediately', () => {
-  // Auto-recovery, as a state rule: an `open` from pairing-required is
-  // authenticated, not "pairing-required until something re-reads it". The
-  // screen comes down the moment the socket opens.
-  assert.strictEqual(nextPhase(PAIRING_REQUIRED, { type: 'open' }), AUTHENTICATED);
+test('an open while pairing is unconfirmed and holds the screen; only confirm clears it', () => {
+  // The anti-flicker rule. A 1008 pairing close is deliverable only after a
+  // WebSocket handshake completes, so the gateway opens the socket and then
+  // closes it 1008 on every retry: the page's socket fires `open` before the
+  // pairing close. Clearing the screen on that `open` tore the overlay away for
+  // the gap between open and close, once per retry, which was the flicker. So an
+  // open while pairing-required HOLDS, and only a `confirm` (an open that
+  // survived the settle window without a pairing close) clears the screen.
+  assert.strictEqual(nextPhase(PAIRING_REQUIRED, { type: 'open' }), PAIRING_REQUIRED);
+  assert.strictEqual(nextPhase(PAIRING_REQUIRED, { type: 'confirm' }), AUTHENTICATED);
+  // A first-connect open (no pairing screen up) is authenticated at once, and a
+  // confirm without a held open changes nothing.
+  assert.strictEqual(nextPhase(CONNECTING, { type: 'open' }), AUTHENTICATED);
+  assert.strictEqual(nextPhase(CONNECTING, { type: 'confirm' }), CONNECTING);
 });
 
 test('a retry connect while pairing-required holds the screen, it does not drop to connecting', () => {
@@ -107,11 +116,13 @@ test('a retry connect while pairing-required holds the screen, it does not drop 
   assert.strictEqual(nextPhase(FAILED, { type: 'connect' }), CONNECTING);
 });
 
-test('the pairing screen does not flap across repeated retries (sequence fixtures)', () => {
-  // The flap reproduced at the level it happened: a run of retries, each a
-  // `connect` followed by another pairing `close`, must leave the visible phase
-  // on pairing-required throughout and never once pass through `connecting`.
-  // Only an `open` (approved) or a non-pairing close ends it.
+test('the pairing screen does not flicker or flap across repeated retries (sequence fixtures)', () => {
+  // Both rules reproduced at the level they happened: a run of retries, each a
+  // `connect`, an `open`, and another pairing `close`, must leave the visible
+  // phase on pairing-required throughout and never once pass through
+  // `connecting` (the flap) OR `authenticated` (the flicker, the overlay tearing
+  // away on a retry's open). Only a `confirm` (an approved socket that survived)
+  // or a non-pairing close ends it.
   const { sequence } = load('pairing.json');
   assert.ok(Array.isArray(sequence) && sequence.length > 0, 'expected sequence fixtures');
   for (const { name, from, events, phases, never } of sequence) {
@@ -124,7 +135,7 @@ test('the pairing screen does not flap across repeated retries (sequence fixture
       assert.strictEqual(phase, phases[i], `${name}: step ${i}`);
     }
     for (const banned of never || []) {
-      assert.ok(!seen.includes(banned), `${name}: passed through ${banned}, which is the flap`);
+      assert.ok(!seen.includes(banned), `${name}: passed through ${banned}, which is a visible churn`);
     }
   }
 });

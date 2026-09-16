@@ -103,14 +103,32 @@ export function readPairingClose({ code, reason } = {}) {
  *
  * Events:
  *  - `connect`  a load/connect was started; nothing is known yet.
- *  - `open`     the gateway socket opened; the device is approved and connected.
+ *  - `open`     the gateway socket opened.
+ *  - `confirm`  an open has survived the settle window with the socket still up.
  *  - `close`    the socket closed; `pairing` is the result of readPairingClose.
  *  - `fail`     the load itself failed (host unreachable, page did not load).
  *
- * `open` always wins: an approval that lands while the pairing screen is up must
- * move straight to authenticated, which is the whole point of auto-recovery. A
- * `close` that is not pairing is an ordinary failure, kept distinct so its copy
+ * A `close` that is not pairing is an ordinary failure, kept distinct so its copy
  * (raised elsewhere) is the network/auth one and never the pairing one.
+ *
+ * `open` from `pairing-required` HOLDS the pairing screen rather than clearing
+ * it, and this is the anti-flicker rule. A 1008 pairing close is only deliverable
+ * AFTER a WebSocket handshake completes, so the gateway genuinely opens the
+ * socket and then closes it 1008 on every retry: the page's socket fires `open`
+ * before the pairing close lands. Clearing the screen on that `open` tore the
+ * overlay away for the moment between the open and the close, once per retry,
+ * exposing the reloading page underneath, which was the flicker. So an `open`
+ * while the device is still unapproved is UNCONFIRMED: the screen holds, and only
+ * an open that SURVIVES (a `confirm`, meaning the socket stayed up past the
+ * settle window without a pairing close) proves the device is approved and moves
+ * to authenticated. From any other phase an `open` is authenticated at once,
+ * because there is no pairing screen to protect: a first connect from
+ * `connecting` that opens is simply connected.
+ *
+ * `confirm` from `pairing-required` is the approval landing: the retry after an
+ * operator approves opens a socket that is not closed 1008, so it settles and
+ * this clears the screen. From any other phase a `confirm` is a no-op, because
+ * only a held open needs confirming.
  *
  * A `connect` from `pairing-required` HOLDS the pairing state rather than
  * dropping back to `connecting`. This is the anti-flap rule, and it is here in
@@ -132,7 +150,14 @@ export function nextPhase(phase, event) {
     case 'connect':
       return phase === PAIRING_REQUIRED ? PAIRING_REQUIRED : CONNECTING;
     case 'open':
-      return AUTHENTICATED;
+      // An open while the screen is up is unconfirmed: the gateway opens the
+      // socket and may still close it 1008. Hold the screen until `confirm`.
+      // From anywhere else there is no screen to protect, so it is connected.
+      return phase === PAIRING_REQUIRED ? PAIRING_REQUIRED : AUTHENTICATED;
+    case 'confirm':
+      // A held open that survived the settle window: the device is approved.
+      // Only meaningful from pairing-required; elsewhere it changes nothing.
+      return phase === PAIRING_REQUIRED ? AUTHENTICATED : phase;
     case 'close':
       return event.pairing ? PAIRING_REQUIRED : FAILED;
     case 'fail':
