@@ -96,6 +96,39 @@ test('an approval that lands while pairing wins immediately', () => {
   assert.strictEqual(nextPhase(PAIRING_REQUIRED, { type: 'open' }), AUTHENTICATED);
 });
 
+test('a retry connect while pairing-required holds the screen, it does not drop to connecting', () => {
+  // The anti-flap rule at the reducer level: a retry attempt while the pairing
+  // screen is up is a `connect`, and answering it with `connecting` is what made
+  // the screen flash once per retry. The device is still unapproved, so the
+  // visible state holds until an `open` or a non-pairing close.
+  assert.strictEqual(nextPhase(PAIRING_REQUIRED, { type: 'connect' }), PAIRING_REQUIRED);
+  // From any other phase, a connect is still a first-connect: connecting.
+  assert.strictEqual(nextPhase(CONNECTING, { type: 'connect' }), CONNECTING);
+  assert.strictEqual(nextPhase(FAILED, { type: 'connect' }), CONNECTING);
+});
+
+test('the pairing screen does not flap across repeated retries (sequence fixtures)', () => {
+  // The flap reproduced at the level it happened: a run of retries, each a
+  // `connect` followed by another pairing `close`, must leave the visible phase
+  // on pairing-required throughout and never once pass through `connecting`.
+  // Only an `open` (approved) or a non-pairing close ends it.
+  const { sequence } = load('pairing.json');
+  assert.ok(Array.isArray(sequence) && sequence.length > 0, 'expected sequence fixtures');
+  for (const { name, from, events, phases, never } of sequence) {
+    assert.strictEqual(events.length, phases.length, `${name}: one expected phase per event`);
+    let phase = from;
+    const seen = [];
+    for (let i = 0; i < events.length; i += 1) {
+      phase = nextPhase(phase, events[i]);
+      seen.push(phase);
+      assert.strictEqual(phase, phases[i], `${name}: step ${i}`);
+    }
+    for (const banned of never || []) {
+      assert.ok(!seen.includes(banned), `${name}: passed through ${banned}, which is the flap`);
+    }
+  }
+});
+
 test('approveCommand() reproduces every fixture', () => {
   const { command } = load('pairing.json');
   assert.ok(command.length > 0, 'expected command fixtures');

@@ -4,6 +4,8 @@
     "The `close` cases pin the one thing a client must not get wrong: pairing is code 1008 AND a pairing reason, so a 1008 with a non-pairing reason and a close on any other code are NOT pairing and stay ordinary failures. Getting that wrong would show a pairing screen for a dropped connection, or hide a real pairing gate behind a network message.",
     "The `requestId` cases pin the strict id pattern: a well-formed id is read, and a reason with no id, or with an id that would not pass the pattern, yields null rather than arbitrary text on a screen.",
     "The `phase` cases pin that `open` always wins (an approval that lands moves straight to authenticated, which is auto-recovery), and that a non-pairing close is `failed` while a pairing close is `pairing-required`.",
+    "The `phase` cases also pin the anti-flap rule: a `connect` from pairing-required STAYS pairing-required. A retry attempt happens underneath the pairing screen while the device is still unapproved, and pulling the visible state back to `connecting` on every retry (only to return to `pairing-required` on the next close) is what made the screen flap. The device is not approved until an `open` says so, so a fresh connect underneath holds the screen rather than dropping it.",
+    "The `sequence` cases pin that same rule at the level the flap actually happened: a run of retries, each a `connect` followed by another pairing `close`, must leave the visible phase on `pairing-required` throughout and never once pass through `connecting`. This is the golden case for `the pairing screen does not flap while waiting`, and only an `open` (approved) or a non-pairing close ends it.",
     "The `command` cases pin the real instruction: the exact `openclaw devices approve <id>` with an id, and the `--latest` form without one."
   ],
   "policyCloseCode": 1008,
@@ -123,6 +125,24 @@
       "to": "authenticated"
     },
     {
+      "name": "a retry connect while pairing-required holds the screen, it does NOT drop to connecting",
+      "from": "pairing-required",
+      "event": { "type": "connect" },
+      "to": "pairing-required"
+    },
+    {
+      "name": "a pairing close while already pairing-required stays pairing-required",
+      "from": "pairing-required",
+      "event": { "type": "close", "pairing": { "reason": "not-paired", "requestId": "req-1" } },
+      "to": "pairing-required"
+    },
+    {
+      "name": "a non-pairing close while pairing-required ends the wait as an ordinary failure",
+      "from": "pairing-required",
+      "event": { "type": "close", "pairing": null },
+      "to": "failed"
+    },
+    {
       "name": "a load failure is failed, not pairing-required",
       "from": "connecting",
       "event": { "type": "fail" },
@@ -135,6 +155,51 @@
       "to": "pairing-required"
     }
   ],
+  "sequence": [
+    {
+      "name": "the pairing screen does not flap across repeated retries while waiting",
+      "from": "connecting",
+      "events": [
+        { "type": "close", "pairing": { "reason": "not-paired", "requestId": "req-7f3a2b" } },
+        { "type": "connect" },
+        { "type": "close", "pairing": { "reason": "not-paired", "requestId": "req-7f3a2b" } },
+        { "type": "connect" },
+        { "type": "close", "pairing": { "reason": "not-paired", "requestId": "req-7f3a2b" } },
+        { "type": "connect" },
+        { "type": "close", "pairing": { "reason": "not-paired", "requestId": "req-7f3a2b" } }
+      ],
+      "phases": [
+        "pairing-required",
+        "pairing-required",
+        "pairing-required",
+        "pairing-required",
+        "pairing-required",
+        "pairing-required",
+        "pairing-required"
+      ],
+      "never": ["connecting", "failed", "authenticated"]
+    },
+    {
+      "name": "an approval that lands after several retries ends the wait, and only then",
+      "from": "connecting",
+      "events": [
+        { "type": "close", "pairing": { "reason": "not-paired", "requestId": "req-7f3a2b" } },
+        { "type": "connect" },
+        { "type": "close", "pairing": { "reason": "not-paired", "requestId": "req-7f3a2b" } },
+        { "type": "connect" },
+        { "type": "open" }
+      ],
+      "phases": [
+        "pairing-required",
+        "pairing-required",
+        "pairing-required",
+        "pairing-required",
+        "authenticated"
+      ],
+      "never": []
+    }
+  ],
+
   "command": [
     {
       "name": "with an id, the exact approve command",

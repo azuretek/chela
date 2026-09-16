@@ -222,6 +222,19 @@ struct ContentView: View {
         // A screenshot run on a simulator, which cannot press the button above.
         // Debug only, and inert without the argument. See `SettingsSpec`.
         if SettingsSpec.screenshotOpensSettings { showingSettings = true }
+        // A screenshot run for the pairing screen, which a simulator cannot reach
+        // without the gateway's own token and an unapproved device on a running
+        // gateway. Drives the REAL pairing state into pairing-required with a
+        // sample refusal, which arms the real retry timer and draws the real
+        // `PairingView`, so what a screenshot proves is the actual screen holding
+        // steady across retries. Debug only, inert without the argument, and it
+        // needs a gateway to draw over, which a screenshot run supplies with
+        // `-claw-gateway-url`. See `SettingsSpec`.
+        #if DEBUG
+        if SettingsSpec.screenshotSeedsPairing {
+            pairing.closed(SettingsSpec.screenshotPairingRefusal)
+        }
+        #endif
         // Look for a newer build once per launch, against the public feed. It is
         // detached and every non-answer is silent (see `UpdateCheck.run`), so a
         // slow or unreachable feed neither blocks the first frame nor puts

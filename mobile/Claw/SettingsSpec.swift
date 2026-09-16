@@ -92,6 +92,28 @@ enum SettingsSpec {
         return arguments[index + 1]
     }
 
+    /// Whether this run should drive the pairing screen from a seeded refusal
+    /// rather than a live gateway close, from `-claw-seed-pairing`.
+    ///
+    /// The same reasoning as `screenshotOpensSettings` and `-claw-seed-notices`:
+    /// the pairing screen is shown only when a live gateway refuses this exact
+    /// device with a 1008 pairing close, which a screenshot run cannot arrange
+    /// without the gateway's own token (a real credential) and an unapproved
+    /// device on a running gateway. So the screenshot run seeds a sample refusal
+    /// through the REAL `PairingState.closed`, which arms the real retry timer and
+    /// draws the real `PairingView`, so what a screenshot proves is the actual
+    /// screen and its actual stability across retries rather than a mock. Compiled
+    /// out of a release build, and inert without the argument.
+    static var screenshotSeedsPairing: Bool {
+        ProcessInfo.processInfo.arguments.contains("-claw-seed-pairing")
+    }
+
+    /// The sample refusal the seeded pairing screen shows: an example requestId of
+    /// the shape the gateway emits, read through the same parser a live close is,
+    /// so the command and the identity on screen are built the real way. The id is
+    /// an example, like every id in the fixtures.
+    static let screenshotPairingRefusal = Pairing.Refusal(reason: "not-paired", requestId: "req-7f3a2b")
+
     /// The build the seeded update check runs as, fixed to a dev version so the
     /// channel gate (dev-only feed) and the comparison are deterministic on a
     /// simulator, whose real `Naming.buildVersion` is only the marketing-version
@@ -104,6 +126,7 @@ enum SettingsSpec {
     static var screenshotOpensSettings: Bool { false }
     static var screenshotSeedsUpdateFeed: Bool { false }
     static var screenshotUpdateFeedVersion: String? { nil }
+    static var screenshotSeedsPairing: Bool { false }
     #endif
 
     /// The split of the settings surface, read from the bundled spec.
