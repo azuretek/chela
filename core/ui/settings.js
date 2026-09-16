@@ -297,6 +297,33 @@ function gatewayEditor(gw) {
   ]);
 }
 
+/**
+ * Whether the gateway has approved this device: 'approved', 'pending' or null.
+ *
+ * Read from the connection phase, which is the same state the row's "Needs
+ * approval" badge is drawn from, rather than from a second check of its own:
+ * there is one answer to "is this device approved" and it already exists. The
+ * phase is `pending` exactly while the gateway is holding this device's
+ * approval, and `connected` is only reached by a socket that survived the
+ * pairing settle window, which is the approval landing.
+ *
+ * Every other phase says nothing either way, and this answers null there rather
+ * than guessing: `idle`, `connecting` and `failed` describe an attempt, not a
+ * verdict, and a row that claimed approval from one of them would be making the
+ * same kind of statement the line above used to make.
+ *
+ * Which gateway a phase belongs to is the host's own rule (the gateway the
+ * connection is aimed at), so both halves are checked: a row for a gateway this
+ * app is not pointed at has no phase to read.
+ */
+function deviceApproval(gw) {
+  const conn = state.connection || {};
+  if (gw.id !== state.activeGatewayId || gw.id !== conn.gatewayId) return null;
+  if (conn.phase === 'pending') return 'pending';
+  if (conn.phase === 'connected') return 'approved';
+  return null;
+}
+
 function renderGateways() {
   const host = $('gateways');
   host.replaceChildren();
@@ -339,13 +366,32 @@ function renderGateways() {
     const open = editing === gw.id;
     const creds = gw.credentials || { hasToken: false, hasPassword: false, headers: [] };
 
-    // A one-line summary of what the app will supply, so the list answers
-    // "why is this one still asking me to sign in?" without opening the editor.
-    const supplies = [
-      creds.hasToken ? 'token' : null,
-      creds.hasPassword ? 'password' : null,
-      creds.headers.length ? `${creds.headers.length} header${creds.headers.length > 1 ? 's' : ''}` : null,
-    ].filter(Boolean);
+    // A one-line summary of what this app holds for this gateway and whether the
+    // gateway has approved this device, so the list answers "why is this one
+    // still asking me to sign in?" without opening the editor.
+    //
+    // Two facts, both already known here, and neither derivable from the other:
+    // the credential summary the host sends (all a credential can be reported as
+    // on any client, since no client can read one back) and the connection
+    // phase, which is the state the row's own "Needs approval" badge is drawn
+    // from.
+    //
+    // What this replaced said "No saved credentials, you will be asked to sign
+    // in", and both halves of that were claims rather than observations. A
+    // gateway that needs no credential never asks, so the sentence promised a
+    // sign-in that would not happen, and "no saved credentials" read as a
+    // verdict on this app's storage rather than on this connection. The state
+    // itself is what is left, and it is the same words on every client because
+    // it is the same state on every client. Where a credential is kept, and in
+    // what, is each client's own business and not this line's: the desktop
+    // keeps it in an encrypted file and the phone in the Keychain, which is a
+    // fact about the two implementations rather than about this gateway.
+    const facts = [creds.hasToken ? 'Token saved' : 'No token saved'];
+    if (creds.hasPassword) facts.push('Password saved');
+    if (creds.headers.length) facts.push(`${creds.headers.length} header${creds.headers.length > 1 ? 's' : ''} saved`);
+    const approval = deviceApproval(gw);
+    if (approval === 'approved') facts.push('Device approved');
+    else if (approval === 'pending') facts.push('Device needs approval');
 
     // What this gateway is doing, and why it is not doing it. The badge used to
     // say "Connected" for whichever gateway was *selected*, which was a lie for
@@ -353,42 +399,49 @@ function renderGateways() {
     // most likely to be reading it.
     const status = gw.status || { tone: 'muted', label: 'Not connected', detail: null };
 
+    // Three groups rather than five loose children: the content, the connection
+    // state, and the actions. At full width the three lay out exactly as the
+    // five items did, one row with the same gaps. The grouping is what lets a
+    // narrow window give the state a line of its own, centred, with the buttons
+    // on the line below it (the narrow-width rule in ui.css) without stretching
+    // the state's pill across the card, which a full-width badge would do.
     const row = el('div', { className: 'row' }, [
       el('div', { className: 'stack grow' }, [
         el('span', { className: 'name', textContent: gw.label || gw.url }),
         el('span', { className: 'url', textContent: gw.url }),
-        el('span', {
-          className: 'muted-sm',
-          textContent: supplies.length ? `Signs in with: ${supplies.join(', ')}` : 'No saved credentials, you will be asked to sign in.',
-        }),
+        el('span', { className: 'muted-sm', textContent: facts.join(' · ') }),
         status.detail ? el('span', { className: `result ${status.tone}`, textContent: status.detail }) : null,
       ]),
-      el('span', { className: `badge badge--${status.tone}`, textContent: status.label }),
-      el('button', {
-        className: active ? 'ghost' : 'primary',
-        // Pressing it again while it is already trying would tear down the
-        // attempt in flight and start an identical one, which reads as the
-        // button doing nothing.
-        disabled: active && phase === 'connecting',
-        textContent: (active && phase === 'connecting') ? 'Connecting…' : (active ? 'Reconnect' : 'Connect'),
-        // The result arrives as a notice over the top of this page, rather than
-        // by this page closing itself. See announceConnected() in src/main.js.
-        onclick: () => { void call('connect', gw.id); },
-      }),
-      el('button', {
-        className: 'ghost',
-        textContent: open ? 'Done' : 'Edit',
-        onclick: () => { editing = open ? null : gw.id; render(); },
-      }),
-      el('button', {
-        className: 'ghost danger',
-        textContent: 'Remove',
-        onclick: async () => {
-          if (editing === gw.id) editing = null;
-          state = await call('removeGateway', gw.id);
-          render();
-        },
-      }),
+      el('div', { className: 'row__status' }, [
+        el('span', { className: `badge badge--${status.tone}`, textContent: status.label }),
+      ]),
+      el('div', { className: 'row__actions' }, [
+        el('button', {
+          className: active ? 'ghost' : 'primary',
+          // Pressing it again while it is already trying would tear down the
+          // attempt in flight and start an identical one, which reads as the
+          // button doing nothing.
+          disabled: active && phase === 'connecting',
+          textContent: (active && phase === 'connecting') ? 'Connecting…' : (active ? 'Reconnect' : 'Connect'),
+          // The result arrives as a notice over the top of this page, rather than
+          // by this page closing itself. See announceConnected() in src/main.js.
+          onclick: () => { void call('connect', gw.id); },
+        }),
+        el('button', {
+          className: 'ghost',
+          textContent: open ? 'Done' : 'Edit',
+          onclick: () => { editing = open ? null : gw.id; render(); },
+        }),
+        el('button', {
+          className: 'ghost danger',
+          textContent: 'Remove',
+          onclick: async () => {
+            if (editing === gw.id) editing = null;
+            state = await call('removeGateway', gw.id);
+            render();
+          },
+        }),
+      ]),
     ]);
 
     host.append(el('div', { className: 'card' }, [row, open ? gatewayEditor(gw) : null]));
@@ -601,7 +654,15 @@ function renderPrefs() {
   }
 }
 
-// The "looking for the gateway's own settings?" card, on the Gateways tab.
+// The "looking for the gateway's own settings?" card, under every tab.
+//
+// It sits with the About footer, outside every panel, so it is on screen
+// whichever tab is showing. It used to live inside the Gateways panel, on the
+// reasoning that the person it is for has the gateways tab open, and that is the
+// half that was wrong: someone who opened Settings looking for the gateway's own
+// settings can be on any tab when they realise it, and behind Certificates the
+// card was on a page they could not see. One card, not one per tab: this is the
+// single copy in the document and the tests assert it.
 //
 // Shown only when there is a Control UI behind this to reach: a gateway is
 // configured (so this is not a first run) and the client can take the reader
