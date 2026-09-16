@@ -18,7 +18,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import {
-  AFFORDANCE_GLOBAL, AFFORDANCE_CONFIG_GLOBAL, AFFORDANCE_MARKER, AFFORDANCE_ANCHORS,
+  AFFORDANCE_GLOBAL, AFFORDANCE_CONFIG_GLOBAL, AFFORDANCE_MARKER, AFFORDANCE_ANCHORS, AFFORDANCE_ROUTES,
   affordanceSource, configStatement, installation, controlUiSettingsSource,
 } from '../app-settings-affordance.js';
 
@@ -51,6 +51,11 @@ function makeDom({ selectors = [] } = {}) {
         props: {},
         setProperty(name, value) { this.props[name] = value; },
         getPropertyValue(name) { return this.props[name] || ''; },
+        // Moving out of the corner clears what the corner set, so the stub has to
+        // be able to remove a property: without it a control that moved into the
+        // footer would still read as absolutely positioned and the test would pass
+        // on a broken placement.
+        removeProperty(name) { delete this.props[name]; },
       },
       setAttribute(name, value) { this.attributes[name] = String(value); },
       getAttribute(name) { return name in this.attributes ? this.attributes[name] : null; },
@@ -120,8 +125,13 @@ function makeDom({ selectors = [] } = {}) {
 function run(dom, { open, frozenBridge = false } = {}) {
   const bridge = { open: open || (() => {}) };
   const window = {};
+  // Where the script navigates when there is no control to press. Recorded
+  // rather than followed: the assertion is which route it handed the OS.
+  const visited = [];
+  window.location = { assign(url) { visited.push(url); } };
   const context = {
     window,
+    location: window.location,
     document: dom.document,
     MutationObserver: dom.MutationObserver,
     console: { debug() {} },
@@ -135,7 +145,7 @@ function run(dom, { open, frozenBridge = false } = {}) {
     window[AFFORDANCE_GLOBAL] = bridge;
   }
   vm.runInNewContext(`${configStatement({ label: 'App settings' })}\n${affordanceSource()}`, context);
-  return { window, context };
+  return { window, context, visited };
 }
 
 function affordanceButton(dom) {
@@ -275,7 +285,74 @@ test('an anchor that appears later is picked up by the observer, without stackin
   assert.strictEqual(buttons.length, 1, 'a re-render must not stack a second control');
 });
 
-/* ----------------------------------------------------- one copy in the tree */
+/* ------------------------------------------------- where it lands, and staying there */
+
+test('the control MOVES into the footer when the footer appears after a corner placement', () => {
+  // The measured bug, 2026-09-16 on a live Control UI: the page opened on a
+  // settings route, where there is no footer action row, so the last-resort
+  // corner was used; the marker then made that placement final, and the control
+  // stayed in the corner for the life of the page even after the chat layout
+  // rendered a real footer. A fallback that fires permanently is not a fallback.
+  const sidebarSelector = spec.anchors.sidebar.split(',')[0].trim();
+  const dom = makeDom({ selectors: [sidebarSelector] });
+  run(dom);
+  dom.document.dispatch('DOMContentLoaded');
+  const corner = affordanceButton(dom);
+  assert.ok(corner, 'it starts in the corner, because that is all the page offered');
+  assert.strictEqual(corner.style.getPropertyValue('position'), 'absolute');
+
+  // The app navigates to the chat layout, whose footer has the action row.
+  const actions = dom.document.createElement('div');
+  actions._selectors = [spec.anchors.primary];
+  dom.anchorElements.set(spec.anchors.primary, actions);
+  dom.registry.push(actions);
+  dom.observers.forEach((o) => o.trigger());
+
+  const moved = affordanceButton(dom);
+  assert.strictEqual(moved, corner, 'the same control is moved rather than a second one added');
+  assert.strictEqual(moved.parent, actions, 'and it is now in the footer actions row');
+  assert.strictEqual(moved.style.getPropertyValue('position'), '', 'with the corner positioning cleared');
+  assert.strictEqual(moved.style.getPropertyValue('left'), '', 'and the corner offsets gone with it');
+});
+
+test('the placement never moves back down to a worse anchor', () => {
+  // The footer can be re-rendered on every navigation. A control that followed it
+  // back into the corner whenever the action row blinked would be worse than one
+  // that never moved.
+  const dom = makeDom({ selectors: [spec.anchors.primary] });
+  run(dom);
+  dom.document.dispatch('DOMContentLoaded');
+  const actions = dom.anchorElements.get(spec.anchors.primary);
+  const button = affordanceButton(dom);
+  assert.strictEqual(button.parent, actions);
+
+  dom.anchorElements.delete(spec.anchors.primary);
+  dom.observers.forEach((o) => o.trigger());
+  assert.strictEqual(affordanceButton(dom).parent, actions, 'it stays where it was put');
+});
+
+test('the last-resort anchor is the main sidebar, not anything whose class contains sidebar', () => {
+  // `aside[class*="sidebar"]` matched `.settings-sidebar` on the live page, so a
+  // page that opened on a settings route parked the control inside the settings
+  // page's own sidebar. The class-substring test is what made that possible.
+  assert.ok(!/class\*=/.test(spec.anchors.sidebar),
+    `the sidebar anchor must not test a class substring; got ${spec.anchors.sidebar}`);
+  assert.ok(spec.anchors.sidebar.split(',').some((s) => s.trim() === '.sidebar-shell'),
+    'it names the main shell');
+});
+
+test('the fallback click target cannot match an unrelated settings button', () => {
+  // Measured on the same live page: `[class*="sidebar"] button[class*="settings"]`
+  // pressed `.chat-talk-input-picker__settings`, the chat composer's own settings
+  // button, and navigated the reader to /chat/main. A control that does something
+  // unrelated is worse than one that does nothing.
+  const fallback = spec.anchors.controlUiSettingsFallback;
+  assert.ok(/sidebar-footer/.test(fallback), `the fallback is scoped to the footer strip; got ${fallback}`);
+  assert.ok(/aria-label/.test(fallback), 'and it is matched by the control\'s accessible name');
+  assert.ok(!/button\[class\*="settings"\]/.test(fallback), 'not by a class substring');
+});
+
+/* ---------------------------------------------------- one copy in the tree */
 
 test('the injected script exists in exactly one file: the spec', () => {
   const distinctive = spec.script.filter((line) => line.trim().length >= 30);
@@ -334,13 +411,50 @@ test('the fallback anchor is pressed when the first selector finds nothing', () 
   assert.strictEqual(dom.anchorElements.get(spec.anchors.controlUiSettingsFallback).clicks, 1);
 });
 
-test('a Control UI with no footer control fails soft with a false, not a throw', () => {
-  // The case that matters on a page we do not own: upstream is free to move its
-  // footer, and a press that threw inside it would break the Control UI rather
-  // than leaving the reader where they were.
+test('a Control UI with no control to press goes to its OWN route instead of doing nothing', () => {
+  // This changed on 2026-09-16, and the reason is the bug the whole area keeps
+  // producing. The Control UI build serving Abi's clients has no settings control
+  // in the sidebar at all (upstream added one after that release), so the old
+  // contract, answer false and log, was a button that appeared to work and did
+  // nothing. The Control UI publishes the route its own settings entry opens, so
+  // the reader is taken there.
+  const dom = makeDom({ selectors: [] });
+  const { window, visited } = run(dom);
+  assert.strictEqual(window[spec.configGlobal].openControlUiSettings(), true, 'the reader is taken somewhere');
+  assert.deepStrictEqual(visited, [spec.routes.appearance], 'to the Control UI route its own entry opens');
+});
+
+test('with no control and no route it still fails soft rather than throwing', () => {
+  // A page we do not own may move both. A press that threw inside it would break
+  // the Control UI rather than leaving the reader where they were. Installed with
+  // an empty config rather than re-assigning the global afterwards: the script
+  // reads its config ONCE at install time, so a later write is not what a page
+  // without these values would look like.
+  const dom = makeDom({ selectors: [] });
+  const window = {};
+  window.location = { assign() { throw new Error('nothing should be navigated to'); } };
+  const context = {
+    window,
+    location: window.location,
+    document: dom.document,
+    MutationObserver: dom.MutationObserver,
+    console: { debug() {} },
+  };
+  vm.runInNewContext(
+    `window.${AFFORDANCE_CONFIG_GLOBAL} = { anchors: {}, routes: {} };\n${affordanceSource()}`,
+    context,
+  );
+  assert.strictEqual(window[AFFORDANCE_CONFIG_GLOBAL].openControlUiSettings(), false,
+    'nothing to press and nowhere to go answers false');
+});
+
+test('the route is the Control UI\'s own, and it comes from the spec rather than a client', () => {
+  assert.strictEqual(spec.routes.appearance, '/settings/appearance', 'the route table path for appearance');
+  assert.strictEqual(AFFORDANCE_ROUTES.appearance, spec.routes.appearance);
+  // Handed to the page with the anchors, so the script that uses it is one copy.
   const dom = makeDom({ selectors: [] });
   const { window } = run(dom);
-  assert.strictEqual(window[spec.configGlobal].openControlUiSettings(), false, 'nothing to press answers false');
+  assert.strictEqual(window[spec.configGlobal].routes.appearance, spec.routes.appearance);
 });
 
 test('the call a client evaluates presses the same control the script would', () => {

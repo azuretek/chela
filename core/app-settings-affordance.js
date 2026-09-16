@@ -35,6 +35,16 @@ export const AFFORDANCE_MARKER = spec.marker;
 /** The selectors the script tries in order: the footer actions, the footer bar, then any sidebar. */
 export const AFFORDANCE_ANCHORS = spec.anchors;
 
+/**
+ * The Control UI routes a client may hand the reader to, by name.
+ *
+ * One today: the route the Control UI's own settings entry opens, which is the
+ * destination "Go to the Control UI settings" promises. Preferred mechanism is
+ * still to press the Control UI's own control; this is what happens when there
+ * is no control to press, so the button cannot silently do nothing.
+ */
+export const AFFORDANCE_ROUTES = spec.routes;
+
 /** The default label and tooltip, so a client that passes neither still reads sensibly. */
 export const DEFAULT_LABEL = 'App settings';
 export const DEFAULT_TOOLTIP = 'Open this app\u2019s settings';
@@ -70,6 +80,11 @@ export function configStatement({ label = DEFAULT_LABEL, tooltip = DEFAULT_TOOLT
     label: String(label || DEFAULT_LABEL),
     tooltip: String(tooltip || DEFAULT_TOOLTIP),
     anchors: spec.anchors,
+    // The Control UI's own route for the destination its settings entry opens.
+    // Handed in like the anchors, so a route change is one edit in the spec
+    // rather than one per client, and so the script that uses it runs identical
+    // bytes on both.
+    routes: spec.routes,
     tokens: tokens && typeof tokens === 'object' ? tokens : {},
   };
   return `window.${spec.configGlobal} = ${JSON.stringify(config)};`;
@@ -99,7 +114,6 @@ export function controlUiSettingsSource() {
   return false;
 })()`;
 }
-
 /**
  * What a client installs into the gateway page: the configuration, then the
  * shared script. The client installs its bridge on `window.<AFFORDANCE_GLOBAL>`
