@@ -1409,6 +1409,10 @@ function updatePolicy() {
   return updates.policy({
     platform: process.platform,
     packaged: app.isPackaged,
+    // Supplied here rather than defaulted inside the policy, which is now shared
+    // core and reads nothing ambient by design. The same fact the policy used to
+    // pick up for itself, from the one place that can see the environment.
+    appImage: Boolean(process.env.APPIMAGE),
     autoUpdate: config.get().autoUpdate !== false,
   });
 }

@@ -1,0 +1,70 @@
+{
+  "description": "policy() golden pairs: every platform's install capability, plus what the automatic-updates preference does to each. Output is the full {action, check, autoDownload, canInstall} tuple. Regenerate is manual; these pin the policy for the Swift port the same way fixtures/progress.json pins the progress curve.",
+  "cases": [
+    {
+      "name": "not packaged",
+      "input": { "platform": "darwin", "packaged": false, "macSigned": true },
+      "output": { "action": "none", "check": false, "autoDownload": false, "canInstall": false }
+    },
+    {
+      "name": "win32, unsigned, still installs",
+      "input": { "platform": "win32", "packaged": true },
+      "output": { "action": "install", "check": true, "autoDownload": true, "canInstall": true }
+    },
+    {
+      "name": "darwin signed with a Developer ID",
+      "input": { "platform": "darwin", "packaged": true, "macSigned": true },
+      "output": { "action": "install", "check": true, "autoDownload": true, "canInstall": true }
+    },
+    {
+      "name": "darwin unsigned: notifies, does not download what it cannot install",
+      "input": { "platform": "darwin", "packaged": true, "macSigned": false },
+      "output": { "action": "notify", "check": true, "autoDownload": false, "canInstall": false }
+    },
+    {
+      "name": "linux running as an AppImage",
+      "input": { "platform": "linux", "packaged": true, "appImage": true },
+      "output": { "action": "install", "check": true, "autoDownload": true, "canInstall": true }
+    },
+    {
+      "name": "linux not running as an AppImage: does not even check",
+      "input": { "platform": "linux", "packaged": true, "appImage": false },
+      "output": { "action": "notify", "check": false, "autoDownload": false, "canInstall": false }
+    },
+    {
+      "name": "an unknown platform falls through to notify",
+      "input": { "platform": "freebsd", "packaged": true },
+      "output": { "action": "notify", "check": true, "autoDownload": false, "canInstall": false }
+    },
+    {
+      "name": "win32 with automatic updates turned off narrows install to manual",
+      "input": { "platform": "win32", "packaged": true, "autoUpdate": false },
+      "output": { "action": "manual", "check": true, "autoDownload": false, "canInstall": true }
+    },
+    {
+      "name": "darwin signed with automatic updates turned off narrows install to manual",
+      "input": { "platform": "darwin", "packaged": true, "macSigned": true, "autoUpdate": false },
+      "output": { "action": "manual", "check": true, "autoDownload": false, "canInstall": true }
+    },
+    {
+      "name": "an AppImage with automatic updates turned off narrows install to manual",
+      "input": { "platform": "linux", "packaged": true, "appImage": true, "autoUpdate": false },
+      "output": { "action": "manual", "check": true, "autoDownload": false, "canInstall": true }
+    },
+    {
+      "name": "darwin unsigned with automatic updates turned off is unchanged: it could never install",
+      "input": { "platform": "darwin", "packaged": true, "macSigned": false, "autoUpdate": false },
+      "output": { "action": "notify", "check": true, "autoDownload": false, "canInstall": false }
+    },
+    {
+      "name": "linux outside an AppImage with automatic updates turned off is unchanged",
+      "input": { "platform": "linux", "packaged": true, "appImage": false, "autoUpdate": false },
+      "output": { "action": "notify", "check": false, "autoDownload": false, "canInstall": false }
+    },
+    {
+      "name": "a source run stays none even with automatic updates turned off",
+      "input": { "platform": "win32", "packaged": false, "autoUpdate": false },
+      "output": { "action": "none", "check": false, "autoDownload": false, "canInstall": false }
+    }
+  ]
+}

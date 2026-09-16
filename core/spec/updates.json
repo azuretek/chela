@@ -1,0 +1,12 @@
+{
+  "actions": {
+    "install": "install",
+    "manual": "manual",
+    "notify": "notify",
+    "none": "none"
+  },
+  "intervals": {
+    "stableMs": 21600000,
+    "prereleaseMs": 300000
+  }
+}
