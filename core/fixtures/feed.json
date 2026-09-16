@@ -1,0 +1,16 @@
+{
+  "description": "Golden feed-reading cases, asserted by core/test/feed.test.js and reproduced by the iOS client's UpdateFeed.swift (mobile/ClawTests/UpdateFeedParityTests.swift). Each case is a fetched feed document and the build reading it: `newer` is the version newerVersion(document, current) must return, or null when the banner must stay absent. `throws` marks the one case a feed version this build cannot parse must throw on rather than silently suppress. This is the contract that keeps the two clients reading one feed the same way.",
+  "cases": [
+    { "name": "a newer dev build is announced", "document": { "version": "1.0.1-dev.149.abc1234567" }, "current": "1.0.1-dev.148.abc1234567", "newer": "1.0.1-dev.149.abc1234567" },
+    { "name": "the same build is not newer, so nothing is announced", "document": { "version": "1.0.1-dev.148.abc1234567" }, "current": "1.0.1-dev.148.abc1234567", "newer": null },
+    { "name": "an older feed build is not newer", "document": { "version": "1.0.1-dev.147.abc1234567" }, "current": "1.0.1-dev.148.abc1234567", "newer": null },
+    { "name": "a higher dev count is newer whatever the sha", "document": { "version": "1.0.1-dev.150.zzzzzzzzzz" }, "current": "1.0.1-dev.149.aaaaaaaaaa", "newer": "1.0.1-dev.150.zzzzzzzzzz" },
+    { "name": "a stable release is newer than the dev build heading towards it", "document": { "version": "1.0.1" }, "current": "1.0.1-dev.148.abc1234567", "newer": "1.0.1" },
+    { "name": "a dev build is not newer than the release it heads towards", "document": { "version": "1.0.1-dev.148.abc1234567" }, "current": "1.0.1", "newer": null },
+    { "name": "a document naming no version announces nothing", "document": { "channel": "dev" }, "current": "1.0.1-dev.148.abc1234567", "newer": null },
+    { "name": "an empty version string announces nothing", "document": { "version": "" }, "current": "1.0.1-dev.148.abc1234567", "newer": null },
+    { "name": "a version with surrounding whitespace is read", "document": { "version": " 1.0.2 " }, "current": "1.0.1", "newer": "1.0.2" },
+    { "name": "extra fields the build does not know are ignored", "document": { "version": "1.0.2", "notes": "anything", "published": "2026-09-16" }, "current": "1.0.1", "newer": "1.0.2" },
+    { "name": "a feed version this build cannot parse is a surfaced fault", "document": { "version": "latest" }, "current": "1.0.1", "throws": true }
+  ]
+}

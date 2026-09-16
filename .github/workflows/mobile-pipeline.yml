@@ -1,6 +1,10 @@
 name: claw-mobile pipeline
 
-# The whole mobile pipeline in one file: version, test, release.
+# The whole mobile pipeline in one file: version, test, release, appcast.
+#
+# The last of those is the public update marker the app's own update banner
+# reads (see the publish-appcast job): a tiny static JSON on GitHub Pages naming
+# the newest build, published only after a build actually shipped to TestFlight.
 #
 # It replaced two files that each owned half of it, mobile.yml (compile and
 # test) and mobile-release.yml (sign and upload). The split was not merely
@@ -871,3 +875,104 @@ jobs:
             exit 1
           fi
           echo "removed $key"
+
+  # The public update marker the app's own update check reads.
+  #
+  # This is the feed end of the client's update banner: the app fetches a tiny
+  # static JSON naming the newest build on its channel, compares it against its
+  # own version with the shared comparator, and raises a notice if the feed is
+  # newer (core/feed.js, mobile/Claw/UpdateFeed.swift). Nothing published this
+  # marker before, so the banner had nothing to read; this job is what publishes
+  # it.
+  #
+  # It is a marker, not electron-updater's `.yml` metadata: it carries the
+  # version and nothing else, because iOS installs nothing and a download URL or
+  # a checksum would name a file no iOS build can apply. The one channel with a
+  # feed is `dev`, which is honest about the world: TestFlight is the one
+  # distribution channel and every build on it is a dev build. A tag build
+  # publishes the stable `latest.json` alongside it, so a future stable check has
+  # a feed to read the day there is a stable client to read it.
+  #
+  # ★ Gated behind `release` succeeding. The feed must never advertise a version
+  # that did not actually ship: a marker written before the upload is confirmed
+  # would send every tester to TestFlight for a build that is not there. So this
+  # needs `release` and asserts its result, the same shape the release gate uses
+  # against the tests. `already-uploaded` runs count as shipped, because the
+  # build genuinely is in TestFlight from an earlier run; the marker just names
+  # the current head, which is what a re-run should leave standing.
+  #
+  # It is on GitHub Pages rather than behind the gateway because the phone cannot
+  # authenticate to a gateway yet, and a public CDN-served file is the correct
+  # shape regardless: knowing a release exists is not privileged. The path
+  # (`appcast/<channel>.json`) is the one string this job and feedUrl() share,
+  # and core/spec/feed.json is its single owner.
+  publish-appcast:
+    needs: [version, release]
+    if: github.event_name != 'pull_request' && needs.version.outputs.build == 'true' && needs.release.result == 'success'
+    runs-on: ubuntu-latest
+    # Pages deploy from a workflow needs both: `pages: write` to publish and
+    # `id-token: write` for the deploy action's OIDC handshake with the Pages
+    # service. `contents: read` is the default the checkout needs and no more;
+    # nothing here writes to the repo.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    # The Pages environment, which is what `deploy-pages` publishes into and what
+    # the repo's Pages settings point the site at.
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The whole site is the appcast directory: one marker per channel, built
+      # from the version this run already decided rather than derived a second
+      # time. A dev build publishes only `dev.json`; a tag build adds
+      # `latest.json`, because a tagged commit is the stable release its own
+      # channel names.
+      #
+      # This is a full replacement of the published site each run, which is the
+      # correct shape for a "newest build" marker: the feed names one version, the
+      # current head, and a history of past markers would be a set of stale files
+      # a check could read the wrong one of. The version the marker carries is the
+      # full identity (`X.Y.Z-dev.<count>.<sha>`), which is exactly what the app
+      # compares against its own build.
+      - name: Build the appcast
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          TAGGED: ${{ needs.version.outputs.tagged }}
+        run: |
+          set -eo pipefail
+          site="$RUNNER_TEMP/site"
+          mkdir -p "$site/appcast"
+
+          # jq builds the JSON rather than a printf, so the version is a real
+          # string value and cannot break the document if it ever holds a
+          # character that would need escaping.
+          jq -n --arg version "$VERSION" '{version: $version}' > "$site/appcast/dev.json"
+          echo "dev.json:"; cat "$site/appcast/dev.json"
+
+          if [ "$TAGGED" = "true" ]; then
+            jq -n --arg version "$VERSION" '{version: $version}' > "$site/appcast/latest.json"
+            echo "latest.json:"; cat "$site/appcast/latest.json"
+          fi
+
+          echo "SITE=$site" >> "$GITHUB_ENV"
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.SITE }}
+
+      - name: Deploy the appcast to Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
+
+      # The URL the app reads, printed so a run says where the marker landed. It
+      # is the same string feedUrl() builds, which is what makes this job and the
+      # app two ends of one contract rather than two guesses.
+      - name: Say where the marker is
+        run: |
+          echo "::notice::published appcast; the dev feed is at ${{ steps.deploy.outputs.page_url }}appcast/dev.json"
