@@ -1,34 +1,42 @@
-name: Claw mobile release
+name: Claw mobile pipeline
 
-# The publish half of the mobile pipeline: the iOS client, built for a real
-# device, signed with the account's distribution certificate, and uploaded to
-# TestFlight.
+# The whole mobile pipeline in one file: version, test, release.
 #
-# mobile.yml is the compile-and-test half and is deliberately credential-free,
-# so the boundary between "builds it" and "signs and ships it" is a file
-# boundary rather than a step boundary: nothing in mobile.yml may need the
-# Apple account, and nothing here has to reason about a matrix of iOS versions.
+# It replaced two files that each owned half of it, mobile.yml (compile and
+# test) and mobile-release.yml (sign and upload). The split was not merely
+# untidy: the two ran in PARALLEL on the same push, so the release could archive,
+# sign and upload a build to TestFlight while the iOS matrix testing that same
+# commit was still failing. A surface with two owners has no owner, and this one
+# could ship past its own tests.
 #
-# Three ways in, mirroring release.yml because they mean the same things there:
+# One file, and one gate: `release` needs the test matrix, so a red leg can no
+# longer produce a TestFlight build. The legs still run on a pull request, where
+# nothing is signed and nothing is uploaded.
 #
-#   push to main       a dev build of whatever just landed, uploaded to
-#                      internal TestFlight testing.
+# Three ways in, and they mean the same thing here:
+#
+#   push to main       whatever just landed in mobile/ or core/ is tested, then
+#                      uploaded as a dev build for internal TestFlight testing.
+#   pull_request       the same paths, tested only. No Apple credential is
+#                      needed and no release job runs.
 #   tag `v*`           a release. The tag must equal package.json, checked
 #                      before anything is built, and the same upload runs with
 #                      the build available to external testing as well.
 #   workflow_dispatch  a dev build of any ref, on demand.
 #
-# TestFlight is the channel for BOTH, which is Abi's decision, and the reason a
-# dev build here is a real distribution build rather than an ad-hoc or
-# development-signed one: the only difference between the two kinds of run is
+# TestFlight is the channel for BOTH kinds of build, which is Abi's decision, and
+# the reason a dev build here is a real distribution build rather than an ad-hoc
+# or development-signed one: the only difference between the two kinds of run is
 # the version they carry and whether the resulting build may leave internal
 # testing. Nothing about how it is signed or uploaded changes.
 #
-# `paths` names what this workflow depends on rather than what it ignores, the
-# same shape mobile.yml uses. `core/**` is the non-obvious entry: the client
-# compiles the shared library in, so a change confined to core/ produces a
-# different app. GitHub does not evaluate path filters for tag pushes, so a
-# release can never be skipped by one.
+# `paths` names what this workflow depends on rather than what it ignores, and
+# `core/**` is the non-obvious entry: the client compiles the shared library in,
+# so a change confined to core/ produces a different app while leaving the
+# desktop alone, and a filter of `mobile/**` alone would skip exactly that run.
+# No docs or config path appears here, because none of them can change what
+# compiles. GitHub does not evaluate path filters for tag pushes, so a release
+# can never be skipped by one.
 on:
   push:
     branches: [main]
@@ -37,11 +45,19 @@ on:
       - 'mobile/**'
       - 'core/**'
       # A workflow that cannot run on its own change is one nobody can fix.
-      - '.github/workflows/mobile-release.yml'
+      - '.github/workflows/mobile-pipeline.yml'
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - 'core/**'
+      - '.github/workflows/mobile-pipeline.yml'
   workflow_dispatch:
 
-# Pushing three commits in a minute should upload the last one, not all three.
-# Tag builds are exempt: a release run must never be cancelled by anything.
+# Pushing three commits in a minute should test and upload the last one, not all
+# three. Tag builds are exempt: a release run must never be cancelled by
+# anything. One group covers both halves now that they are one pipeline, which
+# is stricter than the two groups were separately: a superseded run is cancelled
+# before its upload rather than during one.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -52,8 +68,17 @@ jobs:
   # Apple's problem as much as ours: a bundle version has to be three integers
   # and a monotonically increasing build number, or the upload is rejected after
   # the archive has already been paid for.
+  #
+  # Skipped on a pull request. A version names a build that is going to ship, and
+  # a pull request ships nothing; the release job reads this job's output as part
+  # of its condition, and an output that was never produced reads as no build,
+  # which is the correct answer there.
   version:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
     outputs:
       # The app's full identity, `X.Y.Z-dev.<count>.<sha>` for a dev build.
       # This is what the app reports internally and what its update banner will
@@ -88,7 +113,6 @@ jobs:
       # tagged to $GITHUB_OUTPUT itself, and `count` alongside them.
       - name: Decide the version
         id: decide
-        working-directory: desktop
         run: |
           set -eo pipefail
           node scripts/build-version.js
@@ -121,15 +145,288 @@ jobs:
           echo "count=$count" >> "$GITHUB_OUTPUT"
           echo "bundle version will be $marketing ($count)"
 
-  ios:
-    needs: version
-    # A push whose commit is already covered by a tag build stands down, the
-    # same rule release.yml follows; a manual dispatch is always honoured.
-    if: needs.version.outputs.build == 'true'
-    # Named rather than `macos-latest`, the same discipline mobile.yml's matrix
-    # uses, so the toolchain is a property of this file. macos-26 carries Xcode
-    # 26, which is the oldest toolchain that can build the iOS 26 deployment
-    # target project.yml declares.
+  # The compile-and-test half, one leg per iOS version. Credential-free by
+  # design: nothing here needs the Apple account and nothing here signs
+  # anything, which is what keeps the test legs runnable on a pull request from
+  # a fork.
+  #
+  # One leg per version, rather than one job pinned to one image, because the
+  # image is what supplies the SDK. macos-26 ships Xcode 26 and the iOS 26.x
+  # runtimes and no iOS 27 runtime at all; iOS 27 arrives with Xcode 27 on the
+  # `xcode-27` image, which GitHub publishes as a public preview outside its SLA.
+  # A job pinned to one image cannot express both, and the failure would be a
+  # confusing missing-simulator error on one leg rather than anything naming the
+  # SDK as the cause.
+  #
+  # That SLA exception is accepted deliberately and only for the leg that cannot
+  # exist without it: iOS 27 has no stable image yet, and testing against an
+  # unreleased-but-shipping iOS is the point of this matrix rather than an
+  # accident of it. The iOS 26 leg stays on the SLA-covered image.
+  #
+  # The versions are majors rather than exact releases on purpose. Simulator
+  # runtimes are pinned to whatever the image carries, the resolver below takes
+  # the newest minor inside the major, and an image roll moving 26.4 to 26.5
+  # should not turn this file red.
+  test:
+    strategy:
+      # One version failing must not cancel the others, which is the default and
+      # is wrong here: a cancelled leg reads as a run that never finished, and
+      # the whole point of the matrix is to learn which versions break. It also
+      # matters for the gate, because a cancelled leg is not a passing one.
+      fail-fast: false
+      matrix:
+        include:
+          - ios: 26
+            runner: macos-26
+          - ios: 27
+            runner: xcode-27
+    # Named so the run list says which version a leg is, rather than the default
+    # expansion of every matrix key including the image.
+    name: iOS ${{ matrix.ios }}
+    # The image is named in the matrix rather than `macos-latest`, so the
+    # platform each leg runs on is a property of the file rather than of
+    # whatever the alias resolves to that week.
+    runs-on: ${{ matrix.runner }}
+    # Every xcodebuild step runs in mobile/, where project.yml and the generated
+    # project live. Paths on steps that do not care are unaffected.
+    defaults:
+      run:
+        working-directory: mobile
+    # A hung simulator boot would otherwise hold a runner until GitHub kills the
+    # job at its much longer ceiling.
+    timeout-minutes: 40
+    steps:
+      # Left to resolve its own ref. Each leg has its own checkout, and for a
+      # pull_request the default is already the merge commit this gate is
+      # supposed to judge.
+      - uses: actions/checkout@v4
+
+      # Which Xcode is used is chosen here rather than left to the image's
+      # default, and the newest installed one wins.
+      #
+      # This deliberately does NOT pin a version, and that is a correction. An
+      # earlier revision required Xcode 27 by name, on the belief that macos-26
+      # carried it. The first real run proved otherwise: this image ships 26.0.1
+      # through 26.6, and Xcode 27 lives on the separate `xcode-27` preview
+      # image. Pinning a version the runner does not have fails every run, and
+      # pinning one it does have fails the day GitHub rolls the image forward.
+      #
+      # The requirement that is actually true is a floor: Swift 6 language mode
+      # (SWIFT_VERSION 6.0 in project.yml) needs the Xcode 16 toolchain or
+      # newer. That is what gets checked.
+      #
+      # The version is read back out of each bundle rather than matched by
+      # filename, because the bundle name is not stable. This repo's own
+      # development machine has it at /Applications/Xcode-27.0.0.app, while the
+      # runner has /Applications/Xcode_26.6.app alongside an unversioned
+      # /Applications/Xcode.app pointing at the same build.
+      - name: Select Xcode
+        run: |
+          set -eo pipefail
+
+          chosen_line="$(
+            for bundle in /Applications/Xcode*.app; do
+              [ -d "$bundle" ] || continue
+              version="$(DEVELOPER_DIR="$bundle/Contents/Developer" xcodebuild -version 2>/dev/null | head -1 | sed 's/^Xcode //' || true)"
+              [ -n "$version" ] || continue
+              printf '%s %s\n' "$version" "$bundle"
+            done | sort -V | tail -1
+          )"
+
+          if [ -z "$chosen_line" ]; then
+            echo "::error::no usable Xcode found under /Applications"
+            ls -d /Applications/Xcode*.app 2>/dev/null || echo "no Xcode bundles at all"
+            exit 1
+          fi
+
+          version="${chosen_line%% *}"
+          bundle="${chosen_line#* }"
+          major="${version%%.*}"
+
+          if [ "$major" -lt 16 ]; then
+            echo "::error::newest Xcode is $version, and the project needs the Xcode 16 toolchain or newer for Swift 6 language mode"
+            exit 1
+          fi
+
+          chosen="$bundle/Contents/Developer"
+
+          # DEVELOPER_DIR is exported for every later step rather than used for
+          # this one only. It is what xcodebuild, xcrun and simctl all read, so
+          # the simulator list below comes from the same toolchain that builds.
+          echo "DEVELOPER_DIR=$chosen" >> "$GITHUB_ENV"
+          echo "using $bundle (Xcode $version)"
+          "$chosen/usr/bin/xcodebuild" -version
+          xcrun simctl list runtimes
+
+      # xcodegen is not part of Xcode and the image may or may not carry it.
+      # HOMEBREW_NO_AUTO_UPDATE keeps the install from spending a minute
+      # updating the tap index for one formula.
+      - name: Install xcodegen
+        run: |
+          set -eo pipefail
+          if ! command -v xcodegen >/dev/null; then
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install xcodegen
+          fi
+          xcodegen --version
+
+      # Claw.xcodeproj is generated, not committed: mobile/project.yml is the
+      # single source of truth for the project's shape and the .gitignore says
+      # so. The checkout therefore has no project in it at all, and this step is
+      # what makes the next two possible.
+      #
+      # Generated here rather than carried in from another job on purpose. It is
+      # the one thing every job in this pipeline produces identically from the
+      # same source, so it looks like a saving, and it is not one: the generator
+      # is whatever brew installed on that image, the file is a few lines of
+      # text, and passing it around would buy seconds while adding a stage that
+      # must finish before any other job can start.
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      # Gate 1, compile. Building for the simulator rather than for a device is
+      # what keeps this free of Apple credentials, and the generic destination
+      # compiles every target in the scheme without picking a simulator yet.
+      #
+      # `build-for-testing` rather than `build`, so the test bundle is compiled
+      # by this step too. That is what lets the whole leg compile ONCE: this
+      # produces the app and the test bundle together, and the test step below
+      # runs exactly these products with `test-without-building`. Previously
+      # this gate ran `build` and the test step ran `test`, which compiled the
+      # app twice in the same leg for no extra coverage, and a fault in the test
+      # bundle was only ever found by the second of the two compiles.
+      #
+      # The derived data path is pinned so the two steps share one product tree
+      # instead of each getting a private one, which is what makes the second
+      # step a reuse rather than a rebuild.
+      - name: Build for the simulator
+        run: |
+          set -eo pipefail
+          derived="$RUNNER_TEMP/DerivedData"
+          echo "DERIVED_DATA=$derived" >> "$GITHUB_ENV"
+
+          xcodebuild \
+            -project Claw.xcodeproj \
+            -scheme Claw \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$derived" \
+            build-for-testing
+
+      # The simulator is resolved from the runner's own list rather than named.
+      # The image's simulator set differs from any given development machine's,
+      # so a hardcoded name is the classic way this job fails: it is present
+      # locally and absent there, and the failure reads as a bad destination
+      # rather than a bad assumption. iPhone only, because the project targets
+      # iPhone (TARGETED_DEVICE_FAMILY is 1).
+      #
+      # It is resolved against THIS MATRIX ENTRY's version, and that is a
+      # correction rather than a tidy-up. Taking the newest runtime on the box
+      # would let the iOS 26 leg pick up an iOS 27 simulator the moment one
+      # appears on macos-26, so the leg would go on passing while testing a
+      # version it was never asked to test. The runtime's major version must
+      # equal the entry's, and the newest minor inside that major wins, which
+      # is the only part left free to drift with the image.
+      #
+      # No runtime of that major is a loud failure naming the version. The leg
+      # genuinely cannot verify that version, and falling back to another major
+      # would be exactly the silent wrong-version pass this check exists to
+      # prevent.
+      #
+      # The JSON form of the same command is used because it is the one that can
+      # be parsed without guessing at column widths.
+      - name: Resolve an available iPhone simulator
+        env:
+          IOS_MAJOR: ${{ matrix.ios }}
+        run: |
+          set -eo pipefail
+
+          sim="$(xcrun simctl list devices available --json | python3 -c '
+          import json, os, re, sys
+          wanted = int(os.environ["IOS_MAJOR"])
+          devices = json.load(sys.stdin)["devices"]
+          best = None
+          for identifier, entries in devices.items():
+              match = re.search(r"SimRuntime\.iOS-([0-9-]+)$", identifier)
+              if not match:
+                  continue
+              version = tuple(int(part) for part in match.group(1).split("-"))
+              if version[0] != wanted:
+                  continue
+              for device in entries:
+                  if device.get("isAvailable") and device["name"].startswith("iPhone"):
+                      if best is None or version > best[0]:
+                          best = (version, device["udid"])
+                      break
+          if best is None:
+              sys.exit(1)
+          print(best[1])
+          ' || true)"
+
+          if [ -z "$sim" ]; then
+            echo "::error::no available iPhone simulator on iOS $IOS_MAJOR on this runner, so the iOS $IOS_MAJOR leg has nothing to verify against. Runtimes this image does carry:"
+            xcrun simctl list runtimes || true
+            xcrun simctl list devices available || true
+            exit 1
+          fi
+
+          echo "SIMULATOR_UDID=$sim" >> "$GITHUB_ENV"
+          echo "resolved simulator for iOS $IOS_MAJOR:"
+          xcrun simctl list devices available | grep -F "$sim" || true
+
+      # Gate 2, the real verification: unit tests plus the parity suites, which
+      # are the ones that compare the client's behaviour against core rather
+      # than against itself.
+      #
+      # `test-without-building` runs the products the compile gate above already
+      # made, in that step's derived data, rather than compiling the app a second
+      # time. What is tested is therefore what compiled, and a rebuild that could
+      # disagree with the compile gate's product does not exist.
+      #
+      # A GUI boot check is deliberately not attempted here. desktop/scripts/
+      # smoke.js is the strongest check the desktop app has, and it cannot run
+      # on GitHub's macOS runners (measured: no output, 30s timeout), so a
+      # launch gate would fail for a reason that has nothing to do with the
+      # code. That is why this gate is build plus tests and stops there.
+      - name: Test on the resolved simulator
+        run: |
+          set -eo pipefail
+          xcodebuild \
+            -project Claw.xcodeproj \
+            -scheme Claw \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+            -derivedDataPath "$DERIVED_DATA" \
+            test-without-building
+
+  # The publish half: the iOS client, built for a real device, signed with the
+  # account's distribution certificate, and uploaded to TestFlight.
+  #
+  # ★ The gate. `needs: [version, test]` is what makes a red test leg unable to
+  # produce a TestFlight build, and it is stated twice on purpose: the dependency
+  # orders this job behind the matrix, and the condition asserts the matrix's
+  # result itself. A job-level `if` is not ANDed with the implicit success()
+  # check, so a job that carries one can run after the jobs it needs have failed
+  # unless it says otherwise (that is the documented use of a status function
+  # there). This condition is here regardless, to stand a tag build down, so the
+  # test result is asserted in it explicitly rather than inherited by accident.
+  #
+  # `github.event_name != 'pull_request'` is the other half of the same idea: a
+  # pull request tests the merge commit and ships nothing, on any ref, however
+  # green it is.
+  #
+  # What is NOT shared with the legs above, and cannot be: they build for the
+  # SIMULATOR, this job builds a device ARCHIVE. They are different artifacts
+  # from different SDKs, a device archive cannot run the unit tests, and a
+  # simulator product cannot be signed or uploaded. Nothing crosses this job
+  # boundary as an artifact, so nothing is carried across it with
+  # upload-artifact; the sharing that is real is inside the job, where the one
+  # archive is verified, exported and uploaded without being rebuilt.
+  release:
+    needs: [version, test]
+    if: github.event_name != 'pull_request' && needs.version.outputs.build == 'true' && needs.test.result == 'success'
+    # Named rather than `macos-latest`, the same discipline the test matrix uses,
+    # so the toolchain is a property of this file. macos-26 carries Xcode 26,
+    # which is the oldest toolchain that can build the iOS 26 deployment target
+    # project.yml declares.
     runs-on: macos-26
     # Every xcodebuild step runs in mobile/, where project.yml and the generated
     # project live.
@@ -149,10 +446,10 @@ jobs:
           ref: ${{ github.sha }}
 
       # The newest Xcode the runner has, with a floor of 16 for Swift 6 language
-      # mode. Identical to the selection in mobile.yml, including the reason it
-      # is not pinned: pinning a version the image does not carry fails every
-      # run, and pinning one it does carry fails the day the image rolls
-      # forward.
+      # mode. Identical to the selection in the test legs above, including the
+      # reason it is not pinned: pinning a version the image does not carry
+      # fails every run, and pinning one it does carry fails the day the image
+      # rolls forward.
       - name: Select Xcode
         run: |
           set -eo pipefail
@@ -254,6 +551,10 @@ jobs:
       # written into the project spec. CLAW_BUILD_VERSION is the full identity
       # (`X.Y.Z-dev.<count>.<sha>`) that the bundle cannot carry as its version
       # and that the app's own update check needs.
+      #
+      # This archive is the ONE build of the shipped artifact. The three steps
+      # after it read it rather than make it: verify inspects it, the export
+      # re-signs and uploads it, and the arrival check asks Apple about it.
       - name: Archive
         if: steps.preflight.outputs.already-uploaded != 'true'
         env:
@@ -443,6 +744,10 @@ jobs:
       # applies the export options and hands it to App Store Connect through the
       # same content delivery service Xcode uses. It also takes the same
       # authentication key as the archive, so the account is named once.
+      #
+      # It reads the archive the Archive step made, with the export options
+      # above, and this is the only build step after the archive: nothing is
+      # rebuilt between the archive and Apple.
       #
       # Success here means App Store Connect accepted the bytes, which is NOT
       # the same as the build existing: the next step is what checks that.

@@ -24,9 +24,14 @@ name: Claw Desktop release
 # is not configurable. The two are kept apart by channel, not by trust, see the
 # `prerelease` input below and `channelOf()` in src/updates.js.
 #
-# `paths-ignore` skips docs-only pushes. It is safe to combine with the tag
-# filter: GitHub does not evaluate path filters for tag pushes, so a release can
-# never be skipped by one.
+# `paths-ignore` skips pushes that cannot change what this workflow builds. It
+# is safe to combine with the tag filter: GitHub does not evaluate path filters
+# for tag pushes, so a release can never be skipped by one.
+#
+# GitHub's rule is "run unless EVERY changed path matches an ignored pattern",
+# so a push touching one ignored path and one other path still builds: a commit
+# that changes core/ plus a doc still builds the desktop, which is the behaviour
+# wanted rather than a gap in the filter.
 on:
   push:
     branches: [main]
@@ -39,6 +44,12 @@ on:
     # affects it (desktop consumes core), so core is not ignored; but a change
     # confined to mobile/ must not trigger a desktop release.
       - 'mobile/**'
+    # The mobile pipeline's own file, and the gap this closes is a workflow file
+    # rather than app code: `.github/workflows/mobile-pipeline.yml` is not under
+    # `mobile/**`, so a change to the mobile pipeline alone used to fall through
+    # to here and build three desktop installers, one per platform. Nothing this
+    # workflow reads changes when a mobile workflow file moves.
+      - '.github/workflows/mobile-pipeline.yml'
   workflow_dispatch:
 
 # Pushing three commits in a minute should build the last one, not all three.
