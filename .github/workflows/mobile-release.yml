@@ -346,6 +346,45 @@ jobs:
             echo "::error::'$bundle' is not numeric, which App Store Connect requires"
             failed=1
           fi
+
+          # The app icon, which is what App Store Connect rejected when it was
+          # missing (ITMS-90713 for the key, ITMS-90022 for the 120x120
+          # rendition). Both come from one cause: an AppIcon set with no image
+          # in it, which builds, signs, exports and uploads without a single
+          # warning, and whose only witness is the bundle that arrives at Apple.
+          # So it is asserted here, on the archive, where the failure costs
+          # seconds instead of an upload round trip.
+          #
+          # Both halves are checked, because either one alone can be true of a
+          # bundle Apple will still reject: the plist has to name an icon, and
+          # the compiled catalog has to actually contain an icon of that name.
+          icon_name="$(read_key CFBundleIconName 2>/dev/null || true)"
+          if [ -z "$icon_name" ]; then
+            # Xcode writes this key under CFBundleIcons rather than at the top
+            # level; Claw/Info.plist declares it as well, so either location is
+            # a pass and the name is all this step cares about.
+            icon_name="$(plutil -extract CFBundleIcons.CFBundlePrimaryIcon.CFBundleIconName raw -o - "$app/Info.plist" 2>/dev/null || true)"
+          fi
+          echo "CFBundleIconName:           ${icon_name:-<absent>}"
+          if [ -z "$icon_name" ]; then
+            echo "::error::the archive carries no CFBundleIconName, so App Store Connect rejects the upload (ITMS-90713). Check ASSETCATALOG_COMPILER_APPICON_NAME in project.yml and the AppIcon set in Claw/Assets.xcassets."
+            failed=1
+          elif [ ! -f "$app/Assets.car" ]; then
+            echo "::error::the archive has no Assets.car, so nothing was compiled into the asset catalog and the bundle has no app icon at all"
+            failed=1
+          else
+            # assetutil prints the catalog's renditions as JSON, one object per
+            # image. The app icon is the entry named after the icon set whose
+            # type is "Icon Image".
+            icon_names="$(xcrun --sdk iphoneos assetutil --info "$app/Assets.car" 2>/dev/null | python3 -c 'import json,sys;raw=sys.stdin.read();i=raw.find("[");print("\n".join(str(e.get("Name","")) for e in (json.loads(raw[i:]) if i>=0 else []) if isinstance(e,dict) and e.get("AssetType")=="Icon Image"))')"
+            if printf '%s\n' "$icon_names" | /usr/bin/grep -qx "$icon_name"; then
+              echo "the compiled catalog carries an app icon named $icon_name"
+            else
+              echo "::error::Assets.car has no icon named '$icon_name' (it has: ${icon_names:-none}), so the icon set is empty or was not compiled in. App Store Connect rejects that with ITMS-90022."
+              failed=1
+            fi
+          fi
+
           [ "$failed" = 0 ] || exit 1
 
           authority="$(codesign -dv --verbose=2 "$app" 2>&1 | sed -n 's/^Authority=//p' | head -1)"

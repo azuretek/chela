@@ -63,6 +63,43 @@ left blank in `project.yml`: Xcode fills it from the Apple ID that signs in, so
 there is one place the team id lives rather than two that can disagree. Pick the
 team once in Xcode's Signing & Capabilities pane before building for a device.
 
+## The app icon
+
+The icon is a **placeholder**, and it is generated rather than drawn. A
+committed bitmap with no way to reproduce it is a file nobody can adjust, so
+the mark is a few numbers at the top of `mobile/scripts/make-app-icon.swift`
+and the PNG is its output:
+
+```
+swift mobile/scripts/make-app-icon.swift
+```
+
+That writes `Claw/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png`, which is
+the file the icon set names in its `Contents.json`.
+
+Three things about it are deliberate and worth knowing before changing it:
+
+- **One size, not a pile of them.** The icon set has a single 1024x1024
+  `universal` entry and Xcode derives every size the app needs from it, so
+  there is no `AppIcon60x60@2x.png` to keep in step with anything.
+  Hand-authoring the legacy sizes would be several files that can only disagree
+  with each other.
+- **No alpha channel**, because App Store Connect rejects an app icon that
+  carries one. The script draws into a context with no alpha channel and then
+  reads the file back to confirm it, since what Apple refuses is a property of
+  the file on disk rather than of the drawing.
+- **No text in it.** A wordmark is unreadable at 40 points and is the part of
+  an icon that cannot survive the product being renamed.
+
+An icon set with no image in it is the failure this replaced, and it is worth
+knowing why it is easy to miss: it compiles, signs, exports and uploads without
+a single warning, and App Store Connect is the first thing to object, as
+`ITMS-90713` (no `CFBundleIconName`) and `ITMS-90022` (no 120x120 rendition).
+The archive step of `mobile-release.yml` therefore asserts both halves before
+anything is uploaded: that `CFBundleIconName` is in the built plist, under
+either the top level or `CFBundleIcons`, and that the compiled `Assets.car`
+really holds an icon of that name.
+
 ## Releasing to TestFlight
 
 `.github/workflows/mobile-release.yml` builds the client for a device, signs it
