@@ -490,6 +490,93 @@ body.is-failed .loading__quip { display: none; }
   .loading__progress-fill { transition: none; }
 }
 
+/* --------------------------------------------------------------- pairing */
+
+/* The device-approval screen. Opaque and full-cover, the same as the loading
+   cover and for the same reason: there is nothing behind it worth revealing,
+   the page underneath is one the gateway is refusing to serve this device, and
+   a translucent wash over it would read as a rendering bug rather than as an
+   instruction. */
+.pairing-body { background: var(--bg); overflow: hidden; }
+
+.pairing {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 24px;
+  text-align: center;
+  /* Scrolls rather than clips: the command block and the note are the parts
+     that grow, and a short window must still be able to reach the whole screen. */
+  overflow-y: auto;
+}
+
+/* Only reserve room for the drag band where the app drew the title bar away,
+   the same two rules the loading cover uses. */
+body:not(.frameless) .pairing { padding-top: 24px; }
+body.frameless .pairing { padding-top: 58px; }
+
+.pairing__mark {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 18px;
+  border-radius: var(--radius-full);
+  background: radial-gradient(circle, var(--accent-subtle), transparent 70%);
+}
+
+.pairing__logo { width: 30px; height: 30px; opacity: .9; }
+
+.pairing__title { margin: 0 0 10px; font-size: 19px; font-weight: 600; }
+
+.pairing__body {
+  max-width: 52ch;
+  margin: 0 0 14px;
+  color: var(--muted);
+}
+
+/* The requirement sentence, in the reader's terms: *this* device, and whether it
+   is unapproved, asking for more than it was approved for, or has changed. */
+.pairing__requirement { max-width: 52ch; margin: 0 0 20px; color: var(--text); }
+
+.pairing__details {
+  width: min(520px, 100%);
+  padding: 4px 12px;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* `user-select: all` so one click selects the whole command: it is short, it is
+   meant to be copied, and the id inside it is not. */
+.pairing__command { width: min(520px, 100%); margin-top: 14px; text-align: left; }
+.pairing__command-label { color: var(--muted); font-size: 11.5px; }
+.pairing__command code {
+  display: block;
+  margin-top: 5px;
+  padding: 9px 12px;
+  background: var(--input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  user-select: all;
+}
+
+/* Waiting, not an error: the client is retrying on a cadence and the screen
+   comes down on its own, so this reads as a live state rather than a dead end. */
+.pairing__waiting { margin: 20px 0 0; color: var(--warn); }
+
+.pairing__actions { display: flex; align-items: center; gap: 16px; margin-top: 16px; }
+.pairing__docs { color: var(--muted); font-size: 11.5px; }
+.pairing__docs:hover { color: var(--accent); }
+
+.pairing__note { max-width: 52ch; margin: 16px 0 0; color: var(--muted); font-size: 11.5px; }
+
 /* ----------------------------------------------------------------- inputs */
 
 input[type="text"], input[type="url"], input[type="password"] {

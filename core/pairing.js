@@ -17,9 +17,11 @@
 //
 // Consumers: mobile/Claw/PairingState.swift ports these rules and proves itself
 // against core/fixtures/pairing.json; the mobile web view installs the observer
-// through a WKUserScript. The desktop can read this module directly if it grows
-// a native socket, but today its web contents host the same page, which reports
-// through the same observer.
+// through a WKUserScript. desktop/src/pairing.js consumes this module directly:
+// the desktop hosts the same page in an Electron WebContentsView, injects the
+// same observer bytes at document start, and reads the report over its own
+// bridge, so the reducer, the close parser and the copy are one owner for both
+// clients rather than a port on one side and a copy on the other.
 
 import spec from './spec/pairing.json' with { type: 'json' };
 
@@ -31,6 +33,25 @@ export const FAILED = spec.phases.failed;
 
 /** The WebSocket close code the gateway uses for a policy refusal. */
 export const POLICY_CLOSE_CODE = spec.policyCloseCode;
+
+/**
+ * How long a client waits between reconnect attempts while pairing, in seconds.
+ *
+ * Read from the spec rather than written down per client, because it is a
+ * cadence both clients keep and only its owner can tune: two copies drift the
+ * first time one is changed, and the visible symptom is one client flashing
+ * where the other holds still. See `timing` in spec/pairing.json.
+ */
+export const RETRY_SECONDS = spec.timing.retrySeconds;
+
+/**
+ * How long an open must survive, with no pairing close, before it counts as the
+ * approval and the screen comes down. A pairing close follows an open by
+ * milliseconds on every retry (the gateway completes the handshake and then
+ * closes 1008), so this only has to outlast that gap; see `nextPhase`'s `open`
+ * case for why a bare open is not enough.
+ */
+export const CONFIRM_SECONDS = spec.timing.confirmSeconds;
 
 /** The pairing reasons, in the order the parser tries them. */
 export const PAIRING_REASONS = Object.freeze(Object.keys(spec.reasonSubstrings));
