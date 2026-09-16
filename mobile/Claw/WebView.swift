@@ -11,17 +11,86 @@ import WebKit
 struct WebView: UIViewRepresentable {
     let url: URL
 
+    /// The page's own background, so the strips the safe area leaves above and
+    /// below it are painted with the page's colour rather than the window's.
+    ///
+    /// Handed down from the view that owns it rather than read here, because
+    /// the strips are outside this view: the web view cannot paint what it does
+    /// not cover.
+    @Binding var themeColour: Color
+
     /// Remembers what has been asked for, so a SwiftUI update cannot reload the
     /// page under the user. `updateUIView` runs on every layout pass, and the
     /// web view's own `url` is not a usable guard for that: it stays nil until
     /// the navigation commits, so the pass that follows `load` would load it a
     /// second time.
-    final class Coordinator {
+    ///
+    /// It is also where the page's theme colour arrives: the script this view
+    /// injects posts it through a message handler, which is the only route from
+    /// the page back into this app until Phase 4's certificate pinning gives
+    /// the navigation delegate a reason to exist.
+    final class Coordinator: NSObject, WKScriptMessageHandler {
         var requested: URL?
+        private let themeColour: Binding<Color>
+
+        init(themeColour: Binding<Color>) {
+            self.themeColour = themeColour
+        }
+
+        func userContentController(
+            _ controller: WKUserContentController,
+            didReceive message: WKScriptMessage
+        ) {
+            guard message.name == WebView.themeMessageName,
+                  let parts = message.body as? [NSNumber],
+                  parts.count == 3
+            else { return }
+            themeColour.wrappedValue = Color(uiColor: UIColor(
+                red: CGFloat(parts[0].doubleValue) / 255,
+                green: CGFloat(parts[1].doubleValue) / 255,
+                blue: CGFloat(parts[2].doubleValue) / 255,
+                alpha: 1
+            ))
+        }
     }
 
+    /// The name the injected script posts under.
+    static let themeMessageName = "clawTheme"
+
+    /// Reports the page's `theme-color` as three channel values.
+    ///
+    /// That meta is the page's own declaration of the colour its surroundings
+    /// should be, and the strips above and below the page are exactly that, so
+    /// this reads a value the page publishes for the purpose rather than
+    /// inspecting the page's styling. It resolves for the appearance in force
+    /// and re-reports when the system appearance changes, so the strips follow
+    /// the page in both.
+    ///
+    /// `WKWebView.themeColor` is the native route to the same value and was
+    /// tried first, on the reasoning that a property beats an injected script.
+    /// Observed through KVO it never delivered a value, and left the strips the
+    /// window's colour while looking like it worked. A mechanism that silently
+    /// does nothing is worse here than no mechanism, so it was replaced rather
+    /// than kept alongside this.
+    private static let themeScript = """
+    (function () {
+      function report() {
+        var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var meta = document.querySelector('meta[name="theme-color"][media*="' + (dark ? 'dark' : 'light') + '"]')
+                || document.querySelector('meta[name="theme-color"]');
+        if (!meta) { return; }
+        var hex = /^\\s*#([0-9a-fA-F]{6})\\s*$/.exec(meta.getAttribute('content') || '');
+        if (!hex) { return; }
+        var n = parseInt(hex[1], 16);
+        window.webkit.messageHandlers.clawTheme.postMessage([(n >> 16) & 255, (n >> 8) & 255, n & 255]);
+      }
+      report();
+      try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', report); } catch (e) {}
+    })();
+    """
+
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(themeColour: $themeColour)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -30,6 +99,16 @@ struct WebView: UIViewRepresentable {
         // hands playback to the system player, full screen and outside the page
         // it belongs to.
         configuration.allowsInlineMediaPlayback = true
+        // The theme-colour relay, described above. Injected at document end so
+        // the page's `theme-color` meta is in the document when it runs.
+        let scripts = WKUserContentController()
+        scripts.add(context.coordinator, name: Self.themeMessageName)
+        scripts.addUserScript(WKUserScript(
+            source: Self.themeScript,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        ))
+        configuration.userContentController = scripts
         // WebKit's default user agent stops at `Mobile/15E148`, which says
         // nothing about which client asked for the page. Naming ourselves is
         // what lets a gateway's own logs tell this app from Safari on the same
@@ -51,6 +130,13 @@ struct WebView: UIViewRepresentable {
         // swiping through, and a swipe that moved the whole app off the page
         // with no visible back button would strand someone in it.
         return webView
+    }
+
+    static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
+        // A user content controller keeps its message handlers strongly, so
+        // without this the coordinator outlives the view it was made for.
+        webView.configuration.userContentController
+            .removeScriptMessageHandler(forName: themeMessageName)
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
