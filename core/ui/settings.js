@@ -601,13 +601,6 @@ function renderPrefs() {
   }
 }
 
-// The line under the page, which names the app, the build and what it is running
-// on. Every part of it is formatted by the host, and `state.build` already was:
-// this page is sandboxed and cannot require the module that knows the rules, and
-// what a client runs on is that client's to describe. The desktop says Electron
-// and a Chromium version, the phone says its iOS version, and neither is a fact
-// this page should have been asked to know. A part a client has no answer for is
-// left out rather than printed as `undefined`.
 // The "looking for the gateway's own settings?" card, on the Gateways tab.
 //
 // Shown only when there is a Control UI behind this to return to: a gateway is
@@ -621,23 +614,21 @@ function renderControlUiSettingsLink() {
   card.hidden = firstRun || !hasCommand('closeSettings');
 }
 
-// The About card on the Behaviour tab. Shown when this client's host answers
+// The About footer, under every tab. Shown when this client's host answers
 // `openAbout`, hidden otherwise, exactly like the Control-UI card above: a
 // button that reaches a command the host does not implement is a button that
-// does nothing, so it is the command's presence that decides whether the card
+// does nothing, so it is the command's presence that decides whether the footer
 // appears. Not gated on firstRun: the About page answers "which build is this?"
-// during setup as much as after it, which is why the line at the foot of this
-// page is outside #prefs too.
-function renderAboutEntry() {
-  const card = $('about-entry');
-  if (!card) return;
-  card.hidden = !hasCommand('openAbout');
-}
-
-function renderAbout() {
-  const head = [state.appName, state.build].filter(Boolean).join(' ');
-  const tail = [state.runtime, state.configPath].filter(Boolean);
-  $('about').textContent = [head, ...tail].join(' · ');
+// during setup as much as after it, which is why the footer sits outside #prefs.
+//
+// This replaced a raw build string printed here (app, build, runtime and the
+// config path, all on one line). None of that detail is lost: it lives in the
+// About page now, one click behind this footer. See core/ui/about.html and each
+// host's aboutState().
+function renderAboutFooter() {
+  const footer = $('about-footer');
+  if (!footer) return;
+  footer.hidden = !hasCommand('openAbout');
 }
 
 /* ---------------------------------------------------------------- the tabs */
@@ -742,9 +733,8 @@ function renderHeading() {
 function render() {
   renderHeading();
   renderControlUiSettingsLink();
-  renderAboutEntry();
+  renderAboutFooter();
   renderGateways();
-  renderAbout();
   // Certificates renders on a first run too: its panel is reachable then, and a
   // refused certificate is one of the likeliest things to happen during setup.
   renderCertOffers();
@@ -776,8 +766,8 @@ if (openControlUiSettings) {
 // Opens the shared About page over this surface. Reaches the app through the
 // same host door every other action here uses, so the desktop and the phone
 // each answer it their own way (an overlay, a sheet) behind one command name.
-// Guarded so a client without the command does not throw; the card is hidden in
-// the same case.
+// Guarded so a client without the command does not throw; the footer is hidden
+// in the same case.
 const openAbout = $('open-about');
 if (openAbout) {
   openAbout.addEventListener('click', () => {

@@ -646,6 +646,35 @@ label.check .stack span:last-child { color: var(--muted); font-size: 12px; }
    the blurb above it. A class rather than a style attribute because this page's
    CSP sets `style-src 'self'`, which applies to style attributes too. */
 .control-ui-settings__action { margin-top: 12px; }
+
+/* The About footer, under every tab. It sits below the panels rather than in one
+   of them, so it reads as a footer for the whole surface: a quiet rule above it,
+   the link centred and understated, since it is a way OUT of settings rather than
+   a control on them. A class rather than a style attribute because this page's
+   CSP sets `style-src 'self'`, which applies to style attributes too. The phone
+   pads the bottom for the home indicator on `.scrim`; this only owns the space
+   above itself. */
+.settings-footer {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: center;
+}
+/* A link rather than a filled button: the diagnostic detail it opens is
+   reference, not an action, so it should not compete with Save or Connect. It is
+   still a real button for the keyboard and for touch, sized so a thumb lands on
+   it at phone width. */
+.about-footer__link {
+  background: transparent;
+  border: 0;
+  padding: 6px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.about-footer__link:hover { color: var(--accent); background: var(--bg-hover); }
 /* The message dialog renders its buttons reversed so the default lands at the
    trailing edge, which is where all three platforms put it. */
 .actions--end { justify-content: flex-end; margin-top: 18px; }
