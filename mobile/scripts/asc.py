@@ -195,6 +195,43 @@ def one(items):
     return items[0] if items else None
 
 
+def account_summary(auth):
+    """What the account does contain, for when a lookup comes up empty.
+
+    An empty answer is the one failure where the next step depends on the
+    difference between "this account has nothing" and "this account has apps,
+    but not this one", so the two lists are printed with the failure rather than
+    guessed at. It also rules out the other reading of an empty result: a key
+    whose role cannot read apps answers 403, and that arrives as an error rather
+    than as an empty list.
+    """
+    lines = []
+
+    apps = api(auth, "/apps", {"limit": 50, "fields[apps]": "name,bundleId,sku"})
+    if ok(apps):
+        records = apps.get("data", [])
+        lines.append(f"app records in the account: {len(records)}")
+        for record in records[:10]:
+            attributes = record.get("attributes", {})
+            lines.append(f"  {attributes.get('name')} [{attributes.get('bundleId')}]")
+    else:
+        lines.append(f"listing app records failed: {describe(apps)}")
+
+    ids = api(auth, "/bundleIds", {"limit": 50, "fields[bundleIds]": "identifier,seedId"})
+    if ok(ids):
+        known = [record.get("attributes", {}).get("identifier") for record in ids.get("data", [])]
+        if BUNDLE_ID in known:
+            lines.append(f"the App ID {BUNDLE_ID} IS registered in this account")
+        else:
+            lines.append(f"the App ID {BUNDLE_ID} is not registered in this account either")
+            for identifier in known[:10]:
+                lines.append(f"  registered: {identifier}")
+    else:
+        lines.append(f"listing bundle ids failed: {describe(ids)}")
+
+    return lines
+
+
 def fetch_app(auth):
     """The app record, which no API can create: it is made in the web UI."""
     result = api(auth, "/apps", {"filter[bundleId]": BUNDLE_ID, "limit": 1})
@@ -202,6 +239,9 @@ def fetch_app(auth):
         fail(f"looking up the app record for {BUNDLE_ID} failed: {describe(result)}")
     app = one(result.get("data", []))
     if not app:
+        print(f"no app record for {BUNDLE_ID}. What this account does have:", file=sys.stderr)
+        for line in account_summary(auth):
+            print(f"  {line}", file=sys.stderr)
         fail(
             f"no app record exists in App Store Connect for {BUNDLE_ID}, so an upload has "
             "nothing to attach to. Create it once in App Store Connect (My Apps, then the "
