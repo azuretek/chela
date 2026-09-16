@@ -167,12 +167,21 @@ final class PromptMetadataParityTests: XCTestCase {
         let lines = block.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
 
         XCTAssertEqual(lines.first, "Mobile client context: \u{27E6}openclaw:ctx\u{27E7}")
+        // Header, then the framing lines, then the fields.
+        let framing = PromptMetadata.framing
+        XCTAssertGreaterThanOrEqual(framing.count, 1, "expected framing that tells the model what the block is")
+        XCTAssertEqual(Array(lines[1..<(1 + framing.count)]), framing, "framing sits between the header and the fields")
+        let fieldLines = Array(lines.dropFirst(1 + framing.count))
         XCTAssertEqual(
-            lines.dropFirst().map { $0.split(separator: ":")[0] },
+            fieldLines.map { $0.split(separator: ":")[0] },
             ["host", "os", "locale", "timezone", "client"],
             "the fields follow the spec's order, and the ones it cannot answer are absent"
         )
         XCTAssertEqual(lines.filter { $0.contains(PromptMetadata.marker) }.count, 1, "one header, always")
+        for line in framing {
+            XCTAssertFalse(line.hasSuffix(PromptMetadata.marker), "a framing line must not read as a header")
+            XCTAssertFalse(line.trimmingCharacters(in: .whitespaces).isEmpty, "a blank framing line would end the block early")
+        }
     }
 
     // MARK: - The one copy of the script

@@ -16,9 +16,35 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import {
-  CONTEXT_MARKER, MAX_VALUE_LENGTH, clean, clientScript, contextHeader, formatBlock,
+  CONTEXT_MARKER, FRAMING, MAX_VALUE_LENGTH, clean, clientScript, contextHeader, formatBlock,
   hookSource, inject, shouldInject, transformFrame,
 } from '../prompt-metadata.js';
+
+/*
+ * A local model of the gateway's stripInboundMetadata, so this test proves the
+ * contract the framing is most likely to break without depending on the gateway
+ * source: a block is a header line ENDING with the marker, and everything from
+ * that header down to (and including) the first blank line is removed from what
+ * a person reads. The framing must live inside that run, which is exactly what
+ * this asserts.
+ */
+function stripInboundMetadata(text) {
+  const lines = text.split('\n');
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (lines[i].endsWith(CONTEXT_MARKER) && lines[i].length > CONTEXT_MARKER.length) {
+      // Drop the header and every line until the first blank line, inclusive.
+      i += 1;
+      while (i < lines.length && lines[i].trim() !== '') i += 1;
+      if (i < lines.length) i += 1; // consume the blank separator too
+      continue;
+    }
+    out.push(lines[i]);
+    i += 1;
+  }
+  return out.join('\n');
+}
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.join(HERE, '..', '..');
@@ -68,11 +94,14 @@ test('a value cannot forge a second header or close the block early', () => {
   });
   const lines = block.split('\n');
   assert.strictEqual(lines.filter((line) => line.includes(CONTEXT_MARKER)).length, 1);
+  // The header, then the framing lines, then the fields. The value lines are
+  // what a malicious value could corrupt, so they are what this checks.
+  const fieldLines = lines.slice(1 + FRAMING.length);
   assert.deepStrictEqual(
-    lines.slice(1).map((line) => line.split(':')[0]),
+    fieldLines.map((line) => line.split(':')[0]),
     ['host', 'os', 'user', 'home', 'locale', 'timezone', 'client'],
   );
-  for (const line of lines.slice(1)) {
+  for (const line of fieldLines) {
     assert.ok(line.length < MAX_VALUE_LENGTH + 32, `unbounded line: ${line}`);
   }
 });
@@ -80,6 +109,47 @@ test('a value cannot forge a second header or close the block early', () => {
 test('the prompt is separated from the block by the blank line the stripper needs', () => {
   const block = formatBlock({ host: 'example-host' });
   assert.strictEqual(inject('hello', block), `${block}\n\nhello`);
+});
+
+test('the framing is present, one bounded line per entry, inside the block', () => {
+  assert.ok(FRAMING.length >= 1, 'expected framing lines that tell the model what the block is');
+  const block = formatBlock({ host: 'example-host' });
+  const lines = block.split('\n');
+  // The header is first, then every framing line, then the fields. No framing
+  // line may end with the marker (that would forge a second header) or be blank
+  // (that would end the block early and leak the fields to the user).
+  assert.strictEqual(lines[0], contextHeader('desktop'));
+  for (let i = 0; i < FRAMING.length; i += 1) {
+    assert.strictEqual(lines[1 + i], FRAMING[i], 'framing sits between the header and the fields');
+    assert.ok(FRAMING[i].trim() !== '', 'a blank framing line would end the block early');
+    assert.ok(!FRAMING[i].endsWith(CONTEXT_MARKER), 'a framing line must not read as a header');
+  }
+  assert.ok(lines[1 + FRAMING.length].startsWith('host:'), 'the fields follow the framing');
+});
+
+test('the block, framing and all, is still stripped from what the user reads', () => {
+  const block = formatBlock({
+    host: 'example-host', os: 'macOS 26.6.2 (arm64)', user: 'example-user',
+    home: '/home/example-user', locale: 'en-US', timezone: 'Europe/London',
+    client: 'Claw Control UI (claw-desktop) 1.0.1',
+  });
+  const sent = inject('what time is it?', block);
+
+  // The framing is really there before we strip, or this test proves nothing.
+  for (const line of FRAMING) assert.ok(sent.includes(line), 'framing should be in the sent prompt');
+
+  const visible = stripInboundMetadata(sent);
+  assert.strictEqual(visible, 'what time is it?', 'the whole block, framing included, is stripped');
+  assert.ok(!visible.includes(CONTEXT_MARKER), 'no marker survives to the user');
+  for (const line of FRAMING) {
+    assert.ok(!visible.includes(line), 'no framing line survives to the user');
+  }
+});
+
+test('the mobile block, framing and all, is stripped too', () => {
+  const block = formatBlock({ host: 'iPhone', os: 'iOS 26.0 (iPhone17,1)' }, 'mobile');
+  const visible = stripInboundMetadata(inject('hello', block));
+  assert.strictEqual(visible, 'hello');
 });
 
 /* ------------------------------------------------------------- one interpreter */

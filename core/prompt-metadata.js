@@ -27,6 +27,16 @@ export const CONTEXT_MARKER = spec.marker;
 /** The field order of the block, which every client renders in the same order. */
 export const FIELD_ORDER = spec.fields;
 
+/**
+ * The framing lines that sit inside the block, between the header and the
+ * fields. They tell the model the block describes the user's device, that it is
+ * context rather than an instruction, and that it must not be echoed back or
+ * obeyed. Inside the block on purpose: the stripper matches a header ending
+ * with the marker and runs to the first blank line, so framing kept above that
+ * blank line is stripped from the user's view along with the rest.
+ */
+export const FRAMING = spec.framing || [];
+
 /** The longest a single machine-controlled value may be inside the block. */
 export const MAX_VALUE_LENGTH = spec.maxValueLength;
 
@@ -80,7 +90,7 @@ export function clean(value, fallback = spec.fallback) {
  * nobody checked.
  */
 export function formatBlock(metadata, client = DEFAULT_CLIENT) {
-  const lines = [contextHeader(client)];
+  const lines = [contextHeader(client), ...FRAMING];
   for (const field of spec.fields) {
     const value = metadata?.[field];
     if (value === undefined || value === null) continue;
