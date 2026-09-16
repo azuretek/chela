@@ -102,6 +102,30 @@ if (!coreInAsar && !coreInResources) {
   problems.push('the shared core is in neither app.asar/core nor Resources/core; the app cannot import it');
 }
 
+/**
+ * The shared web surface, which is a packaging fault of a different kind.
+ *
+ * Nothing imports a page, so a filter that drops one of these files, or the
+ * stylesheet, or the artwork, breaks nothing that any test can see from the
+ * source tree: the app still boots, and the page it opens is unstyled with a
+ * missing logo and no error anywhere. It only ever fails in a build, which is
+ * exactly the case this script exists for. Every page the desktop loads is
+ * listed, not only the settings page, because the rest moved into this tree with
+ * it.
+ */
+const CORE_UI = [
+  'ui/settings.html', 'ui/settings.js', 'ui/ui.css', 'ui/assets/claw.svg',
+  'ui/about.html', 'ui/about.js', 'ui/banner.html', 'ui/banner.js', 'ui/banner.css',
+  'ui/loading.html', 'ui/loading.js', 'ui/titlebar.html',
+];
+const uiInAsar = CORE_UI.every((f) => entries.has(`/core/${f}`));
+const uiInResources = CORE_UI.every((f) => fs.existsSync(path.join(resourcesDir, 'core', f)));
+if (uiInAsar) notes.push('the shared web surface is at app.asar/core/ui');
+if (uiInResources) notes.push('the shared web surface is at Resources/core/ui');
+if (!uiInAsar && !uiInResources) {
+  problems.push('core/ui is in neither app.asar/core/ui nor Resources/core/ui; the app would open its own pages unstyled');
+}
+
 /** Both possible targets for a relative specifier from a packaged module. */
 function candidatesFor(fromKey, spec) {
   const dir = path.posix.dirname(fromKey);

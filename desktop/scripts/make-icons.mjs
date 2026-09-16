@@ -1,7 +1,7 @@
 // Rasterises the icon artwork into every platform's icon files.
 //
 // One mark, one generator, every platform. This file is the repo's icon
-// pipeline rather than the desktop's: src/assets/claw.svg is read ONCE here and
+// pipeline rather than the desktop's: core/ui/assets/claw.svg is read ONCE here and
 // rasterised into the desktop's PNGs and into the iOS app icon, so the two
 // cannot drift. Copying a bitmap from one platform to another would be a second
 // owner of the artwork, and the two copies disagree the first time only one of
@@ -9,8 +9,8 @@
 // same arrangement desktop/scripts/build-version.js has, and the mobile release
 // workflow already runs that one from this directory.
 //
-// Two sources, not one. src/assets/claw.svg is the application icon, a tile with
-// a window and a title bar in it. src/assets/claw-tray.svg is the same mark with
+// Two sources, not one. core/ui/assets/claw.svg is the application icon, a tile with
+// a window and a title bar in it. core/ui/assets/claw-tray.svg is the same mark with
 // all of that removed, because at 16 physical pixels the frame and the title-bar
 // dots turn to mush, and a filled dark square is the wrong shape to hang in a
 // menu bar. Rendering one file at both sizes is what forces artwork to be timid
@@ -54,10 +54,15 @@ import path from 'node:path';
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));   // desktop/
 const repo = path.dirname(root);                                            // the repo
 const read = (p) => readFileSync(path.join(root, p));
+// The artwork itself lives beside the pages that draw it, in the shared core/ui
+// tree, so the app icon, the tray icon, the About page and the loading cover all
+// come from one copy of one file. The generated bitmaps stay under src/assets,
+// which is what the desktop loads at runtime.
+const readRepo = (p) => readFileSync(path.join(repo, p));
 
 const artwork = {
-  app: read('src/assets/claw.svg'),
-  tray: read('src/assets/claw-tray.svg'),
+  app: readRepo('core/ui/assets/claw.svg'),
+  tray: readRepo('core/ui/assets/claw-tray.svg'),
 };
 
 // One entry per file that ships. `file` is relative to the repo root rather

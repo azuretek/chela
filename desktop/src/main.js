@@ -41,9 +41,27 @@ import secrets from './secrets.js';
 import defaults from './defaults.js';
 import { withTokenHandoff } from '../../core/gateway-url.js';
 import { product, releasesUrl } from '../../core/naming.js';
+// The settings surface's spec, read here rather than by the page: the page is a
+// file:// document with `default-src 'none'`, so it cannot fetch a JSON file, and
+// the spec has to arrive inside the state this process already pushes. The iOS
+// client bundles the same file and hands it over the same way, so the two clients
+// render from one copy of the split. See core/spec/settings.json.
+import settingsSpec from '../../core/spec/settings.json' with { type: 'json' };
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const UI_DIR = path.join(HERE, 'ui');
+// Our own pages, which live in the repo's core/ui rather than here, and which the
+// desktop loads out of core/ui in a source checkout and out of the packaged copy
+// of core in a build (electron-builder ships core both inside the asar and beside
+// it, see electron-builder.yml). Settings is there because the iOS client loads
+// that same page; the rest are the desktop's own, and they are there with it for
+// a reason that is mechanical rather than tidiness: a page in this tree cannot
+// reach a stylesheet in that one by a relative href that is correct in BOTH
+// layouts, because packing flattens `desktop/` into the archive's root, so
+// `src/ui/about.html` sits one directory deeper in the checkout than in the
+// build. Everything in one directory is the only arrangement where one relative
+// href is right in both. desktop/test/dialogs.test.js asserts that each href
+// resolves.
+const UI_DIR = path.join(HERE, '..', '..', 'core', 'ui');
 const ASSETS = path.join(HERE, 'assets');
 const PRELOAD = path.join(HERE, 'preload.cjs');
 
@@ -985,6 +1003,8 @@ function adoptTheme(theme) {
  * Views stack in the order they are added, so a message opened while Settings
  * is up lands on top of it and Settings is still there underneath when it goes.
  */
+// name -> the page, resolved against UI_DIR at the call site, the way it always
+// was. The directory is core/ui now, see the note on UI_DIR above.
 const OVERLAY_PAGES = { settings: 'settings.html', about: 'about.html' };
 
 /** name -> WebContentsView, in the order they were opened, which is z-order. */
@@ -2143,6 +2163,16 @@ function currentState() {
       milestone: connection.milestone,
       milestoneAt: connection.milestoneAt,
     },
+    // Which client this is, and the split of the settings surface that belongs
+    // to it. The page filters with these rather than each host doing it: the
+    // spec is handed over as it stands, so there is one owner of the split and
+    // the page is not a second one. See core/spec/settings.json.
+    client: 'desktop',
+    surface: settingsSpec,
+    // What this build is running on, pre-formatted, for the line under the page.
+    // The phone answers the same question with its iOS version, so the page
+    // prints it rather than knowing what Electron is.
+    runtime: `Electron ${process.versions.electron} · Chromium ${process.versions.chrome}`,
     // The product name, for the one line Settings prints about itself. The
     // page is sandboxed, so it cannot read core/naming.js the way this file
     // does, and this is the same arrangement as every other formatted value it

@@ -16,6 +16,28 @@ the iOS app behave identically where it counts and cannot drift apart.
 | `gateway-url.js` | The token handoff: build the Control UI URL with the token on the `#token=` fragment. |
 | `updates.js` | What this build may do about a new version: the action, whether to check, whether to download, and why. Takes `platform`, `packaged`, `macSigned` and `appImage` as arguments, so a stray environment variable cannot change the answer. |
 | `prompt-metadata.js` | The client-context block every client puts on every outgoing prompt: the marker, the header, the field order, the value rules, and the script each client installs to put it on a `chat.send` frame. Platform-free, so only the gathered facts differ. |
+| `ui/` | The web surface our own chrome is drawn from: the settings page, which every client renders, and the desktop's other pages. One copy, loaded by both clients, with one stylesheet and one set of design tokens. See below. |
+
+## The shared web surface
+
+`ui/` holds the pages our own chrome is made of, and it is here rather than beside
+the desktop's source for two reasons, both load-bearing:
+
+- **The settings surface is shared.** `ui/settings.html` with `ui/settings.js` and
+  `ui/ui.css` is rendered by the desktop AND by the iOS app, out of its bundle. It is
+  one page, not one per client, because both clients are web views and a native
+  screen per client would be a second implementation of every tab.
+- **A page in `desktop/src` cannot address a stylesheet here.** Packing flattens
+  `desktop/` into the archive's root, so the same page sits one directory deeper in a
+  checkout than in a build, and no single relative href is correct in both. Everything
+  in one directory is the only arrangement where it is. `desktop/test/dialogs.test.js`
+  asserts that every href in every page resolves.
+
+What differs between the clients is which tabs and which settings apply, and that is
+NOT in the page: it is data in `spec/settings.json`, handed to the page at runtime by
+whichever host is running it (`window.clawSettings`). The page filters by it, hides
+what its client does not have, and never asks which client it is. That last part is a
+test, not a convention: see `desktop/test/settings-surface.test.js`.
 
 ## One source of truth
 
@@ -27,6 +49,7 @@ The data each module needs lives in `spec/*.json`, and the JS reads from it:
 - `spec/notices.json`: the tones and their sort rank.
 - `spec/updates.json`: the four action names and the two check intervals.
 - `spec/prompt-metadata.json`: the marker, the per-client headers, the block's field order, the value rules, and the injected script itself.
+- `spec/settings.json`: the settings surface's split by client: which tabs and which settings apply to each, the reason any of them is absent on a client, and the command vocabulary a client's host implements. Not a mirror: both clients hand this file to the one shared page at runtime.
 
 A Swift port reads the same JSON, so the data cannot say one thing on desktop
 and another on the phone. Change a quip or a milestone floor once, in the spec,

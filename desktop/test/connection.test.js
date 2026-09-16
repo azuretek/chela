@@ -117,7 +117,7 @@ test('a real load while connecting does count', () => {
 
 test('one of the app’s own pages never means a gateway answered', () => {
   assert.equal(
-    connection.shouldMarkConnected({ phase: connection.CONNECTING, url: 'file:///app/src/ui/settings.html' }),
+    connection.shouldMarkConnected({ phase: connection.CONNECTING, url: 'file:///app/core/ui/settings.html' }),
     false,
   );
 });

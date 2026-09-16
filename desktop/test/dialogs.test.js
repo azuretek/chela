@@ -20,7 +20,29 @@ import path from 'node:path';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const SRC = path.join(HERE, '..', 'src');
-const UI = path.join(SRC, 'ui');
+const UI = path.join(HERE, '..', '..', 'core', 'ui');
+// Our own pages live in the repo's core/ui rather than beside this source.
+// Settings is there because the iOS app loads that same page; the rest are there
+// with it because a page in desktop/src cannot reach a stylesheet in core/ by a
+// relative href that is correct in both the checkout and the packaged app, where
+// packing flattens `desktop/` into the archive's root. See the note on UI_DIR in
+// src/main.js.
+
+/**
+ * The one page with no script, and why. It is a title strip, drawn and sized by
+ * the main process, with nothing in it to click. Every other page here has
+ * controls, and a page whose script did not load is a page whose buttons do
+ * nothing, which is why the rest are required to load one. The assertion below
+ * fails if this page gains a script, so the list cannot go stale.
+ */
+const SCRIPTLESS = new Set(['titlebar.html']);
+
+/** Every page in the pages directory, with its own text. */
+function pages() {
+  return fs.readdirSync(UI)
+    .filter((f) => f.endsWith('.html'))
+    .map((file) => ({ file, html: fs.readFileSync(path.join(UI, file), 'utf8') }));
+}
 
 // There are no exceptions. The last one was the certificate prompt, and it went
 // because the failed handshake means there is often no page to lay a dialog
@@ -75,22 +97,53 @@ test('nothing uses the built-in About panel', () => {
   }
 });
 
-test('every page in src/ui is loadable and locked down', () => {
+test('every page the app can load is loadable and locked down', () => {
   // Covers the banner too, which is not an overlay but is still one of the
   // app's own pages, and fails the same two ways: no script, or an inline one
-  // its own CSP then blocks.
-  const pages = fs.readdirSync(UI).filter((f) => f.endsWith('.html'));
-  assert.ok(pages.length >= 4, `only found ${pages.length} pages`);
-  for (const file of pages) {
-    const html = fs.readFileSync(path.join(UI, file), 'utf8');
-    assert.match(html, /Content-Security-Policy/, `ui/${file} has no CSP`);
-    assert.doesNotMatch(html, /<script>/, `ui/${file} has an inline script its CSP blocks`);
+  // its own CSP then blocks. Settings is one of these too, out of the shared
+  // directory, which is why both trees are read: a page that cannot load is the
+  // same fault wherever it lives.
+  const all = pages();
+  assert.ok(all.length >= 5, `only found ${all.length} pages`);
+  for (const { file, html } of all) {
+    assert.match(html, /Content-Security-Policy/, `${file} has no CSP`);
+    assert.doesNotMatch(html, /<script>/, `${file} has an inline script its CSP blocks`);
+    // Every page is loaded into a sandboxed view with contextIsolation on (or,
+    // on iOS, into a web view whose only bridge is a named message handler), so
+    // its own script is the only way it can do anything at all.
+    if (SCRIPTLESS.has(file)) {
+      assert.doesNotMatch(html, /<script/, `${file} has a script now: take it off SCRIPTLESS`);
+      continue;
+    }
+    const script = /<script src="([^"]+)"/.exec(html);
+    assert.ok(script, `${file} loads no script`);
+    assert.ok(fs.existsSync(path.join(UI, script[1])), `${file} loads a missing ${script[1]}`);
+  }
+});
+
+test('every stylesheet and script a page asks for resolves beside it', () => {
+  // The failure this catches is the one a move produces, and it is silent: a
+  // stylesheet href that no longer points anywhere leaves an unstyled page, and
+  // a script src that does leaves a page whose buttons do nothing, neither with
+  // anything in the console and neither noticed by a suite that never loads the
+  // page. Settings moved into core/ui while the desktop's other pages stayed, so
+  // their stylesheet is now reached two directories up, which is exactly the
+  // kind of href nothing else checks.
+  for (const { file, html } of pages()) {
+    for (const [, ref] of html.matchAll(/(?:href|src)="([^"]+)"/g)) {
+      if (/^(https?:|data:|#)/.test(ref)) continue;
+      assert.ok(fs.existsSync(path.join(UI, ref)), `${file} points at a missing ${ref}`);
+    }
   }
 });
 
 test('every overlay page main.js can open exists on disk', () => {
-  // main.js maps a name to a filename, and a typo there is a modal that opens
-  // as a blank sheet over the whole window until the watchdog tears it down.
+  // main.js maps a name to a path, and a typo there is a modal that opens as a
+  // blank sheet over the whole window until the watchdog tears it down. The paths
+  // are built from a directory constant now rather than being bare filenames,
+  // because the pages no longer share one directory, so each constant is resolved
+  // here and one this test does not know about fails loudly rather than being
+  // skipped.
   const main = fs.readFileSync(path.join(SRC, 'main.js'), 'utf8');
   const block = /const OVERLAY_PAGES = \{([^}]*)\}/.exec(main);
   assert.ok(block, 'OVERLAY_PAGES not found in main.js');
@@ -99,17 +152,18 @@ test('every overlay page main.js can open exists on disk', () => {
   assert.ok(pages.length >= 2, `expected settings and about; found ${pages.length}`);
 
   for (const { name, file } of pages) {
-    assert.ok(fs.existsSync(path.join(UI, file)), `${name} -> ui/${file} does not exist`);
-    // Every page is loaded into a sandboxed view with contextIsolation on, so
-    // its script is the only way it can do anything at all.
-    const html = fs.readFileSync(path.join(UI, file), 'utf8');
-    const script = /<script src="([^"]+)"/.exec(html);
-    assert.ok(script, `ui/${file} loads no script`);
-    assert.ok(fs.existsSync(path.join(UI, script[1])), `ui/${file} loads a missing ${script[1]}`);
-    // Inline script and style are blocked by each page's own CSP, so a page
-    // without one is a page whose failure mode is "the buttons do nothing".
-    assert.match(html, /Content-Security-Policy/, `ui/${file} has no CSP`);
+    assert.ok(fs.existsSync(path.join(UI, file)), `${name} -> ${file} is not in ${path.basename(UI)}`);
   }
+
+  // And they are loaded out of the SHARED tree, which is the assertion this test
+  // is really for. Settings is the page the iOS app also renders, so a copy of it
+  // back under desktop/src would still open, still render and still be green
+  // everywhere else, while being a second implementation of one surface. The
+  // directory is read out of main.js rather than assumed, so moving the pages
+  // again fails here rather than passing quietly.
+  const dir = /const UI_DIR = path\.join\(([^)]*)\)/.exec(main);
+  assert.ok(dir, 'UI_DIR not found in main.js');
+  assert.ok(dir[1].includes("'core'") && dir[1].includes("'ui'"), `UI_DIR must name core/ui; got ${dir[1]}`);
 });
 
 test('the app has no modal message dialog left to reach for', () => {

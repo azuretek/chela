@@ -1,6 +1,6 @@
 // The banner page.
 //
-// src/ui/banner.js is a browser script, so it is loaded here against a minimal
+// core/ui/banner.js is a browser script, so it is loaded here against a minimal
 // DOM rather than required. That is worth the shim for one reason: the stack is
 // rebuilt key by key so a banner that has been sitting there for an hour does
 // not replay its slide every time an unrelated one appears, and the Mark all
@@ -18,7 +18,7 @@ import path from 'node:path';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-const SOURCE = path.join(HERE, '..', 'src', 'ui', 'banner.js');
+const SOURCE = path.join(HERE, '..', '..', 'core', 'ui', 'banner.js');
 
 function makeNode(tag) {
   const node = {

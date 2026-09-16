@@ -100,25 +100,41 @@ test('the workflow display names use the shorthand', () => {
 });
 
 test('the app pages carry the product name the way the spec spells it', () => {
-  const ui = path.join(DESKTOP, 'src', 'ui');
-  const expect = {
-    'about.html': [
-      `<title>About ${naming.product}</title>`,
-      `<h1 id="title">${naming.product}</h1>`,
-    ],
-    'titlebar.html': [
-      `<title>${naming.product}</title>`,
-      `id="label">${naming.product}<`,
-    ],
-    'banner.html': [`<title>${naming.product} notices</title>`],
-    'settings.html': [
-      `<title>${naming.product} Settings</title>`,
-      `Start ${naming.product} automatically when you sign in.`,
-      `${naming.product} version with ordinary chat prompts`,
-    ],
-  };
-  for (const [file, strings] of Object.entries(expect)) {
-    const html = read(ui, file);
+  // Every one of these pages is in core/ui now, Settings because the iOS client
+  // loads that same page, and the rest because a page in desktop/src cannot
+  // reach a stylesheet in core/ by a relative href that is right in both the
+  // checkout and the packaged app. See the note on UI_DIR in src/main.js.
+  const ui = path.join(DESKTOP, '..', 'core', 'ui');
+  const pages = [
+    {
+      dir: ui,
+      file: 'about.html',
+      strings: [
+        `<title>About ${naming.product}</title>`,
+        `<h1 id="title">${naming.product}</h1>`,
+      ],
+    },
+    {
+      dir: ui,
+      file: 'titlebar.html',
+      strings: [
+        `<title>${naming.product}</title>`,
+        `id="label">${naming.product}<`,
+      ],
+    },
+    { dir: ui, file: 'banner.html', strings: [`<title>${naming.product} notices</title>`] },
+    {
+      dir: ui,
+      file: 'settings.html',
+      strings: [
+        `<title>${naming.product} Settings</title>`,
+        `Start ${naming.product} automatically when you sign in.`,
+        `so ${naming.product} knows which machine is talking`,
+      ],
+    },
+  ];
+  for (const { dir, file, strings } of pages) {
+    const html = read(dir, file);
     for (const string of strings) {
       assert.ok(html.includes(string), `${file} should contain: ${string}`);
     }

@@ -1,19 +1,64 @@
 'use strict';
 
-const api = window.clawDesktop;
+/*
+ * The settings surface, for whichever client is running it.
+ *
+ * ONE page, TWO clients. This file is the only implementation of the settings
+ * UI in the repo: the desktop loads it in an overlay view (or, on a first run,
+ * as the window's own content), and the iOS app loads the same file out of its
+ * bundle in a sheet. There is no native settings screen on the phone and no
+ * second copy of any tab, which is the whole reason this lives in core/ rather
+ * than beside either client: two implementations would be two things to keep in
+ * step, and the tokens, the notices and the gateway rules are already shared for
+ * exactly that reason.
+ *
+ * What differs between the clients is therefore NOT in here. The host supplies
+ * the state, and `state.client` plus the copy of core/spec/settings.json that
+ * host handed over say which tabs and which settings this client has. Anything
+ * this client does not have is hidden rather than specially cased, so a desktop
+ * setting cannot be reimplemented on the phone by accident: it would have to be
+ * added to that spec first.
+ *
+ * The host itself is `window.clawSettings`, installed before this script runs.
+ * One door, `invoke(command, args)`, plus `on(event, handler)`: desktop builds it
+ * in desktop/src/preload.cjs over IPC, and iOS builds it over a
+ * WKScriptMessageHandler in mobile/Claw/SettingsHost.swift. A named method here
+ * would have to be mirrored in Swift, which is why there is one.
+ */
+
+const host = window.clawSettings;
+if (!host || typeof host.invoke !== 'function') {
+  // Only ever loaded by a client, and a client that installs no host has a boot
+  // fault worth failing loudly for: the alternative is a page whose every button
+  // silently does nothing.
+  throw new Error('settings page loaded without a clawSettings host');
+}
+
+/** One command on the host, as a promise. Never called before `state` is read. */
+function call(command, ...args) {
+  return host.invoke(command, args);
+}
+
+/** Subscribe to one host event. */
+function on(event, handler) {
+  return host.on(event, handler);
+}
+
 const params = new URLSearchParams(location.search);
 const firstRun = params.has('firstRun');
-// This page is the window's own content rather than a dialog over it, which is
-// a first run and nothing else now, a failed connection leaves you where you
-// were and raises a notice. Kept separate from firstRun, which additionally
-// hides the preferences, so the two can differ again.
+// This page is the window's own content rather than a dialog over it, which on
+// the desktop is a first run and nothing else now (a failed connection leaves you
+// where you were and raises a notice), and on iOS is always: the page fills a
+// sheet, which is the phone's version of a window of its own. Kept separate from
+// firstRun, which additionally hides the preferences, so the two can differ
+// again.
 const asPage = params.has('page');
 const $ = (id) => document.getElementById(id);
 
-// Applied before first paint, from the URL rather than from getState(), because
+// Applied before first paint, from the URL rather than from a getState(), because
 // these decide where the card sits and whether it is a dialog or the window
-// itself. Fetched over IPC they land after the first frame and the card jumps.
-// (This script is the last element in <body>, so document.body exists.)
+// itself. Fetched over the host they land after the first frame and the card
+// jumps. (This script is the last element in <body>, so document.body exists.)
 if (params.has('frameless')) document.body.classList.add('frameless');
 if (asPage) document.body.classList.add('as-page');
 if (firstRun) document.body.classList.add('first-run');
@@ -46,6 +91,66 @@ function field(labelText, control, hint) {
   ]);
 }
 
+/* ------------------------------------------------------------- the surface */
+
+/**
+ * The half of the settings surface this client has.
+ *
+ * From core/spec/settings.json, which the host hands over as it stands, so the
+ * split has one owner and this page is not a second one. Filtering here rather
+ * than in each host is what keeps the hosts thin: all a host has to know is which
+ * client it is.
+ */
+function surface() {
+  const spec = (state && state.surface) || {};
+  const client = state && state.client;
+  const mine = (list) => (Array.isArray(list) ? list : []).filter((e) => (e.clients || []).includes(client));
+  return {
+    tabs: mine(spec.tabs),
+    settings: mine(spec.settings),
+    commands: mine(spec.commands),
+  };
+}
+
+function surfaceTabIds() {
+  return surface().tabs.map((t) => t.id);
+}
+
+function hasSetting(id) {
+  return surface().settings.some((s) => s.id === id);
+}
+
+/** Whether this client's host answers a command at all. */
+function hasCommand(id) {
+  return surface().commands.some((c) => c.id === id);
+}
+
+/**
+ * Hide the settings this client does not have.
+ *
+ * Hidden rather than deleted: this is one document rendering both clients, and
+ * reaching into it to remove nodes would leave the two clients rendering from two
+ * different documents while still calling it shared. The markup carries
+ * `data-setting` for every setting the clients use between them, and
+ * desktop/test/settings-surface.test.js asserts those ids and the spec agree in
+ * both directions, so a setting cannot be added to one and forgotten in the
+ * other.
+ */
+function applySurface() {
+  const ids = new Set(surface().settings.map((s) => s.id));
+  for (const node of document.querySelectorAll('[data-setting]')) {
+    node.hidden = !ids.has(node.dataset.setting);
+  }
+  // A tab this client does not have is hidden here and skipped by showTab, so
+  // neither the button nor the panel can be reached into.
+  for (const id of ALL_TAB_IDS) {
+    const button = $(`tab-${id}`);
+    if (button) button.hidden = !surfaceTabIds().includes(id);
+    const panel = $(`panel-${id}`);
+    if (panel && !surfaceTabIds().includes(id)) panel.hidden = true;
+  }
+}
+
 /* ---------------------------------------------------------------- gateways */
 
 // The renderer never receives a stored secret, only whether one exists. So the
@@ -63,7 +168,7 @@ function secretRow(gw, { key, title, has, hint }, out) {
     textContent: 'Save',
     onclick: async () => {
       if (!input.value) return setResult(out, 'Enter a value first.', 'err');
-      const res = await api.setCredentials(gw.id, { [key]: input.value });
+      const res = await call('setCredentials', gw.id, { [key]: input.value });
       state = res;
       input.value = '';
       setResult(out, res.saved.ok ? `${title} saved.` : res.saved.error, res.saved.ok ? 'ok' : 'err');
@@ -76,7 +181,7 @@ function secretRow(gw, { key, title, has, hint }, out) {
     textContent: 'Clear',
     disabled: !has,
     onclick: async () => {
-      const res = await api.setCredentials(gw.id, { [key]: '' });
+      const res = await call('setCredentials', gw.id, { [key]: '' });
       state = res;
       setResult(out, res.saved.ok ? `${title} cleared.` : res.saved.error, res.saved.ok ? 'ok' : 'err');
       render();
@@ -89,6 +194,14 @@ function secretRow(gw, { key, title, has, hint }, out) {
   ]);
 }
 
+/**
+ * The extra request headers, which only a client that can set them shows.
+ *
+ * Marked with the spec's id like every other setting, and asked for by name
+ * rather than built and hidden, because the half that hides it would still have
+ * listed this gateway's stored header names on the phone, names the phone cannot
+ * use and has no business displaying.
+ */
 function headerSection(gw, out) {
   const names = (gw.credentials && gw.credentials.headers) || [];
   const list = el('div', {}, names.length
@@ -98,7 +211,7 @@ function headerSection(gw, out) {
         className: 'ghost danger',
         textContent: 'Remove',
         onclick: async () => {
-          const res = await api.removeHeader(gw.id, name);
+          const res = await call('removeHeader', gw.id, name);
           state = res;
           setResult(out, res.saved.ok ? `Removed ${name}.` : res.saved.error, res.saved.ok ? 'ok' : 'err');
           render();
@@ -114,7 +227,7 @@ function headerSection(gw, out) {
     textContent: 'Add header',
     onclick: async () => {
       if (!name.value.trim()) return setResult(out, 'Enter a header name.', 'err');
-      const res = await api.addHeader(gw.id, name.value, value.value);
+      const res = await call('addHeader', gw.id, name.value, value.value);
       state = res;
       if (res.saved.ok) { name.value = ''; value.value = ''; }
       setResult(out, res.saved.ok ? 'Header saved.' : res.saved.error, res.saved.ok ? 'ok' : 'err');
@@ -122,7 +235,7 @@ function headerSection(gw, out) {
     },
   });
 
-  return el('div', {}, [
+  const box = el('div', {}, [
     el('div', { className: 'field' }, [
       el('span', { textContent: 'Extra request headers' }),
       list,
@@ -133,6 +246,8 @@ function headerSection(gw, out) {
     ]),
     el('div', { className: 'row' }, [name, value, add]),
   ]);
+  box.setAttribute('data-setting', 'gatewayHeaders');
+  return box;
 }
 
 function gatewayEditor(gw) {
@@ -147,7 +262,7 @@ function gatewayEditor(gw) {
     textContent: 'Save address',
     onclick: async () => {
       if (!url.value.trim()) return setResult(out, 'Enter a URL first.', 'err');
-      state = await api.updateGateway(gw.id, { label: label.value.trim(), url: url.value.trim() });
+      state = await call('updateGateway', gw.id, { label: label.value.trim(), url: url.value.trim() });
       setResult(out, 'Saved. Reconnect to use the new address.', 'ok');
       render();
     },
@@ -170,8 +285,7 @@ function gatewayEditor(gw) {
       has: creds.hasPassword,
       hint: 'Only for gateways in password mode. There is no URL handoff for passwords, so the app fills the sign-in form instead, best effort.',
     }, out),
-    el('hr'),
-    headerSection(gw, out),
+    hasSetting('gatewayHeaders') ? el('div', {}, [el('hr'), headerSection(gw, out)]) : null,
     out,
   ]);
 }
@@ -252,7 +366,7 @@ function renderGateways() {
         textContent: (active && phase === 'connecting') ? 'Connecting…' : (active ? 'Reconnect' : 'Connect'),
         // The result arrives as a notice over the top of this page, rather than
         // by this page closing itself. See announceConnected() in src/main.js.
-        onclick: () => { void api.connect(gw.id); },
+        onclick: () => { void call('connect', gw.id); },
       }),
       el('button', {
         className: 'ghost',
@@ -264,7 +378,7 @@ function renderGateways() {
         textContent: 'Remove',
         onclick: async () => {
           if (editing === gw.id) editing = null;
-          state = await api.removeGateway(gw.id);
+          state = await call('removeGateway', gw.id);
           render();
         },
       }),
@@ -281,8 +395,11 @@ function renderGateways() {
  *
  * This is the whole reason there is no certificate prompt any more. The
  * fingerprints are here to be compared rather than dismissed, nothing is
- * blocked on the answer, and doing nothing leaves the connection refused, 
+ * blocked on the answer, and doing nothing leaves the connection refused,
  * which is the safe outcome, unlike a modal whose easiest button is "yes".
+ *
+ * Desktop only, and the panel is hidden on a client without the tab, so this
+ * renders nothing there whatever the state carries.
  */
 function renderCertOffers() {
   const host = $('cert-offers');
@@ -323,7 +440,7 @@ function renderCertOffers() {
       className: 'primary',
       textContent: offer.changed ? 'Trust the new certificate' : 'Trust this certificate',
       onclick: async () => {
-        const res = await api.trustCert(offer.host);
+        const res = await call('trustCert', offer.host);
         state = res;
         setResult(out, res.trusted ? `Pinned. Reconnecting to ${offer.host}…` : 'That certificate is no longer being offered.', res.trusted ? 'ok' : 'warn');
         render();
@@ -333,7 +450,7 @@ function renderCertOffers() {
     const dismiss = el('button', {
       className: 'ghost',
       textContent: 'Not now',
-      onclick: async () => { state = await api.dismissCertOffer(offer.host); render(); },
+      onclick: async () => { state = await call('dismissCertOffer', offer.host); render(); },
     });
 
     host.append(el('div', { className: 'card' }, [
@@ -415,13 +532,14 @@ function renderNoticeHistory() {
         ? `Showing the ${HISTORY_SHOWN} most recent of ${history.length} kept.`
         : 'Kept for three months, a file per month.',
     }),
-    el('button', { className: 'ghost', textContent: 'Open log folder', onclick: () => api.openNoticeLog() }),
+    el('button', { className: 'ghost', textContent: 'Open log folder', onclick: () => call('openNoticeLog') }),
   ]));
 }
 
 /** Read the log and redraw. Failure leaves the section empty rather than the page broken. */
 async function loadHistory() {
-  try { history = await api.noticeHistory(); } catch { history = []; }
+  if (!hasCommand('noticeHistory')) return;
+  try { history = await call('noticeHistory'); } catch { history = []; }
   renderNoticeHistory();
 }
 
@@ -444,22 +562,27 @@ function renderCerts() {
       el('button', {
         className: 'ghost danger',
         textContent: 'Forget',
-        onclick: async () => { state = await api.forgetCert(name); render(); },
+        onclick: async () => { state = await call('forgetCert', name); render(); },
       }),
     ])));
   }
 }
 
 function renderPrefs() {
-  const s = state.settings;
-  $('closeToTray').checked = s.closeToTray;
-  $('launchAtLogin').checked = s.launchAtLogin;
-  $('startHidden').checked = s.startHidden;
-  $('promptMetadata').checked = s.promptMetadata;
-  $('globalShortcut').value = s.globalShortcut || '';
+  const s = state.settings || {};
+  // Each row is written only if this client has it. A control that is not on
+  // screen must not be written from, and one that is on screen must not be
+  // skipped: that reading of the split is the whole reason the ids are checked
+  // here rather than the DOM being assumed complete.
+  if (hasSetting('closeToTray')) $('closeToTray').checked = Boolean(s.closeToTray);
+  if (hasSetting('launchAtLogin')) $('launchAtLogin').checked = Boolean(s.launchAtLogin);
+  if (hasSetting('startHidden')) $('startHidden').checked = Boolean(s.startHidden);
+  if (hasSetting('promptMetadata')) $('promptMetadata').checked = Boolean(s.promptMetadata);
+  if (hasSetting('globalShortcut')) $('globalShortcut').value = s.globalShortcut || '';
 
+  if (!hasSetting('autoUpdate')) return;
   // A build that could never install an update has nothing to switch on, so the
-  // checkbox says why instead of sitting there doing nothing when clicked, 
+  // checkbox says why instead of sitting there doing nothing when clicked,
   // which is what an unsigned macOS build or a non-AppImage Linux run gets.
   const canInstall = !state.updates || state.updates.canInstall;
   $('autoUpdate').checked = s.autoUpdate && canInstall;
@@ -470,34 +593,44 @@ function renderPrefs() {
   }
 }
 
-// `state.build` already reads as "1.0.0 (a1b2c3d4e5, built …)", the main
-// process formats it, because this page is sandboxed and cannot require the
-// module that knows the rules.
+// The line under the page, which names the app, the build and what it is running
+// on. Every part of it is formatted by the host, and `state.build` already was:
+// this page is sandboxed and cannot require the module that knows the rules, and
+// what a client runs on is that client's to describe. The desktop says Electron
+// and a Chromium version, the phone says its iOS version, and neither is a fact
+// this page should have been asked to know. A part a client has no answer for is
+// left out rather than printed as `undefined`.
 function renderAbout() {
-  $('about').textContent =
-    `${state.appName} ${state.build} · Electron ${state.versions.electron} · Chromium ${state.versions.chrome} · ${state.configPath}`;
+  const head = [state.appName, state.build].filter(Boolean).join(' ');
+  const tail = [state.runtime, state.configPath].filter(Boolean);
+  $('about').textContent = [head, ...tail].join(' · ');
 }
 
 /* ---------------------------------------------------------------- the tabs */
 
-// Order is the tab order, and the first is what opens. Gateways first because
-// it is the only one that is ever urgent: the reason to open this page at all
-// is usually that the app is pointed at the wrong thing.
-const TABS = ['gateways', 'behaviour', 'certificates', 'problems'];
+// The tabs this page's own markup provides, in document order, read off the
+// buttons rather than listed a second time. Which of them this client has comes
+// from the spec; this is only what is in the document.
+const ALL_TAB_IDS = [...document.querySelectorAll('#tabs .tab')].map((b) => b.id.replace(/^tab-/, ''));
 
 // A first run has nothing to prefer and nothing has gone wrong yet, so those two
 // tabs lead nowhere. Certificates stays, because refusing a gateway's own
 // certificate is often the very first thing that happens.
 const FIRST_RUN_TABS = ['gateways', 'certificates'];
 
-/** The tabs that exist right now. Arrow keys walk these, not TABS. */
+/** The tabs that exist right now, in this client. Arrow keys walk these. */
 function visibleTabs() {
-  return firstRun ? FIRST_RUN_TABS : TABS;
+  const mine = surfaceTabIds();
+  return FIRST_RUN_TABS.filter((t) => mine.includes(t)).length && firstRun
+    ? FIRST_RUN_TABS.filter((t) => mine.includes(t))
+    : mine;
 }
 
 // The subtitle describes the tab, not the page. One fixed line under a tab bar
 // is wrong on three of the four tabs, and a heading that is wrong is worse than
-// no heading.
+// no heading. The words live here rather than in the spec because this page
+// cannot read the spec's file, and a string in two places that can only import
+// one of them is how a page ends up disagreeing with its own list.
 const SUBTITLES = {
   gateways: 'Choose which gateway this app connects to.',
   behaviour: 'How the app starts, updates, and stays out of the way.',
@@ -505,7 +638,7 @@ const SUBTITLES = {
   problems: 'What went wrong, kept for three months.',
 };
 
-let tab = TABS[0];
+let tab = ALL_TAB_IDS[0];
 
 /**
  * Show one panel and hide the rest.
@@ -517,7 +650,7 @@ let tab = TABS[0];
 function showTab(name) {
   if (!visibleTabs().includes(name)) return;
   tab = name;
-  for (const t of TABS) {
+  for (const t of ALL_TAB_IDS) {
     const on = t === name;
     const button = $(`tab-${t}`);
     const panel = $(`panel-${t}`);
@@ -529,7 +662,10 @@ function showTab(name) {
       // walk all four before reaching the panel they control.
       button.tabIndex = on ? 0 : -1;
     }
-    if (panel) panel.hidden = !on;
+    // A panel this client does not have stays hidden whatever is asked for. The
+    // guard at the top covers the tab the spec gave us; this covers the panel
+    // that goes with a tab we did not.
+    if (panel) panel.hidden = !on || !surfaceTabIds().includes(t);
   }
   const body = document.querySelector('.modal__body');
   if (body) body.scrollTop = 0;
@@ -540,11 +676,12 @@ function showTab(name) {
 async function refreshProblemCount() {
   const badge = $('tab-problems-count');
   if (!badge) return;
+  if (!hasCommand('liveNotices')) return;
   let live = [];
   // liveNotices, not notices: the latter is the banner's unread list, and a
   // failure you have read is still a failure. A count that emptied when you
   // closed the bar would say the app was fine because you stopped looking.
-  try { live = await api.liveNotices(); } catch { live = []; }
+  try { live = await call('liveNotices'); } catch { live = []; }
   // Live conditions rather than the log's unresolved rows: a failure the app was
   // killed during never got its clear written, so the log would call it open
   // forever.
@@ -558,7 +695,7 @@ async function refreshProblemCount() {
  *
  * It used to carry the reason this page was on screen, because a failure put it
  * there and it owed an explanation for having taken over the window. Nothing
- * does that any more, a failure raises a notice and leaves the window alone, 
+ * does that any more, a failure raises a notice and leaves the window alone,
  * so the page is only ever here because someone opened it, and it says which
  * part of itself you are looking at.
  */
@@ -580,6 +717,7 @@ function render() {
 }
 
 function setResult(node, text, kind) {
+  if (!node) return;
   node.textContent = text;
   node.className = `result${kind ? ` ${kind}` : ''}`;
 }
@@ -593,7 +731,7 @@ $('test').addEventListener('click', async () => {
 
   $('test').disabled = true;
   setResult(out, 'Testing…');
-  const res = await api.testGateway(url);
+  const res = await call('testGateway', url);
   $('test').disabled = false;
   setResult(out, res.message, res.ok ? (res.fingerprint ? 'warn' : 'ok') : 'err');
 });
@@ -603,7 +741,7 @@ $('add').addEventListener('click', async () => {
   const label = $('new-label').value.trim();
   if (!url) return setResult($('test-result'), 'Enter a URL first.', 'err');
 
-  state = await api.addGateway({ label, url });
+  state = await call('addGateway', { label, url });
   $('new-url').value = '';
   $('new-label').value = '';
   setResult($('test-result'), 'Added. Use Edit to save its token, password, or headers.', 'ok');
@@ -635,27 +773,34 @@ if (gatewayFilter) {
 }
 
 $('save').addEventListener('click', async () => {
-  const patch = {
-    closeToTray: $('closeToTray').checked,
-    launchAtLogin: $('launchAtLogin').checked,
-    startHidden: $('startHidden').checked,
-    promptMetadata: $('promptMetadata').checked,
-    // Never write false just because the checkbox is disabled: a Linux user who
-    // once ran the unpacked binary would come back to their AppImage with the
-    // preference silently turned off.
-    ...($('autoUpdate').disabled ? {} : { autoUpdate: $('autoUpdate').checked }),
-    globalShortcut: $('globalShortcut').value.trim(),
-  };
-  const res = await api.saveSettings(patch);
+  // Only what this client has. A key written from a client that does not show it
+  // would be a preference changed by a control nobody touched, and a key left out
+  // on a client that does show it would be a preference that silently never
+  // saves.
+  const patch = {};
+  if (hasSetting('closeToTray')) patch.closeToTray = $('closeToTray').checked;
+  if (hasSetting('launchAtLogin')) patch.launchAtLogin = $('launchAtLogin').checked;
+  if (hasSetting('startHidden')) patch.startHidden = $('startHidden').checked;
+  if (hasSetting('promptMetadata')) patch.promptMetadata = $('promptMetadata').checked;
+  // Never write false just because the checkbox is disabled: a Linux user who
+  // once ran the unpacked binary would come back to their AppImage with the
+  // preference silently turned off.
+  if (hasSetting('autoUpdate') && !$('autoUpdate').disabled) patch.autoUpdate = $('autoUpdate').checked;
+  if (hasSetting('globalShortcut')) patch.globalShortcut = $('globalShortcut').value.trim();
+
+  const res = await call('saveSettings', patch);
   state = res;
 
+  // The two things a save can fail at are desktop's, because the settings they
+  // belong to are. A client without them gets neither field back, so both are
+  // read as absent rather than assumed.
   const problems = [
-    res.shortcut.ok ? null : `the shortcut was rejected (${res.shortcut.error})`,
-    res.login.ok ? null : `"open at login" could not be set (${res.login.error})`,
+    !res.shortcut || res.shortcut.ok ? null : `the shortcut was rejected (${res.shortcut.error})`,
+    !res.login || res.login.ok ? null : `"open at login" could not be set (${res.login.error})`,
   ].filter(Boolean);
 
   setResult(
-    $('shortcut-result'),
+    $('save-result'),
     problems.length ? `Saved, but ${problems.join(', and ')}.` : 'Saved.',
     problems.length ? 'warn' : 'ok',
   );
@@ -664,12 +809,13 @@ $('save').addEventListener('click', async () => {
 
 /* ----------------------------------------------------------------- dismiss */
 
-// Only dismissable as a modal. When this page IS the window, a first run, or a
-// connection that failed, there is nothing behind it to go back to, and an
+// Only dismissable as a modal. When this page IS the window, a first run on the
+// desktop or any time on iOS, there is nothing behind it to go back to, and an
 // Escape key that emptied the window would leave the app running with a blank
-// frame and no way to pick a gateway.
+// frame and no way to pick a gateway. On iOS the sheet's own pull-down is the
+// way out, which is why the page does not draw a second one.
 if (!asPage) {
-  const dismiss = () => api.closeSettings();
+  const dismiss = () => call('closeSettings');
   $('close').addEventListener('click', dismiss);
   // Only a click that both starts and ends on the scrim counts. Without the
   // target check, releasing the mouse outside the card after selecting text
@@ -682,41 +828,49 @@ if (!asPage) {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') dismiss();
   });
-
-  // Left and right move between tabs, Home and End jump to the ends, which is
-  // what a tablist is expected to do and the reason the tabs carry a roving
-  // tabindex rather than all being in the page's tab order.
-  $('tabs').addEventListener('click', (e) => {
-    const button = e.target.closest('.tab');
-    if (button) showTab(button.id.replace(/^tab-/, ''));
-  });
-  $('tabs').addEventListener('keydown', (e) => {
-    const walk = visibleTabs();
-    const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
-    let next = null;
-    if (step) next = walk[(walk.indexOf(tab) + step + walk.length) % walk.length];
-    else if (e.key === 'Home') next = walk[0];
-    else if (e.key === 'End') next = walk[walk.length - 1];
-    if (!next) return;
-    e.preventDefault();
-    showTab(next);
-    $(`tab-${next}`).focus();
-  });
 }
+
+// The tab bar is wired for every client, and deliberately outside the block
+// above. It used to be inside it, which meant the tabs did nothing whenever this
+// page was the window rather than a dialog in one, and that is the only mode a
+// first run has: on a first run the whole point of the tab bar is the
+// Certificates tab, and it could not be opened. Found while giving the page a
+// second client, where it is always in this mode.
+//
+// Left and right move between tabs, Home and End jump to the ends, which is
+// what a tablist is expected to do and the reason the tabs carry a roving
+// tabindex rather than all being in the page's tab order.
+$('tabs').addEventListener('click', (e) => {
+  const button = e.target.closest('.tab');
+  if (button) showTab(button.id.replace(/^tab-/, ''));
+});
+$('tabs').addEventListener('keydown', (e) => {
+  const walk = visibleTabs();
+  const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+  let next = null;
+  if (step) next = walk[(walk.indexOf(tab) + step + walk.length) % walk.length];
+  else if (e.key === 'Home') next = walk[0];
+  else if (e.key === 'End') next = walk[walk.length - 1];
+  if (!next) return;
+  e.preventDefault();
+  showTab(next);
+  $(`tab-${next}`).focus();
+});
 
 /* -------------------------------------------------------------------- boot */
 
 // A certificate refused while this page is open, which is exactly what
 // pressing Reconnect from in here does, has to appear without the page being
 // closed and reopened. The snapshot this renders from is otherwise as old as
-// the dialog.
-api.onStateChanged(async () => {
-  state = await api.getState();
+// the sheet.
+on('state', async () => {
+  state = await call('state');
+  applySurface();
   render();
 });
 
 (async () => {
-  state = await api.getState();
+  state = await call('state');
   if (firstRun) {
     $('title').textContent = 'Connect to a gateway';
     $('subtitle').textContent = 'Pick the OpenClaw gateway this app should open, or add your own.';
@@ -728,10 +882,13 @@ api.onStateChanged(async () => {
   // The bar stays on a first run, showing the two tabs that mean anything then.
   // showTab hides the buttons for the rest.
   $('close').hidden = asPage;
+  // What this client has, before anything is drawn: the spec's split decides
+  // both the rows and which of them the first render is allowed to touch.
+  applySurface();
   // A notice can name the tab that answers it, so "Review" on a refused
   // certificate lands on the fingerprints rather than on Gateways with the work
   // of finding them left to you.
-  showTab(TABS.includes(params.get('tab')) ? params.get('tab') : TABS[0]);
+  showTab(visibleTabs().includes(params.get('tab')) ? params.get('tab') : visibleTabs()[0]);
   render();
   // After the first paint rather than before it: the page is useful without the
   // log, and reading three months of files should not hold up the card.
@@ -741,4 +898,4 @@ api.onStateChanged(async () => {
 // A notice going up or coming down is exactly when the log gained a line, so the
 // section is re-read then rather than polled. Open Settings, watch a gateway
 // fail, and the row appears underneath without reopening the page.
-api.onNoticesChanged(() => { if (!firstRun) { loadHistory(); refreshProblemCount(); } });
+on('notices', () => { if (!firstRun) { loadHistory(); refreshProblemCount(); } });
