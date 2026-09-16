@@ -3,7 +3,7 @@ import XCTest
 
 @testable import Claw
 
-/// Parity with `compare()`/`isNewer()` in `desktop/scripts/version.js`, proven
+/// Parity with `compare()`/`isNewer()` in `core/version.js`, proven
 /// against the same golden fixture the JS side asserts
 /// (`core/fixtures/version.json`, checked by `desktop/test/version.test.js`).
 ///

@@ -1,13 +1,14 @@
 import Foundation
 
 /// Comparing two version strings by semver precedence, ported from
-/// `compare()`/`isNewer()` in `desktop/scripts/version.js`.
+/// `compare()`/`isNewer()` in `core/version.js`.
 ///
 /// This exists because the phone's update check has to ask the one question the
 /// desktop's updater already answers: is the feed's newest build newer than the
 /// build I am. The desktop delegates that to `semver`; iOS has no `semver`, so
 /// the same rule is ported here rather than reinvented, and it is proven against
 /// the exact golden fixture the JS side asserts (`core/fixtures/version.json`,
+/// via `desktop/test/version.test.js`,
 /// reproduced by `VersionParityTests`). One rule, two ports, one fixture: that is
 /// what stops the two clients disagreeing about what a release means.
 ///
@@ -32,7 +33,7 @@ enum Version {
     /// A parsed version, or nil for a string that is not one this releases.
     ///
     /// The same shape and the same regex as `parse()` in
-    /// `desktop/scripts/version.js`: three integers, an optional prerelease drawn
+    /// `core/version.js`: three integers, an optional prerelease drawn
     /// from the same alphabet, and nothing else. Build metadata (`+sha`) is not
     /// accepted, because the desktop rejects it too for the same reason (it goes
     /// straight into filenames).
