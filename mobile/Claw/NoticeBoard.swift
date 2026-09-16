@@ -65,8 +65,33 @@ final class NoticeBoard: ObservableObject {
 
     // MARK: Store, republished
 
-    func raise(_ id: String, _ notice: NoticeRaise) {
+    /// Notices that take themselves down again, by id.
+    ///
+    /// The timer lives here rather than in `NoticeStore` for the same reason it
+    /// lives in `main.js` and not in `core/notices.js` on the desktop: the store is
+    /// a pure data structure with no clock in it, which is what makes the
+    /// ordering and the replace-don't-stack rule testable without waiting. Held per
+    /// id, so re-raising one cancels the countdown it was carrying rather than
+    /// leaving two timers racing to clear the same notice.
+    private var timers: [String: Task<Void, Never>] = [:]
+
+    /// Raise a notice, optionally for a fixed time.
+    ///
+    /// Almost every notice is a standing condition and stays until whatever
+    /// raised it says otherwise; that is the shape of the thing. `ttlMs` is for
+    /// the handful that are not: the answer to a manual "check for updates", which
+    /// is a reply to a question rather than a condition, and would otherwise sit
+    /// there permanently announcing that nothing is wrong.
+    func raise(_ id: String, _ notice: NoticeRaise, ttlMs: Int = 0) {
+        timers[id]?.cancel()
+        timers[id] = nil
         if store.set(id, notice) { refresh() }
+        guard ttlMs > 0 else { return }
+        timers[id] = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(ttlMs) * 1_000_000)
+            guard !Task.isCancelled else { return }
+            self?.clear(id)
+        }
     }
 
     func markRead(_ id: String) {
@@ -78,6 +103,8 @@ final class NoticeBoard: ObservableObject {
     }
 
     func clear(_ id: String) {
+        timers[id]?.cancel()
+        timers[id] = nil
         if store.clear(id) { refresh() }
     }
 

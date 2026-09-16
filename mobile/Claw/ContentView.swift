@@ -165,30 +165,54 @@ struct ContentView: View {
                     }
                 }
                 .animation(.easeInOut(duration: 0.2), value: pairing.isPairing)
-                .overlay(alignment: .top) { NoticeStack(board: notices) }
+                // Order is the whole point of these two lines, and it is load
+                // bearing rather than cosmetic: SwiftUI stacks overlays in the
+                // order they are applied, so the notice stack has to come AFTER
+                // the corner button or the button is drawn over the top card's
+                // dismiss X. Measured on an iPhone 17 simulator on 2026-09-16:
+                // with the button last, the first card showed no X at all and the
+                // reader had no way to close a notice except the route to
+                // Settings, which is exactly what was reported.
                 .overlay(alignment: .topTrailing) { SettingsButton { showingSettings = true } }
+                .noticeBanner(notices)
                 // Settings, and About over it. Both fill the screen, presented the
                 // one way this client presents a shared web surface: the surface
                 // carries its own safe area, and the sheet is pinned to the whole
                 // screen so a page's own height never sizes it. See
                 // `fullScreenSurfaceSheet`.
-                .fullScreenSurfaceSheet(isPresented: $showingSettings) {
+                .fullScreenSurfaceSheet(isPresented: $showingSettings, notices: notices) {
                     if let host {
                         SettingsSurface(host: host, appearance: appearance.mode)
                             // About is presented from the settings surface, so the
                             // second sheet stacks over the first the way the
                             // desktop's About-over-Settings overlay does, and lands
                             // back on settings when dismissed.
-                            .aboutSheet(isPresented: $showingAbout, host: aboutHost, appearance: appearance.mode)
+                            .aboutSheet(
+                                isPresented: $showingAbout,
+                                host: aboutHost,
+                                appearance: appearance.mode,
+                                notices: notices
+                            )
                     }
                 }
             } else if let host {
                 // No gateway yet, so this IS the app: there is nothing behind it to
                 // go back to, and nothing to draw the sheet over. About is still
                 // reached from here, so the About sheet rides the surface itself.
+                //
+                // The notice stack is drawn here too, and that is not symmetry for
+                // its own sake: the launch update check runs whether or not a
+                // gateway is configured, so a build that finds a release with no
+                // gateway set would raise a notice into a board nothing draws.
                 SettingsSurface(host: host, appearance: appearance.mode)
                     .ignoresSafeArea()
-                    .aboutSheet(isPresented: $showingAbout, host: aboutHost, appearance: appearance.mode)
+                    .aboutSheet(
+                        isPresented: $showingAbout,
+                        host: aboutHost,
+                        appearance: appearance.mode,
+                        notices: notices
+                    )
+                    .noticeBanner(notices)
             } else {
                 // One frame, while the host is built in `onAppear`.
                 Color(uiColor: .systemBackground)
@@ -281,7 +305,13 @@ struct ContentView: View {
         if aboutHost == nil {
             // Closing is the page's `closeOverlay('about')`: on the phone that is
             // dismissing the sheet, which lands back on whatever opened it.
-            aboutHost = AboutHost(notices: notices, onClose: { showingAbout = false })
+            aboutHost = AboutHost(
+                notices: notices,
+                onClose: { showingAbout = false },
+                // The same seeded-or-real check the launch uses, so a screenshot
+                // run's press answers about the same feed its banner is under.
+                makeCheck: { Self.updateCheck(board: notices) }
+            )
         }
         // The notice model carries a command NAME rather than a callback, so this
         // is where the commands this client has are answered. "Open Settings" on a
@@ -316,6 +346,26 @@ struct ContentView: View {
         if SettingsSpec.screenshotOpensAbout {
             showingSettings = true
             DispatchQueue.main.async { showingAbout = true }
+        }
+        // A screenshot run that presses the About page's Check for updates, which
+        // a simulator cannot tap. The launch check is a background one and is
+        // silent when it finds nothing, so the "this build is current" answer only
+        // exists after a press: without this the direction the report was about
+        // could not be shown at all. Drives the real command the page's button
+        // posts, through the real check and the real notice, so what is drawn is
+        // the answer rather than a seeded banner. Debug only, inert without the
+        // argument. See `SettingsSpec`.
+        if SettingsSpec.screenshotChecksUpdates {
+            showingSettings = true
+            DispatchQueue.main.async {
+                showingAbout = true
+                // After the About sheet is on screen: a press before the page has
+                // laid out would have nothing to refresh and nothing to sit over.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    let host = aboutHost
+                    Task { await host?.pressCheckForUpdates() }
+                }
+            }
         }
         // A screenshot run for the pairing screen, which a simulator cannot reach
         // without the gateway's own token and an unapproved device on a running
@@ -362,30 +412,43 @@ struct ContentView: View {
     /// Built once: it cannot change while the app runs.
     static let deviceLabel: String = PromptMetadata.machineIdentifier()
 
-    private func startUpdateCheck() {
-        let check: UpdateCheck
+    /// The update check this run should use, real or seeded.
+    ///
+    /// One builder rather than two, because the launch check and a press on the
+    /// About page have to read the SAME feed: a screenshot run that seeded one and
+    /// not the other would show a press answering about a different world than the
+    /// banner it is sitting under.
+    ///
+    /// The real check fetches the public feed; a screenshot run hands it
+    /// `UpdateCheck.seededFeed` instead, through the same `UpdateFeed` reader and
+    /// the same raiser, so what a screenshot exercises is the real notice rather
+    /// than a mock. That is what lets both banner screenshots (a newer version, and
+    /// this build being current) be produced without a live release or a real
+    /// network. Static and board-passed rather than a method on the view, so the
+    /// closure `AboutHost` holds captures the board and not a copy of a value-type
+    /// view.
+    static func updateCheck(board: NoticeBoard) -> UpdateCheck {
         #if DEBUG
         if let advertised = SettingsSpec.screenshotUpdateFeedVersion {
-            // The seeded feed: a document naming the version the launch argument
-            // gave, handed to the real check as if fetched, against a fixed dev
-            // build so the channel gate and the comparison are deterministic. A
-            // version equal to `screenshotCurrentVersion` produces no banner (the
-            // "absent when it matches" case); a newer one produces it (the
-            // "appears when newer" case). Both go through the real `UpdateFeed`
-            // reader and the real raiser, so what a screenshot draws is the notice
-            // and not a mock of it.
-            let body = Data(#"{"version":"\#(advertised)"}"#.utf8)
-            check = UpdateCheck(
-                board: notices,
+            // A document naming the version the launch argument gave, handed to the
+            // real check as if fetched, against a fixed dev build so the channel
+            // gate and the comparison are deterministic. A version equal to
+            // `screenshotCurrentVersion` is the "nothing newer" case and a higher
+            // one is the "a release exists" case.
+            return UpdateCheck(
+                board: board,
                 currentVersion: SettingsSpec.screenshotCurrentVersion,
-                fetch: { _ in body }
+                fetch: { _ in UpdateCheck.seededFeed(advertising: advertised) }
             )
-        } else {
-            check = UpdateCheck(board: notices)
         }
-        #else
-        check = UpdateCheck(board: notices)
         #endif
+        return UpdateCheck(board: board)
+    }
+
+    /// Kick off the once-per-launch update check: a background one, so it is
+    /// silent unless it finds a release.
+    private func startUpdateCheck() {
+        let check = Self.updateCheck(board: notices)
         Task { await check.run() }
     }
 }
@@ -411,8 +474,19 @@ struct ContentView: View {
 /// `.ignoresSafeArea()` is part of the same one way: the page carries the safe
 /// area itself (see `SettingsSurface`), so the sheet must not inset it a second
 /// time.
+///
+/// The notice stack rides HERE rather than only on the page, and this is the
+/// second half of the stacking fix. A sheet is its own presentation layer: it is
+/// presented over the view that asked for it, so an overlay on that view is
+/// behind the sheet no matter what order the overlays were applied in. That is
+/// how a notice could be raised and drawn while the surface it was raised from was
+/// the only thing on screen. Drawing the stack inside the sheet puts it above the
+/// surface, and `aboutSheet` routes through this same modifier, so About over
+/// Settings is covered without a third copy. One modifier, applied at each layer
+/// boundary, rather than a height or a z-index nudged on the card.
 private struct FullScreenSurfaceSheet<Surface: View>: ViewModifier {
     @Binding var isPresented: Bool
+    let notices: NoticeBoard
     @ViewBuilder let surface: () -> Surface
 
     func body(content: Content) -> some View {
@@ -420,6 +494,7 @@ private struct FullScreenSurfaceSheet<Surface: View>: ViewModifier {
             surface()
                 .ignoresSafeArea()
                 .presentationDetents([.large])
+                .noticeBanner(notices)
         }
     }
 }
@@ -429,9 +504,10 @@ extension View {
     /// presents a shared web surface; see `FullScreenSurfaceSheet`.
     func fullScreenSurfaceSheet<Surface: View>(
         isPresented: Binding<Bool>,
+        notices: NoticeBoard,
         @ViewBuilder surface: @escaping () -> Surface
     ) -> some View {
-        modifier(FullScreenSurfaceSheet(isPresented: isPresented, surface: surface))
+        modifier(FullScreenSurfaceSheet(isPresented: isPresented, notices: notices, surface: surface))
     }
 
     /// Present the About surface as a full-screen sheet over the settings surface.
@@ -443,13 +519,41 @@ extension View {
     func aboutSheet(
         isPresented: Binding<Bool>,
         host: AboutHost?,
-        appearance: AppearanceMode
+        appearance: AppearanceMode,
+        notices: NoticeBoard
     ) -> some View {
-        fullScreenSurfaceSheet(isPresented: isPresented) {
+        fullScreenSurfaceSheet(isPresented: isPresented, notices: notices) {
             if let host {
                 AboutSurface(host: host, appearance: appearance)
             }
         }
+    }
+}
+
+/// Draw the notice banner over whatever this view is.
+///
+/// ONE modifier, applied at each layer boundary where the banner has to be on top,
+/// rather than a copy of `NoticeStack` per surface: the page, the settings sheet
+/// and the About sheet each own a layer, and a banner is only above everything if
+/// it is drawn in the topmost layer that is actually on screen.
+///
+/// It stays an overlay rather than becoming part of any page's layout: a notice is
+/// this client's condition to report, it has to be visible while the page behind
+/// it is broken or absent, and an overlay changes no layout underneath it. The
+/// stack itself is as tall as its cards and no taller, so every touch outside them
+/// still reaches the surface below. See `NoticeStack`.
+private struct NoticeBanner: ViewModifier {
+    let board: NoticeBoard
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .top) { NoticeStack(board: board) }
+    }
+}
+
+extension View {
+    /// Draw `board`'s unread notices over this view, at the top.
+    func noticeBanner(_ board: NoticeBoard) -> some View {
+        modifier(NoticeBanner(board: board))
     }
 }
 

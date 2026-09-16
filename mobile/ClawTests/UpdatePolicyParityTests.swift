@@ -52,6 +52,54 @@ final class UpdatePolicyParityTests: XCTestCase {
         XCTAssertFalse(plan.canInstall, "iOS cannot install its own update whatever we do")
         XCTAssertNotEqual(plan.reason, UpdatePolicy.capability(platform: "android", packaged: true).reason)
     }
+
+    /// What a check answers, reproduced from the same golden pairs the JS asserts.
+    ///
+    /// This is the contract for the bug the answer exists for: a control that
+    /// appeared to work and reported nothing. One direction of the pair would not
+    /// be enough, so the fixture set carries both and this test also asserts that
+    /// it does, because a fixture file that lost a direction would leave this
+    /// green while the phone went silent again.
+    func testAnswerReproducesEveryFixture() throws {
+        let fixture: UpdatesFixture = try Fixtures.load("updates")
+        XCTAssertFalse(fixture.answers.isEmpty, "expected answers in core/fixtures/updates.json")
+
+        for testCase in fixture.answers {
+            let input = testCase.input
+            guard let outcome = UpdateAnswer.Outcome(rawValue: input.outcome) else {
+                XCTFail("\(testCase.name): unknown outcome \(input.outcome)")
+                continue
+            }
+            let trigger = try input.trigger.map { raw in
+                try XCTUnwrap(UpdateTrigger(rawValue: raw), "\(testCase.name): unknown trigger \(raw)")
+            } ?? .manual
+            let action = try input.action.map { raw in
+                try XCTUnwrap(UpdatePolicy.Action(rawValue: raw), "\(testCase.name): unknown action \(raw)")
+            } ?? .notify
+            let answer = UpdateAnswer.answer(
+                outcome: outcome,
+                trigger: trigger,
+                version: input.version,
+                current: input.current,
+                action: action,
+                reason: input.reason,
+                error: input.error,
+                pointer: input.pointer
+            )
+            guard let expected = testCase.output else {
+                XCTAssertNil(answer, "\(testCase.name): expected no answer")
+                continue
+            }
+            let actual = try XCTUnwrap(answer, "\(testCase.name): expected an answer")
+            XCTAssertEqual(actual.tone, expected.tone, testCase.name)
+            XCTAssertEqual(actual.message, expected.message, testCase.name)
+            XCTAssertEqual(actual.detail, expected.detail, testCase.name)
+        }
+
+        let outcomes = Set(fixture.answers.map(\.input.outcome))
+        XCTAssertTrue(outcomes.contains("available") && outcomes.contains("current"),
+                      "the fixtures must cover an available and a current answer; got \(outcomes)")
+    }
 }
 
 /// `core/fixtures/updates.json`: the platform, whether it is a packaged build,
@@ -63,11 +111,44 @@ final class UpdatePolicyParityTests: XCTestCase {
 /// defaulting into the unknown-platform branch and passing for the wrong reason.
 struct UpdatesFixture: Decodable {
     let cases: [FixtureCase]
+    let answers: [AnswerCase]
 
     struct FixtureCase: Decodable {
         let name: String
         let input: Input
         let output: Output
+    }
+
+    /// One answer pair. `input.action`, `input.reason` and `input.pointer` are
+    /// optional because a fixture only carries the fields its case turns on, and
+    /// `output` is optional because one of them is the deliberate silence: a
+    /// background check that found nothing answers null.
+    ///
+    /// The three enum-shaped fields arrive as the raw strings the fixtures and the
+    /// JS use, and the test maps them, so an unknown name in a fixture fails loudly
+    /// rather than defaulting into a branch that would pass for the wrong reason.
+    /// That is the same discipline `Output.action` follows.
+    struct AnswerCase: Decodable {
+        let name: String
+        let input: AnswerInput
+        let output: AnswerOutput?
+    }
+
+    struct AnswerInput: Decodable {
+        let outcome: String
+        let trigger: String?
+        let version: String?
+        let current: String
+        let action: String?
+        let reason: String?
+        let error: String?
+        let pointer: String?
+    }
+
+    struct AnswerOutput: Decodable {
+        let tone: String
+        let message: String
+        let detail: String
     }
 
     struct Input: Decodable, CustomStringConvertible {
