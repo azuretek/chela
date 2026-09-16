@@ -1,0 +1,260 @@
+import Foundation
+
+/// The keyed notice store, read from the same rules the desktop uses.
+///
+/// Ported from `core/notices.js`. A notice is a condition that is true until
+/// something fixes it: credentials that cannot be stored, a gateway that will not
+/// answer, an update that failed to download. None of them can be answered with a
+/// button, so a dialog is the wrong shape, it interrupts, gets dismissed, and the
+/// condition is still true afterwards with nothing on screen to say so.
+///
+/// So a notice is keyed and idempotent rather than a stream of events. Raising
+/// the same id twice replaces it instead of stacking, and the raiser clears it
+/// when the condition passes. That is what makes "stays until it resolves"
+/// literally true rather than a timeout dressed up as one.
+///
+/// The four tones and their sort rank are data, mirrored from
+/// `core/spec/notices.json`, and `NoticesParityTests` proves this port reproduces
+/// the golden fixtures in `core/fixtures/notices.json` that `core/test/fixtures.test.js`
+/// asserts on the JS side. That test is the contract: change the model, regenerate
+/// the fixtures, and this file is what has to move with it. The Swift does not
+/// read the spec at runtime, because a shipped app cannot read a file that lives
+/// in the repo, and a bundled copy of the data would be a third thing to keep in
+/// step.
+///
+/// Platform-free on purpose, like `Progress` and `UpdatePolicy`: no window, no
+/// web view, no clock. What draws it is `NoticeBanner`, and what owns the live
+/// instance is `NoticeBoard`.
+enum NoticeTone {
+    /// Severities, worst first. The banner is sorted by these.
+    static let error = "error"
+    static let warn = "warn"
+    static let info = "info"
+    /// Good news: connected, or an update finished downloading. A separate tone
+    /// rather than `info` because this app's accent colour is red, so an
+    /// informational notice is already indistinguishable from a failure at a
+    /// glance, and these are the ones where reading "connected" as an alarm is
+    /// worst.
+    static let ok = "ok"
+
+    /// The rank a tone sorts by, worst first, mirroring `rank` in
+    /// `core/spec/notices.json`. A tone missing from here sorts last rather than
+    /// crashing, matching how the JS reads its own rank map.
+    static func rank(_ tone: String) -> Int {
+        switch tone {
+        case error: return 0
+        case warn: return 1
+        case info: return 2
+        case ok: return 3
+        default: return Int.max
+        }
+    }
+}
+
+/// The one place a notice offers to do something.
+///
+/// A *command name* rather than a callback, matching the JS: the surface that
+/// renders a notice is on the other side of a process boundary on desktop and
+/// across a web view here, so anything it can invoke has to be a name the host
+/// already knows how to run. It is deliberately singular, because a notice that
+/// needs two buttons is a question, and a question is a dialog.
+struct NoticeAction: Equatable {
+    let label: String
+    let command: String
+}
+
+/// One condition, as stored.
+struct Notice: Equatable {
+    let id: String
+    var tone: String
+    var message: String
+    var detail: String?
+    var dismissible: Bool
+    /// A fraction, 0 to 1, or nil for a notice that is not about something
+    /// arriving. Part of the notice rather than a separate channel to the banner,
+    /// because the bar and the sentence above it describe one condition, and two
+    /// channels could disagree about which phase it is in.
+    var progress: Double?
+    var action: NoticeAction?
+    /// Seen, but still true. Distinct from the notice being absent, and the
+    /// distinction is the point: clearing says the condition passed, reading says
+    /// you know about it.
+    var read: Bool
+    /// Insertion order within a severity, so a new warning appears below an older
+    /// one rather than shuffling what someone is reading.
+    var order: Int
+}
+
+extension Notice {
+    /// Whether this notice and another say the same thing, which is the question
+    /// the store asks before deciding a raise changed anything. Not `Equatable`,
+    /// which compares every field: the two ids are the same by construction (they
+    /// are the key), and `read` and `order` are the store's bookkeeping rather
+    /// than part of what is on screen.
+    func saysTheSame(as other: Notice) -> Bool {
+        tone == other.tone
+            && message == other.message
+            && detail == other.detail
+            && progress == other.progress
+            && action == other.action
+    }
+}
+
+/// What a raiser hands the store. Every field but the message has a default, so a
+/// one-line condition stays one line at the call site.
+struct NoticeRaise {
+    var tone: String
+    var message: String
+    var detail: String?
+    var dismissible: Bool
+    var action: NoticeAction?
+    var progress: Double?
+
+    init(
+        tone: String = NoticeTone.error,
+        message: String,
+        detail: String? = nil,
+        dismissible: Bool = true,
+        action: NoticeAction? = nil,
+        progress: Double? = nil
+    ) {
+        self.tone = tone
+        self.message = message
+        self.detail = detail
+        self.dismissible = dismissible
+        self.action = action
+        self.progress = progress
+    }
+}
+
+/// The store itself. A class rather than a value, matching the JS object: callers
+/// hold one instance and raise conditions into it over the life of the app.
+final class NoticeStore {
+    private var notices: [String: Notice] = [:]
+    private var seq = 0
+
+    /// Raise a notice, or update the one already under this id.
+    ///
+    /// - Returns: whether anything actually changed. Identical to what is already
+    ///   on screen reports `false`, which matters: the caller uses it to avoid
+    ///   re-rendering, and a banner that re-renders replays its slide-in
+    ///   animation for no reason.
+    @discardableResult
+    func set(_ id: String, _ raise: NoticeRaise) -> Bool {
+        if let previous = notices[id] {
+            let next = Notice(
+                id: id,
+                tone: raise.tone,
+                message: raise.message,
+                detail: raise.detail,
+                dismissible: raise.dismissible,
+                progress: raise.progress,
+                action: raise.action,
+                read: false,
+                order: previous.order
+            )
+            if previous.saysTheSame(as: next) { return false }
+            notices[id] = next
+            return true
+        }
+        notices[id] = Notice(
+            id: id,
+            tone: raise.tone,
+            message: raise.message,
+            detail: raise.detail,
+            dismissible: raise.dismissible,
+            progress: raise.progress,
+            action: raise.action,
+            // Unread, always, because reaching here means something changed. A
+            // condition that has been read and then says something different is
+            // new news, and leaving it read would let a failure change under a
+            // banner that has already been waved away.
+            read: false,
+            order: seq
+        )
+        seq += 1
+        return true
+    }
+
+    /// Seen, but still true. Returns whether that changed anything.
+    @discardableResult
+    func markRead(_ id: String) -> Bool {
+        guard var notice = notices[id], !notice.read else { return false }
+        notice.read = true
+        notices[id] = notice
+        return true
+    }
+
+    /// Read everything that can be read.
+    ///
+    /// A notice that is not dismissible is not markable either. The one that
+    /// carries it is the finished update download, kept because losing it means
+    /// waiting for the next check to find a version that is already on disk, and a
+    /// bulk action is exactly how it would get lost.
+    @discardableResult
+    func markAllRead() -> Bool {
+        var changed = false
+        for (id, notice) in notices where notice.dismissible && !notice.read {
+            var next = notice
+            next.read = true
+            notices[id] = next
+            changed = true
+        }
+        return changed
+    }
+
+    /// The condition passed. Returns whether there was anything to clear.
+    @discardableResult
+    func clear(_ id: String) -> Bool {
+        notices.removeValue(forKey: id) != nil
+    }
+
+    /// The notice under this id, as stored, or nil.
+    ///
+    /// As *stored*, which is the point: the defaults have been applied, so a
+    /// caller that omitted a tone reads back the error it actually raised rather
+    /// than an absent value. Anything mirroring a notice elsewhere should read it
+    /// from here rather than from the argument it passed in.
+    func notice(_ id: String) -> Notice? {
+        notices[id]
+    }
+
+    /// Every condition that is still true, worst first, then oldest first.
+    func list() -> [Notice] {
+        notices.values.sorted {
+            let left = NoticeTone.rank($0.tone)
+            let right = NoticeTone.rank($1.tone)
+            return left == right ? $0.order < $1.order : left < right
+        }
+    }
+
+    /// What the banner draws: the conditions nobody has acknowledged yet.
+    ///
+    /// The banner is the only surface filtered this way. Everywhere else wants
+    /// `list()`, because "is the gateway unreachable" and "have you been told the
+    /// gateway is unreachable" are different questions and only the banner is
+    /// asking the second one.
+    func unread() -> [Notice] {
+        list().filter { !$0.read }
+    }
+
+    var size: Int { notices.count }
+}
+
+/// Make a fragment into a sentence: capital at the front, full stop at the back.
+///
+/// Every detail line is one of our sentences with a string from the OS or a
+/// library dropped into it, and those start and end however they start and end.
+/// Without the full stop a notice reads "conversion failure from Frobnicate+Zz
+/// Change it in Settings."; without the capital, a reason written to be appended
+/// to a sentence, "running from source", stands alone looking truncated.
+///
+/// Only the first character is touched, so an all-caps error code arrives
+/// unharmed. Ported from `sentence()` in `core/notices.js`, fixture for fixture.
+func noticeSentence(_ text: String?) -> String {
+    let trimmed = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty { return "" }
+    let capitalised = trimmed.prefix(1).uppercased() + trimmed.dropFirst()
+    if let last = capitalised.last, ".!?:;".contains(last) { return capitalised }
+    return capitalised + "."
+}

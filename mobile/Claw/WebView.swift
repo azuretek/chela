@@ -3,11 +3,15 @@ import WebKit
 
 /// The Control UI, hosted in a `WKWebView`.
 ///
-/// Deliberately thin: this phase loads a URL and nothing else. The things that
-/// belong here are the ones that need a navigation delegate (Phase 4's
-/// certificate pinning) and a loading or failure surface (Phase 5), which is why
-/// the delegate is absent rather than stubbed out: a delegate that does nothing
-/// is a surface someone will later read as the place pinning happens.
+/// Deliberately thin: this phase loads a URL, relays the page's theme colour and
+/// reports whether the load worked, which is the one condition this client can
+/// observe on its own and therefore the one notice it raises by itself.
+///
+/// The navigation delegate the file used to say was absent for a reason is here
+/// now for exactly that reason: it exists to answer "did the page load", and the
+/// notice board is what consumes the answer. Phase 4's certificate pinning
+/// attaches to the same two methods, so it joins a surface that already has a job
+/// rather than inventing one.
 struct WebView: UIViewRepresentable {
     let url: URL
 
@@ -19,6 +23,10 @@ struct WebView: UIViewRepresentable {
     /// not cover.
     @Binding var themeColour: Color
 
+    /// Where a failed or recovered load is reported. Held rather than observed:
+    /// this view raises, and the banner in ContentView draws.
+    let notices: NoticeBoard
+
     /// Remembers what has been asked for, so a SwiftUI update cannot reload the
     /// page under the user. `updateUIView` runs on every layout pass, and the
     /// web view's own `url` is not a usable guard for that: it stays nil until
@@ -29,12 +37,14 @@ struct WebView: UIViewRepresentable {
     /// injects posts it through a message handler, which is the only route from
     /// the page back into this app until Phase 4's certificate pinning gives
     /// the navigation delegate a reason to exist.
-    final class Coordinator: NSObject, WKScriptMessageHandler {
+    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         var requested: URL?
         private let themeColour: Binding<Color>
+        private let notices: NoticeBoard
 
-        init(themeColour: Binding<Color>) {
+        init(themeColour: Binding<Color>, notices: NoticeBoard) {
             self.themeColour = themeColour
+            self.notices = notices
         }
 
         func userContentController(
@@ -51,6 +61,54 @@ struct WebView: UIViewRepresentable {
                 blue: CGFloat(parts[2].doubleValue) / 255,
                 alpha: 1
             ))
+        }
+
+        /// The page loaded. Whatever a previous failure said about this gateway is
+        /// no longer true, so the notice the banner is showing comes down.
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            Task { @MainActor in notices.connectionRecovered() }
+        }
+
+        /// The page could not be fetched at all.
+        ///
+        /// A provisional failure is the one that means the host never answered, or
+        /// answered with something that is not a page, which is the condition the
+        /// desktop reports as "Cannot connect". A cancelled request is not a
+        /// failure of the gateway and is ignored: it is what a superseded load
+        /// reports, and raising a banner for it would announce a problem every
+        /// time a navigation was replaced.
+        func webView(
+            _ webView: WKWebView,
+            didFailProvisionalNavigation navigation: WKNavigation!,
+            withError error: Error
+        ) {
+            report(error)
+        }
+
+        /// A load that got as far as a response and then failed, or a page that
+        /// died after it was up. Both mean the Control UI is not on screen, which
+        /// is the same sentence to the reader.
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            report(error)
+        }
+
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            Task { @MainActor in
+                notices.connectionFailed(
+                    label: Gateway.default.name,
+                    description: "The page stopped responding and will be reloaded."
+                )
+                webView.reload()
+            }
+        }
+
+        private func report(_ error: Error) {
+            let urlError = error as? URLError
+            if urlError?.code == .cancelled { return }
+            let description = urlError?.localizedDescription ?? error.localizedDescription
+            Task { @MainActor in
+                notices.connectionFailed(label: Gateway.default.name, description: description)
+            }
         }
     }
 
@@ -90,7 +148,7 @@ struct WebView: UIViewRepresentable {
     """
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(themeColour: $themeColour)
+        Coordinator(themeColour: $themeColour, notices: notices)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -129,6 +187,7 @@ struct WebView: UIViewRepresentable {
         // Control UI is a single-page app, so there is no history worth
         // swiping through, and a swipe that moved the whole app off the page
         // with no visible back button would strand someone in it.
+        webView.navigationDelegate = context.coordinator
         return webView
     }
 

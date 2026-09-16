@@ -14,6 +14,7 @@ import path from 'node:path';
 
 import { percent } from '../progress.js';
 import { reason, status } from '../connection.js';
+import { create, sentence } from '../notices.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(HERE, '..', 'fixtures');
@@ -55,5 +56,61 @@ test('connection.status() reproduces every fixture', () => {
       output,
       `status(${JSON.stringify(input)}) should be ${JSON.stringify(output)}`,
     );
+  }
+});
+
+/*
+ * The notice model's half of the same contract.
+ *
+ * The fixtures are a sequence of operations rather than a single call, because
+ * the store's rules are about what changes between calls: an id replaces rather
+ * than stacks, an identical set reports no change so the banner does not
+ * re-render, reading leaves it in the store, and a notice that changes after
+ * being read becomes unread again. Each step's return value is asserted as well
+ * as the state at the end, since every one of those rules is answered by the
+ * boolean rather than by the map.
+ */
+function applyOp(store, op) {
+  switch (op.op) {
+    case 'set': return store.set(op.id, op.notice);
+    case 'markRead': return store.markRead(op.id);
+    case 'markAllRead': return store.markAllRead();
+    case 'clear': return store.clear(op.id);
+    default: throw new Error(`unknown op in the notices fixture: ${op.op}`);
+  }
+}
+
+function snapshot(store) {
+  const notice = {};
+  for (const n of store.list()) {
+    notice[n.id] = {
+      tone: n.tone,
+      message: n.message,
+      detail: n.detail,
+      dismissible: n.dismissible,
+      progress: n.progress,
+      action: n.action,
+      read: n.read,
+    };
+  }
+  return { size: store.size(), list: store.list().map((n) => n.id), unread: store.unread().map((n) => n.id), notice };
+}
+
+test('notices.sentence() reproduces every fixture', () => {
+  const { sentence: cases } = load('notices.json');
+  assert.ok(cases.length > 0, 'expected sentence fixtures');
+  for (const { input, output } of cases) {
+    assert.strictEqual(sentence(input), output, `sentence(${JSON.stringify(input)}) should be ${JSON.stringify(output)}`);
+  }
+});
+
+test('the notice store reproduces every fixture', () => {
+  const { store: cases } = load('notices.json');
+  assert.ok(cases.length > 0, 'expected notice store fixtures');
+  for (const fixture of cases) {
+    const store = create();
+    const returns = fixture.ops.map((op) => applyOp(store, op));
+    assert.deepStrictEqual(returns, fixture.returns, `${fixture.name}: the returns disagree`);
+    assert.deepStrictEqual(snapshot(store), fixture.expect, `${fixture.name}: the state disagrees`);
   }
 });
