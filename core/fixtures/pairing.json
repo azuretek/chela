@@ -1,0 +1,155 @@
+{
+  "description": "The device-pairing contract's golden cases. core/test/pairing.test.js asserts the JS reproduces every one, and mobile/ClawTests/PairingParityTests.swift asserts the Swift port does, so both clients read the same gateway close into the same state, pull the same requestId out of the same reason, and move through the same four phases. The tokens and ids here are examples.",
+  "why": [
+    "The `close` cases pin the one thing a client must not get wrong: pairing is code 1008 AND a pairing reason, so a 1008 with a non-pairing reason and a close on any other code are NOT pairing and stay ordinary failures. Getting that wrong would show a pairing screen for a dropped connection, or hide a real pairing gate behind a network message.",
+    "The `requestId` cases pin the strict id pattern: a well-formed id is read, and a reason with no id, or with an id that would not pass the pattern, yields null rather than arbitrary text on a screen.",
+    "The `phase` cases pin that `open` always wins (an approval that lands moves straight to authenticated, which is auto-recovery), and that a non-pairing close is `failed` while a pairing close is `pairing-required`.",
+    "The `command` cases pin the real instruction: the exact `openclaw devices approve <id>` with an id, and the `--latest` form without one."
+  ],
+  "policyCloseCode": 1008,
+  "close": [
+    {
+      "name": "1008 with a first-connection reason and an id is pairing",
+      "input": { "code": 1008, "reason": "pairing required: device is not approved yet (requestId: req-7f3a2b)" },
+      "output": { "reason": "not-paired", "requestId": "req-7f3a2b" }
+    },
+    {
+      "name": "1008 with a first-connection reason and no id is still pairing",
+      "input": { "code": 1008, "reason": "pairing required" },
+      "output": { "reason": "not-paired", "requestId": null }
+    },
+    {
+      "name": "1008 with a scope-upgrade reason is scope-upgrade, not the broader not-paired",
+      "input": { "code": 1008, "reason": "scope upgrade pending approval (requestId: req-scope-1)" },
+      "output": { "reason": "scope-upgrade", "requestId": "req-scope-1" }
+    },
+    {
+      "name": "1008 with a role-upgrade reason is role-upgrade",
+      "input": { "code": 1008, "reason": "role upgrade pending approval (requestId: req-role-9)" },
+      "output": { "reason": "role-upgrade", "requestId": "req-role-9" }
+    },
+    {
+      "name": "1008 with a metadata-upgrade reason is metadata-upgrade",
+      "input": { "code": 1008, "reason": "device metadata change pending approval (requestId: req-meta-3)" },
+      "output": { "reason": "metadata-upgrade", "requestId": "req-meta-3" }
+    },
+    {
+      "name": "the reason match is case-insensitive",
+      "input": { "code": 1008, "reason": "PAIRING REQUIRED (requestId: req-CAPS-1)" },
+      "output": { "reason": "not-paired", "requestId": "req-CAPS-1" }
+    },
+    {
+      "name": "1008 with a non-pairing reason is not pairing",
+      "input": { "code": 1008, "reason": "policy violation: message too large" },
+      "output": null
+    },
+    {
+      "name": "1008 with an empty reason is not pairing",
+      "input": { "code": 1008, "reason": "" },
+      "output": null
+    },
+    {
+      "name": "an abnormal close (1006) is never pairing, even with a pairing-looking reason",
+      "input": { "code": 1006, "reason": "pairing required (requestId: req-x)" },
+      "output": null
+    },
+    {
+      "name": "a normal close (1000) is not pairing",
+      "input": { "code": 1000, "reason": "" },
+      "output": null
+    },
+    {
+      "name": "a missing code is not pairing",
+      "input": { "reason": "pairing required" },
+      "output": null
+    }
+  ],
+  "requestId": [
+    {
+      "name": "a well-formed id is read",
+      "input": "pairing required: device is not approved yet (requestId: req-7f3a2b)",
+      "output": "req-7f3a2b"
+    },
+    {
+      "name": "an id with the allowed punctuation is read",
+      "input": "pairing required (requestId: node.host:ios-01_2)",
+      "output": "node.host:ios-01_2"
+    },
+    {
+      "name": "a reason with no id yields null",
+      "input": "pairing required",
+      "output": null
+    },
+    {
+      "name": "an id starting with punctuation fails the pattern and yields null",
+      "input": "pairing required (requestId: -bad)",
+      "output": null
+    },
+    {
+      "name": "an empty id yields null",
+      "input": "pairing required (requestId: )",
+      "output": null
+    }
+  ],
+  "phase": [
+    {
+      "name": "connect from idle is connecting",
+      "from": "idle",
+      "event": { "type": "connect" },
+      "to": "connecting"
+    },
+    {
+      "name": "open from connecting is authenticated",
+      "from": "connecting",
+      "event": { "type": "open" },
+      "to": "authenticated"
+    },
+    {
+      "name": "a pairing close from connecting is pairing-required",
+      "from": "connecting",
+      "event": { "type": "close", "pairing": { "reason": "not-paired", "requestId": "req-1" } },
+      "to": "pairing-required"
+    },
+    {
+      "name": "a non-pairing close from connecting is failed",
+      "from": "connecting",
+      "event": { "type": "close", "pairing": null },
+      "to": "failed"
+    },
+    {
+      "name": "open while pairing-required wins, moving straight to authenticated",
+      "from": "pairing-required",
+      "event": { "type": "open" },
+      "to": "authenticated"
+    },
+    {
+      "name": "a load failure is failed, not pairing-required",
+      "from": "connecting",
+      "event": { "type": "fail" },
+      "to": "failed"
+    },
+    {
+      "name": "an unknown event leaves the phase unchanged",
+      "from": "pairing-required",
+      "event": { "type": "tick" },
+      "to": "pairing-required"
+    }
+  ],
+  "command": [
+    {
+      "name": "with an id, the exact approve command",
+      "input": "req-7f3a2b",
+      "output": "openclaw devices approve req-7f3a2b"
+    },
+    {
+      "name": "with no id, the latest form",
+      "input": null,
+      "output": "openclaw devices approve --latest"
+    },
+    {
+      "name": "an id that fails the pattern falls back to the latest form",
+      "input": "-bad",
+      "output": "openclaw devices approve --latest"
+    }
+  ]
+}
