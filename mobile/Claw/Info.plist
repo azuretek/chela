@@ -56,6 +56,15 @@
 	     build reports its marketing version instead. -->
 	<key>ClawBuildVersion</key>
 	<string>$(CLAW_BUILD_VERSION)</string>
+	<!-- The gateway this app loads on launch, substituted from the
+	     CLAW_GATEWAY_URL build setting. The value is deliberately not in this
+	     file: this repository is public, and a client carrying its author's own
+	     gateway address would ship that address to every reader. The neutral
+	     default and the local override both live under Config/*.xcconfig, and
+	     Gateway.swift reads this key and falls back to the same placeholder if a
+	     build supplies nothing usable. -->
+	<key>ClawGatewayURL</key>
+	<string>$(CLAW_GATEWAY_URL)</string>
 	<!-- Export compliance, answered here so a build does not sit in TestFlight
 	     asking for it. `false` means the app uses no encryption that is not
 	     exempt, which is the case: the only cryptography in the app is what

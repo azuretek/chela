@@ -43,6 +43,14 @@ targets:
   Claw:
     type: application
     platform: iOS
+    # The build settings that are personal to one machine, kept out of this file
+    # so the repository stays neutral: `Config/Local.xcconfig` carries the
+    # placeholder default and includes `Config/Local.private.xcconfig` if it
+    # exists, which is where a local build puts a real gateway address. See the
+    # comment in that file.
+    configFiles:
+      Debug: Config/Local.xcconfig
+      Release: Config/Local.xcconfig
     sources:
       - path: Claw
       # The client-context spec, bundled rather than mirrored.

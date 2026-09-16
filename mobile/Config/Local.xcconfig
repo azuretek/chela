@@ -1,0 +1,23 @@
+// Build settings personal to one machine, kept out of project.yml so that a
+// fresh clone of this repository never points at somebody else's gateway.
+//
+// CLAW_GATEWAY_URL is substituted into Claw/Info.plist as ClawGatewayURL, which
+// Gateway.swift reads: it is the address the app loads on launch. The value
+// below is an obvious placeholder on purpose. This repository is public, so a
+// real address committed here would be the author's own machine shipped to
+// every reader of the source.
+//
+// A build that should reach a real gateway writes that address into
+// Local.private.xcconfig beside this file, which git ignores, and the include
+// at the bottom picks it up. Last assignment wins in an xcconfig, so the
+// include sits after the default rather than before it. It is the same shape as
+// the Apple team id in ../build-device.sh: a personal value arrives from outside
+// the repo, and the repo keeps only what is true for everyone.
+//
+// One trap, because it costs an hour when it bites: `//` starts a comment in an
+// xcconfig file, so a URL written literally is truncated at `https:` and the app
+// silently loads a broken address. An empty `$()` between the two slashes is the
+// standard escape and is what makes the slashes survive.
+CLAW_GATEWAY_URL = https:/$()/your-host.your-tailnet.ts.net
+
+#include? "Local.private.xcconfig"
