@@ -27,6 +27,15 @@
 //             .deb and .rpm updaters exist, but they run dpkg or rpm through
 //             pkexec, so every update raises a password prompt.
 //
+//   iOS       No self-update at all, and this one is a platform rule rather
+//             than a signing fact: an app cannot install its own new version,
+//             because installation is the operating system's job rather than the
+//             app's. So the most a build can do is notice that a release exists,
+//             tell the user, and hand them a link. The reason below names no
+//             distribution channel on purpose: which one delivers the new build
+//             is an open decision, and a sentence baked into the policy would
+//             settle it by accident.
+//
 // This is the pure decision layer, and it lives in core so that every client
 // reads the same answer from one place. It stays free of Electron and of
 // `process`, taking `platform`, `packaged`, `macSigned` and `appImage` as
@@ -133,6 +142,25 @@ export function capability({ platform, packaged, macSigned = MAC_SIGNED, appImag
         autoDownload: false,
         reason: 'not running as an AppImage, so there is no file an update could replace',
       };
+  }
+
+  // iOS is a branch rather than a fallthrough because it is the one platform
+  // where the limit is a rule instead of a signing accident, and because the two
+  // answers agree by coincidence: the generic branch below happens to say NOTIFY
+  // with the same two flags today, and a fact that is right by accident stops
+  // being right the first time anything upstream moves.
+  //
+  // NOTIFY rather than MANUAL: this build cannot install anything even when
+  // asked, so there is no button to offer. `check` stays true because noticing a
+  // release is the whole of what this platform can do, and autoDownload stays
+  // false because there is nothing to download that the app could apply.
+  if (platform === 'ios') {
+    return {
+      action: NOTIFY,
+      check: true,
+      autoDownload: false,
+      reason: 'iOS does not let an app install its own update, so it can only say a release exists and offer an install link',
+    };
   }
 
   return { action: NOTIFY, check: true, autoDownload: false, reason: 'no tested install path on this platform' };

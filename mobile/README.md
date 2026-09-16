@@ -17,8 +17,8 @@ the repo:
 - **The Control UI itself**, loaded in a `WKWebView`. That is web code and runs
   anywhere.
 - **The shared [`core/`](../core/)**, whose rules (config model, token handoff,
-  connection state, loading progress, quips, notices) are mirrored in Swift and
-  proven against `core/fixtures/` so the two clients cannot drift.
+  connection state, loading progress, quips, notices, update policy) are mirrored
+  in Swift and proven against `core/fixtures/` so the two clients cannot drift.
 
 What is reimplemented natively, because it has no cross-platform form:
 

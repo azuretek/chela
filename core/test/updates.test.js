@@ -50,7 +50,7 @@ test('the fixture cases cover every platform the policy branches on', () => {
   // afford.
   const { cases } = load('updates.json');
   const covered = new Set(cases.map((c) => c.input.platform));
-  for (const platform of ['win32', 'darwin', 'linux']) {
+  for (const platform of ['win32', 'darwin', 'linux', 'ios']) {
     assert.ok(covered.has(platform), `no fixture for ${platform}`);
   }
   assert.ok(cases.some((c) => c.input.packaged === false), 'no fixture for a source run');
@@ -58,6 +58,30 @@ test('the fixture cases cover every platform the policy branches on', () => {
     cases.filter((c) => c.input.autoUpdate === false).length >= 2,
     'the automatic-updates preference needs at least two fixtures',
   );
+});
+
+test('ios is NOTIFY on purpose, not by falling through the unknown-platform branch', () => {
+  // The two answers agree today: iOS reaches the same action, check and
+  // autoDownload as an unrecognised platform does. This is what keeps that
+  // agreement from being the reason it works. The reason string is the evidence
+  // that the branch is deliberate.
+  const ios = capability({ platform: 'ios', packaged: true });
+  const unknown = capability({ platform: 'freebsd', packaged: true });
+  assert.equal(ios.action, NOTIFY);
+  assert.equal(ios.check, true, 'noticing a release is the whole of what iOS can do');
+  assert.equal(ios.autoDownload, false);
+  assert.match(ios.reason, /iOS/);
+  assert.match(ios.reason, /install its own update/);
+  assert.notEqual(ios.reason, unknown.reason);
+});
+
+test('the ios reason names no distribution channel', () => {
+  // Which mechanism delivers the next build is an open decision, so the policy
+  // must not have settled it in a sentence nobody reviews.
+  const { reason } = capability({ platform: 'ios', packaged: true });
+  for (const channel of ['TestFlight', 'testflight', 'App Store', 'AppStore', 'manifest', 'ad-hoc', 'ad hoc', 'enterprise']) {
+    assert.doesNotMatch(reason, new RegExp(channel), `the ios reason should not name ${channel}`);
+  }
 });
 
 test('the environment cannot change the answer', () => {
