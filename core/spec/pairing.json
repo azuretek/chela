@@ -6,6 +6,7 @@
     "The requestId is what the operator matches when they approve, and it travels in the close REASON string rather than in a structured detail object, because a raw WebSocket close carries only a numeric code and a short reason string. So the parser's job is string parsing, held to a strict id pattern so a malformed reason cannot inject arbitrary text into a screen. The id pattern and the `(requestId: <id>)` shape mirror the gateway's own `connect-error-details` contract in the OpenClaw checkout (packages/gateway-protocol/src/connect-error-details.ts), so the two agree by construction rather than by luck.",
     "The reason strings the gateway emits are matched by the same substrings the gateway's own reader uses: `pairing required` for the first-connection case, and the upgrade phrasings for the three upgrade reasons. A close that is code 1008 but whose reason is NOT a pairing reason is left as an ordinary failure, because 1008 is a general policy code and not pairing's alone.",
     "The copy lives here so both clients say the same thing, and it reflects the REAL instruction the gateway and the Control UI give (`openclaw devices approve <requestId>`, or `openclaw devices approve --latest` when there is no id), rather than an invented one. The command is shown for the operator to run on the gateway host; the client cannot run it, and says so.",
+    "`timing` is here for the same one-owner reason, and it is the one part of the screen that is a cadence rather than a string. Both clients keep the pairing screen up while they wait for an approval, and both must reissue a connect attempt on a sane interval (`retrySeconds`) and take the screen down only once an open has SURVIVED a short settle window (`confirmSeconds`). Two clients with two copies of those numbers drift the first time one is tuned, and the visible symptom is one client flickering where the other does not, so they live here and both read them: core/pairing.js exports them, the Swift port reads them off the bundled spec. The values are a balance, documented where they are used: long enough not to hammer a gateway that is deliberately refusing this device and to outlast the gap between a socket open and the 1008 close that follows it, short enough that an operator's approval reaches the user promptly.",
     "It is an ARRAY of lines for the script, not one escaped string, for the same reason prompt-metadata's hook is: a maintainable escape is the only kind that survives an edit, each line reads as a line, and the readers join with a newline."
   ],
   "phases": {
@@ -15,6 +16,10 @@
     "failed": "failed"
   },
   "policyCloseCode": 1008,
+  "timing": {
+    "retrySeconds": 3,
+    "confirmSeconds": 0.6
+  },
   "reasonSubstrings": {
     "not-paired": "pairing required",
     "role-upgrade": "role upgrade pending approval",

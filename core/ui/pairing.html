@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: file:;">
+  <title>Approve this device</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="pairing-body">
+  <!-- The device-approval screen, shown when the gateway refuses this client
+       until an operator approves it.
+
+       A full cover rather than a dialog, and that is the point of it: there is
+       no Control UI behind this to reach. The gateway held the socket, so the
+       page underneath is a shell that cannot load, reload or send anything, and
+       the one thing to do about it is done on the gateway host, not here. It
+       comes down on its own the moment the device is approved, because the
+       client reissues a connect attempt while it waits and the phase moves when
+       one of them opens a socket that stays open.
+
+       Every sentence on it comes from the host, which reads the shared contract
+       (core/spec/pairing.json): this page is sandboxed and cannot require
+       core/pairing.js, and the phone renders the same words because they have
+       one owner rather than one copy per client. The command shown is the real
+       instruction the gateway and the Control UI give, reflected rather than
+       invented, and it runs on the gateway host: this device cannot approve
+       itself. -->
+  <div class="dragbar"></div>
+  <main class="pairing" id="root">
+    <div class="pairing__mark">
+      <img class="pairing__logo" src="assets/claw.svg" alt="">
+    </div>
+    <h1 class="pairing__title" id="title">Approve this device</h1>
+    <p class="pairing__body" id="body"></p>
+    <p class="pairing__requirement" id="requirement"></p>
+
+    <!-- Request id and device, then the command. Filled by pairing.js as
+         `.fact` rows, the same label/value shape About uses. -->
+    <div class="pairing__details" id="details"></div>
+
+    <div class="pairing__command">
+      <span class="pairing__command-label" id="command-label"></span>
+      <code class="mono" id="command"></code>
+    </div>
+
+    <p class="pairing__waiting" id="waiting"></p>
+
+    <div class="pairing__actions">
+      <!-- Offered beside the waiting line rather than instead of it: the screen
+           retries on a cadence of its own, and this is for someone who has just
+           approved the device and does not want to wait for the next beat. -->
+      <button class="ghost" id="retry" type="button">Try again now</button>
+      <a class="pairing__docs" id="docs" href="#" rel="noreferrer">How device pairing works</a>
+    </div>
+
+    <p class="pairing__note" id="note"></p>
+  </main>
+  <script src="pairing.js"></script>
+</body>
+</html>

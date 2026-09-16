@@ -1,6 +1,6 @@
 'use strict';
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 // This preload is attached to the same window that later loads the remote
 // Control UI, so gate the bridge on the page being one of *our* local pages.
@@ -20,6 +20,69 @@ const isLocalPage = location.protocol === 'file:';
 contextBridge.exposeInMainWorld('__clawAppSettings', {
   open: () => { ipcRenderer.invoke('app:open-settings'); },
 });
+
+/* The device-pairing observer's report, and the second of exactly two things the
+   remote gateway page may say to this app.
+
+   The observer (core/spec/pairing.json) watches the page's own WebSocket and
+   reports a pairing refusal, which is the one connection state this app cannot
+   learn from the navigation delegate: the page's HTML loaded, so the socket
+   close is an event inside the page. It prefers a host message handler, which
+   Electron has none of, so `desktop/src/pairing.js` defines the global it falls
+   back to as a live channel pointing here.
+
+   One direction, no reply, and the payload is narrowed to the shared contract in
+   main (a kind the spec names, a reason it knows, an id that passes its pattern)
+   before anything is shown. The worst a hostile page can do with it is make this
+   app show its own pairing screen, which is a page it cannot read, write or
+   navigate away from, and which offers nothing but a retry. The report is also
+   ignored unless it comes from the gateway page itself; see the sender check on
+   the handler in src/main.js. */
+contextBridge.exposeInMainWorld('__clawPairingReport', (payload) => {
+  try {
+    ipcRenderer.send('pairing:report', typeof payload === 'string' ? payload : '');
+  } catch { /* nothing to report it to; the page is on its own */ }
+});
+
+/* The observer itself, injected into the gateway page's MAIN world at document
+   start, which is the one moment early enough to wrap `WebSocket` before the
+   page opens its gateway socket.
+
+   Why here and not from the main process. `webContents.executeJavaScript` runs
+   once the document already exists, and CDP's
+   `Page.addScriptToEvaluateOnNewDocument` cannot be relied on at all from there:
+   measured on this app, a registration fired before the first navigation is
+   queued until the renderer exists and lands after the document it was meant to
+   precede, and one that does resolve is scoped to the renderer it was sent to,
+   so it missed even a plain reload. Both left the page holding a native
+   `WebSocket` with nothing to report a refusal.
+
+   `webFrame.executeJavaScript` from the preload has neither problem: the preload
+   is already running before the page has a document, and this evaluates in the
+   page's main world (measured: the injected marker lands before the document's
+   first script, with the bridge below already visible to it). It is not subject
+   to the page's CSP, because it evaluates rather than inserting a script element.
+   The other direction is still closed: the isolated world cannot see this call,
+   and the page gains no function it can invoke.
+
+   The bytes come from main over a SYNCHRONOUS channel, because the ordering is
+   the whole point: an async read would resolve a tick later, after the page's
+   own first script. Two short strings, once per document.
+
+   Fail-soft and LOUD: a document that could not be injected says so to main,
+   which logs it in the app's own stdout, because a silent non-installation is
+   exactly how this shipped broken once. */
+if (!isLocalPage) {
+  let report = { ok: false, error: 'no script from main' };
+  try {
+    const sources = ipcRenderer.sendSync('pairing:script') || [];
+    for (const source of sources) webFrame.executeJavaScript(source);
+    report = { ok: true, error: '' };
+  } catch (err) {
+    report = { ok: false, error: (err && err.message) || String(err) };
+  }
+  try { ipcRenderer.send('pairing:injected', report); } catch { /* nothing left to report it to */ }
+}
 
 if (isLocalPage) {
   contextBridge.exposeInMainWorld('clawDesktop', {
@@ -81,6 +144,13 @@ if (isLocalPage) {
     reconnect: () => ipcRenderer.invoke('app:reconnect'),
     progress: () => ipcRenderer.invoke('app:progress'),
     onProgress: (fn) => ipcRenderer.on('app:progress', (_event, value) => fn(value)),
+
+    /* The pairing screen. The page renders what main already parsed and
+       narrowed through core/pairing.js, so the screen holds no rule of its own
+       about what counts as pairing, and a second client that renders the same
+       page gets the same answer from its own host. */
+    pairing: () => ipcRenderer.invoke('app:pairing'),
+    onPairingChanged: (fn) => ipcRenderer.on('app:pairing-changed', () => fn()),
 
   });
 

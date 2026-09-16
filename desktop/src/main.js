@@ -19,6 +19,7 @@ const require = createRequire(import.meta.url);
 import path from 'node:path';
 import fs from 'node:fs';
 import https from 'node:https';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import * as autostart from './autostart.js';
 import config from './config.js';
@@ -31,6 +32,7 @@ import * as menus from './menus.js';
 import * as noticeStore from './notices.js';
 import * as noticelog from './noticelog.js';
 import * as overlay from './overlay.js';
+import * as pairing from './pairing.js';
 import * as profile from './profile.js';
 import * as progress from './progress.js';
 import * as promptMetadata from './prompt-metadata.js';
@@ -40,6 +42,11 @@ import updates from './updates.js';
 import secrets from './secrets.js';
 import defaults from './defaults.js';
 import { withTokenHandoff } from '../../core/gateway-url.js';
+// The pairing copy and the approve command, read from the shared contract rather
+// than written down here: the screen the desktop shows and the screen the phone
+// shows say the same thing because they read the same file. The phase names, the
+// close parser and the reducer come through src/pairing.js.
+import { COPY as PAIRING_COPY } from '../../core/pairing.js';
 import { product, releasesUrl } from '../../core/naming.js';
 // The shared "App settings" affordance: the ONE injected script that adds a
 // control to the Control UI's sidebar footer and calls a host bridge to open our
@@ -449,6 +456,11 @@ function showConnectionFailure(detail) {
     phase: connectionState.FAILED,
     error: { code: detail.errorCode, description: detail.errorDescription || '' },
   };
+  // A load that never reached a page is a network/host failure, not pairing: the
+  // gateway did not get far enough to refuse the device. Kept distinct so the
+  // pairing screen does not appear for a dropped connection, exactly as the phone
+  // keeps them apart in WebView.report().
+  pairingState.failed();
   setNotice('connection', connectionState.failureNotice({ label, error: connection.error }));
   // Already up from the connect attempt; this re-asserts it for the case where
   // the very first load failed before anything covered the window.
@@ -519,6 +531,13 @@ function loadActiveGateway() {
     milestone: progress.START,
     milestoneAt: Date.now(),
   });
+  // A connect attempt is starting, so the pairing state hears about it too. Two
+  // cases, and core/pairing.js decides which: a first connect clears any earlier
+  // refusal, while a retry from the pairing screen HOLDS the screen and its
+  // refusal, so the command on it does not change and the attempt happens
+  // underneath. This is the anti-flap rule, and it is why the retry cadence does
+  // not make the screen flash once per attempt.
+  pairingState.connecting();
   // Raised before the load rather than after, because the whole point is to
   // cover the gap: a `loadURL` to an unreachable host leaves the previous
   // document, or a blank view, on screen for as long as it takes to fail.
@@ -720,6 +739,203 @@ function maybeAutofill(wc) {
     .catch((err) => console.warn(`[claw-desktop] login gate autofill failed: ${err.message}`));
 }
 
+/* ------------------------------------------------------------ device pairing */
+
+// The gateway's second gate, after the token check, finally surfaced here.
+//
+// The page opens the gateway socket, so a refusal for an unapproved device is an
+// event INSIDE the page rather than a navigation failure: the HTML loads fine,
+// `did-finish-load` fires, this app marks the connection CONNECTED, and the
+// socket is closed 1008 behind it. Nothing in the desktop's world could see that,
+// so the app sat on a dead page with no explanation. The phone has had a pairing
+// screen since 366184d; the desktop had none, which is why a device whose
+// approval was revoked server-side (the gateway closes the established session
+// `4001 device removed`, then refuses the next connects 1008) showed nothing at
+// all, at any point in the app's life.
+//
+// Three pieces, all shared-contract-driven, none of them a second copy of the
+// rules (see src/pairing.js):
+//   - the observer bytes from core/spec/pairing.json, injected into the page at
+//     document START so it wraps WebSocket before the page opens one;
+//   - the report that comes back, narrowed through the contract before anything
+//     is shown;
+//   - the shared reducer's phase moves, plus a reload cadence and a settle
+//     window while the screen is up.
+//
+// The injection is the one piece with no plain Electron equivalent, and it is
+// the piece that shipped broken. The first version reached for CDP's
+// `Page.addScriptToEvaluateOnNewDocument` through `webContents.debugger`: it
+// registered, it logged that it registered, and the script never ran. Measured
+// here, both ways. The debugger's page domain does not answer until the
+// webContents has a live renderer, so a registration fired before the first
+// navigation is queued and lands on the wrong side of the document it was meant
+// to precede. And a registration that DOES resolve belongs to the target it was
+// sent to, so it missed the next document even on a plain reload: the page came
+// back with `injected:false` and a native `WebSocket` both times, which is the
+// refusal disappearing with nothing to report it.
+//
+// What holds is the preload. `webFrame.executeJavaScript` called from that
+// page's own preload runs in the MAIN world at document start (measured: the
+// injected marker landed before the document's first inline script, with the
+// contextBridge surface already visible to it), and it is not subject to the
+// page's CSP because it evaluates rather than inserting a script element. The
+// isolated world still cannot reach it, so the page gains no call it did not
+// have. src/preload.cjs owns that half now, and this side only owns the bytes:
+// the preload reads them over the synchronous `pairing:script` channel below.
+
+const pairingState = pairing.createState({
+  onRetry: () => retryPairingConnect(),
+  // Every phase move repaints the screen, INCLUDING the one the settle window
+  // makes with no other caller. Without this the recovery is invisible: measured
+  // live, an approval landed, the socket stayed open, the gateway was serving the
+  // Control UI, and the pairing screen sat over it with nothing to take it down.
+  //
+  // The came-down line is kept here rather than in the report handler for the
+  // same reason: the recovery has two routes (an approval confirmed by the settle
+  // window, or a report that never was pairing), and only one of them passes
+  // through a report. One place sees both.
+  onChange: () => {
+    const pairingNow = pairingState.isPairing();
+    if (pairingWasUp && !pairingNow) console.log('[claw-desktop] device pairing cleared; the pairing screen is down');
+    pairingWasUp = pairingNow;
+    syncPairing();
+  },
+});
+
+/** The last phase's pairing flag, so the change can be logged once, where it happens. */
+let pairingWasUp = false;
+
+/**
+ * The observer bytes, read by the preload at document start.
+ *
+ * Synchronous on purpose. The preload runs at document start, which is the only
+ * moment early enough to wrap `WebSocket` before the page opens one, and an
+ * async read would come back a tick later, after the page's own first script had
+ * already run. The reply is two short strings, once per document, so blocking
+ * that one tick is the cheap side of the trade; see the pairing section of
+ * src/preload.cjs for the half that does the injecting.
+ *
+ * Registered at import time rather than from registerIpc(), because the first
+ * page load can begin before the app's own IPC table is built, and a preload
+ * that asked too early would get no reply at all.
+ */
+ipcMain.on('pairing:script', (event) => {
+  event.returnValue = pairing.injectedSources();
+});
+
+/**
+ * The preload's word that the injection ran, which is the only proof of it.
+ *
+ * A registration that silently does nothing is exactly how this shipped broken
+ * once, so the line is logged either way: the app's own stdout says whether the
+ * observer is in the page, and it is the line to read when a pairing refusal
+ * does not surface.
+ */
+ipcMain.on('pairing:injected', (_event, report) => {
+  if (report && report.ok) {
+    console.log('[claw-desktop] pairing observer installed (document start)');
+    return;
+  }
+  console.warn(`[claw-desktop] pairing observer did not install (${(report && report.error) || 'no reason given'}); a pairing refusal will not surface`);
+});
+
+/**
+ * What the pairing screen renders: the state, plus the copy the contract owns.
+ *
+ * The page is sandboxed and cannot require core/pairing.js, the same split the
+ * settings, About and loading pages use, so the requirement sentence and the
+ * approve command arrive already built. The device row names the machine this
+ * build is on, which is what an operator lines up against `openclaw devices
+ * list`; the request id beside it is the thing they actually match.
+ */
+function pairingSnapshot() {
+  const snap = pairingState.snapshot();
+  return {
+    phase: snap.phase,
+    requestId: snap.requestId,
+    requirement: snap.requirement,
+    command: snap.command,
+    device: os.hostname(),
+    title: PAIRING_COPY.title,
+    body: PAIRING_COPY.body,
+    commandLabel: PAIRING_COPY.commandLabel,
+    requestIdLabel: PAIRING_COPY.requestIdLabel,
+    deviceIdLabel: PAIRING_COPY.deviceIdLabel,
+    waiting: PAIRING_COPY.waiting,
+    cannotRunHere: PAIRING_COPY.cannotRunHere,
+    docsHref: PAIRING_COPY.docsHref,
+  };
+}
+
+/**
+ * Put the screen up, take it down, or repaint it, from the phase alone.
+ *
+ * Called after every move, so the screen cannot get ahead of the state: while
+ * the phase is pairing-required the screen is up (opened here if it is not), and
+ * the moment the phase leaves it the screen goes. Auto-recovery needs no button
+ * of its own because of this: an approval produces a socket that survives, the
+ * phase moves to authenticated, and the screen comes down on its own.
+ */
+function syncPairing() {
+  const snap = pairingState.snapshot();
+  if (snap.pairing) {
+    if (!overlayAlive('pairing')) openOverlay('pairing');
+    else notifyPairingChanged();
+    return;
+  }
+  if (overlayAlive('pairing')) closeOverlay('pairing');
+}
+
+/** Push a fresh pairing state into the screen if it is up. */
+function notifyPairingChanged() {
+  const view = overlayViews.get('pairing');
+  if (view && !view.webContents.isDestroyed()) view.webContents.send('app:pairing-changed');
+}
+
+/**
+ * One reconnect beat while the pairing screen is up.
+ *
+ * The page's own socket retry cannot be relied on: observed against the live
+ * gateway, the Control UI stopped reattaching a few seconds after the refusal,
+ * so an approval that landed afterwards produced no reconnect at all. So this
+ * drives the attempt, and it drives it through the app's OWN connect path rather
+ * than a bespoke one, which is what makes an approval pick up with no relaunch
+ * and no reimplementation of the page's connect. The cadence comes from the
+ * shared spec. `connecting()` is the anti-flap rule: while the screen is up it
+ * holds the phase, so the attempt happens underneath a screen that never moves.
+ */
+function retryPairingConnect() {
+  if (!pairingState.isPairing()) return;
+  pairingState.connecting();
+  console.log('[claw-desktop] pairing: retrying the connect');
+  loadActiveGateway();
+}
+
+/**
+ * A report from the page's observer, or nothing.
+ *
+ * The sender is checked against the live gateway page, so only the page this
+ * app loaded can move this state; then the payload is narrowed through the
+ * contract. The transition is logged with the request id, because that line and
+ * the gateway's own are the two halves of any diagnosis of this.
+ */
+function handlePairingReport(event, payload) {
+  const wc = page();
+  if (!wc || event.sender !== wc) return;
+  const report = pairing.parseReport(payload);
+  if (!report) return;
+
+  if (report.kind === 'open') {
+    pairingState.opened();
+  } else {
+    pairingState.closed(report.refusal);
+    console.warn(`[claw-desktop] gateway refused this device: ${report.refusal.reason}` +
+      `${report.refusal.requestId ? ` (requestId: ${report.refusal.requestId})` : ''}; showing the pairing screen`);
+  }
+  // The screen and the recovery line both follow the phase through createState's
+  // onChange, so there is nothing to do here but record what the page said.
+}
+
 function attachNavigationGuards(wc) {
   // A link to anywhere other than the gateway belongs in the real browser. Without
   // this, one click on an external link replaces the app with a page that has no
@@ -855,6 +1071,10 @@ function createMainWindow() {
 
   const wc = pageView.webContents;
   attachNavigationGuards(wc);
+  // The pairing observer needs no arming here: it is installed by this view's own
+  // preload at document start, on the first document and every one after it. See
+  // the device-pairing section below for why, and for the CDP route that looked
+  // like it worked and did not.
   layoutViews();
 
   // The Control UI sets document.title to "<session>, OpenClaw", and Electron
@@ -1051,7 +1271,7 @@ function adoptTheme(theme) {
  */
 // name -> the page, resolved against UI_DIR at the call site, the way it always
 // was. The directory is core/ui now, see the note on UI_DIR above.
-const OVERLAY_PAGES = { settings: 'settings.html', about: 'about.html' };
+const OVERLAY_PAGES = { settings: 'settings.html', about: 'about.html', pairing: 'pairing.html' };
 
 /** name -> WebContentsView, in the order they were opened, which is z-order. */
 const overlayViews = new Map();
@@ -2381,6 +2601,11 @@ function registerIpc() {
   // back showing the same thing rather than an empty card.
   ipcMain.handle('app:close-overlay', (_e, name) => { closeOverlay(String(name)); });
   ipcMain.handle('app:about', () => aboutState());
+  // The pairing screen's own read, and the report channel the injected observer
+  // uses. The report is checked against the live gateway page rather than trusted
+  // from wherever it arrived; see handlePairingReport.
+  ipcMain.handle('app:pairing', () => pairingSnapshot());
+  ipcMain.on('pairing:report', handlePairingReport);
   ipcMain.handle('app:check-updates', () => { void checkForUpdates('manual'); });
   ipcMain.handle('app:open-releases', () => shell.openExternal(RELEASES_URL));
   // The banner. It reports the height it needs rather than being given one: the

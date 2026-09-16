@@ -18,6 +18,8 @@ import {
   POLICY_CLOSE_CODE,
   PAIRING_REASONS,
   COPY,
+  RETRY_SECONDS,
+  CONFIRM_SECONDS,
   readRequestId,
   readPairingClose,
   nextPhase,
@@ -79,6 +81,43 @@ test('readRequestId() reproduces every fixture and holds to the id pattern', () 
   for (const { name, input, output } of requestId) {
     assert.strictEqual(readRequestId(input), output, name);
   }
+});
+
+test('a pairing close from an established session enters the pairing state', () => {
+  // The regression this contract exists to prevent, named rather than left to
+  // the fixture sweep: a device that was approved and WORKING, and then had its
+  // approval revoked server-side, is refused with the same 1008 pairing close a
+  // first connection gets. A client whose pairing screen only ever opened from
+  // its initial connecting phase showed that user a dead app with no
+  // explanation, because the refusal arrived while it was in `authenticated`.
+  //
+  // Entering pairing from every prior phase is the rule; `authenticated` is the
+  // one that was missing from the fixture set, which is how the gap survived a
+  // suite that already covered `connecting` and `pairing-required`.
+  const refusal = { reason: 'not-paired', requestId: 'req-established-1' };
+  assert.strictEqual(nextPhase(AUTHENTICATED, { type: 'close', pairing: refusal }), PAIRING_REQUIRED);
+  // And the same close from the other two phases, so the rule reads as "any
+  // phase" rather than "the three phases tried":
+  for (const phase of [CONNECTING, FAILED]) {
+    assert.strictEqual(nextPhase(phase, { type: 'close', pairing: refusal }), PAIRING_REQUIRED, phase);
+  }
+  // A non-pairing close from an established session stays an ordinary failure:
+  // the socket dropping is not a device approval problem.
+  assert.strictEqual(nextPhase(AUTHENTICATED, { type: 'close', pairing: null }), FAILED);
+});
+
+test('the retry and settle cadences come from the spec, one owner for both clients', () => {
+  // The desktop reads these to drive its own reload cadence and to decide when
+  // an open has survived long enough to count as an approval; the Swift port
+  // reads the same fields off the bundled spec. A second copy of either number
+  // in a client is what makes one client flash where the other holds still.
+  assert.strictEqual(RETRY_SECONDS, spec.timing.retrySeconds);
+  assert.strictEqual(CONFIRM_SECONDS, spec.timing.confirmSeconds);
+  // A settle window inside a retry interval is the property that makes it work:
+  // a genuine approval clears the screen before the next attempt is due, and
+  // the refusal that follows an unapproved open always lands inside the window.
+  assert.ok(CONFIRM_SECONDS > 0 && CONFIRM_SECONDS < RETRY_SECONDS, 'confirm must sit inside retry');
+  assert.ok(RETRY_SECONDS >= 1, 'a sub-second retry would hammer a gateway that is refusing this device');
 });
 
 test('nextPhase() reproduces every fixture', () => {
