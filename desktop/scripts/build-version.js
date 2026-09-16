@@ -120,12 +120,13 @@ function headTags() {
 
 function main(argv) {
   const packageVersion = JSON.parse(fs.readFileSync(PKG, 'utf8')).version;
+  const count = commitCount();
   const result = decide({
     ref: arg(argv, 'ref', process.env.GITHUB_REF || ''),
     sha: arg(argv, 'sha', process.env.GITHUB_SHA || ''),
     eventName: arg(argv, 'event', process.env.GITHUB_EVENT_NAME || 'push'),
     headTags: headTags(),
-    count: commitCount(),
+    count,
     packageVersion,
   });
 
@@ -138,8 +139,15 @@ function main(argv) {
     ? `  • building version ${result.version}  (${result.note})`
     : `  • skipping this build  (${result.note})`);
   if (process.env.GITHUB_OUTPUT) {
+    // `count` is published as well as folded into the version, because it is
+    // the number an App Store bundle carries: CFBundleVersion has to be a
+    // single increasing integer, so the mobile release takes this exact value
+    // rather than deriving a second one that could disagree with the dev
+    // version's. Empty when the checkout was shallow, which the caller is
+    // expected to treat as a failure.
     fs.appendFileSync(process.env.GITHUB_OUTPUT,
-      `version=${result.version}\nbuild=${result.build}\ntagged=${result.tagged}\n`);
+      `version=${result.version}\nbuild=${result.build}\ntagged=${result.tagged}\n`
+      + `count=${count ?? ''}\n`);
   }
 }
 
