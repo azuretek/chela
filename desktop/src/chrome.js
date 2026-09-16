@@ -179,7 +179,7 @@ export function stripCss(platform = process.platform) {
 
 /* ------------------------------------------------------------------- title */
 
-export const APP_NAME = 'Claw Desktop';
+export const APP_NAME = 'Claw Control UI';
 
 /**
  * True for a chat route with an agent but no session, the "Home" entry in the

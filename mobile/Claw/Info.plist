@@ -2,10 +2,20 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- The home-screen label and the name in TestFlight. Kept short: a longer
-	     one is truncated under the icon, which is the wrong place to learn it. -->
+	<!-- The home-screen label and the name in TestFlight. It is the product name
+	     now rather than the short one it used to be, and at fifteen characters it
+	     exceeds the roughly twelve iOS draws under the icon, so the springboard
+	     shows "Claw Contro…". The one-line change that would keep it short is
+	     CFBundleDisplayName back to "Claw" with CFBundleName left as the product
+	     name; the trade is a label that does not name the product.
+
+	     CFBundleName is a literal rather than $(PRODUCT_NAME) because the target
+	     stays `Claw`: it is the scheme, the generated project and the directory
+	     names in this repo, and the archive and export paths in the pipeline are
+	     built around it. The name a person sees does not have to be the name a
+	     build system uses, which is the same split as the bundle identifier below. -->
 	<key>CFBundleDisplayName</key>
-	<string>Claw</string>
+	<string>Claw Control UI</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -31,7 +41,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>Claw Control UI</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>

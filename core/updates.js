@@ -218,7 +218,7 @@ export function policy({ autoUpdate = true, ...opts }) {
  * Linux could reach it too, a dialog confidently naming the wrong cause.
  */
 export function availableMessage({ action, version, current, reason = null }) {
-  const headline = `Claw Desktop ${version} is available.`;
+  const headline = `Claw Control UI ${version} is available.`;
   if (action === INSTALL) {
     return { message: headline, detail: `You are on ${current}. It will download in the background, and you can restart to apply it.` };
   }

@@ -23,7 +23,7 @@ const commands = () => Object.fromEntries(
   menus.COMMANDS.map((id) => [id, { label: `label:${id}`, click: noop }]),
 );
 
-const build = (platform) => menus.template({ platform, appName: 'Claw Desktop', commands: commands() });
+const build = (platform) => menus.template({ platform, appName: 'Claw Control UI', commands: commands() });
 
 /** The shared menus, i.e. everything but the macOS application menu. */
 const shared = (platform) => build(platform).filter((m) => menus.SHARED_MENUS.includes(m.label));
@@ -69,7 +69,7 @@ test('About and Check for updates are both in Help, on every platform', () => {
 
 test('only macOS has an application menu, and it comes first', () => {
   const mac = build('darwin');
-  assert.equal(mac[0].label, 'Claw Desktop', 'macOS turns the first menu into the application menu');
+  assert.equal(mac[0].label, 'Claw Control UI', 'macOS turns the first menu into the application menu');
   for (const platform of ['win32', 'linux']) {
     assert.equal(build(platform)[0].label, 'File');
   }
@@ -112,7 +112,7 @@ test('a missing command is a build error, not a silently absent menu item', () =
   const short = commands();
   delete short.about;
   assert.throws(
-    () => menus.template({ platform: 'win32', appName: 'Claw Desktop', commands: short }),
+    () => menus.template({ platform: 'win32', appName: 'Claw Control UI', commands: short }),
     /no command "about"/,
   );
 });

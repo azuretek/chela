@@ -132,9 +132,9 @@ app.whenReady().then(async () => {
   const steps = [
     {
       name: 'about',
-      click: 'About Claw Desktop',
+      click: 'About Claw Control UI',
       file: 'about.html',
-      expect: [/Claw Desktop/, /Updates:/, /Check for updates/, /Electron/],
+      expect: [/Claw Control UI/, /Updates:/, /Check for updates/, /Electron/],
     },
     // The banner, reached through the real update path: a source build has no
     // updater, and a manual check is the one trigger that says so. It is a

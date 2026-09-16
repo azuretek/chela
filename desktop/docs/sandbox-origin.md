@@ -12,7 +12,7 @@ unavailable"**, the client cannot reach that sandbox origin.
 
 ## Why it fails over a tunnel
 
-Claw Desktop reaches the gateway over Tailscale, which by default exposes only
+Claw Control UI reaches the gateway over Tailscale, which by default exposes only
 the main gateway port through its `:443` serve. The sandbox port is not routed,
 and the raw tailnet IP to `18790` is usually firewalled. So the iframe has no
 reachable origin. This is the `mcp.apps.sandboxOrigin` case the gateway's own

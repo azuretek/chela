@@ -1,4 +1,4 @@
-name: Claw Desktop release
+name: claw-desktop release
 
 # The Electron app lives in desktop/ since the repo became the product monorepo
 # (core/ shared, desktop/ this app, mobile/ the iOS client). Every npm/script

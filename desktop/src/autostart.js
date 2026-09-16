@@ -69,7 +69,7 @@ export function quoteExec(arg) {
  * X-GNOME-Autostart-enabled is redundant under the spec but is what GNOME's own
  * Tweaks writes, and its absence is read by some versions as disabled.
  */
-export function entryBody({ exec, hidden = false, name = 'Claw Desktop' } = {}) {
+export function entryBody({ exec, hidden = false, name = 'Claw Control UI' } = {}) {
   const command = [quoteExec(exec), ...(hidden ? ['--hidden'] : [])].join(' ');
   return [
     '[Desktop Entry]',

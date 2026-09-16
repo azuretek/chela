@@ -144,5 +144,5 @@ export function about({ version, info, updateStatus, electron, chrome, platform,
     ...(electron ? [`Electron ${electron}, Chromium ${chrome}`] : []),
     ...(platform ? [`${PLATFORM_NAMES[platform] || platform} ${arch}`] : []),
   ].join('\n');
-  return { message: 'Claw Desktop', detail };
+  return { message: 'Claw Control UI', detail };
 }

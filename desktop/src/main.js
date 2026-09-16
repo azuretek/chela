@@ -50,14 +50,45 @@ const PRELOAD = path.join(HERE, 'preload.cjs');
 // while the app is running.
 const buildStamp = buildInfo.read();
 
-/* ------------------------------------------------------- profile after rename */
+/* ------------------------------------------- profile and identity after rename */
 
-// Runs at load, before app.whenReady() and before anything opens the profile, // `appData` is one of the few paths resolvable that early. The logic itself
+// Runs at load, before app.whenReady() and before anything opens the profile,
+// and `appData` is one of the few paths resolvable that early. The logic itself
 // lives in src/profile.js so it can be tested without launching Electron.
+//
+// TWO things are settled here, and the second is the one that is easy to miss,
+// so it is spelled out in full: see the header of src/profile.js for why the
+// userData directory and the safeStorage keychain item move for different
+// reasons, and why one migrates while the other is pinned.
 {
-  const migration = profile.migrate(app.getPath('appData'));
-  if (migration.status === 'migrated') console.log(`[claw] migrated profile: ${migration.from} -> ${migration.to}`);
-  if (migration.status === 'failed') console.warn(`[claw] could not migrate profile (${migration.error}); starting fresh`);
+  const isolated = app.commandLine.hasSwitch('user-data-dir');
+  if (isolated) {
+    // A caller that pinned userData is isolating this run: scripts/smoke.js,
+    // scripts/dump-overlays.js, any harness. The migration works on `appData`,
+    // which none of them redirect, so running it here would move the profile of
+    // whoever happens to be on this machine, which is the opposite of what an
+    // isolated run is for. Leave the directory alone and use theirs.
+    console.log('[claw-desktop] isolated userData; not migrating the profile');
+  } else {
+    const migration = profile.migrate(app.getPath('appData'));
+    if (migration.status === 'migrated') console.log(`[claw-desktop] migrated profile: ${migration.from} -> ${migration.to}`);
+    if (migration.status === 'failed') console.warn(`[claw-desktop] could not migrate profile (${migration.error}); starting fresh`);
+    // Explicit rather than left to the default, which Electron derives from the
+    // app name: the name is about to be overridden below, and a path that
+    // silently follows it is how the profile ends up in two places.
+    app.setPath('userData', migration.to);
+  }
+
+  // The keychain item holding the key to credentials.json is named after the app
+  // name, so it follows a rename unless something stops it. This stops it, on
+  // every run including the first one after the rename, and before any
+  // safeStorage call. Credentials written by the previous name stay readable.
+  //
+  // Logged, because a credential that cannot be decrypted fails silently by
+  // design (see src/secrets.js): the item name is the whole diagnosis, and this
+  // is the one line that shows which one the app is looking in.
+  app.setName(profile.KEYCHAIN_NAME);
+  console.log(`[claw-desktop] credentials keychain item: ${profile.KEYCHAIN_NAME} Safe Storage`);
 }
 
 let mainWindow = null;
@@ -124,7 +155,7 @@ function promptMetadataConfig() {
 function installPromptMetadata(wc) {
   if (!wc || wc.isDestroyed() || originOf(wc.getURL()) !== activeOrigin()) return;
   wc.executeJavaScript(promptMetadata.clientScript(promptMetadataConfig()), true)
-    .catch((err) => console.warn(`[claw] prompt metadata hook failed: ${err.message}`));
+    .catch((err) => console.warn(`[claw-desktop] prompt metadata hook failed: ${err.message}`));
 }
 
 /**
@@ -348,7 +379,7 @@ function showConnectionFailure(detail) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const gw = config.activeGateway();
   const label = gw ? gw.label || gw.url : null;
-  console.warn(`[claw] cannot reach ${label || 'the gateway'}: ${detail.errorCode} ${detail.errorDescription}`);
+  console.warn(`[claw-desktop] cannot reach ${label || 'the gateway'}: ${detail.errorCode} ${detail.errorDescription}`);
   connection = {
     gatewayId: gw ? gw.id : null,
     phase: connectionState.FAILED,
@@ -431,7 +462,7 @@ function loadActiveGateway() {
   const creds = secrets.load(gw.id);
   const supplied = [creds.token && 'token', creds.password && 'password', creds.headers.length && `${creds.headers.length} header(s)`]
     .filter(Boolean).join(', ');
-  console.log(`[claw] connecting to ${gw.label || gw.url} <${gw.url}>${supplied ? ` (supplying ${supplied})` : ''}`);
+  console.log(`[claw-desktop] connecting to ${gw.label || gw.url} <${gw.url}>${supplied ? ` (supplying ${supplied})` : ''}`);
   page()?.loadURL(withTokenHandoff(gw.url, creds.token));
 }
 
@@ -498,7 +529,7 @@ async function maybeRefreshForNewBuild(wc) {
   config.update({ swVersions: { ...config.get().swVersions, [origin]: version } });
   if (decision.action === 'record') return;
 
-  console.log(`[claw] control ui build changed at ${origin} (${seen} -> ${version}); clearing cache`);
+  console.log(`[claw-desktop] control ui build changed at ${origin} (${seen} -> ${version}); clearing cache`);
   selfReloading = true;
   await cache.clear(session.defaultSession, [origin]);
   loadActiveGateway();
@@ -512,7 +543,7 @@ async function maybeRefreshForNewBuild(wc) {
 async function clearCacheAndReload() {
   const active = activeOrigin();
   const origins = active ? [active] : gatewayOrigins();
-  console.log(`[claw] clearing cache for ${origins.join(', ') || '(no gateway)'}`);
+  console.log(`[claw-desktop] clearing cache for ${origins.join(', ') || '(no gateway)'}`);
   await cache.clear(session.defaultSession, origins);
   // Drop the recorded ids too, so the load that follows records what it finds
   // instead of comparing against a build whose cache no longer exists.
@@ -556,7 +587,7 @@ async function clearOnAppUpgrade() {
   if (previous === current) return;
   config.update({ appBuild: current, swVersions: {} });
   if (!previous) return;
-  console.log(`[claw] app build changed (${previous} -> ${current}); clearing web cache`);
+  console.log(`[claw-desktop] app build changed (${previous} -> ${current}); clearing web cache`);
   await cache.clear(session.defaultSession, gatewayOrigins());
 }
 
@@ -621,8 +652,8 @@ function maybeAutofill(wc) {
   if (!creds.token && !creds.password) return;
   autofilled = true;
   wc.executeJavaScript(autofillScript(creds), true)
-    .then((result) => console.log(`[claw] login gate autofill: ${result}`))
-    .catch((err) => console.warn(`[claw] login gate autofill failed: ${err.message}`));
+    .then((result) => console.log(`[claw-desktop] login gate autofill: ${result}`))
+    .catch((err) => console.warn(`[claw-desktop] login gate autofill failed: ${err.message}`));
 }
 
 function attachNavigationGuards(wc) {
@@ -717,7 +748,7 @@ function createStrip() {
 function setStripLabel(session) {
   const wc = stripView && !stripView.webContents.isDestroyed() ? stripView.webContents : null;
   if (!wc) return;
-  const text = session || 'Claw Desktop';
+  const text = session || chrome.APP_NAME;
   wc.executeJavaScript(
     `document.getElementById('label').textContent = ${JSON.stringify(text)};`,
     true,
@@ -736,7 +767,7 @@ function createMainWindow() {
     show: false,
     backgroundColor: currentTheme.surface,
     autoHideMenuBar: true,
-    title: 'Claw Desktop',
+    title: chrome.APP_NAME,
     icon: process.platform === 'linux' ? path.join(ASSETS, 'icon.png') : undefined,
   });
 
@@ -922,7 +953,7 @@ function adoptTheme(theme) {
   if (!changed) return;
 
   const modeChanged = theme.mode !== currentTheme.mode;
-  console.log(`[claw] theme: ${theme.mode} ${theme.surface} (${Object.keys(theme.tokens).length} tokens)`);
+  console.log(`[claw-desktop] theme: ${theme.mode} ${theme.surface} (${Object.keys(theme.tokens).length} tokens)`);
   currentTheme = theme;
   chrome.applyTheme(currentTheme, [mainWindow]);
   refreshThemedPages();
@@ -1014,7 +1045,7 @@ function openOverlay(name, opts = {}) {
   overlay.supervise(wc, {
     isCurrent: () => overlayViews.get(name) === view,
     close: () => closeOverlay(name),
-    log: (msg) => console.error(`[claw] ${name} overlay: ${msg}`),
+    log: (msg) => console.error(`[claw-desktop] ${name} overlay: ${msg}`),
   });
   mainWindow.contentView.addChildView(view);
   restackViews();
@@ -1425,7 +1456,7 @@ function setZoom(delta, absolute) {
 // Where a platform that cannot install for itself sends the user. Hard-coded
 // rather than read from electron-builder.yml's `publish` block: that file is not
 // packaged, so the app would be parsing something it does not ship.
-const RELEASES_URL = 'https://github.com/azuretek/claw-desktop/releases';
+const RELEASES_URL = 'https://github.com/azuretek/claw-control-ui/releases';
 // Long enough that a cold start is not competing with the gateway connection
 // for the network, and short enough to be within one sitting.
 const UPDATE_FIRST_CHECK_MS = 60 * 1000;
@@ -1474,7 +1505,7 @@ function applyUpdatePreference() {
  */
 function initUpdates() {
   const plan = updatePolicy();
-  console.log(`[claw] updates: ${plan.action} (${plan.reason})`);
+  console.log(`[claw-desktop] updates: ${plan.action} (${plan.reason})`);
   if (!plan.check) return;
 
   const { autoUpdater } = require('electron-updater');
@@ -1487,7 +1518,7 @@ function initUpdates() {
   // Installing behind the user's back on quit is the wrong default for an app
   // they close to the tray dozens of times a day; the restart is offered.
   updater.autoInstallOnAppQuit = false;
-  updater.logger = { info: () => {}, warn: () => {}, error: (m) => console.error(`[claw] updater: ${m}`), debug: () => {} };
+  updater.logger = { info: () => {}, warn: () => {}, error: (m) => console.error(`[claw-desktop] updater: ${m}`), debug: () => {} };
 
   // The plan is re-read on every event rather than captured here: the
   // automatic-updates preference can change while the app runs, and a handler
@@ -1498,7 +1529,7 @@ function initUpdates() {
   updater.on('error', (err) => {
     // Never unprompted. A machine that is offline, or behind a proxy, or hitting
     // a rate limit must not interrupt whatever the user was doing to say so.
-    console.error(`[claw] update check failed: ${err && err.message}`);
+    console.error(`[claw-desktop] update check failed: ${err && err.message}`);
     setLastCheck('check failed');
     if (!pendingManualCheck) return;
     pendingManualCheck = false;
@@ -1514,13 +1545,13 @@ function initUpdates() {
     pendingManualCheck = false;
     setNotice(UPDATE_ANSWER, {
       tone: noticeStore.OK,
-      message: 'Claw Desktop is up to date.',
+      message: `${chrome.APP_NAME} is up to date.`,
       detail: `You are on ${app.getVersion()}.`,
     }, ANSWER_TTL_MS);
   });
 
   const every = updates.checkIntervalMs(app.getVersion());
-  console.log(`[claw] updates: checking every ${Math.round(every / 60000)} min`);
+  console.log(`[claw-desktop] updates: checking every ${Math.round(every / 60000)} min`);
   setTimeout(() => void checkForUpdates('startup'), UPDATE_FIRST_CHECK_MS);
   updateTimer = setInterval(() => void checkForUpdates('scheduled'), every);
 }
@@ -1678,7 +1709,7 @@ async function downloadOfferedUpdate() {
     setLastCheck('download failed');
     setNotice('update-available', {
       tone: noticeStore.WARN,
-      message: `Could not download Claw Desktop ${version}.`,
+      message: `Could not download ${chrome.APP_NAME} ${version}.`,
       detail: `${noticeStore.sentence((err && err.message) || err)} It will try again at the next check.`,
     });
   }
@@ -1702,7 +1733,7 @@ async function downloadOfferedUpdate() {
 function downloadingNotice(version, info) {
   return {
     tone: noticeStore.INFO,
-    message: `Downloading Claw Desktop ${version}.`,
+    message: `Downloading ${chrome.APP_NAME} ${version}.`,
     detail: updates.transferDetail(info) || 'Starting the download.',
     dismissible: false,
     progress: updates.downloadProgress(info),
@@ -1752,7 +1783,7 @@ function onUpdateDownloaded(info) {
   // which costs more than the restart it was protecting.
   setNotice('update-available', {
     tone: noticeStore.OK,
-    message: `Claw Desktop ${info.version} is ready.`,
+    message: `${chrome.APP_NAME} ${info.version} is ready.`,
     detail: 'Install it now, or keep working and install it later.',
     action: { label: 'Install update', command: 'update-restart' },
   });
@@ -1860,14 +1891,14 @@ function showAbout() {
  */
 function menuCommands() {
   return {
-    about: { label: 'About Claw Desktop', click: () => showAbout() },
+    about: { label: `About ${chrome.APP_NAME}`, click: () => showAbout() },
     checkUpdates: { label: 'Check for updates…', click: () => { void checkForUpdates('manual'); } },
     releaseNotes: { label: 'Release notes', click: () => { void shell.openExternal(RELEASES_URL); } },
     settings: { label: 'Settings…', click: () => openSettings() },
     reload: { label: 'Reload', click: () => (settingsIsPage ? loadActiveGateway() : page()?.reload()) },
     reconnect: { label: 'Reconnect to gateway', click: () => loadActiveGateway() },
     clearCache: { label: 'Clear cache and reload', click: () => { void clearCacheAndReload(); } },
-    quit: { label: 'Quit Claw Desktop', click: () => { quitting = true; app.quit(); } },
+    quit: { label: `Quit ${chrome.APP_NAME}`, click: () => { quitting = true; app.quit(); } },
     zoomIn: { label: 'Zoom In', click: () => setZoom(0.5) },
     zoomOut: { label: 'Zoom Out', click: () => setZoom(-0.5) },
     actualSize: { label: 'Actual Size', click: () => setZoom(0, 0) },
@@ -1878,7 +1909,9 @@ function menuCommands() {
 function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(menus.template({
     platform: process.platform,
-    appName: app.name,
+    // chrome.APP_NAME, not app.name: app.name is pinned to the keychain
+    // identity above, which is deliberately not the name on the menu.
+    appName: chrome.APP_NAME,
     commands: menuCommands(),
   })));
 }
@@ -1888,7 +1921,7 @@ function buildMenu() {
 function buildTray() {
   if (!tray) {
     tray = new Tray(trayImage());
-    tray.setToolTip('Claw Desktop');
+    tray.setToolTip(chrome.APP_NAME);
     tray.on('click', () => (process.platform === 'darwin' ? tray.popUpContextMenu() : toggleMainWindow()));
     tray.on('double-click', showMainWindow);
   }
@@ -1897,7 +1930,7 @@ function buildTray() {
   // differ between the two places someone might reach for it.
   const cmd = menuCommands();
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Open Claw Desktop', click: showMainWindow },
+    { label: `Open ${chrome.APP_NAME}`, click: showMainWindow },
     // Only once there is genuinely something to install. A permanently present
     // "Install update" that usually does nothing teaches people to ignore it,
     // which is the opposite of what it is for.
@@ -1980,7 +2013,7 @@ function reportLaunchAtLogin() {
   else {
     setNotice('login-item', {
       tone: noticeStore.WARN,
-      message: 'Claw Desktop will not open at login.',
+      message: `${chrome.APP_NAME} will not open at login.`,
       detail: `${noticeStore.sentence(result.error)} The setting is saved, but the system refused it.`,
     });
   }
@@ -2346,14 +2379,14 @@ if (!app.requestSingleInstanceLock()) {
     // and the failed load becomes the app's own error page pointing at it.
     certs.install(app, {
       onOffer: (offer) => {
-        console.warn(`[claw] refused ${offer.changed ? 'CHANGED' : 'untrusted'} certificate for ${offer.host} (${offer.fingerprint})`);
+        console.warn(`[claw-desktop] refused ${offer.changed ? 'CHANGED' : 'untrusted'} certificate for ${offer.host} (${offer.fingerprint})`);
         refreshCertNotice();
         notifyStateChanged();
       },
     });
 
     if (!secrets.available()) {
-      console.warn(`[claw] ${secrets.unavailableReason()}`);
+      console.warn(`[claw-desktop] ${secrets.unavailableReason()}`);
       // True for the whole run and the reason saving a token appears to do
       // nothing, so it belongs on screen rather than in a log nobody reads.
       setNotice('secrets', {
@@ -2368,7 +2401,7 @@ if (!app.requestSingleInstanceLock()) {
     reportLaunchAtLogin();
 
     const shortcut = registerShortcut();
-    if (!shortcut.ok) console.warn(`[claw] global shortcut not registered: ${shortcut.error}`);
+    if (!shortcut.ok) console.warn(`[claw-desktop] global shortcut not registered: ${shortcut.error}`);
 
     initUpdates();
 
@@ -2377,7 +2410,7 @@ if (!app.requestSingleInstanceLock()) {
     // Before the first load, not after: clearing a service worker out from
     // under a page it is already controlling leaves that page on the old
     // bundle until something reloads it.
-    await clearOnAppUpgrade().catch((err) => console.warn(`[claw] cache clear failed: ${err.message}`));
+    await clearOnAppUpgrade().catch((err) => console.warn(`[claw-desktop] cache clear failed: ${err.message}`));
 
     createMainWindow();
 

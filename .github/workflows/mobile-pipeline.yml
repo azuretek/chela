@@ -1,4 +1,4 @@
-name: Claw mobile pipeline
+name: claw-mobile pipeline
 
 # The whole mobile pipeline in one file: version, test, release.
 #

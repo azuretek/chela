@@ -176,7 +176,7 @@ test('About carries the build identity, the update line and the runtime', () => 
     platform: 'win32',
     arch: 'x64',
   });
-  assert.equal(about.message, 'Claw Desktop');
+  assert.equal(about.message, 'Claw Control UI');
   assert.match(about.detail, /1\.0\.1-dev\.40\.00aeecf142 \(a1b2c3d4e5, built 2026-09-02 08:41Z\)/);
   assert.match(about.detail, /dev channel/);
   assert.match(about.detail, /Electron 44\.1\.1, Chromium 140\.0\.0\.0/);
