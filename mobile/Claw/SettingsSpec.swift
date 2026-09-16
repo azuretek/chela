@@ -95,6 +95,21 @@ enum SettingsSpec {
         ProcessInfo.processInfo.arguments.contains("-claw-settings-scroll-bottom")
     }
 
+    /// Whether this run should press the About page's Check for updates, from
+    /// `-claw-check-updates`.
+    ///
+    /// The same reasoning as `screenshotOpensAbout`, one step further on: a
+    /// simulator cannot be tapped, and the launch check is a BACKGROUND one, which
+    /// is deliberately silent when it finds nothing. So the direction the report
+    /// was about, "this build is current", is only ever drawn after a press, and
+    /// without this a screenshot run cannot reach it at all. It drives the real
+    /// command the page's button posts, `AboutHost.pressCheckForUpdates`, so what
+    /// is shown is the real answer to a real press rather than a seeded notice.
+    /// Compiled out of a release build, and inert without the argument.
+    static var screenshotChecksUpdates: Bool {
+        ProcessInfo.processInfo.arguments.contains("-claw-check-updates")
+    }
+
     /// Whether this run should drive the update check from a seeded feed rather
     /// than the network, from `-claw-seed-update-feed <version>`.
     ///
@@ -167,6 +182,7 @@ enum SettingsSpec {
     static var screenshotTab: String? { nil }
     static var screenshotOpensSettings: Bool { false }
     static var screenshotOpensAbout: Bool { false }
+    static var screenshotChecksUpdates: Bool { false }
     static var screenshotScrollsToBottom: Bool { false }
     static var screenshotSeedsUpdateFeed: Bool { false }
     static var screenshotUpdateFeedVersion: String? { nil }

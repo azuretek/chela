@@ -38,14 +38,27 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
     /// `closeOverlay('about')`.
     private let onClose: () -> Void
 
+    /// How a press on the page's Check for updates button builds its check.
+    ///
+    /// A closure rather than a check built here, because a screenshot run has to
+    /// hand the check a seeded feed and only the layer that knows whether this is
+    /// one can say so (see `SettingsSpec`). The default is the real check, which
+    /// is what a shipped build always gets.
+    private let makeCheck: () -> UpdateCheck
+
     /// The page's own web view, for delivering a reply or the one event it
     /// listens for. Weak, because the view owns the message handler's
     /// registration and not the other way round.
     weak var webView: WKWebView?
 
-    init(notices: NoticeBoard, onClose: @escaping () -> Void) {
+    init(
+        notices: NoticeBoard,
+        onClose: @escaping () -> Void,
+        makeCheck: (() -> UpdateCheck)? = nil
+    ) {
         self.notices = notices
         self.onClose = onClose
+        self.makeCheck = makeCheck ?? { UpdateCheck(board: notices) }
         super.init()
     }
 
@@ -131,6 +144,22 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
         webView?.evaluateJavaScript("window.__clawAboutEmit && window.__clawAboutEmit()")
     }
 
+    #if DEBUG
+    /// Press the page's Check for updates, for a screenshot run.
+    ///
+    /// A simulator cannot be tapped by a script, and without this the phone's
+    /// answer to a press cannot be seen at all: the launch check is a background
+    /// one, which stays silent when it finds nothing, so "this build is current"
+    /// is only ever drawn after a press. It runs the same command the page's own
+    /// button posts (`checkUpdates`), which is the route a tap takes, so what a
+    /// screenshot shows is the real answer rather than a seeded banner.
+    ///
+    /// DEBUG only, and inert without `-claw-check-updates`. See `SettingsSpec`.
+    func pressCheckForUpdates() async {
+        await run(id: nil, command: "checkUpdates", args: [])
+    }
+    #endif
+
     // MARK: The commands
 
     private func run(id: String?, command: String, args: [Any]) async {
@@ -140,11 +169,15 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
 
         case "checkUpdates":
             // The phone cannot install its own update, so a check is only ever a
-            // fresh look at the feed: it may raise the "a release exists" banner,
-            // which is the whole of what this platform does about one. Run the
-            // real check (the same one the launch runs), then tell the page to
-            // re-read so its status line stops saying "checking".
-            await UpdateCheck(board: notices).run()
+            // fresh look at the feed. A MANUAL trigger, like the desktop's
+            // `checkForUpdates('manual')`: this is a button somebody pressed, so
+            // an answer is owed in BOTH directions. It raises the standing "a
+            // release exists" banner when the feed names a newer build, and an
+            // "up to date" (or "could not check") notice when it does not, which
+            // is what stops the button from appearing to work and reporting
+            // nothing. Then the page is told to re-read so its status line stops
+            // saying "checking".
+            await makeCheck().run(trigger: .manual)
             emitChanged()
 
         case "openReleases":

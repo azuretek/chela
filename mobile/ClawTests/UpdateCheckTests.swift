@@ -91,7 +91,8 @@ final class UpdateCheckTests: XCTestCase {
     }
 
     /// A stable build has no feed yet (only dev is published), so the check does
-    /// not even fetch: it returns before touching the network.
+    /// not even fetch: it returns before touching the network. A BACKGROUND check,
+    /// so the stand-down is silent; the manual direction is asserted separately.
     func testAStableBuildDoesNotFetch() async throws {
         let board = board()
         var fetched = false
@@ -120,4 +121,130 @@ final class UpdateCheckTests: XCTestCase {
 
         XCTAssertEqual(board.all.count, first, "a re-announcement of the same version adds no second notice")
     }
+
+    /*
+     * The two directions of a PRESS.
+     *
+     * The bug behind these: the check ran, compared against the running build,
+     * and found a release, while the surface it was pressed on drew the banner
+     * underneath itself, so nothing was reported. And in the other direction a
+     * background check's silence was carried into a manual one, so pressing the
+     * button on a current build reported nothing at all. Both halves are asserted
+     * here rather than one, because one direction of proof is what let the silent
+     * half through.
+     */
+
+    /// A press on a build that is current is answered: it must never do nothing.
+    func testAManualCheckThatFindsNothingSaysSo() async throws {
+        let board = board()
+        let feed = atom("1.0.1-dev.148.abc1234567")
+        let check = UpdateCheck(board: board, currentVersion: "1.0.1-dev.148.abc1234567", fetch: { _ in feed })
+
+        await check.run(trigger: .manual)
+
+        let notice = try XCTUnwrap(
+            board.all.first { $0.id == UpdateCheck.answerNoticeId },
+            "a press on a current build must be answered"
+        )
+        XCTAssertEqual(notice.tone, NoticeTone.ok)
+        XCTAssertTrue(notice.message.contains("up to date"), notice.message)
+        XCTAssertEqual(notice.detail, "You are on 1.0.1-dev.148.abc1234567.")
+        XCTAssertNotNil(board.unread.first { $0.id == UpdateCheck.answerNoticeId }, "and it is drawn")
+        // The standing "a release exists" notice is not what answers this: there
+        // is no release, so it stays absent.
+        XCTAssertNil(board.all.first { $0.id == UpdateCheck.noticeId })
+    }
+
+    /// The other direction on the same path, so the two cannot drift apart: a
+    /// press that finds a newer build names it and points at TestFlight.
+    func testAManualCheckThatFindsANewerBuildNamesIt() async throws {
+        let board = board()
+        let feed = atom("1.0.1-dev.150.abc1234567")
+        let check = UpdateCheck(board: board, currentVersion: "1.0.1-dev.148.abc1234567", fetch: { _ in feed })
+
+        await check.run(trigger: .manual)
+
+        let notice = try XCTUnwrap(board.all.first { $0.id == UpdateCheck.noticeId }, "the update notice was not raised")
+        XCTAssertTrue(notice.message.contains("1.0.1-dev.150.abc1234567"), notice.message)
+        XCTAssertEqual(notice.detail, "You are on 1.0.1-dev.148.abc1234567. Open TestFlight to update.")
+        XCTAssertEqual(notice.action?.command, UpdateCheck.openTestFlightCommand)
+        // Answered rather than duplicated: the standing notice IS the answer here,
+        // so a separate "up to date" style reply must not sit beside it.
+        XCTAssertNil(board.all.first { $0.id == UpdateCheck.answerNoticeId })
+    }
+
+    /// A press the feed could not be read for is still answered, as a warning.
+    func testAManualCheckThatCouldNotFinishSaysSo() async throws {
+        let board = board()
+        struct Offline: Error {}
+        let check = UpdateCheck(board: board, currentVersion: "1.0.1-dev.148.abc1234567", fetch: { _ in throw Offline() })
+
+        await check.run(trigger: .manual)
+
+        let notice = try XCTUnwrap(board.all.first { $0.id == UpdateCheck.answerNoticeId })
+        XCTAssertEqual(notice.tone, NoticeTone.warn, "a check that could not finish is not good news")
+        XCTAssertTrue(notice.message.contains("Could not check for updates"), notice.message)
+    }
+
+    /// A build with no feed to read answers the press with why, rather than
+    /// standing down silently as it does for its own background check.
+    func testAStableBuildAnswersAPressWithWhy() async throws {
+        let board = board()
+        var fetched = false
+        let check = UpdateCheck(board: board, currentVersion: "1.0.1", fetch: { _ in
+            fetched = true
+            return self.atom("2.0.0")
+        })
+
+        await check.run(trigger: .manual)
+
+        XCTAssertFalse(fetched, "a stable build has no feed to read, so nothing is fetched")
+        let notice = try XCTUnwrap(board.all.first { $0.id == UpdateCheck.answerNoticeId })
+        XCTAssertEqual(notice.tone, NoticeTone.info)
+        XCTAssertTrue(notice.message.contains("Updates are not available"), notice.message)
+    }
+
+    /// The answer is a reply rather than a standing condition, so it takes itself
+    /// away. The standing update notice is the opposite and is never timed out:
+    /// losing it would mean waiting for the next check to hear about a build that
+    /// is already published.
+    func testTheAnswerIsShortLivedAndTheStandingNoticeIsNot() async throws {
+        let board = board()
+        let feed = atom("1.0.1-dev.148.abc1234567")
+        let check = UpdateCheck(board: board, currentVersion: "1.0.1-dev.148.abc1234567", fetch: { _ in feed })
+
+        await check.run(trigger: .manual)
+        XCTAssertNotNil(board.all.first { $0.id == UpdateCheck.answerNoticeId })
+        XCTAssertGreaterThan(UpdateCheck.answerTtlMs, 0)
+
+        try await Task.sleep(nanoseconds: UInt64(UpdateCheck.answerTtlMs) * 1_000_000 + 400_000_000)
+        XCTAssertNil(board.all.first { $0.id == UpdateCheck.answerNoticeId }, "the reply takes itself away")
+    }
+
+    #if DEBUG
+    /// The feed a screenshot run hands the check has to be a document the reader
+    /// actually reads.
+    ///
+    /// This is the bug that made the report what it was, one layer under the
+    /// notice: the seeded body was a one-line JSON object and `UpdateFeed.decode`
+    /// parses Atom, so the document failed to parse, the check answered nothing and
+    /// the banner stayed empty. Nothing about that is visible in a screenshot of an
+    /// empty banner, so it is asserted here: the seeded document decodes, the
+    /// version inside it is the one the check reports, and a seeded feed naming this
+    /// build is the no-update case which is what lets the two screenshots differ by
+    /// the launch argument alone.
+    func testTheSeededScreenshotFeedIsADocumentTheReaderReads() throws {
+        let newer = "1.0.1-dev.150.abc1234567"
+        let current = "1.0.1-dev.148.abc1234567"
+
+        let document = try XCTUnwrap(UpdateFeed.decode(UpdateCheck.seededFeed(advertising: newer)),
+                                     "the seeded feed must decode as the reader's own document")
+        XCTAssertEqual(try UpdateFeed.newerVersion(in: document, current: current), newer,
+                       "and a newer version in it must read as newer")
+
+        let matching = try XCTUnwrap(UpdateFeed.decode(UpdateCheck.seededFeed(advertising: current)))
+        XCTAssertNil(try UpdateFeed.newerVersion(in: matching, current: current),
+                     "a seeded feed naming this build is the no-update case")
+    }
+    #endif
 }
