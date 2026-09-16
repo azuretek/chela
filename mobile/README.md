@@ -111,18 +111,26 @@ An icon set with no image in it is the failure this replaced, and it is worth
 knowing why it is easy to miss: it compiles, signs, exports and uploads without
 a single warning, and App Store Connect is the first thing to object, as
 `ITMS-90713` (no `CFBundleIconName`) and `ITMS-90022` (no 120x120 rendition).
-The archive step of `mobile-release.yml` therefore asserts both halves before
+The archive step of the release job therefore asserts both halves before
 anything is uploaded: that `CFBundleIconName` is in the built plist, under
 either the top level or `CFBundleIcons`, and that the compiled `Assets.car`
 really holds an icon of that name.
 
-## Releasing to TestFlight
+## Testing and releasing to TestFlight
 
-`.github/workflows/mobile-release.yml` builds the client for a device, signs it
-with cloud managed signing, and uploads it to TestFlight. Pushing to `main`
-touching `mobile/` or `core/` makes a dev build; a `v*` tag makes a release; a
-manual dispatch makes a dev build of any ref. `mobile.yml` remains the
-credential-free compile-and-test half and never signs anything.
+`.github/workflows/mobile-pipeline.yml` is the whole mobile pipeline in one
+file, and the only one that owns it: version, then a test leg per iOS version,
+then release. Pushing to `main` touching `mobile/` or `core/` tests the commit
+and uploads a dev build; a `v*` tag makes a release; a manual dispatch makes a
+dev build of any ref; a pull request runs the test legs only, needs no Apple
+credential and never signs anything.
+
+The release job needs the test matrix, so a failing leg cannot produce a
+TestFlight build. The legs build for the simulator and the release archives for
+a device, so there is no build to share between them: what is shared is within a
+leg, where the compile gate and the test run use one `build-for-testing` product
+through `test-without-building`, and within the release job, where the single
+archive is verified, exported and uploaded without being rebuilt.
 
 TestFlight is the channel for both kinds of build, so the two differ only in
 what they may do once they arrive: a dev build is internal-testing-only and a
