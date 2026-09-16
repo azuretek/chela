@@ -596,6 +596,10 @@ label.check .stack span:last-child { color: var(--muted); font-size: 12px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
 .empty { color: var(--muted); font-style: italic; }
 .actions { display: flex; gap: 8px; margin-top: 14px; }
+/* The one action on the "looking for the gateway's settings?" card, spaced from
+   the blurb above it. A class rather than a style attribute because this page's
+   CSP sets `style-src 'self'`, which applies to style attributes too. */
+.control-ui-settings__action { margin-top: 12px; }
 /* The message dialog renders its buttons reversed so the default lands at the
    trailing edge, which is where all three platforms put it. */
 .actions--end { justify-content: flex-end; margin-top: 18px; }
