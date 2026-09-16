@@ -167,20 +167,27 @@ final class PromptMetadataParityTests: XCTestCase {
         let lines = block.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
 
         XCTAssertEqual(lines.first, "Mobile client context: \u{27E6}openclaw:ctx\u{27E7}")
-        // Header, then the framing lines, then the fields.
+        // Header, then the framing lines, then the fields, then the closing.
         let framing = PromptMetadata.framing
+        let closing = PromptMetadata.closing
         XCTAssertGreaterThanOrEqual(framing.count, 1, "expected framing that tells the model what the block is")
+        XCTAssertGreaterThanOrEqual(closing.count, 1, "expected a closing line that marks the end of the context")
         XCTAssertEqual(Array(lines[1..<(1 + framing.count)]), framing, "framing sits between the header and the fields")
-        let fieldLines = Array(lines.dropFirst(1 + framing.count))
+        let fieldLines = Array(lines.dropFirst(1 + framing.count).dropLast(closing.count))
         XCTAssertEqual(
             fieldLines.map { $0.split(separator: ":")[0] },
             ["host", "os", "locale", "timezone", "client"],
             "the fields follow the spec's order, and the ones it cannot answer are absent"
         )
+        XCTAssertEqual(Array(lines.suffix(closing.count)), closing, "the closing lines are the last lines in the block")
         XCTAssertEqual(lines.filter { $0.contains(PromptMetadata.marker) }.count, 1, "one header, always")
         for line in framing {
             XCTAssertFalse(line.hasSuffix(PromptMetadata.marker), "a framing line must not read as a header")
             XCTAssertFalse(line.trimmingCharacters(in: .whitespaces).isEmpty, "a blank framing line would end the block early")
+        }
+        for line in closing {
+            XCTAssertFalse(line.hasSuffix(PromptMetadata.marker), "a closing line must not read as a header")
+            XCTAssertFalse(line.trimmingCharacters(in: .whitespaces).isEmpty, "a blank closing line would end the block early")
         }
     }
 

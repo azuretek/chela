@@ -31,6 +31,7 @@ enum PromptMetadata {
         let marker: String
         let headers: [String: String]
         let framing: [String]
+        let closing: [String]
         let fields: [String]
         let maxValueLength: Int
         let fallback: String
@@ -42,7 +43,7 @@ enum PromptMetadata {
 
     private static func loadSpec() -> Spec {
         let empty = Spec(
-            marker: "", headers: [:], framing: [], fields: [],
+            marker: "", headers: [:], framing: [], closing: [], fields: [],
             maxValueLength: 0, fallback: "", global: "", hook: [],
         )
         guard let url = Bundle.main.url(forResource: "prompt-metadata", withExtension: "json"),
@@ -73,6 +74,15 @@ enum PromptMetadata {
     /// header ending with the marker and runs to the first blank line, so
     /// framing kept above that blank line is stripped from the user's view too.
     static var framing: [String] { spec.framing }
+
+    /// The closing lines that sit at the END of the block, after the last field
+    /// and before the terminating blank line. They mark where the context ends
+    /// and the user's own words begin, so the model cannot blur the boundary.
+    /// Inside the block on purpose, same as the framing: the stripper runs from
+    /// the header to the first blank line, so a closing line kept above that
+    /// blank line is stripped from the user's view. A closing line placed AFTER
+    /// the blank line would instead be part of the visible user message.
+    static var closing: [String] { spec.closing }
 
     // MARK: - The block
 
@@ -136,6 +146,7 @@ enum PromptMetadata {
             guard let value = metadata[field] else { continue }
             lines.append("\(field): \(clean(value))")
         }
+        lines += spec.closing
         return lines.joined(separator: "\n")
     }
 

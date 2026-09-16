@@ -11,7 +11,7 @@ import {
 // one part that is honestly platform-specific, gathering this machine's facts
 // with Node's `os` rather than UIKit.
 export {
-  CONTEXT_MARKER, FIELD_ORDER, FRAMING, MAX_VALUE_LENGTH, DEFAULT_CLIENT,
+  CONTEXT_MARKER, FIELD_ORDER, FRAMING, CLOSING, MAX_VALUE_LENGTH, DEFAULT_CLIENT,
   contextHeader, clientIdentity, clean, formatBlock, shouldInject, inject,
   transformFrame, hookSource, clientScript,
 } from '../../core/prompt-metadata.js';

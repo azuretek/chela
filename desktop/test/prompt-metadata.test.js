@@ -51,9 +51,10 @@ test('the block is bounded, single-line per field, and cannot forge a header', (
   const lines = block.split('\n');
   // Only the first line carries the marker, so nothing in a value can extend the block.
   assert.strictEqual(lines.filter((line) => line.includes(MARKER)).length, 1);
-  // Header, then the framing lines, then the fields. The value lines are what a
-  // value could corrupt, so they are what this checks.
-  const fieldLines = lines.slice(1 + metadata.FRAMING.length);
+  // Header, then the framing lines, then the fields, then the closing. The value
+  // lines are what a value could corrupt, so they are what this checks, with the
+  // closing lines sliced back off the end.
+  const fieldLines = lines.slice(1 + metadata.FRAMING.length, lines.length - metadata.CLOSING.length);
   assert.deepStrictEqual(
     fieldLines.map((line) => line.split(':')[0]),
     ['host', 'os', 'user', 'home', 'locale', 'timezone', 'client'],
@@ -76,6 +77,25 @@ test('the framing sits between the header and the fields and survives stripping'
     assert.ok(metadata.FRAMING[i].trim() !== '', 'a blank framing line would end the block early');
     assert.ok(!metadata.FRAMING[i].endsWith(MARKER), 'a framing line must not read as a header');
   }
+});
+
+test('the closing line ends the block, after the fields and before the blank line', () => {
+  assert.ok(metadata.CLOSING.length >= 1, 'expected a closing line that marks the end of the context');
+  const block = sampleBlock();
+  const lines = block.split('\n');
+  // The closing lines are the last lines of the block. Placed here, inside the
+  // block, they are stripped along with everything else; placed AFTER the blank
+  // line inject() adds, they would be part of the visible message instead.
+  assert.deepStrictEqual(lines.slice(lines.length - metadata.CLOSING.length), metadata.CLOSING);
+  for (const line of metadata.CLOSING) {
+    assert.ok(line.trim() !== '', 'a blank closing line would end the block early');
+    assert.ok(!line.endsWith(MARKER), 'a closing line must not read as a header');
+  }
+  // inject() puts the blank line AFTER the block, so every closing line sits
+  // strictly before it, which is the whole point of ending the block with it.
+  const injected = metadata.inject('hello', block);
+  const afterBlank = injected.slice(injected.indexOf('\n\n') + 2);
+  assert.strictEqual(afterBlank, 'hello', 'nothing of the block, closing line included, leaks past the blank line');
 });
 
 test('a value carrying the marker is neutralised instead of adding a second header', () => {

@@ -37,6 +37,18 @@ export const FIELD_ORDER = spec.fields;
  */
 export const FRAMING = spec.framing || [];
 
+/**
+ * The closing lines that sit at the END of the block, after the last field and
+ * before the terminating blank line. They mark where the context ends and the
+ * user's own words begin, so the model cannot blur the boundary. Inside the
+ * block on purpose, same as the framing: the stripper runs from the header to
+ * the first blank line, so a closing line kept above that blank line is stripped
+ * from the user's view. A closing line placed AFTER the blank line would instead
+ * become part of the visible user message, which is the failure this ordering
+ * exists to avoid.
+ */
+export const CLOSING = spec.closing || [];
+
 /** The longest a single machine-controlled value may be inside the block. */
 export const MAX_VALUE_LENGTH = spec.maxValueLength;
 
@@ -96,6 +108,7 @@ export function formatBlock(metadata, client = DEFAULT_CLIENT) {
     if (value === undefined || value === null) continue;
     lines.push(`${field}: ${clean(value)}`);
   }
+  lines.push(...CLOSING);
   return lines.join('\n');
 }
 
