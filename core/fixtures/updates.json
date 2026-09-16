@@ -37,6 +37,16 @@
       "output": { "action": "notify", "check": true, "autoDownload": false, "canInstall": false }
     },
     {
+      "name": "ios cannot install its own update, so it announces and hands off",
+      "input": { "platform": "ios", "packaged": true },
+      "output": { "action": "notify", "check": true, "autoDownload": false, "canInstall": false }
+    },
+    {
+      "name": "ios from source does not check at all",
+      "input": { "platform": "ios", "packaged": false },
+      "output": { "action": "none", "check": false, "autoDownload": false, "canInstall": false }
+    },
+    {
       "name": "win32 with automatic updates turned off narrows install to manual",
       "input": { "platform": "win32", "packaged": true, "autoUpdate": false },
       "output": { "action": "manual", "check": true, "autoDownload": false, "canInstall": true }
@@ -60,6 +70,11 @@
       "name": "linux outside an AppImage with automatic updates turned off is unchanged",
       "input": { "platform": "linux", "packaged": true, "appImage": false, "autoUpdate": false },
       "output": { "action": "notify", "check": false, "autoDownload": false, "canInstall": false }
+    },
+    {
+      "name": "ios with automatic updates turned off is unchanged, and never becomes manual",
+      "input": { "platform": "ios", "packaged": true, "autoUpdate": false },
+      "output": { "action": "notify", "check": true, "autoDownload": false, "canInstall": false }
     },
     {
       "name": "a source run stays none even with automatic updates turned off",
