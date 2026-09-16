@@ -26,13 +26,18 @@ enum AppSettingsAffordance {
         let configGlobal: String
         let marker: String
         let anchors: [String: String]
+        /// The Control UI route the script may hand the reader to when there is no
+        /// control to press, read from the same spec as the anchors. Decoded by
+        /// NAME rather than mirrored in Swift, because it is a path the Control UI
+        /// owns and a second copy could be wrong the day upstream moves a route.
+        let routes: [String: String]?
         let script: [String]
     }
 
     private static let spec: Spec = loadSpec()
 
     private static func loadSpec() -> Spec {
-        let empty = Spec(global: "", configGlobal: "", marker: "", anchors: [:], script: [])
+        let empty = Spec(global: "", configGlobal: "", marker: "", anchors: [:], routes: nil, script: [])
         guard let url = Bundle.main.url(forResource: "app-settings-affordance", withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let spec = try? JSONDecoder().decode(Spec.self, from: data),
@@ -75,6 +80,10 @@ enum AppSettingsAffordance {
             "label": "App settings",
             "tooltip": "\(Naming.product) settings",
             "anchors": spec.anchors,
+            // The same two things the desktop's configStatement() hands over, from
+            // the same spec: the anchors, and the Control UI's own route for the
+            // destination its settings entry opens.
+            "routes": spec.routes ?? [String: String](),
             "tokens": [String: String](),
         ]
     }
