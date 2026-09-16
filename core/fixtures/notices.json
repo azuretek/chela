@@ -1,0 +1,816 @@
+{
+  "description": "sentence() and the keyed notice store as golden pairs. Both clients reproduce these: core/test/fixtures.test.js asserts them against core/notices.js, and mobile/ClawTests/NoticesParityTests.swift asserts them against the Swift port. Regenerate is manual; this pins the four tones, their rank, the replace-don't-stack rule and the read/clear split.",
+  "tones": {
+    "error": "error",
+    "warn": "warn",
+    "info": "info",
+    "ok": "ok"
+  },
+  "rank": {
+    "error": 0,
+    "warn": 1,
+    "info": 2,
+    "ok": 3
+  },
+  "sentence": [
+    {
+      "input": null,
+      "output": ""
+    },
+    {
+      "input": "",
+      "output": ""
+    },
+    {
+      "input": "   ",
+      "output": ""
+    },
+    {
+      "input": "a",
+      "output": "A."
+    },
+    {
+      "input": "already done.",
+      "output": "Already done."
+    },
+    {
+      "input": "refused",
+      "output": "Refused."
+    },
+    {
+      "input": "running from source",
+      "output": "Running from source."
+    },
+    {
+      "input": "ERROR_CODE_42",
+      "output": "ERROR_CODE_42."
+    },
+    {
+      "input": "cannot connect to example-host",
+      "output": "Cannot connect to example-host."
+    },
+    {
+      "input": "what?",
+      "output": "What?"
+    },
+    {
+      "input": "ok: yes",
+      "output": "Ok: yes."
+    },
+    {
+      "input": "x;",
+      "output": "X;"
+    },
+    {
+      "input": "  padded  ",
+      "output": "Padded."
+    },
+    {
+      "input": "UPPER",
+      "output": "UPPER."
+    },
+    {
+      "input": "multi\nline",
+      "output": "Multi\nline."
+    },
+    {
+      "input": "Trailing space ",
+      "output": "Trailing space."
+    }
+  ],
+  "store": [
+    {
+      "name": "raising the same id twice replaces rather than stacks",
+      "ops": [
+        {
+          "op": "set",
+          "id": "connection",
+          "notice": {
+            "tone": "error",
+            "message": "Cannot connect",
+            "detail": "Refused",
+            "action": {
+              "label": "Open Settings",
+              "command": "settings"
+            }
+          }
+        },
+        {
+          "op": "set",
+          "id": "connection",
+          "notice": {
+            "tone": "error",
+            "message": "Still cannot connect",
+            "detail": "Timed out",
+            "action": {
+              "label": "Open Settings",
+              "command": "settings"
+            }
+          }
+        }
+      ],
+      "returns": [
+        true,
+        true
+      ],
+      "expect": {
+        "size": 1,
+        "list": [
+          "connection"
+        ],
+        "unread": [
+          "connection"
+        ],
+        "notice": {
+          "connection": {
+            "tone": "error",
+            "message": "Still cannot connect",
+            "detail": "Timed out",
+            "dismissible": true,
+            "progress": null,
+            "action": {
+              "label": "Open Settings",
+              "command": "settings"
+            },
+            "read": false
+          }
+        }
+      }
+    },
+    {
+      "name": "an identical notice reports no change, so the banner does not re-render",
+      "ops": [
+        {
+          "op": "set",
+          "id": "shortcut",
+          "notice": {
+            "tone": "warn",
+            "message": "A global shortcut is not active",
+            "detail": "Frobnicate+Zz"
+          }
+        },
+        {
+          "op": "set",
+          "id": "shortcut",
+          "notice": {
+            "tone": "warn",
+            "message": "A global shortcut is not active",
+            "detail": "Frobnicate+Zz"
+          }
+        }
+      ],
+      "returns": [
+        true,
+        false
+      ],
+      "expect": {
+        "size": 1,
+        "list": [
+          "shortcut"
+        ],
+        "unread": [
+          "shortcut"
+        ],
+        "notice": {
+          "shortcut": {
+            "tone": "warn",
+            "message": "A global shortcut is not active",
+            "detail": "Frobnicate+Zz",
+            "dismissible": true,
+            "progress": null,
+            "action": null,
+            "read": false
+          }
+        }
+      }
+    },
+    {
+      "name": "a changed action is a change even when the message is not",
+      "ops": [
+        {
+          "op": "set",
+          "id": "update",
+          "notice": {
+            "tone": "info",
+            "message": "Update available",
+            "action": {
+              "label": "Download",
+              "command": "update-download"
+            }
+          }
+        },
+        {
+          "op": "set",
+          "id": "update",
+          "notice": {
+            "tone": "info",
+            "message": "Update available",
+            "action": {
+              "label": "Install",
+              "command": "update-install"
+            }
+          }
+        }
+      ],
+      "returns": [
+        true,
+        true
+      ],
+      "expect": {
+        "size": 1,
+        "list": [
+          "update"
+        ],
+        "unread": [
+          "update"
+        ],
+        "notice": {
+          "update": {
+            "tone": "info",
+            "message": "Update available",
+            "detail": null,
+            "dismissible": true,
+            "progress": null,
+            "action": {
+              "label": "Install",
+              "command": "update-install"
+            },
+            "read": false
+          }
+        }
+      }
+    },
+    {
+      "name": "progress is part of the notice, so a download can move it",
+      "ops": [
+        {
+          "op": "set",
+          "id": "download",
+          "notice": {
+            "tone": "info",
+            "message": "Downloading",
+            "progress": 0.25,
+            "dismissible": false
+          }
+        },
+        {
+          "op": "set",
+          "id": "download",
+          "notice": {
+            "tone": "info",
+            "message": "Downloading",
+            "progress": 0.5,
+            "dismissible": false
+          }
+        }
+      ],
+      "returns": [
+        true,
+        true
+      ],
+      "expect": {
+        "size": 1,
+        "list": [
+          "download"
+        ],
+        "unread": [
+          "download"
+        ],
+        "notice": {
+          "download": {
+            "tone": "info",
+            "message": "Downloading",
+            "detail": null,
+            "dismissible": false,
+            "progress": 0.5,
+            "action": null,
+            "read": false
+          }
+        }
+      }
+    },
+    {
+      "name": "an omitted tone is stored as the error it raised",
+      "ops": [
+        {
+          "op": "set",
+          "id": "bare",
+          "notice": {
+            "message": "Something went wrong"
+          }
+        }
+      ],
+      "returns": [
+        true
+      ],
+      "expect": {
+        "size": 1,
+        "list": [
+          "bare"
+        ],
+        "unread": [
+          "bare"
+        ],
+        "notice": {
+          "bare": {
+            "tone": "error",
+            "message": "Something went wrong",
+            "detail": null,
+            "dismissible": true,
+            "progress": null,
+            "action": null,
+            "read": false
+          }
+        }
+      }
+    },
+    {
+      "name": "the list is worst first, then oldest first within a tone",
+      "ops": [
+        {
+          "op": "set",
+          "id": "good",
+          "notice": {
+            "tone": "ok",
+            "message": "Connected"
+          }
+        },
+        {
+          "op": "set",
+          "id": "bad1",
+          "notice": {
+            "tone": "error",
+            "message": "First failure"
+          }
+        },
+        {
+          "op": "set",
+          "id": "meh",
+          "notice": {
+            "tone": "warn",
+            "message": "Warning"
+          }
+        },
+        {
+          "op": "set",
+          "id": "bad2",
+          "notice": {
+            "tone": "error",
+            "message": "Second failure"
+          }
+        },
+        {
+          "op": "set",
+          "id": "fyi",
+          "notice": {
+            "tone": "info",
+            "message": "Informational"
+          }
+        }
+      ],
+      "returns": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "expect": {
+        "size": 5,
+        "list": [
+          "bad1",
+          "bad2",
+          "meh",
+          "fyi",
+          "good"
+        ],
+        "unread": [
+          "bad1",
+          "bad2",
+          "meh",
+          "fyi",
+          "good"
+        ],
+        "notice": {
+          "bad1": {
+            "tone": "error",
+            "message": "First failure",
+            "detail": null,
+            "dismissible": true,
+            "progress": null,
+            "action": null,
+            "read": false
+          },
+          "bad2": {
+            "tone": "error",
+            "message": "Second failure",
+            "detail": null,
+            "dismissible": true,
+            "progress": null,
+            "action": null,
+            "read": false
+          },
+          "meh": {
+            "tone": "warn",
+            "message": "Warning",
+            "detail": null,
+            "dismissible": true,
+            "progress": null,
+            "action": null,
+            "read": false
+          },
+          "fyi": {
+            "tone": "info",
+            "message": "Informational",
+            "detail": null,
+            "dismissible": true,
+            "progress": null,
+            "action": null,
+            "read": false
+          },
+          "good": {
+            "tone": "ok",
+            "message": "Connected",
+            "detail": null,
+            "dismissible": true,
+            "progress": null,
+            "action": null,
+            "read": false
+          }
+        }
+      }
+    },
+    {
+      "name": "the order a notice keeps is the one it first had",
+      "ops": [
+        {
+          "op": "set",
+          "id": "first",
+          "notice": {
+            "tone": "warn",
+            "message": "One"
+          }
+        },
+        {
+          "op": "set",
+          "id": "second",
+          "notice": {
+            "tone": "warn",
+            "message": "Two"
+          }
+        },
+        {
+          "op": "set",
+          "id": "first",
+          "notice": {
+            "tone": "warn",
+            "message": "One again"
+          }
+        }
+      ],
+      "returns": [
+        true,
+        true,
+        true
+      ],
+      "expect": {
+        "size": 2,
+        "list": [
+          "first",
+          "second"
+        ],
+        "unread": [
+          "first",
+          "second"
+        ],
+        "notice": {
+          "first": {
+            "tone": "warn",
+            "message": "One again",
+            "detail": null,
+            "dismissible": true,
+            "progress": null,
+            "action": null,
+            "read": false
+          },
+          "second": {
+            "tone": "warn",
+            "message": "Two",
+            "detail": null,
+            "dismissible": true,
+            "progress": null,
+            "action": null,
+            "read": false
+          }
+        }
+      }
+    },
+    {
+      "name": "reading takes a notice out of unread and leaves it in the store",
+      "ops": [
+        {
+          "op": "set",
+          "id": "shortcut",
+          "notice": {
+            "tone": "warn",
+            "message": "Refused"
+          }
+        },
+        {
+          "op": "markRead",
+          "id": "shortcut"
+        }
+      ],
+      "returns": [
+        true,
+        true
+      ],
+      "expect": {
+        "size": 1,
+        "list": [
+          "shortcut"
+        ],
+        "unread": [],
+        "notice": {
+          "shortcut": {
+            "tone": "warn",
+            "message": "Refused",
+            "detail": null,
+            "dismissible": true,
+            "progress": null,
+            "action": null,
+            "read": true
+          }
+        }
+      }
+    },
+    {
+      "name": "a notice that changes after being read is unread again",
+      "ops": [
+        {
+          "op": "set",
+          "id": "connection",
+          "notice": {
+            "tone": "error",
+            "message": "Down"
+          }
+        },
+        {
+          "op": "markRead",
+          "id": "connection"
+        },
+        {
+          "op": "set",
+          "id": "connection",
+          "notice": {
+            "tone": "error",
+            "message": "Still down"
+          }
+        }
+      ],
+      "returns": [
+        true,
+        true,
+        true
+      ],
+      "expect": {
+        "size": 1,
+        "list": [
+          "connection"
+        ],
+        "unread": [
+          "connection"
+        ],
+        "notice": {
+          "connection": {
+            "tone": "error",
+            "message": "Still down",
+            "detail": null,
+            "dismissible": true,
+            "progress": null,
+            "action": null,
+            "read": false
+          }
+        }
+      }
+    },
+    {
+      "name": "marking all read skips a notice that cannot be dismissed",
+      "ops": [
+        {
+          "op": "set",
+          "id": "download",
+          "notice": {
+            "tone": "info",
+            "message": "Update downloaded",
+            "dismissible": false
+          }
+        },
+        {
+          "op": "set",
+          "id": "connection",
+          "notice": {
+            "tone": "error",
+            "message": "Cannot connect"
+          }
+        },
+        {
+          "op": "markAllRead"
+        }
+      ],
+      "returns": [
+        true,
+        true,
+        true
+      ],
+      "expect": {
+        "size": 2,
+        "list": [
+          "connection",
+          "download"
+        ],
+        "unread": [
+          "download"
+        ],
+        "notice": {
+          "connection": {
+            "tone": "error",
+            "message": "Cannot connect",
+            "detail": null,
+            "dismissible": true,
+            "progress": null,
+            "action": null,
+            "read": true
+          },
+          "download": {
+            "tone": "info",
+            "message": "Update downloaded",
+            "detail": null,
+            "dismissible": false,
+            "progress": null,
+            "action": null,
+            "read": false
+          }
+        }
+      }
+    },
+    {
+      "name": "marking all read a second time reports no change",
+      "ops": [
+        {
+          "op": "set",
+          "id": "connection",
+          "notice": {
+            "tone": "error",
+            "message": "Cannot connect"
+          }
+        },
+        {
+          "op": "markAllRead"
+        },
+        {
+          "op": "markAllRead"
+        }
+      ],
+      "returns": [
+        true,
+        true,
+        false
+      ],
+      "expect": {
+        "size": 1,
+        "list": [
+          "connection"
+        ],
+        "unread": [],
+        "notice": {
+          "connection": {
+            "tone": "error",
+            "message": "Cannot connect",
+            "detail": null,
+            "dismissible": true,
+            "progress": null,
+            "action": null,
+            "read": true
+          }
+        }
+      }
+    },
+    {
+      "name": "clearing answers whether the condition was there",
+      "ops": [
+        {
+          "op": "set",
+          "id": "connection",
+          "notice": {
+            "tone": "error",
+            "message": "Cannot connect"
+          }
+        },
+        {
+          "op": "clear",
+          "id": "connection"
+        },
+        {
+          "op": "clear",
+          "id": "connection"
+        }
+      ],
+      "returns": [
+        true,
+        true,
+        false
+      ],
+      "expect": {
+        "size": 0,
+        "list": [],
+        "unread": [],
+        "notice": {}
+      }
+    },
+    {
+      "name": "reading an id that was never raised changes nothing",
+      "ops": [
+        {
+          "op": "set",
+          "id": "connection",
+          "notice": {
+            "tone": "error",
+            "message": "Cannot connect"
+          }
+        },
+        {
+          "op": "markRead",
+          "id": "nowhere"
+        }
+      ],
+      "returns": [
+        true,
+        false
+      ],
+      "expect": {
+        "size": 1,
+        "list": [
+          "connection"
+        ],
+        "unread": [
+          "connection"
+        ],
+        "notice": {
+          "connection": {
+            "tone": "error",
+            "message": "Cannot connect",
+            "detail": null,
+            "dismissible": true,
+            "progress": null,
+            "action": null,
+            "read": false
+          }
+        }
+      }
+    },
+    {
+      "name": "an action is kept as its label and command only",
+      "ops": [
+        {
+          "op": "set",
+          "id": "update",
+          "notice": {
+            "tone": "ok",
+            "message": "Update ready",
+            "action": {
+              "label": "Restart",
+              "command": "update-restart"
+            }
+          }
+        }
+      ],
+      "returns": [
+        true
+      ],
+      "expect": {
+        "size": 1,
+        "list": [
+          "update"
+        ],
+        "unread": [
+          "update"
+        ],
+        "notice": {
+          "update": {
+            "tone": "ok",
+            "message": "Update ready",
+            "detail": null,
+            "dismissible": true,
+            "progress": null,
+            "action": {
+              "label": "Restart",
+              "command": "update-restart"
+            },
+            "read": false
+          }
+        }
+      }
+    }
+  ]
+}

@@ -46,14 +46,29 @@ import SwiftUI
 /// and this view paints with it. Without that the strips would be the window's
 /// colour, and the page would look like it stopped short of the bottom rather
 /// than like it filled the screen and inset its own content.
+///
+/// ## The notice banner
+///
+/// The notices this client raises are drawn here, as a native SwiftUI overlay
+/// above the page rather than as anything the page has to render: a notice is our
+/// condition to report, and it has to be visible while the page is broken or
+/// absent, which is exactly when the connection notice goes up. An overlay does
+/// not change the page's layout, so the Control UI keeps every pixel of the safe
+/// area it lays itself out in.
 struct ContentView: View {
     /// Starts as the system background, which is what shows for the first frame,
     /// before the page has a document to read a colour out of.
     @State private var themeColour = Color(uiColor: .systemBackground)
 
+    /// The one live board. `NoticeBoard.live()` is a plain board in a release
+    /// build and a seeded one under `-claw-seed-notices`, which is how the tones
+    /// nobody can otherwise reach are rendered for a screenshot.
+    @StateObject private var notices = NoticeBoard.live()
+
     var body: some View {
-        WebView(url: Gateway.default.url, themeColour: $themeColour)
+        WebView(url: Gateway.default.url, themeColour: $themeColour, notices: notices)
             .background(themeColour)
+            .overlay(alignment: .top) { NoticeStack(board: notices) }
     }
 }
 
