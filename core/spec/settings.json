@@ -122,6 +122,7 @@
     { "id": "connect", "clients": ["desktop", "ios"] },
     { "id": "saveSettings", "clients": ["desktop", "ios"] },
     { "id": "closeSettings", "clients": ["desktop", "ios"], "note": "Where the sheet goes. The desktop closes the overlay it opened the page in; iOS dismisses the sheet." },
+    { "id": "openAbout", "clients": ["desktop", "ios"], "note": "Opens the shared About page (core/ui/about.html), which the menu bar can no longer reach on a platform without one: iOS has no menu bar, and the Windows desktop hides its behind Alt. The desktop reuses showAbout(), the same overlay path the menu and tray already open; iOS presents the same page in a sheet. It adds a route to About rather than a second copy of it, and it does not remove the macOS menu route, where a menu bar does exist." },
     { "id": "addHeader", "clients": ["desktop"] },
     { "id": "removeHeader", "clients": ["desktop"] },
     { "id": "trustCert", "clients": ["desktop"] },

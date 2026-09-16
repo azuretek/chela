@@ -621,6 +621,19 @@ function renderControlUiSettingsLink() {
   card.hidden = firstRun || !hasCommand('closeSettings');
 }
 
+// The About card on the Behaviour tab. Shown when this client's host answers
+// `openAbout`, hidden otherwise, exactly like the Control-UI card above: a
+// button that reaches a command the host does not implement is a button that
+// does nothing, so it is the command's presence that decides whether the card
+// appears. Not gated on firstRun: the About page answers "which build is this?"
+// during setup as much as after it, which is why the line at the foot of this
+// page is outside #prefs too.
+function renderAboutEntry() {
+  const card = $('about-entry');
+  if (!card) return;
+  card.hidden = !hasCommand('openAbout');
+}
+
 function renderAbout() {
   const head = [state.appName, state.build].filter(Boolean).join(' ');
   const tail = [state.runtime, state.configPath].filter(Boolean);
@@ -729,6 +742,7 @@ function renderHeading() {
 function render() {
   renderHeading();
   renderControlUiSettingsLink();
+  renderAboutEntry();
   renderGateways();
   renderAbout();
   // Certificates renders on a first run too: its panel is reachable then, and a
@@ -756,6 +770,18 @@ const openControlUiSettings = $('open-control-ui-settings');
 if (openControlUiSettings) {
   openControlUiSettings.addEventListener('click', () => {
     if (hasCommand('closeSettings')) call('closeSettings');
+  });
+}
+
+// Opens the shared About page over this surface. Reaches the app through the
+// same host door every other action here uses, so the desktop and the phone
+// each answer it their own way (an overlay, a sheet) behind one command name.
+// Guarded so a client without the command does not throw; the card is hidden in
+// the same case.
+const openAbout = $('open-about');
+if (openAbout) {
+  openAbout.addEventListener('click', () => {
+    if (hasCommand('openAbout')) call('openAbout');
   });
 }
 

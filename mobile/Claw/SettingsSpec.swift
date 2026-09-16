@@ -69,6 +69,19 @@ enum SettingsSpec {
         ProcessInfo.processInfo.arguments.contains("-claw-open-settings")
     }
 
+    /// Whether this run should open the About sheet at launch, from
+    /// `-claw-open-about`.
+    ///
+    /// The same reasoning as `screenshotOpensSettings` one line up, and it exists
+    /// for the same reason: About is reached by pressing a button in Settings, and
+    /// a simulator cannot be tapped by a script. This drives the very path the
+    /// button drives (`showingAbout = true` in `ContentView`), so what a screenshot
+    /// proves is the real settings-to-About route rather than a page loaded on its
+    /// own. Compiled out of a release build.
+    static var screenshotOpensAbout: Bool {
+        ProcessInfo.processInfo.arguments.contains("-claw-open-about")
+    }
+
     /// Whether this run should drive the update check from a seeded feed rather
     /// than the network, from `-claw-seed-update-feed <version>`.
     ///
@@ -124,6 +137,7 @@ enum SettingsSpec {
     #else
     static var screenshotTab: String? { nil }
     static var screenshotOpensSettings: Bool { false }
+    static var screenshotOpensAbout: Bool { false }
     static var screenshotSeedsUpdateFeed: Bool { false }
     static var screenshotUpdateFeedVersion: String? { nil }
     static var screenshotSeedsPairing: Bool { false }

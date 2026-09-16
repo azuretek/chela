@@ -1,17 +1,33 @@
 'use strict';
 
-// The About box. Same shape as settings.js: nodes are built rather than
-// assigned as innerHTML, and every value comes from the main process already
-// formatted, because this page is sandboxed and cannot require src/updates.js
-// or src/build-info.js. Formatting here would mean a second copy of those rules
-// that drifts the first time either changes.
+// The About box, and the ONE copy of it. Same shape as settings.js: nodes are
+// built rather than assigned as innerHTML, and every value comes from the host
+// already formatted, because this page is sandboxed and cannot require
+// src/updates.js or src/build-info.js. Formatting here would mean a second copy
+// of those rules that drifts the first time either changes.
+//
+// TWO clients render this page now, for the same reason the settings page has
+// two: the desktop loads it in an overlay view (`window.clawDesktop`, installed
+// over IPC in desktop/src/preload.cjs), and the iOS app loads the same file out
+// of its bundle in a sheet (`window.clawDesktop`, installed over a
+// WKScriptMessageHandler in mobile/Claw/AboutHost.swift). About was reachable
+// only from a native menu bar before, which iOS has none of and the Windows
+// desktop hides behind an Alt press, so it now hangs off Settings, which every
+// client can reach. Nothing here branches on which client it is: the facts a
+// build reports are the host's to describe (the desktop says Electron and a
+// Chromium version, the phone says its iOS version and device), so they arrive
+// as `state.facts` rather than being hardcoded here, the same way the settings
+// page reads its own runtime line from the host.
 
 const api = window.clawDesktop;
+if (!api || typeof api.about !== 'function') {
+  // Only ever loaded by a client, and a client that installs no host has a boot
+  // fault worth failing loudly for, the same as the settings page.
+  throw new Error('about page loaded without a clawDesktop host');
+}
 const $ = (id) => document.getElementById(id);
 
 if (new URLSearchParams(location.search).has('frameless')) document.body.classList.add('frameless');
-
-const PLATFORM_NAMES = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
 
 function el(tag, props = {}, children = []) {
   const node = Object.assign(document.createElement(tag), props);
@@ -39,12 +55,14 @@ function render(state) {
   $('update-hint').textContent = hint;
   $('update-hint').hidden = !hint;
 
-  $('facts').replaceChildren(
-    fact('Version', state.version),
-    fact('Channel', state.channel),
-    fact('Electron', `${state.versions.electron} · Chromium ${state.versions.chrome}`),
-    fact('Platform', `${PLATFORM_NAMES[state.platform] || state.platform} ${state.arch}`),
-  );
+  // The facts a bug report asks for, formatted by the host: which build this is,
+  // what it runs on. The list is the host's rather than this page's because what
+  // a client runs on is that client's to describe, and a desktop fact
+  // (Electron, Chromium) has no meaning on the phone and the phone's (its iOS
+  // version, its device) has none on the desktop. Each entry is a
+  // `{ label, value }` pair, already stringified.
+  const facts = Array.isArray(state.facts) ? state.facts : [];
+  $('facts').replaceChildren(...facts.map((f) => fact(f.label, f.value)));
 }
 
 async function refresh() {
