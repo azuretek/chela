@@ -87,6 +87,22 @@ targets:
       # the repository's.
       - path: ../core/spec/pairing.json
         buildPhase: resources
+      # The device-identity persistence contract, bundled rather than mirrored
+      # for its TWO injected scripts: the seed that restores the page's device
+      # keypair into localStorage before the page boots, and the capture that
+      # posts the page's current keypair out to the native layer. DeviceIdentity
+      # reads this at runtime for those scripts, while the storage key, the seed
+      # global and the message name are Swift constants proven against
+      # core/fixtures/device-identity.json, the same split as NativeControlAuth.
+      # This is what makes an approved device stay approved across a reinstall:
+      # the gateway recognises a paired device by the keypair the page presents,
+      # and a WKWebView wipes that keypair's localStorage on uninstall, so the
+      # Keychain holds it and these scripts bridge it. A mirror of either script
+      # would be a second copy of it, which is the fork the shared file exists to
+      # prevent, so DeviceIdentityParityTests asserts the bundled copy is the
+      # repository's.
+      - path: ../core/spec/device-identity.json
+        buildPhase: resources
       # The shared settings surface, bundled rather than mirrored.
       #
       # The same three files the desktop loads out of core/ui, so this client

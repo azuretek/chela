@@ -1,0 +1,52 @@
+{
+  "description": "How a native client makes the Control UI's device identity survive a reinstall. The Control UI generates an Ed25519 keypair, derives the device id as the SHA-256 of the public key, and keeps the keypair in localStorage under one key (openclaw-device-identity-v1); it signs the gateway's connect challenge with that key, and the gateway recognises an already-paired device by the id derived from the public key it presents (see deriveDeviceIdFromPublicKey and verifyGatewayConnectDeviceProof in the OpenClaw checkout). On the desktop that localStorage is Chromium origin storage, which persists across launches, so the desktop pairs once. On iOS the same page runs in a WKWebView whose localStorage is wiped when the app is uninstalled, so every dev reinstall mints a new keypair, a new device id, and a fresh pairing request. This file owns the ONE storage key both clients agree on and the TWO injected scripts that bridge that localStorage value to a store that outlives the web view: a seed script at document start that writes a persisted identity back into localStorage before the page boots and reads it, and a capture script that posts the page's current identity out to the native layer so it can be persisted. core/device-identity.js reads this file; the iOS client bundles it and installs the scripts through WKUserScript, so the storage key and the bridge scripts have ONE owner in the tree rather than one per client.",
+  "why": [
+    "The gateway recognises a paired device by the keypair, NOT the token. The operator token is the first gate (auth): a client with the right token reaches phase=auth_validated. The keypair is the second gate (pairing): the gateway derives the device id from the public key the client presents, checks the signature over the connect challenge, and matches the id against its approved-device store. So the thing that must survive a reinstall to stop re-pairing is the keypair, which the page keeps in localStorage. The token surviving is not enough and never was: the phone's token already survives in the Keychain, which is why its connects reach auth_validated and are then closed 1008 pairing required.",
+    "The page stays the ONE owner of generation. This bridge does not generate, derive or sign anything: the Control UI's own code (loadOrCreateDeviceIdentity in the checkout at ui/src/lib/nodes/index.ts) still mints the keypair, derives the id and signs the challenge, exactly as on the desktop. All the native layer does is make the localStorage value the page reads and writes persist across a reinstall. That keeps the gateway contract untouched and keeps one implementation of the crypto rather than a Swift port of it.",
+    "Seed at document START, before the page boots. The page reads openclaw-device-identity-v1 synchronously while it decides whether it already has an identity; a value written after that read is a value the page has already skipped past, so it would mint a fresh key and only persist it on the NEXT launch, which never converges. The seed script runs at document start, the same timing the token handoff and the pairing observer use and for the same reason, so the persisted identity is in localStorage before the page's own script runs.",
+    "Capture is a small polling read rather than a Storage-event listener, because a page writes its OWN localStorage and the Storage event fires only in OTHER documents, so a listener in the same document would never see the page's write. The script reads the one key on a short interval and posts it out only when it changed, so the native layer learns the identity the moment the page creates it and again if the page ever rotates it. The value is opaque JSON the page owns; the native layer stores the string verbatim and never parses the keypair.",
+    "ONE key, matched to the page's own constant. DEVICE_IDENTITY_STORAGE_KEY in the checkout at ui/src/lib/nodes/index.ts is openclaw-device-identity-v1, and this file pins the same string so the seed writes where the page reads and the capture reads what the page wrote. The device-token key (openclaw.device.auth.v1) is deliberately NOT bridged: the gateway re-issues that token on every connect from the recognised device, so persisting the keypair alone restores pairing, and persisting a bearer token that the gateway rotates would add a second, weaker credential to keep in step for no gain.",
+    "ARRAYS of lines for both scripts, the same shape as the other injected hooks in this tree, so a maintainable script survives an edit and both engines run identical bytes. The seed script takes the persisted value from a global the native layer sets just before it, so the script body has no per-client parts and no credential is spliced into its text."
+  ],
+  "storageKey": "openclaw-device-identity-v1",
+  "seedGlobal": "__clawDeviceIdentitySeed",
+  "messageName": "clawDeviceIdentity",
+  "pollIntervalMs": 1000,
+  "seed": [
+    "(function () {",
+    "  try {",
+    "    var seed = window.__clawDeviceIdentitySeed;",
+    "    if (typeof seed !== 'string' || seed === '') return;",
+    "    var storage = window.localStorage;",
+    "    if (!storage) return;",
+    "    if (storage.getItem('openclaw-device-identity-v1')) return;",
+    "    storage.setItem('openclaw-device-identity-v1', seed);",
+    "  } catch (error) {}",
+    "})();"
+  ],
+  "capture": [
+    "(function () {",
+    "  if (window.__clawDeviceIdentityCaptureInstalled) return;",
+    "  window.__clawDeviceIdentityCaptureInstalled = true;",
+    "  var last = null;",
+    "  function post(value) {",
+    "    try {",
+    "      window.webkit.messageHandlers.clawDeviceIdentity.postMessage(value);",
+    "    } catch (error) {}",
+    "  }",
+    "  function read() {",
+    "    try {",
+    "      var storage = window.localStorage;",
+    "      if (!storage) return;",
+    "      var value = storage.getItem('openclaw-device-identity-v1');",
+    "      if (typeof value === 'string' && value !== '' && value !== last) {",
+    "        last = value;",
+    "        post(value);",
+    "      }",
+    "    } catch (error) {}",
+    "  }",
+    "  read();",
+    "  try { setInterval(read, 1000); } catch (error) {}",
+    "})();"
+  ]
+}
