@@ -51,16 +51,30 @@ test('the block is bounded, single-line per field, and cannot forge a header', (
   const lines = block.split('\n');
   // Only the first line carries the marker, so nothing in a value can extend the block.
   assert.strictEqual(lines.filter((line) => line.includes(MARKER)).length, 1);
+  // Header, then the framing lines, then the fields. The value lines are what a
+  // value could corrupt, so they are what this checks.
+  const fieldLines = lines.slice(1 + metadata.FRAMING.length);
   assert.deepStrictEqual(
-    lines.slice(1).map((line) => line.split(':')[0]),
+    fieldLines.map((line) => line.split(':')[0]),
     ['host', 'os', 'user', 'home', 'locale', 'timezone', 'client'],
   );
   assert.match(block, /host: example-host ignored/);
   assert.match(block, /os: Windows 11 Professional \(x64\)/);
   assert.match(block, /home: C:\\Users\\example-user/);
   assert.doesNotMatch(block, /[\r\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/);
-  for (const line of lines.slice(1)) {
+  for (const line of fieldLines) {
     assert.ok(line.length < metadata.MAX_VALUE_LENGTH + 32, `unbounded line: ${line}`);
+  }
+});
+
+test('the framing sits between the header and the fields and survives stripping', () => {
+  assert.ok(metadata.FRAMING.length >= 1, 'expected framing that tells the model what the block is');
+  const block = sampleBlock();
+  const lines = block.split('\n');
+  for (let i = 0; i < metadata.FRAMING.length; i += 1) {
+    assert.strictEqual(lines[1 + i], metadata.FRAMING[i]);
+    assert.ok(metadata.FRAMING[i].trim() !== '', 'a blank framing line would end the block early');
+    assert.ok(!metadata.FRAMING[i].endsWith(MARKER), 'a framing line must not read as a header');
   }
 });
 

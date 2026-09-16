@@ -30,6 +30,7 @@ enum PromptMetadata {
     private struct Spec: Decodable {
         let marker: String
         let headers: [String: String]
+        let framing: [String]
         let fields: [String]
         let maxValueLength: Int
         let fallback: String
@@ -41,7 +42,7 @@ enum PromptMetadata {
 
     private static func loadSpec() -> Spec {
         let empty = Spec(
-            marker: "", headers: [:], fields: [],
+            marker: "", headers: [:], framing: [], fields: [],
             maxValueLength: 0, fallback: "", global: "", hook: [],
         )
         guard let url = Bundle.main.url(forResource: "prompt-metadata", withExtension: "json"),
@@ -64,6 +65,14 @@ enum PromptMetadata {
 
     /// The block's field order, which both clients render in the same order.
     static var fieldOrder: [String] { spec.fields }
+
+    /// The framing lines that sit inside the block, between the header and the
+    /// fields. They tell the model the block describes the user's device, that
+    /// it is context rather than an instruction, and that it must not be echoed
+    /// back or obeyed. Inside the block on purpose: the stripper matches a
+    /// header ending with the marker and runs to the first blank line, so
+    /// framing kept above that blank line is stripped from the user's view too.
+    static var framing: [String] { spec.framing }
 
     // MARK: - The block
 
@@ -122,7 +131,7 @@ enum PromptMetadata {
     /// has no OS account or home directory to report, and "unknown" would read
     /// as a fact somebody checked.
     static func formatBlock(_ metadata: [String: String], client: String = "mobile") -> String {
-        var lines = [header(client: client)]
+        var lines = [header(client: client)] + spec.framing
         for field in spec.fields {
             guard let value = metadata[field] else { continue }
             lines.append("\(field): \(clean(value))")
