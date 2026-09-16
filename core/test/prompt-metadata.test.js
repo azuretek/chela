@@ -16,7 +16,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import {
-  CONTEXT_MARKER, FRAMING, MAX_VALUE_LENGTH, clean, clientScript, contextHeader, formatBlock,
+  CONTEXT_MARKER, CLOSING, FRAMING, MAX_VALUE_LENGTH, clean, clientScript, contextHeader, formatBlock,
   hookSource, inject, shouldInject, transformFrame,
 } from '../prompt-metadata.js';
 
@@ -94,9 +94,10 @@ test('a value cannot forge a second header or close the block early', () => {
   });
   const lines = block.split('\n');
   assert.strictEqual(lines.filter((line) => line.includes(CONTEXT_MARKER)).length, 1);
-  // The header, then the framing lines, then the fields. The value lines are
-  // what a malicious value could corrupt, so they are what this checks.
-  const fieldLines = lines.slice(1 + FRAMING.length);
+  // The header, then the framing lines, then the fields, then the closing. The
+  // value lines are what a malicious value could corrupt, so they are what this
+  // checks, with the closing lines sliced back off the end.
+  const fieldLines = lines.slice(1 + FRAMING.length, lines.length - CLOSING.length);
   assert.deepStrictEqual(
     fieldLines.map((line) => line.split(':')[0]),
     ['host', 'os', 'user', 'home', 'locale', 'timezone', 'client'],
@@ -109,6 +110,43 @@ test('a value cannot forge a second header or close the block early', () => {
 test('the prompt is separated from the block by the blank line the stripper needs', () => {
   const block = formatBlock({ host: 'example-host' });
   assert.strictEqual(inject('hello', block), `${block}\n\nhello`);
+});
+
+test('the closing line ends the block, after the fields and before the blank line', () => {
+  assert.ok(CLOSING.length >= 1, 'expected a closing line that marks the end of the context');
+  const block = formatBlock({ host: 'example-host', os: 'macOS 26.6.2 (arm64)' });
+  const lines = block.split('\n');
+  // The closing lines are the LAST lines of the block: header, framing, fields,
+  // then closing. They must never end with the marker (that would forge a
+  // second header) or be blank (that would end the block early, and everything
+  // after it, the closing line included, would leak to the user).
+  const tail = lines.slice(lines.length - CLOSING.length);
+  assert.deepStrictEqual(tail, CLOSING, 'the closing lines are the last lines in the block');
+  for (const line of CLOSING) {
+    assert.ok(line.trim() !== '', 'a blank closing line would end the block early');
+    assert.ok(!line.endsWith(CONTEXT_MARKER), 'a closing line must not read as a header');
+  }
+  // A field comes before the closing, so the closing genuinely follows the
+  // context rather than replacing it.
+  assert.ok(lines[lines.length - CLOSING.length - 1].includes(': '), 'the closing follows the fields');
+});
+
+test('the closing line is inside the block, so injecting keeps it before the blank line', () => {
+  // This is the failure this ordering exists to avoid: a boundary marker placed
+  // AFTER the blank line would be part of the visible user message. The block
+  // ends with the closing, inject() then adds the blank line and the words, so
+  // every closing line sits strictly before the first blank line.
+  const block = formatBlock({ host: 'example-host' });
+  const sent = inject('hello', block);
+  const blankAt = sent.indexOf('\n\n');
+  assert.ok(blankAt > 0, 'the block and the message are separated by a blank line');
+  const beforeBlank = sent.slice(0, blankAt);
+  const afterBlank = sent.slice(blankAt + 2);
+  for (const line of CLOSING) {
+    assert.ok(beforeBlank.includes(line), 'the closing line is inside the block, before the blank line');
+    assert.ok(!afterBlank.includes(line), 'no closing line leaks into the visible message');
+  }
+  assert.strictEqual(afterBlank, 'hello', 'the visible portion is the user message alone');
 });
 
 test('the framing is present, one bounded line per entry, inside the block', () => {
@@ -138,18 +176,49 @@ test('the block, framing and all, is still stripped from what the user reads', (
   // The framing is really there before we strip, or this test proves nothing.
   for (const line of FRAMING) assert.ok(sent.includes(line), 'framing should be in the sent prompt');
 
+  // The closing line is really there before we strip, or the leak check below
+  // proves nothing.
+  for (const line of CLOSING) assert.ok(sent.includes(line), 'the closing line should be in the sent prompt');
+
   const visible = stripInboundMetadata(sent);
-  assert.strictEqual(visible, 'what time is it?', 'the whole block, framing included, is stripped');
+  assert.strictEqual(visible, 'what time is it?', 'the whole block, framing and closing included, is stripped');
   assert.ok(!visible.includes(CONTEXT_MARKER), 'no marker survives to the user');
   for (const line of FRAMING) {
     assert.ok(!visible.includes(line), 'no framing line survives to the user');
   }
+  for (const line of CLOSING) {
+    assert.ok(!visible.includes(line), 'no closing line survives to the user');
+  }
+  // The exact failure mode this shape guards against: nothing of the separator,
+  // not even a fragment of it, is left in what the user reads.
+  assert.ok(!visible.includes('end of client context'), 'the boundary marker does not leak into the message');
+  assert.ok(!visible.includes('-----'), 'no rule characters from the boundary leak into the message');
 });
 
 test('the mobile block, framing and all, is stripped too', () => {
   const block = formatBlock({ host: 'iPhone', os: 'iOS 26.0 (iPhone17,1)' }, 'mobile');
   const visible = stripInboundMetadata(inject('hello', block));
   assert.strictEqual(visible, 'hello');
+});
+
+test('the model receives the block plus closing on the active turn, at frame level', () => {
+  // The gateway strips the block from what a PERSON reads and from replayed
+  // past turns, but the active turn keeps its metadata, so this proves the
+  // model still sees the whole unit, closing line included, in the outbound
+  // chat.send frame the client actually sends.
+  const block = formatBlock({
+    host: 'example-host', os: 'macOS 26.6.2 (arm64)', user: 'example-user',
+    home: '/home/example-user', locale: 'en-US', timezone: 'Europe/London',
+    client: 'Claw Control UI (claw-desktop) 1.0.1',
+  });
+  const socket = hookedSocket({ enabled: true, block });
+  const sent = sentMessage(socket, 'what time is it?');
+  for (const line of FRAMING) assert.ok(sent.includes(line), 'the framing rides the frame');
+  for (const line of CLOSING) assert.ok(sent.includes(line), 'the closing rides the frame');
+  assert.strictEqual(sent, `${block}\n\nwhat time is it?`, 'the frame carries the block, the blank line, then the words');
+  // And the block that rides really ends with the closing line, before the
+  // blank line the stripper needs.
+  assert.ok(block.endsWith(CLOSING[CLOSING.length - 1]), 'the block ends with the closing line');
 });
 
 /* ------------------------------------------------------------- one interpreter */
