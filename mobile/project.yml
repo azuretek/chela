@@ -16,8 +16,18 @@ name: Claw
 
 options:
   bundleIdPrefix: com.azuretek
+  # The floor follows the CI matrix: the deployment target names the oldest
+  # version we actually build and test against, so the support we declare and
+  # the support we verify are the same claim rather than two numbers that drift
+  # apart. The matrix in .github/workflows/mobile.yml currently covers iOS 26
+  # and 27, so the floor is 26. Adding an older version to the matrix means
+  # moving this line in the same change; leaving it behind would keep claiming
+  # support for versions nothing tests.
+  #
+  # It was 17.0 before the matrix existed, which asserted support for nine
+  # majors that no run had ever exercised.
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "26.0"
   createIntermediateGroups: true
   groupSortPosition: top
   generateEmptyDirectories: false
