@@ -56,6 +56,11 @@ import SwiftUI
 /// not change the page's layout, so the Control UI keeps every pixel of the safe
 /// area it lays itself out in.
 struct ContentView: View {
+    /// Where this device's gateway comes from, owned here because this is the
+    /// view that decides what the app shows: the page, or the question of which
+    /// gateway to load.
+    @StateObject private var gateways = GatewayStore()
+
     /// Starts as the system background, which is what shows for the first frame,
     /// before the page has a document to read a colour out of.
     @State private var themeColour = Color(uiColor: .systemBackground)
@@ -65,10 +70,29 @@ struct ContentView: View {
     /// nobody can otherwise reach are rendered for a screenshot.
     @StateObject private var notices = NoticeBoard.live()
 
+    /// Whether someone has asked for the gateway setup surface over a gateway
+    /// that is already configured. The connection notice's own action is what
+    /// turns it on, so an address that stopped working is correctable in the app
+    /// rather than by reinstalling it.
+    @State private var editingGateway = false
+
     var body: some View {
-        WebView(url: Gateway.default.url, themeColour: $themeColour, notices: notices)
-            .background(themeColour)
-            .overlay(alignment: .top) { NoticeStack(board: notices) }
+        Group {
+            if let gateway = gateways.gateway, !editingGateway {
+                WebView(gateway: gateway, themeColour: $themeColour, notices: notices)
+                    .background(themeColour)
+                    .overlay(alignment: .top) { NoticeStack(board: notices) }
+            } else {
+                GatewaySetupView(store: gateways) { editingGateway = false }
+            }
+        }
+        .onAppear {
+            // The notice model carries a command NAME rather than a callback, so
+            // this is where the one command this client has is answered.
+            notices.onCommand = { command in
+                if command == NoticeBoard.settingsCommand { editingGateway = true }
+            }
+        }
     }
 }
 
