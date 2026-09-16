@@ -124,6 +124,11 @@ if (isLocalPage) {
           connect: ([id]) => ipcRenderer.invoke('app:connect', id),
           saveSettings: ([patch]) => ipcRenderer.invoke('app:save-settings', patch),
           closeSettings: () => ipcRenderer.invoke('app:close-settings'),
+          // Opens the app's own About page over whatever is on screen, the same
+          // overlay the menu bar and tray open. It is About's one way in on a
+          // build with no reachable menu bar (the Windows desktop hides its
+          // behind Alt), and the desktop's half of a command iOS answers too.
+          openAbout: () => ipcRenderer.invoke('app:settings-open-about'),
           liveNotices: () => ipcRenderer.invoke('app:live-notices'),
           noticeHistory: () => ipcRenderer.invoke('app:notice-history'),
           openNoticeLog: () => ipcRenderer.invoke('app:open-notice-log'),

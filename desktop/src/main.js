@@ -1874,6 +1874,10 @@ function restartForUpdate() {
  * versions and when it last looked, and the runtime a rendering bug would be
  * blamed on.
  */
+// The names people read for a platform, in the one place About formats its own
+// facts. `process.platform` is a machine token; About is where a human reads it.
+const PLATFORM_NAMES = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
+
 function aboutState() {
   const plan = updatePolicy();
   return {
@@ -1894,9 +1898,17 @@ function aboutState() {
     capabilityReason: plan.capabilityReason,
     checking: pendingManualCheck,
     updateReady,
-    versions: { electron: process.versions.electron, chrome: process.versions.chrome },
-    platform: process.platform,
-    arch: process.arch,
+    // The facts the page draws, formatted here rather than in the page, because
+    // the page is sandboxed and cannot require the modules that know the rules,
+    // and because what this client runs on is this client's to describe: the
+    // phone's About renders its own list from its own host. A `{ label, value }`
+    // per row, all strings. See renderFacts in core/ui/about.js.
+    facts: [
+      { label: 'Version', value: app.getVersion() },
+      { label: 'Channel', value: updates.channelOf(app.getVersion()) || 'stable' },
+      { label: 'Electron', value: `${process.versions.electron} · Chromium ${process.versions.chrome}` },
+      { label: 'Platform', value: `${PLATFORM_NAMES[process.platform] || process.platform} ${process.arch}` },
+    ],
     releasesUrl: RELEASES_URL,
   };
 }
@@ -2348,6 +2360,12 @@ function registerIpc() {
   });
   ipcMain.handle('app:open-settings', () => { openSettings(); });
   ipcMain.handle('app:close-settings', () => { closeSettings(); });
+  // The About page, reached from inside Settings rather than from the menu bar.
+  // showAbout() is the same overlay path the menu and tray already open, so this
+  // adds a route to About without a second way of opening it: About shown over
+  // Settings stacks on top, and closeOverlay hands focus back to Settings when it
+  // goes. It is the desktop's half of the shared `openAbout` settings command.
+  ipcMain.handle('app:settings-open-about', () => { showAbout(); });
 
   // The app's own dialogs. `app:message` is what a freshly loaded message page
   // asks for; there is no push, so a page that reloads for any reason comes

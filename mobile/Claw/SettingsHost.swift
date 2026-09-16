@@ -44,6 +44,12 @@ final class SettingsHost: NSObject, ObservableObject, WKScriptMessageHandler {
     /// Asked to load a gateway. The surface closes itself first: a sheet covers
     /// the page it just switched to, and a failure would be raised behind it.
     private let onConnect: () -> Void
+    /// Asked to open the About page over the settings surface. About was reachable
+    /// only from a native menu bar before, which this client has none of, so it
+    /// now hangs off Settings through the shared `openAbout` command. The view
+    /// answers by presenting `AboutSurface`; this host only carries the request,
+    /// the same way `onClose` and `onConnect` do.
+    private let onOpenAbout: () -> Void
 
     /// The page's own web view, for delivering a reply or an event. Weak, because
     /// the view owns the message handler's registration and not the other way
@@ -56,7 +62,8 @@ final class SettingsHost: NSObject, ObservableObject, WKScriptMessageHandler {
         notices: NoticeBoard,
         appearance: AppearanceStore,
         onClose: @escaping () -> Void,
-        onConnect: @escaping () -> Void
+        onConnect: @escaping () -> Void,
+        onOpenAbout: @escaping () -> Void
     ) {
         self.store = store
         self.connection = connection
@@ -64,6 +71,7 @@ final class SettingsHost: NSObject, ObservableObject, WKScriptMessageHandler {
         self.appearance = appearance
         self.onClose = onClose
         self.onConnect = onConnect
+        self.onOpenAbout = onOpenAbout
         super.init()
     }
 
@@ -241,6 +249,14 @@ final class SettingsHost: NSObject, ObservableObject, WKScriptMessageHandler {
 
         case "closeSettings":
             onClose()
+            reply(id, value: NSNull())
+
+        case "openAbout":
+            // Opens the shared About page over this surface, the phone's version
+            // of the desktop's showAbout(). The view presents AboutSurface; this
+            // only asks. About is reachable nowhere else on a client with no menu
+            // bar, which is why it hangs off Settings.
+            onOpenAbout()
             reply(id, value: NSNull())
 
         default:

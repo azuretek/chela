@@ -108,6 +108,27 @@ targets:
         buildPhase: resources
       - path: ../core/spec/settings.json
         buildPhase: resources
+      # The shared About page, bundled rather than mirrored, for the same reason
+      # the settings page is: it is the desktop's own About page (core/ui), so
+      # this client renders it instead of a native screen. About was reachable
+      # only from a menu bar before, which this client has none of, so it now
+      # hangs off Settings through the shared `openAbout` command, and
+      # AboutHost.swift answers the same window.clawDesktop calls the desktop's
+      # preload does. Copied in flat so the page's own relative links (ui.css,
+      # about.js, assets/claw.svg) resolve in the bundle exactly as in the repo;
+      # AboutSurface loads the page with read access to that directory.
+      - path: ../core/ui/about.html
+        buildPhase: resources
+      - path: ../core/ui/about.js
+        buildPhase: resources
+      # The icon the About header draws, under `assets/` beside the page so the
+      # `src="assets/claw.svg"` link resolves. `type: folder` makes this a folder
+      # reference, which copies the directory into the bundle whole and keeps the
+      # `assets/` path: a plain group would flatten claw.svg to the bundle root and
+      # the relative link in about.html would break.
+      - path: ../core/ui/assets
+        type: folder
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.azuretek.claw-mobile

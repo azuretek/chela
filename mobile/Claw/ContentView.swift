@@ -107,11 +107,20 @@ struct ContentView: View {
     /// gateway, where the surface is shown without a sheet: see the note above.
     @State private var showingSettings = false
 
+    /// Whether the About sheet is up. About has no menu bar to open it from on
+    /// this client, so it is reached from Settings through the shared `openAbout`
+    /// command, and shown as its own sheet over whatever is on screen.
+    @State private var showingAbout = false
+
     /// The page's other end. Built once, held, and handed to the settings web
     /// view: it is the object `core/ui/settings.js` talks to for the whole life of
     /// the surface, and a fresh one per layout pass would drop replies the page is
     /// waiting on.
     @State private var host: SettingsHost?
+
+    /// The About page's other end, built once for the same reason `host` is: it is
+    /// the object `core/ui/about.js` talks to for the life of the About sheet.
+    @State private var aboutHost: AboutHost?
 
     var body: some View {
         Group {
@@ -169,6 +178,17 @@ struct ContentView: View {
                 Color(uiColor: .systemBackground)
             }
         }
+        // About hangs off the Group rather than off either branch, so it opens
+        // whether or not there is a gateway: it is reached from Settings, and
+        // Settings is the app itself on a first run. On a gateway it is the second
+        // sheet, over the settings one that opened it, which is the phone's stack
+        // for the desktop's About-over-Settings overlay.
+        .sheet(isPresented: $showingAbout) {
+            if let aboutHost {
+                AboutSurface(host: aboutHost, appearance: appearance.mode)
+                    .ignoresSafeArea()
+            }
+        }
         // The app's own appearance, and it is the whole app rather than the web
         // view: the status bar, the sheet's background and the strips around the
         // page are the native half, and a page passed light while they stayed dark
@@ -200,8 +220,19 @@ struct ContentView: View {
                 // the sheet covers the page it just switched to, so a failure would
                 // be raised behind it, and the point of pressing Connect is to see
                 // the result.
-                onConnect: { if gateways.hasGateway { showingSettings = false } }
+                onConnect: { if gateways.hasGateway { showingSettings = false } },
+                // Opens the About page over the settings surface, the phone's
+                // showAbout(). A sheet over a sheet: SwiftUI presents it above the
+                // settings one that asked for it, and dismissing it lands back on
+                // settings, which is where the desktop's About-over-Settings
+                // overlay lands too.
+                onOpenAbout: { showingAbout = true }
             )
+        }
+        if aboutHost == nil {
+            // Closing is the page's `closeOverlay('about')`: on the phone that is
+            // dismissing the sheet, which lands back on whatever opened it.
+            aboutHost = AboutHost(notices: notices, onClose: { showingAbout = false })
         }
         // The notice model carries a command NAME rather than a callback, so this
         // is where the commands this client has are answered. "Open Settings" on a
@@ -222,6 +253,19 @@ struct ContentView: View {
         // A screenshot run on a simulator, which cannot press the button above.
         // Debug only, and inert without the argument. See `SettingsSpec`.
         if SettingsSpec.screenshotOpensSettings { showingSettings = true }
+        // The About route, driven the way the Settings button drives it: open
+        // Settings, then open About over it, which is the stack a tap produces.
+        // A simulator cannot be tapped, so this proves the real route rather than
+        // loading the page on its own. Debug only, inert without the argument.
+        // Presenting two sheets in one render pass is unreliable in SwiftUI (the
+        // second lands empty), so a screenshot run opens About on its own: it is
+        // the same `showingAbout` the Settings button sets, so the page and its
+        // host are exercised the real way, and the settings-to-About wiring is
+        // covered by AboutHostTests and settings-surface.test.js rather than by
+        // stacking two sheets here.
+        if SettingsSpec.screenshotOpensAbout {
+            showingAbout = true
+        }
         // A screenshot run for the pairing screen, which a simulator cannot reach
         // without the gateway's own token and an unapproved device on a running
         // gateway. Drives the REAL pairing state into pairing-required with a
