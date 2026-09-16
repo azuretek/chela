@@ -1,4 +1,5 @@
 import os from 'node:os';
+import { clientLabel } from '../../core/naming.js';
 
 // The marker OpenClaw already owns for inbound context.
 //
@@ -22,7 +23,7 @@ export const MAX_VALUE_LENGTH = 256;
 // person would recognise, then the shorthand that tells the clients apart in a
 // transcript where one agent may be talking to several. Same split as the
 // naming everywhere else, and the mobile client does the same with claw-mobile.
-const CLIENT = 'Claw Control UI (claw-desktop)';
+const CLIENT = clientLabel.desktop;
 
 /** Keep machine-controlled values on one bounded line inside the prompt block. */
 export function clean(value, fallback = 'unknown') {

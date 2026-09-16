@@ -172,7 +172,7 @@ struct WebView: UIViewRepresentable {
         // what lets a gateway's own logs tell this app from Safari on the same
         // phone, and the Control UI only ever reads the user agent to detect a
         // legacy browser, so replacing the token is safe as well as useful.
-        configuration.applicationNameForUserAgent = "claw-mobile/\(Self.version)"
+        configuration.applicationNameForUserAgent = "\(Naming.mobileToken)/\(Self.version)"
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         // Not opaque, and painted with the system background rather than left

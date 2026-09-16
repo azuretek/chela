@@ -40,6 +40,7 @@ import updates from './updates.js';
 import secrets from './secrets.js';
 import defaults from './defaults.js';
 import { withTokenHandoff } from '../../core/gateway-url.js';
+import { product, releasesUrl } from '../../core/naming.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const UI_DIR = path.join(HERE, 'ui');
@@ -1456,7 +1457,7 @@ function setZoom(delta, absolute) {
 // Where a platform that cannot install for itself sends the user. Hard-coded
 // rather than read from electron-builder.yml's `publish` block: that file is not
 // packaged, so the app would be parsing something it does not ship.
-const RELEASES_URL = 'https://github.com/azuretek/claw-control-ui/releases';
+const RELEASES_URL = releasesUrl;
 // Long enough that a cold start is not competing with the gateway connection
 // for the network, and short enough to be within one sitting.
 const UPDATE_FIRST_CHECK_MS = 60 * 1000;
@@ -2142,6 +2143,11 @@ function currentState() {
       milestone: connection.milestone,
       milestoneAt: connection.milestoneAt,
     },
+    // The product name, for the one line Settings prints about itself. The
+    // page is sandboxed, so it cannot read core/naming.js the way this file
+    // does, and this is the same arrangement as every other formatted value it
+    // is handed.
+    appName: product,
     secretsAvailable: secrets.available(),
     frameless: chrome.enabled(),
     secretsError: secrets.unavailableReason(),

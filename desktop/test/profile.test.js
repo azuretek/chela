@@ -6,11 +6,8 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import * as profile from '../src/profile.js';
-
-const DESKTOP = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function tmpAppData() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'claw-profile-'));
@@ -111,25 +108,12 @@ test('reports failure instead of throwing, so startup survives it', () => {
   assert.equal(fs.existsSync(path.join(base, 'Claw Desktop')), true);
 });
 
-/* ------------------------------------------------ the name is the product name */
+/* ------------------------------------------------------- the pinned identities */
 
-// The migration moves a directory whose name is `CURRENT_NAME`, and Electron
-// only looks there because `productName` decides the default userData path. The
-// two are written in three files that cannot import each other (profile.js is
-// Electron-free, electron-builder.yml is not JavaScript), so the agreement is
-// asserted here rather than assumed. Change one without the others and the app
-// starts on an empty profile while every test above still passes.
-test('CURRENT_NAME is the productName both build files ship', () => {
-  const pkg = JSON.parse(fs.readFileSync(path.join(DESKTOP, 'package.json'), 'utf8'));
-  assert.equal(pkg.productName, profile.CURRENT_NAME);
-
-  // electron-builder reads the top-level productName; a `^productName:` at the
-  // start of a line is also the only other place the name decides where the app
-  // is installed and what it is called on disk.
-  const builder = fs.readFileSync(path.join(DESKTOP, 'electron-builder.yml'), 'utf8');
-  assert.match(builder, new RegExp(`^productName: ${profile.CURRENT_NAME}$`, 'm'));
-});
-
+// That the directory named by CURRENT_NAME is the productName the build files
+// carry is asserted in test/naming.test.js, which owns every surface that cannot
+// import core/spec/naming.json. What is left here is the invariant the migration
+// itself depends on.
 test('the keychain name is pinned to a name the credentials were written under', () => {
   // Not CURRENT_NAME: a keychain item is found by name, so the pinned identity
   // has to be the name the item was created under, which is the previous one.

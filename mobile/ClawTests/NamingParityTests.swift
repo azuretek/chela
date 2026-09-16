@@ -1,0 +1,86 @@
+import XCTest
+
+@testable import Claw
+
+/// Parity with `core/spec/naming.json`, which is the ONE owner of the product
+/// name and of each client's shorthand.
+///
+/// This is the mobile half of the contract. The desktop reads the same file at
+/// runtime, so nothing has to agree by convention: if a name changes in the spec
+/// and `Naming.swift` does not move with it, this fails, and if the spec and
+/// `Info.plist` disagree, this fails too. The plist is the part a person
+/// actually sees, and it is the part that cannot import anything.
+///
+/// The plist is read from the source tree rather than from the built bundle,
+/// because the source is what drifts. A generated plist that disagreed with its
+/// own source would be a second owner, and the tests would be reading the wrong
+/// one.
+final class NamingParityTests: XCTestCase {
+    private struct NamingSpec: Decodable {
+        struct Repo: Decodable {
+            let owner: String
+            let name: String
+        }
+
+        struct Client: Decodable {
+            let shorthand: String
+            let bundleId: String
+        }
+
+        struct Clients: Decodable {
+            let desktop: Client
+            let mobile: Client
+        }
+
+        let product: String
+        let repo: Repo
+        let clients: Clients
+    }
+
+    private func spec() throws -> NamingSpec {
+        try Fixtures.loadSpec("naming")
+    }
+
+    func testTheProductNameMirrorsTheSpec() throws {
+        XCTAssertEqual(
+            Naming.product,
+            try spec().product,
+            "Naming.product disagrees with core/spec/naming.json; move both together"
+        )
+    }
+
+    func testTheClientTokenMirrorsTheSpec() throws {
+        XCTAssertEqual(
+            Naming.mobileToken,
+            try spec().clients.mobile.shorthand,
+            "Naming.mobileToken disagrees with core/spec/naming.json"
+        )
+        // The two clients have to be tellable apart in one string, which is the
+        // whole reason the shorthand exists rather than the product name.
+        XCTAssertNotEqual(try spec().clients.desktop.shorthand, Naming.mobileToken)
+    }
+
+    /// The two keys a home screen, TestFlight and the App Store read.
+    func testThePlistNamesMirrorTheSpec() throws {
+        let plist = try Fixtures.root()
+            .appendingPathComponent("mobile/Claw/Info.plist")
+        let data = try Data(contentsOf: plist)
+        let raw = try PropertyListSerialization.propertyList(from: data, format: nil)
+        guard let entries = raw as? [String: Any] else {
+            return XCTFail("mobile/Claw/Info.plist is not a dictionary")
+        }
+
+        let expected = try spec().product
+        XCTAssertEqual(entries["CFBundleDisplayName"] as? String, expected)
+        XCTAssertEqual(entries["CFBundleName"] as? String, expected)
+    }
+
+    /// The bundle id is identity rather than naming: it does not follow the
+    /// product name, and a rename that moved it would orphan the App Store
+    /// Connect record and every install that updates in place.
+    func testTheBundleIdComesFromTheSpecAndIsNotTheProductName() throws {
+        let expected = try spec().clients.mobile.bundleId
+        XCTAssertEqual(Bundle.main.bundleIdentifier, expected)
+        XCTAssertNotEqual(expected, try spec().product)
+    }
+}
