@@ -475,7 +475,7 @@ function renderPrefs() {
 // module that knows the rules.
 function renderAbout() {
   $('about').textContent =
-    `Claw Control UI ${state.build} · Electron ${state.versions.electron} · Chromium ${state.versions.chrome} · ${state.configPath}`;
+    `${state.appName} ${state.build} · Electron ${state.versions.electron} · Chromium ${state.versions.chrome} · ${state.configPath}`;
 }
 
 /* ---------------------------------------------------------------- the tabs */

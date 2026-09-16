@@ -108,11 +108,11 @@ extension NoticeBoard {
         board.raise("seed-warn", NoticeRaise(
             tone: NoticeTone.warn,
             message: "This build cannot install its own updates",
-            detail: "iOS installs apps. Claw Control UI can tell you a release exists and no more."
+            detail: "iOS installs apps. \(Naming.product) can tell you a release exists and no more."
         ))
         board.raise("seed-info", NoticeRaise(
             tone: NoticeTone.info,
-            message: "Downloading Claw Control UI 1.0.2",
+            message: "Downloading \(Naming.product) 1.0.2",
             dismissible: false,
             progress: 0.42
         ))

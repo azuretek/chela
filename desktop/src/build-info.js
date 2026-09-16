@@ -8,6 +8,7 @@
 // no single commit to claim. It says so instead of guessing.
 
 import fs from 'node:fs';
+import { product } from '../../core/naming.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -144,5 +145,5 @@ export function about({ version, info, updateStatus, electron, chrome, platform,
     ...(electron ? [`Electron ${electron}, Chromium ${chrome}`] : []),
     ...(platform ? [`${PLATFORM_NAMES[platform] || platform} ${arch}`] : []),
   ].join('\n');
-  return { message: 'Claw Control UI', detail };
+  return { message: product, detail };
 }

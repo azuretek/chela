@@ -21,7 +21,17 @@
 // A CommonJS config rather than .release-it.json so the reasoning above can live
 // with the settings; package.json declares no `type`, so `.cjs` is explicit.
 
-const REPO = 'https://github.com/azuretek/claw-control-ui';
+const fs = require('node:fs');
+const path = require('node:path');
+
+// The repo this releases into, from the one owner (core/spec/naming.json).
+// Read rather than written down: a slug that lives in two files is a slug that
+// sends someone to a 404 the day one of them moves. This config is CommonJS
+// while core/naming.js is ESM, so it parses the spec itself.
+const naming = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', 'core', 'spec', 'naming.json'), 'utf8'),
+);
+const REPO = `https://github.com/${naming.repo.owner}/${naming.repo.name}`;
 
 module.exports = {
   git: {

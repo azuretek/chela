@@ -54,6 +54,7 @@
 // taking `platform`.
 
 import spec from './spec/updates.json' with { type: 'json' };
+import { product } from './naming.js';
 
 // Flip to true when macOS builds are signed with a Developer ID and notarized.
 // It is a constant rather than a runtime probe on purpose: asking the OS whether
@@ -218,7 +219,7 @@ export function policy({ autoUpdate = true, ...opts }) {
  * Linux could reach it too, a dialog confidently naming the wrong cause.
  */
 export function availableMessage({ action, version, current, reason = null }) {
-  const headline = `Claw Control UI ${version} is available.`;
+  const headline = `${product} ${version} is available.`;
   if (action === INSTALL) {
     return { message: headline, detail: `You are on ${current}. It will download in the background, and you can restart to apply it.` };
   }

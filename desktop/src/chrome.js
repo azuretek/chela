@@ -1,4 +1,5 @@
 import electron from 'electron';
+import { product } from '../../core/naming.js';
 
 // `nativeTheme` is the only Electron surface this module touches, and only
 // applyTheme() uses it. Imported as the default so this module loads under
@@ -179,7 +180,7 @@ export function stripCss(platform = process.platform) {
 
 /* ------------------------------------------------------------------- title */
 
-export const APP_NAME = 'Claw Control UI';
+export const APP_NAME = product;
 
 /**
  * True for a chat route with an agent but no session, the "Home" entry in the

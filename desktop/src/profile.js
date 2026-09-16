@@ -1,5 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
+import { product, desktop } from '../../core/naming.js';
 
 // The two names a rename moves, and they move for different reasons.
 //
@@ -37,12 +38,19 @@ import fs from 'node:fs';
 // macOS, so an "isolated" Electron run moved the live profile instead. The
 // launch harness uses CFFIXED_USER_HOME, which does.)
 
+// All three come from core/spec/naming.json rather than being written here,
+// because they are the values a rename has to move together: a stale copy of any
+// one of them is what loses a user's settings or their stored credentials, and
+// nothing about that failure is loud. test/naming.test.js asserts that the
+// directory named here is the productName Electron and electron-builder are
+// actually given.
+//
 // Newest first: a profile is only ever migrated from the name immediately
 // before it, so if two predecessors are both present the newer one is the live
 // profile and the older is left alone as evidence rather than merged.
-export const PREVIOUS_NAMES = ['Claw Desktop', 'OpenClaw'];
-export const CURRENT_NAME = 'Claw Control UI';
-export const KEYCHAIN_NAME = 'Claw Desktop';
+export const PREVIOUS_NAMES = desktop.profileNames;
+export const CURRENT_NAME = product;
+export const KEYCHAIN_NAME = desktop.keychainItem;
 
 /**
  * Move an old-name profile into place, once.

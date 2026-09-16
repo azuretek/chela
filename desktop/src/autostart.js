@@ -17,9 +17,14 @@
 import path from 'node:path';
 import os from 'node:os';
 import nodeFs from 'node:fs';
+import { product, desktop } from '../../core/naming.js';
 
-/** The autostart entry's filename. Matches package.json `desktopName`. */
-export const ENTRY = 'claw-desktop.desktop';
+/**
+ * The autostart entry's filename, which pairs with package.json `desktopName`
+ * (asserted in test/naming.test.js) and with electron-builder's
+ * `syncDesktopName`, which is what ties a running window back to this file.
+ */
+export const ENTRY = `${desktop.shorthand}.desktop`;
 
 /**
  * Where the entry belongs.
@@ -69,7 +74,7 @@ export function quoteExec(arg) {
  * X-GNOME-Autostart-enabled is redundant under the spec but is what GNOME's own
  * Tweaks writes, and its absence is read by some versions as disabled.
  */
-export function entryBody({ exec, hidden = false, name = 'Claw Control UI' } = {}) {
+export function entryBody({ exec, hidden = false, name = product } = {}) {
   const command = [quoteExec(exec), ...(hidden ? ['--hidden'] : [])].join(' ');
   return [
     '[Desktop Entry]',
