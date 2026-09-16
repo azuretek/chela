@@ -522,6 +522,73 @@ jobs:
           ls -l "$key"
           echo "ASC_KEY_PATH=$key" >> "$GITHUB_ENV"
 
+      # The Apple Distribution identity, imported once into a keychain of this
+      # run's own. It is the one part cloud managed signing cannot supply and a
+      # human had to make: Apple refuses to create a Distribution certificate
+      # or an App Store profile through the API (a plain 403 for both, whatever
+      # the key's role), so the certificate is created in Xcode, exported with
+      # its private key as a .p12, and its bytes and password kept as the two
+      # repo secrets read here.
+      #
+      # Why it exists at all: without an identity already in the account,
+      # `-allowProvisioningUpdates` mints a throwaway one on every archive and
+      # never revokes it, until the account hits Apple's certificate cap and the
+      # next archive fails for the want of a free slot. A stable identity in the
+      # keychain is the one signing already knows to reuse, so nothing is minted
+      # and nothing accumulates.
+      #
+      # A dedicated keychain, deleted with the runner, so this never touches a
+      # login keychain and the private key never outlives the job. The identity
+      # is not printed and the password reaches `security` on its own line, not
+      # in an argument, so neither is visible in the process list.
+      - name: Import the signing certificate
+        env:
+          P12_BASE64: ${{ secrets.CLAW_DIST_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.CLAW_DIST_P12_PASSWORD }}
+        run: |
+          set -eo pipefail
+          if [ -z "$P12_BASE64" ] || [ -z "$P12_PASSWORD" ]; then
+            echo "::error::CLAW_DIST_P12_BASE64 or CLAW_DIST_P12_PASSWORD is not set. The Apple Distribution certificate and its password are what sign the build; export the cert from Xcode as a .p12 and set both as repository secrets."
+            exit 1
+          fi
+
+          keychain="$RUNNER_TEMP/claw-signing.keychain-db"
+          # A random, run-scoped keychain password: it only has to unlock this
+          # keychain for the length of the job, and it is generated here rather
+          # than kept anywhere.
+          keychain_password="$(openssl rand -base64 24)"
+          p12="$RUNNER_TEMP/dist-cert.p12"
+
+          printf '%s' "$P12_BASE64" | base64 --decode > "$p12"
+
+          security create-keychain -p "$keychain_password" "$keychain"
+          # Off the auto-lock timeout, so the keychain does not relock partway
+          # through a build that runs longer than the default.
+          security set-keychain-settings "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+
+          # The password reaches security on stdin, never as an argument.
+          security import "$p12" -k "$keychain" -P "$P12_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/xcodebuild -f pkcs12
+
+          # Let codesign and xcodebuild use the imported key without the
+          # interactive prompt that would otherwise hang a headless runner.
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+
+          # Put this keychain first in the search list, keeping the login and
+          # system keychains after it, so the toolchain finds the identity
+          # without losing the rest.
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | sed 's/"//g')
+
+          identities="$(security find-identity -v -p codesigning "$keychain")"
+          echo "$identities"
+          if ! printf '%s' "$identities" | grep -q 'Apple Distribution'; then
+            echo "::error::the imported certificate is not an Apple Distribution identity, so it cannot sign a TestFlight build. Export the Apple Distribution certificate (not Apple Development or Developer ID) from Xcode and update the secret."
+            exit 1
+          fi
+          echo "SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          rm -f "$p12"
+
       # Everything that must be true before an archive is worth building, and
       # every one of these fails in seconds what would otherwise fail minutes
       # later inside toolchain output: the app record (which no API can create),
@@ -537,17 +604,18 @@ jobs:
           BUILD_NUMBER: ${{ needs.version.outputs.build-number }}
         run: python3 scripts/asc.py preflight
 
-      # Cloud managed signing: the API key authenticates to Apple, and Apple
-      # issues the Apple Distribution certificate and the App Store provisioning
-      # profile itself. That is what makes this step free of a certificate
-      # export, a base64 secret and a keychain, which is most of what a signing
-      # pipeline normally is.
+      # Signing uses the Apple Distribution identity imported above, with
+      # `-allowProvisioningUpdates` left on so Apple still supplies the one thing
+      # the API cannot create for us, the App Store provisioning profile, which
+      # it generates against the certificate already in the keychain rather than
+      # minting a new certificate. That is the whole point of importing a stable
+      # identity: with one present, nothing is minted and nothing accumulates,
+      # where before every archive left a throwaway certificate behind until the
+      # account hit Apple's cap.
       #
-      # `-allowProvisioningUpdates` is what permits it. Without an Apple
-      # Distribution certificate in the account the key can create one; if it
-      # cannot, this fails here and deliberately does not fall back to a
-      # development or ad-hoc build, because the only thing an unsigned archive
-      # could produce is an upload Apple will reject.
+      # It deliberately does not fall back to a development or ad-hoc build,
+      # because the only thing an unsigned archive could produce is an upload
+      # Apple will reject.
       #
       # The three version overrides are the whole of the stamping. project.yml
       # keeps a value for each so a local build still reports something, and CI
