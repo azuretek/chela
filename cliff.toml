@@ -1,0 +1,107 @@
+# Release notes for every GitHub Release this repo publishes.
+#
+# The `release` job in `.github/workflows/release.yml` runs this file through
+# git-cliff and hands the result to the Release as its body. Nothing else reads
+# it, and nothing here decides a version.
+#
+# ## Why the notes are built here at all
+#
+# The release step used to ask GitHub for them (`generate_release_notes: true`).
+# That feature groups MERGED PULL REQUESTS, by label and contributor. This repo
+# commits straight to main, so there are no pull requests to group and every
+# release body came out as the bare compare link. The setting was on and working
+# the whole time; it had nothing to work on.
+#
+# What this file reads instead is the history that is actually here: commit
+# subjects in Conventional Commit form (`feat(ui): ...`), grouped by type, with
+# the commit's own body carried under a `feat` or a `fix` because that is where
+# the reasoning lives. Nothing is summarised, inferred or added: every line in a
+# release body is a line someone committed.
+#
+# ## Why git-cliff and not a script
+#
+# Parsing, grouping, section order and templating are each a small decision with
+# an edge case behind it, and the range handling is a third: a commit that is not
+# conventional has to still appear, a commit body has to be re-indented to sit
+# under its entry, a range spanning tags has to yield one section rather than one
+# per tag, and a dev tag must not cut a release in half. git-cliff is maintained
+# and already answers all of that; a bespoke generator would have to re-answer it
+# and then be tested. The whole configuration is this file.
+#
+# To read what the next release will say, from a checkout with full history and
+# tags (`git fetch --tags` first if the clone is shallow):
+#
+#   git-cliff $(git describe --tags --abbrev=0 HEAD^)..HEAD
+#
+# ## What is deliberately NOT here
+#
+# Version numbers. `desktop/.release-it.cjs` owns the bump and it stays a human
+# decision for the reasons recorded there; commits generate these notes only.
+
+[changelog]
+# `header` and `footer` are left unset rather than emptied, because an empty
+# string here is still a line: setting both inserts a blank line at each end of
+# the body. git-cliff's own defaults are empty and its output is just the
+# sections, which is what a Release body should be. GitHub supplies the title,
+# the tag and the compare link, so a heading or a footer from here would be a
+# second, competing copy of them.
+#
+# `body` renders [[group, commits]] for the release: a heading per group, one
+# line per commit, and the commit's own body under it for the two groups whose
+# reasoning is worth reading. `commit.message` has had its `type(scope):` prefix
+# stripped by the parser, which is why the scope is re-attached here as a label;
+# `| first` guards the unparsed commits, whose message is the whole raw message
+# and whose subject is wanted alone.
+body = '''
+{%- for group, commits in commits | group_by(attribute="group") %}{% if not loop.first %}
+{% endif %}### {{ group }}
+
+{% for commit in commits -%}
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | trim | split(pat="\n") | first }}{% if (group == "Features" or group == "Fixes") and commit.body %}
+
+  {{ "  " }}{{ commit.body | trim | split(pat="\n") | join(sep="\n  ") }}{% endif %}
+{% endfor %}
+{%- endfor -%}
+'''
+
+[git]
+# Conventional Commits are how this repo writes history, and they are what the
+# notes group on.
+#
+# `filter_unconventional` stays FALSE, and that is the important line here: a
+# commit written as prose still describes a change and must still appear, under
+# Other Changes. The first 34 commits in this history are exactly that, so a
+# filter would make a release body quietly shorter than the release it
+# describes, which is the failure mode these notes exist to remove.
+conventional_commits = true
+filter_unconventional = false
+
+# The group names below are also read by the `body` template above, which
+# carries a commit's body for Features and Fixes and the subject alone for
+# anything else. Renaming one here means renaming it there.
+#
+# Everything that is not a feat or a fix lands in one bucket. Split it here, by
+# adding a parser per type, if a type ever deserves its own heading in a release.
+commit_parsers = [
+  { message = "^feat", group = "Features" },
+  { message = "^fix", group = "Fixes" },
+  { message = ".*", group = "Other Changes" },
+]
+
+# Oldest first, so a section reads in the order the work happened.
+sort_commits = "oldest"
+
+# A release boundary is a STABLE tag and nothing else. A dev tag is a build
+# marker: CI puts one on every push to main and prunes them to the newest 10. If
+# one counted as a boundary, a release's notes would be split at every dev build
+# inside its range, so a release covering a month of pushes would arrive as a
+# hundred sections of one commit instead of one set of notes. (Measured on
+# this history: one range holding 10 commits across 7 dev tags renders 7
+# sections with dev tags as boundaries and 1 as configured.)
+#
+# The pattern also bounds what a bare `git-cliff` run in a checkout sees, so a
+# developer gets the same sections CI does. A prerelease tag other than our dev
+# form is skipped as a boundary too, which costs nothing: the range is passed
+# explicitly and the body carries no version, so such a build renders the same
+# commits either way.
+tag_pattern = '''^v[0-9]+[.][0-9]+[.][0-9]+$'''
