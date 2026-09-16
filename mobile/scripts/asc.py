@@ -252,24 +252,43 @@ def fetch_app(auth):
 
 
 def fetch_team_id(auth):
-    """The team id, read from the bundle id record rather than kept anywhere.
+    """The team id, read from the account rather than kept anywhere.
 
     `project.yml` has no team id on purpose, the same reason build-device.sh
     takes one from the environment: it is a property of the account, and a
     committed copy is a second place to keep in step with it. This asks the
-    account instead, from the App ID prefix, which is the team id.
+    account instead, from an App ID's seed id, which is the team id.
+
+    Any App ID will do, not only ours, because the seed id is a property of the
+    team and every App ID in it carries the same one. That matters on an account
+    where our App ID does not exist yet: automatic signing registers it during
+    the archive, so requiring it here would refuse to sign on exactly the first
+    run an account ever does. The wildcard App ID Xcode registers for
+    development signing is enough to answer the question.
     """
-    result = api(auth, "/bundleIds", {"filter[identifier]": BUNDLE_ID, "limit": 10})
+    result = api(auth, "/bundleIds", {"limit": 50, "filter[identifier]": BUNDLE_ID})
     if not ok(result):
-        fail(f"looking up the bundle id {BUNDLE_ID} failed: {describe(result)}")
-    for record in result.get("data", []):
+        # A key that cannot read the identifiers at all is worth distinguishing
+        # from an account that has none, so the failing call is reported with
+        # its own words before the wider list is tried.
+        print(f"note: looking up the bundle id {BUNDLE_ID} failed: {describe(result)}")
+        result = {"data": []}
+
+    records = result.get("data", [])
+    if not records:
+        result = api(auth, "/bundleIds", {"limit": 50})
+        if not ok(result):
+            fail(f"listing this account's bundle ids failed: {describe(result)}")
+        records = result.get("data", [])
+
+    for record in records:
         seed = record.get("attributes", {}).get("seedId")
         if seed:
             return seed
     fail(
-        f"the bundle id {BUNDLE_ID} exists but carries no seed id, so the team cannot be "
-        "read from it. Register the App ID in the developer portal, or check that this key "
-        "belongs to the account that owns it."
+        "this account has no App ID at all, so it carries no seed id and the team cannot be "
+        "read from it. Register an App ID in the developer portal (Certificates, Identifiers "
+        "and Profiles), which needs an Admin or Account Holder role, then re-run."
     )
 
 
@@ -338,10 +357,15 @@ def preflight():
     later and in a place where Apple's message is buried in toolchain output.
     """
     auth = token()
-    app = fetch_app(auth)
+    # The team id first, and written out as soon as it is known: it is what the
+    # archive signs with, so a failure later in this step still leaves the
+    # signing half of the run answerable.
     team_id = fetch_team_id(auth)
-    print(f"app record: {app['attributes'].get('name')} ({app['id']}) for {BUNDLE_ID}")
+    output("team-id", team_id)
     print(f"team id: {team_id}")
+
+    app = fetch_app(auth)
+    print(f"app record: {app['attributes'].get('name')} ({app['id']}) for {BUNDLE_ID}")
 
     build_number = env("BUILD_NUMBER")
     marketing = env("MARKETING_VERSION")
@@ -356,7 +380,6 @@ def preflight():
         output("already-uploaded", "false")
 
     output("app-id", app["id"])
-    output("team-id", team_id)
 
 
 def wait():
