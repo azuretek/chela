@@ -157,38 +157,41 @@ struct ContentView: View {
                 .animation(.easeInOut(duration: 0.2), value: pairing.isPairing)
                 .overlay(alignment: .top) { NoticeStack(board: notices) }
                 .overlay(alignment: .topTrailing) { SettingsButton { showingSettings = true } }
-                .sheet(isPresented: $showingSettings) {
+                // Settings, and About over it. Both fill the screen, presented the
+                // one way this client presents a shared web surface: the surface
+                // carries its own safe area, and the sheet is pinned to the whole
+                // screen so a page's own height never sizes it. See
+                // `fullScreenSurfaceSheet`.
+                .fullScreenSurfaceSheet(isPresented: $showingSettings) {
                     if let host {
                         SettingsSurface(host: host, appearance: appearance.mode)
-                            // The page is a settings form inside a sheet, so it is
-                            // the surface that carries the safe area rather than the
-                            // sheet's own inset: the card's padding is measured from
-                            // the page edge, and insetting twice would pull it in
-                            // from both.
-                            .ignoresSafeArea()
+                            // About is presented from the settings surface, so the
+                            // second sheet stacks over the first the way the
+                            // desktop's About-over-Settings overlay does, and lands
+                            // back on settings when dismissed.
+                            .aboutSheet(isPresented: $showingAbout, host: aboutHost, appearance: appearance.mode)
                     }
                 }
             } else if let host {
                 // No gateway yet, so this IS the app: there is nothing behind it to
-                // go back to, and nothing to draw the sheet over.
+                // go back to, and nothing to draw the sheet over. About is still
+                // reached from here, so the About sheet rides the surface itself.
                 SettingsSurface(host: host, appearance: appearance.mode)
                     .ignoresSafeArea()
+                    .aboutSheet(isPresented: $showingAbout, host: aboutHost, appearance: appearance.mode)
             } else {
                 // One frame, while the host is built in `onAppear`.
                 Color(uiColor: .systemBackground)
             }
         }
-        // About hangs off the Group rather than off either branch, so it opens
-        // whether or not there is a gateway: it is reached from Settings, and
-        // Settings is the app itself on a first run. On a gateway it is the second
-        // sheet, over the settings one that opened it, which is the phone's stack
-        // for the desktop's About-over-Settings overlay.
-        .sheet(isPresented: $showingAbout) {
-            if let aboutHost {
-                AboutSurface(host: aboutHost, appearance: appearance.mode)
-                    .ignoresSafeArea()
-            }
-        }
+        // About is presented from the settings surface in each branch above,
+        // rather than off the Group here: it is reached from Settings and only
+        // from Settings, and a second sheet stacks reliably over the first when it
+        // is raised from the presented surface rather than from an ancestor of it.
+        // Raised from the Group it was raised from outside the sheet that was on
+        // screen, which resolved it to a content-height detent around About's short
+        // card. See `aboutSheet` and `fullScreenSurfaceSheet`.
+        //
         // The app's own appearance, and it is the whole app rather than the web
         // view: the status bar, the sheet's background and the strips around the
         // page are the native half, and a page passed light while they stayed dark
@@ -257,14 +260,16 @@ struct ContentView: View {
         // Settings, then open About over it, which is the stack a tap produces.
         // A simulator cannot be tapped, so this proves the real route rather than
         // loading the page on its own. Debug only, inert without the argument.
-        // Presenting two sheets in one render pass is unreliable in SwiftUI (the
-        // second lands empty), so a screenshot run opens About on its own: it is
-        // the same `showingAbout` the Settings button sets, so the page and its
-        // host are exercised the real way, and the settings-to-About wiring is
-        // covered by AboutHostTests and settings-surface.test.js rather than by
-        // stacking two sheets here.
+        //
+        // About is presented from the settings surface now, so it needs Settings
+        // up first: showing both in one render pass lands the second empty, so
+        // Settings is opened here and About on the next runloop tick, once the
+        // first sheet is on screen. This is the real presenter and the real
+        // `showingAbout` the About card sets, so a screenshot proves the actual
+        // About-over-Settings stack rather than a page loaded on its own.
         if SettingsSpec.screenshotOpensAbout {
-            showingAbout = true
+            showingSettings = true
+            DispatchQueue.main.async { showingAbout = true }
         }
         // A screenshot run for the pairing screen, which a simulator cannot reach
         // without the gateway's own token and an unapproved device on a running
@@ -325,6 +330,69 @@ struct ContentView: View {
         check = UpdateCheck(board: notices)
         #endif
         Task { await check.run() }
+    }
+}
+
+/// How this client presents a shared web surface as a sheet, in one place so
+/// every sheet is presented the same way.
+///
+/// Settings and About are the two, and they are the same kind of thing: a shared
+/// `core/ui` page in a web view that lays itself out edge to edge and insets its
+/// own content from the safe area. So each wants the whole screen, the way the
+/// desktop gives each of them the whole window, rather than a sheet sized to the
+/// height of whatever the page happens to draw.
+///
+/// A plain `.sheet` gives the whole screen at the top level, which is why Settings
+/// filled it. About did not, because it was raised while Settings was already a
+/// sheet, and a sheet presented from within a sheet resolves to a content-height
+/// detent unless it is told otherwise: About's card is short, so the sheet came
+/// out mid-height around it. `.presentationDetents([.large])` is what says "the
+/// whole screen" regardless of the content or of what is already presented, so
+/// pinning it here makes About fill the screen the same way Settings does and
+/// keeps the two from ever drifting apart again.
+///
+/// `.ignoresSafeArea()` is part of the same one way: the page carries the safe
+/// area itself (see `SettingsSurface`), so the sheet must not inset it a second
+/// time.
+private struct FullScreenSurfaceSheet<Surface: View>: ViewModifier {
+    @Binding var isPresented: Bool
+    @ViewBuilder let surface: () -> Surface
+
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: $isPresented) {
+            surface()
+                .ignoresSafeArea()
+                .presentationDetents([.large])
+        }
+    }
+}
+
+extension View {
+    /// Present `surface` as a sheet that fills the screen. The one way this client
+    /// presents a shared web surface; see `FullScreenSurfaceSheet`.
+    func fullScreenSurfaceSheet<Surface: View>(
+        isPresented: Binding<Bool>,
+        @ViewBuilder surface: @escaping () -> Surface
+    ) -> some View {
+        modifier(FullScreenSurfaceSheet(isPresented: isPresented, surface: surface))
+    }
+
+    /// Present the About surface as a full-screen sheet over the settings surface.
+    ///
+    /// Attached to the settings surface rather than to an ancestor, so About is the
+    /// second sheet over the first the way the desktop stacks About over Settings,
+    /// and fills the screen the same way through `fullScreenSurfaceSheet`. A nil
+    /// host draws nothing, which is the one frame before `onAppear` builds it.
+    func aboutSheet(
+        isPresented: Binding<Bool>,
+        host: AboutHost?,
+        appearance: AppearanceMode
+    ) -> some View {
+        fullScreenSurfaceSheet(isPresented: isPresented) {
+            if let host {
+                AboutSurface(host: host, appearance: appearance)
+            }
+        }
     }
 }
 
