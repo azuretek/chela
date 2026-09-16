@@ -110,6 +110,19 @@ enum SettingsSpec {
         ProcessInfo.processInfo.arguments.contains("-claw-check-updates")
     }
 
+    /// Whether this run should press the update notice's own action, from
+    /// `-claw-open-testflight`.
+    ///
+    /// The same reasoning as `screenshotChecksUpdates`, one button further on: a
+    /// simulator cannot be tapped, and the TestFlight action is the one control
+    /// whose result is outside this app, so without this the only evidence for it
+    /// would be a source read. It runs the real command the notice's button posts,
+    /// so the app's own log carries what it handed the system and what the system
+    /// answered. Compiled out of a release build, and inert without the argument.
+    static var screenshotOpensTestFlight: Bool {
+        ProcessInfo.processInfo.arguments.contains("-claw-open-testflight")
+    }
+
     /// Whether this run should drive the update check from a seeded feed rather
     /// than the network, from `-claw-seed-update-feed <version>`.
     ///
@@ -183,6 +196,7 @@ enum SettingsSpec {
     static var screenshotOpensSettings: Bool { false }
     static var screenshotOpensAbout: Bool { false }
     static var screenshotChecksUpdates: Bool { false }
+    static var screenshotOpensTestFlight: Bool { false }
     static var screenshotScrollsToBottom: Bool { false }
     static var screenshotSeedsUpdateFeed: Bool { false }
     static var screenshotUpdateFeedVersion: String? { nil }

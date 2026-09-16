@@ -324,7 +324,13 @@ struct ContentView: View {
             case NoticeBoard.settingsCommand:
                 showingSettings = true
             case UpdateCheck.openTestFlightCommand:
-                UIApplication.shared.open(UpdateCheck.testFlightURL)
+                // Into TestFlight, and on to its App Store page when TestFlight is
+                // not on this phone: `TestFlight.open` is the platform's opener and
+                // reads its answer rather than assuming either one worked. Detached
+                // because the command handler is synchronous and the opener is not,
+                // and nothing waits on the result: the notice stays up until the
+                // build is actually installed.
+                Task { await TestFlight.open() }
             default:
                 break
             }
@@ -365,6 +371,16 @@ struct ContentView: View {
                     let host = aboutHost
                     Task { await host?.pressCheckForUpdates() }
                 }
+            }
+        }
+        // A screenshot run that presses the update notice's own action. The card's
+        // button reaches the command through `notices.run`, which is the call this
+        // makes, so what the run exercises is the real route minus the tap: the
+        // real opener, the real fallback and the app's own log of both. Debug only,
+        // inert without the argument. See `SettingsSpec`.
+        if SettingsSpec.screenshotOpensTestFlight {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                notices.run(UpdateCheck.openTestFlightCommand)
             }
         }
         // A screenshot run for the pairing screen, which a simulator cannot reach

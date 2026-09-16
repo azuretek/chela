@@ -76,6 +76,8 @@ final class UpdateCheck {
     /// Where a new build waits, in this client's own words. The shared
     /// composition names no distribution channel (`core/updates.js` refuses to on
     /// purpose), so the sentence is passed in rather than written into the answer.
+    /// The word is honest about what pressing the action does: it is `TestFlight`
+    /// that opens, whatever it takes to get there.
     static let updatePointer = "Open TestFlight to update."
 
     /// Why this build does not read a feed at all: only the dev channel has
@@ -88,18 +90,11 @@ final class UpdateCheck {
     /// same shape the connection notice's `settings` command uses.
     static let openTestFlightCommand = "update-open-testflight"
 
-    /// Where the tap sends someone. TestFlight is the one distribution channel
-    /// today (the mobile pipeline uploads every build to it), so the newer build
-    /// the feed announced is the one already waiting there for this tester. The
-    /// itms-beta scheme opens the TestFlight app straight to this app if it is
-    /// installed; the https URL is the fallback the OS uses when it is not, which
-    /// lands on the TestFlight page and offers to install it.
-    ///
-    /// Not a channel baked into the shared policy: `core/updates.js` names none on
-    /// purpose, because which mechanism delivers the next build is an open
-    /// decision. It is named here, in the one client that has an install link to
-    /// offer, rather than in the rule both clients share.
-    static let testFlightURL = URL(string: "https://testflight.apple.com/")!
+    /// Where the reader is sent, and how, is `TestFlight`'s rather than this
+    /// file's: it is the one place that knows TestFlight is an app to be opened and
+    /// not a page to be read, and the one place that handles a phone without it.
+    /// What stays here is the sentence and the label, because this is the notice
+    /// that decides the reader is being offered an update at all.
 
     /// The last version this app told the reader about, for the one other place
     /// that needs it: the About page's Release notes button, which should open
