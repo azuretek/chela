@@ -21,8 +21,13 @@ command line, because Apple's token format puts them in the JWT header and
 claims and there is no other way to name a key, and neither is a credential:
 both are visible in the App Store Connect UI, the key itself is the secret.
 
-Reads and writes only what the release needs, so nothing here can change an app
-record, a certificate or a profile.
+Reads and writes only what the release needs. It cannot change an app record or
+a profile. The one thing it revokes is the throwaway Development certificate
+that automatic signing mints and abandons: an account fills with them until an
+archive fails for the want of a free slot, and preflight prunes them so it does
+not, keeping the newest and never touching a person-made or distribution
+certificate. That housekeeping is why the key needs a certificate-management
+role, which the Admin key it already uses has.
 """
 
 import base64
@@ -329,6 +334,74 @@ def fetch_build(auth, app_id, build_number):
     return None
 
 
+# The Development certificate that automatic signing mints. `xcodebuild
+# -allowProvisioningUpdates` creates one of these on an archive when it needs a
+# signing identity and cannot find one, names it exactly this, and never revokes
+# it. Apple caps Development certificates per account, so after enough archives
+# the account fills with abandoned copies and the next archive fails with
+# "Choose a certificate to revoke. Your account has reached the maximum number
+# of certificates", which reads as a signing bug but is only housekeeping Apple
+# will not do. This is the exact display name Apple assigns them; a real,
+# person-created Development certificate carries a person's name instead, and a
+# distribution or Developer ID certificate is a different type, so matching on
+# both type and this name touches nothing anyone made on purpose.
+AUTO_DEV_CERT_NAME = "Created via API"
+
+# How many of the auto-minted Development certificates to leave behind. One is
+# kept so the next archive can reuse it rather than mint yet another, and so a
+# concurrent run signing against it is not cut off mid-build. Everything older
+# than this is revoked, which keeps the account well under Apple's cap without
+# ever emptying it.
+KEEP_AUTO_DEV_CERTS = 1
+
+
+def prune_stale_dev_certs(auth):
+    """Revoke the abandoned auto-minted Development certificates.
+
+    Housekeeping, run in preflight so a full account is emptied before the
+    archive needs a slot rather than after it has already failed for the want of
+    one. Deliberately narrow and deliberately non-fatal: it revokes only the
+    Development certificates automatic signing left behind, keeps the newest so
+    a build still has an identity, and never fails the release if a revoke does
+    not go through, because a slightly full account still archives and the next
+    run prunes again. Anything a person made, and every distribution or
+    Developer ID certificate, is a different type or a different name and is
+    never a candidate.
+    """
+    result = api(auth, "/certificates", {
+        "limit": 200,
+        "fields[certificates]": "certificateType,displayName,expirationDate",
+    })
+    if not ok(result):
+        print(f"::warning::could not list certificates to prune stale ones: {describe(result)}")
+        return
+
+    stale = [
+        cert for cert in result.get("data", [])
+        if cert.get("attributes", {}).get("certificateType") == "DEVELOPMENT"
+        and cert.get("attributes", {}).get("displayName") == AUTO_DEV_CERT_NAME
+    ]
+    # Newest last, so the ones kept are the most recently created.
+    stale.sort(key=lambda c: c.get("attributes", {}).get("expirationDate") or "")
+    to_revoke = stale[:-KEEP_AUTO_DEV_CERTS] if KEEP_AUTO_DEV_CERTS else stale
+
+    if not to_revoke:
+        print(f"certificate housekeeping: {len(stale)} auto-minted Development cert(s), "
+              "nothing to prune")
+        return
+
+    print(f"certificate housekeeping: {len(stale)} auto-minted Development cert(s), "
+          f"revoking {len(to_revoke)} and keeping the newest {KEEP_AUTO_DEV_CERTS}")
+    revoked = 0
+    for cert in to_revoke:
+        deleted = api(auth, f"/certificates/{cert['id']}", method="DELETE")
+        if ok(deleted):
+            revoked += 1
+        else:
+            print(f"::warning::could not revoke stale certificate {cert['id']}: {describe(deleted)}")
+    print(f"certificate housekeeping: revoked {revoked} of {len(to_revoke)} stale Development cert(s)")
+
+
 def internal_group(auth, app_id):
     result = api(auth, "/betaGroups", {"filter[app]": app_id, "limit": 50})
     if not ok(result):
@@ -357,6 +430,13 @@ def preflight():
     later and in a place where Apple's message is buried in toolchain output.
     """
     auth = token()
+    # Housekeeping first, before anything reads the account for a build: this is
+    # what keeps `-allowProvisioningUpdates` able to mint the identity the
+    # archive needs, on an account that automatic signing steadily fills with
+    # abandoned Development certificates. Non-fatal, so it never blocks a
+    # release; it only clears room for one.
+    prune_stale_dev_certs(auth)
+
     # The team id first, and written out as soon as it is known: it is what the
     # archive signs with, so a failure later in this step still leaves the
     # signing half of the run answerable.
