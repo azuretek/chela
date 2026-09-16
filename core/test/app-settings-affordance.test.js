@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   AFFORDANCE_GLOBAL, AFFORDANCE_CONFIG_GLOBAL, AFFORDANCE_MARKER, AFFORDANCE_ANCHORS,
-  affordanceSource, configStatement, installation,
+  affordanceSource, configStatement, installation, controlUiSettingsSource,
 } from '../app-settings-affordance.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -57,6 +57,11 @@ function makeDom({ selectors = [] } = {}) {
       appendChild(child) { this.children.push(child); child.parent = this; registry.push(child); return child; },
       addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
       dispatch(type, event = {}) { (listeners[type] || []).forEach((fn) => fn(event)); },
+      // A press, as a browser makes one: the count is what the assertions about
+      // the Control UI's own control read, and it is dispatched so a listener the
+      // page attached still runs.
+      click() { this.clicks += 1; this.dispatch('click', { preventDefault() {}, stopPropagation() {} }); },
+      clicks: 0,
       matches(selector) { return (this._selectors || []).includes(selector); },
       querySelector() { return null; },
     };
@@ -83,8 +88,15 @@ function makeDom({ selectors = [] } = {}) {
     dispatch(type, event = {}) { (this._domListeners[type] || []).forEach((fn) => fn(event)); },
     // Match against the marker attribute or a known anchor selector. A comma
     // list is tried left to right, which is what the sidebar fallback uses.
+    //
+    // A selector containing a SPACE is a descendant selector rather than an
+    // attribute test, and the attribute branch is skipped for it: without that
+    // guard a compound fallback like `[class*="sidebar"] button[class*="settings"]`
+    // starts and ends with a bracket, so it was read as an attribute lookup,
+    // found nothing, and made a fallback nothing here could press look untested
+    // rather than broken.
     querySelector(selector) {
-      const attr = /^\[(.+?)\]$/.exec(selector.trim());
+      const attr = selector.trim().includes(' ') ? null : /^\[(.+?)\]$/.exec(selector.trim());
       if (attr) {
         return registry.find((el) => el.getAttribute && el.getAttribute(attr[1].split('=')[0]) !== null) || null;
       }
@@ -291,4 +303,77 @@ test('the injected script exists in exactly one file: the spec', () => {
       `the injected script has been copied, and this line is held by ${owners.length} files (${owners.join(', ')}): ${line.trim()}`,
     );
   }
+});
+
+/* ------------------------------------ handing the reader to the Control UI */
+
+// The second thing this script can do, and the reason the app's settings page
+// offers a link at all: take the reader to the CONTROL UI's own settings. It is
+// a different surface from ours and not ours to navigate, so the script presses
+// the Control UI's own footer control rather than building a URL, which keeps the
+// route the Control UI's and the two clients from coming to mean different pages.
+
+test('the press is the Control UI footer control named by the spec, pressed once', () => {
+  const dom = makeDom({ selectors: [spec.anchors.controlUiSettings] });
+  const { window } = run(dom);
+  const config = window[spec.configGlobal];
+
+  assert.strictEqual(typeof config.openControlUiSettings, 'function', 'the press is installed on the config global');
+  assert.strictEqual(config.openControlUiSettings(), true, 'a control in the footer is pressed');
+  assert.strictEqual(
+    dom.anchorElements.get(spec.anchors.controlUiSettings).clicks,
+    1,
+    'exactly one press, on the Control UI control itself',
+  );
+});
+
+test('the fallback anchor is pressed when the first selector finds nothing', () => {
+  const dom = makeDom({ selectors: [spec.anchors.controlUiSettingsFallback] });
+  const { window } = run(dom);
+  assert.strictEqual(window[spec.configGlobal].openControlUiSettings(), true, 'the fallback control is pressed');
+  assert.strictEqual(dom.anchorElements.get(spec.anchors.controlUiSettingsFallback).clicks, 1);
+});
+
+test('a Control UI with no footer control fails soft with a false, not a throw', () => {
+  // The case that matters on a page we do not own: upstream is free to move its
+  // footer, and a press that threw inside it would break the Control UI rather
+  // than leaving the reader where they were.
+  const dom = makeDom({ selectors: [] });
+  const { window } = run(dom);
+  assert.strictEqual(window[spec.configGlobal].openControlUiSettings(), false, 'nothing to press answers false');
+});
+
+test('the call a client evaluates presses the same control the script would', () => {
+  const dom = makeDom({ selectors: [spec.anchors.controlUiSettings] });
+  const { window, context } = run(dom);
+  const source = controlUiSettingsSource();
+
+  assert.ok(source.includes(spec.configGlobal), 'the call reads the config global the installation wrote');
+  assert.ok(!source.includes(`${spec.global}.open`), 'the call never reaches for the app-settings bridge');
+  assert.strictEqual(vm.runInNewContext(source, context), true, 'the client evaluates this exact string');
+  assert.strictEqual(dom.anchorElements.get(spec.anchors.controlUiSettings).clicks, 1);
+});
+
+test('installing twice leaves one press rather than a queue of them', () => {
+  // The installation is re-run on every load of a page whose footer can be
+  // rebuilt, so a second install must replace the function rather than add a
+  // second one that would open settings once per install.
+  const dom = makeDom({ selectors: [spec.anchors.controlUiSettings] });
+  const { window, context } = run(dom);
+  vm.runInNewContext(`${configStatement({ label: 'App settings' })}\n${affordanceSource()}`, context);
+
+  assert.strictEqual(window[spec.configGlobal].openControlUiSettings(), true);
+  assert.strictEqual(dom.anchorElements.get(spec.anchors.controlUiSettings).clicks, 1, 'one press per call, not per install');
+});
+
+test('the anchors are flat strings, so the client that mirrors them can decode the file', () => {
+  // Measured the hard way: a nested object for the Control UI settings control
+  // failed the phone's `[String: String]` decode of this whole file, which takes
+  // the script and the config with it, and an affordance that never installs
+  // reports nothing anywhere.
+  for (const [key, value] of Object.entries(spec.anchors)) {
+    assert.strictEqual(typeof value, 'string', `anchors.${key} must be a string`);
+  }
+  assert.ok(spec.anchors.controlUiSettings, 'the Control UI settings control is named');
+  assert.ok(spec.anchors.controlUiSettingsFallback, 'and has a fallback');
 });
