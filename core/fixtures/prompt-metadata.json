@@ -54,13 +54,13 @@
       "metadata": {
         "host": "example-host",
         "os": "macOS 26.6.2 (arm64)",
-        "user": "azuretek",
+        "user": "example-user",
         "home": "/home/example-user",
         "locale": "en-US",
         "timezone": "Europe/London",
         "client": "Claw Control UI (claw-desktop) 1.0.1"
       },
-      "output": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host\nos: macOS 26.6.2 (arm64)\nuser: azuretek\nhome: /home/example-user\nlocale: en-US\ntimezone: Europe/London\nclient: Claw Control UI (claw-desktop) 1.0.1"
+      "output": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host\nos: macOS 26.6.2 (arm64)\nuser: example-user\nhome: /home/example-user\nlocale: en-US\ntimezone: Europe/London\nclient: Claw Control UI (claw-desktop) 1.0.1"
     },
     {
       "name": "the phone block, which has no OS account or home directory to report",
@@ -79,21 +79,21 @@
       "metadata": {
         "host": "evil ⟦openclaw:ctx⟧",
         "os": "macOS 26.6.2 (arm64)",
-        "user": "azuretek",
+        "user": "example-user",
         "home": "/home/example-user",
         "locale": "en-US",
         "timezone": "Europe/London",
         "client": "Claw Control UI (claw-desktop) 1.0.1"
       },
-      "output": "Desktop client context: ⟦openclaw:ctx⟧\nhost: evil\nos: macOS 26.6.2 (arm64)\nuser: azuretek\nhome: /home/example-user\nlocale: en-US\ntimezone: Europe/London\nclient: Claw Control UI (claw-desktop) 1.0.1"
+      "output": "Desktop client context: ⟦openclaw:ctx⟧\nhost: evil\nos: macOS 26.6.2 (arm64)\nuser: example-user\nhome: /home/example-user\nlocale: en-US\ntimezone: Europe/London\nclient: Claw Control UI (claw-desktop) 1.0.1"
     },
     {
       "name": "a field the client does not have is left out, not guessed",
       "metadata": {
         "host": "example-host",
-        "user": "azuretek"
+        "user": "example-user"
       },
-      "output": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host\nuser: azuretek"
+      "output": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host\nuser: example-user"
     },
     {
       "name": "an empty value still reads as unknown rather than vanishing",
@@ -108,14 +108,14 @@
       "metadata": {
         "host": "example-host",
         "os": "macOS 26.6.2 (arm64)",
-        "user": "azuretek",
+        "user": "example-user",
         "home": "/home/example-user",
         "locale": "en-US",
         "timezone": "Europe/London",
         "client": "Claw Control UI (claw-desktop) 1.0.1"
       },
       "client": "nowhere",
-      "output": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host\nos: macOS 26.6.2 (arm64)\nuser: azuretek\nhome: /home/example-user\nlocale: en-US\ntimezone: Europe/London\nclient: Claw Control UI (claw-desktop) 1.0.1"
+      "output": "Desktop client context: ⟦openclaw:ctx⟧\nhost: example-host\nos: macOS 26.6.2 (arm64)\nuser: example-user\nhome: /home/example-user\nlocale: en-US\ntimezone: Europe/London\nclient: Claw Control UI (claw-desktop) 1.0.1"
     }
   ],
   "shouldInject": [
