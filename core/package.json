@@ -11,6 +11,7 @@
     "./progress.js": "./progress.js",
     "./connection.js": "./connection.js",
     "./notices.js": "./notices.js",
+    "./updates.js": "./updates.js",
     "./config-model.js": "./config-model.js",
     "./gateway-url.js": "./gateway-url.js"
   },

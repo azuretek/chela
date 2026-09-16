@@ -14,6 +14,7 @@ the future iOS app behave identically where it counts and cannot drift apart.
 | `notices.js` | The keyed-by-condition notice store: raise, replace, read, clear, sorted worst-first. |
 | `config-model.js` | The gateway config shape and the pure CRUD over its gateway list (no persistence, that is each client's disk). |
 | `gateway-url.js` | The token handoff: build the Control UI URL with the token on the `#token=` fragment. |
+| `updates.js` | What this build may do about a new version: the action, whether to check, whether to download, and why. Takes `platform`, `packaged`, `macSigned` and `appImage` as arguments, so a stray environment variable cannot change the answer. |
 
 ## One source of truth
 
@@ -23,6 +24,7 @@ The data each module needs lives in `spec/*.json`, and the JS reads from it:
 - `spec/progress.json`: the milestone order, floors, the easing time constant and creep.
 - `spec/connection.json`: the phase names, `ERR_ABORTED`, and the error-code hints.
 - `spec/notices.json`: the tones and their sort rank.
+- `spec/updates.json`: the four action names and the two check intervals.
 
 A Swift port reads the same JSON, so the data cannot say one thing on desktop
 and another on the phone. Change a quip or a milestone floor once, in the spec,
@@ -37,6 +39,9 @@ port is most likely to get subtly wrong:
   elapsed times, including the failed-load freeze.
 - `fixtures/connection.json`: `reason()` and `status()` across every error code
   and phase.
+- `fixtures/updates.json`: `policy()` across every platform's install
+  capability, including the automatic-updates preference that may only ever
+  narrow it.
 
 `test/*.test.js` asserts the JS reproduces every fixture exactly. The iOS
 client's Swift tests reproduce the same fixtures, which is what turns "these
