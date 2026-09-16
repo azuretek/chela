@@ -150,7 +150,17 @@ html, body {
 
 /* The scrim fills the overlay view, which fills the window. Padding-top clears
    the drag band below so the card never sits under it, or, on Windows, under
-   the caption buttons the OS draws above the web contents. */
+   the caption buttons the OS draws above the web contents.
+
+   The two safe-area lines below are for the phone, where this page is laid out
+   edge to edge in a web view that covers the whole screen (see
+   mobile/Claw/SettingsView.swift) and has to inset its own content from the
+   status bar and the home indicator. They resolve to zero in every Electron
+   window, which has no safe area, so the desktop keeps exactly the 58px and 24px
+   above: `env()` is 0 there, and `max()` picks the literal. Written as an
+   override rather than folded into the shorthand because a browser without
+   `env()` drops the whole declaration, and the shorthand above is then what it
+   already had. */
 .scrim {
   position: fixed;
   inset: 0;
@@ -159,6 +169,10 @@ html, body {
   justify-content: center;
   padding: 58px 24px 24px;
   background: var(--scrim);
+  padding-top: max(58px, env(safe-area-inset-top));
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+  padding-left: max(24px, env(safe-area-inset-left));
+  padding-right: max(24px, env(safe-area-inset-right));
 }
 
 /* When this page is the window's whole content, a first run, or a connection
@@ -485,6 +499,23 @@ input[type="text"], input[type="url"], input[type="password"] {
 input[type="text"]:focus, input[type="url"]:focus, input[type="password"]:focus {
   outline: none; border-color: var(--ring);
 }
+
+/* The one picker on any of our pages, and styled as the field it stands in
+   rather than left to the platform: an unstyled select in this palette is a
+   grey system control with its own idea of a border, which is the shape of
+   "bolted on" this stylesheet exists to avoid. Only what has to differ from the
+   inputs above is written here. */
+select {
+  width: 100%; background: var(--input); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 8px 10px; font: inherit; cursor: pointer;
+}
+select:focus { outline: none; border-color: var(--ring); }
+
+/* Native menus are drawn by the platform and take their colours from
+   `color-scheme`, which :root sets below for each mode, so the list a select
+   opens follows the palette without anything here painting it. */
+option { background: var(--input); color: var(--text); }
 
 button {
   background: var(--panel-hover); color: var(--text); border: 1px solid var(--border);

@@ -55,8 +55,22 @@ enum SettingsSpec {
         guard let index = arguments.firstIndex(of: "-claw-settings-tab"), index + 1 < arguments.count else { return nil }
         return arguments[index + 1]
     }
+
+    /// Whether this run should open the settings sheet at launch, from
+    /// `-claw-open-settings`.
+    ///
+    /// The same reasoning as `screenshotTab` one line up, and it exists because
+    /// the two facts are separate: the sheet is only reachable by pressing a
+    /// button, and a simulator cannot be tapped by a script. Without this the one
+    /// presentation the phone has of the settings surface, a sheet over the page,
+    /// is the one no screenshot run can reach, so its size and its safe-area
+    /// strips would be checked only by looking at it on a device.
+    static var screenshotOpensSettings: Bool {
+        ProcessInfo.processInfo.arguments.contains("-claw-open-settings")
+    }
     #else
     static var screenshotTab: String? { nil }
+    static var screenshotOpensSettings: Bool { false }
     #endif
 
     /// The split of the settings surface, read from the bundled spec.

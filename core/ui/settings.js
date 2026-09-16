@@ -581,6 +581,7 @@ function renderPrefs() {
   // screen must not be written from, and one that is on screen must not be
   // skipped: that reading of the split is the whole reason the ids are checked
   // here rather than the DOM being assumed complete.
+  if (hasSetting('appearance')) $('appearance').value = (state.appearance && state.appearance.mode) || 'system';
   if (hasSetting('closeToTray')) $('closeToTray').checked = Boolean(s.closeToTray);
   if (hasSetting('launchAtLogin')) $('launchAtLogin').checked = Boolean(s.launchAtLogin);
   if (hasSetting('startHidden')) $('startHidden').checked = Boolean(s.startHidden);
@@ -785,6 +786,7 @@ $('save').addEventListener('click', async () => {
   // on a client that does show it would be a preference that silently never
   // saves.
   const patch = {};
+  if (hasSetting('appearance')) patch.appearance = $('appearance').value;
   if (hasSetting('closeToTray')) patch.closeToTray = $('closeToTray').checked;
   if (hasSetting('launchAtLogin')) patch.launchAtLogin = $('launchAtLogin').checked;
   if (hasSetting('startHidden')) patch.startHidden = $('startHidden').checked;
@@ -813,6 +815,27 @@ $('save').addEventListener('click', async () => {
   );
   render();
 });
+
+/* ------------------------------------------------------------------ appearance */
+
+// Applied on the spot rather than at Save, unlike every other row on this tab.
+// The others are preferences whose effect is somewhere else and later; this one
+// repaints the app the moment it is chosen, so sending it with a button press
+// nobody has made yet would leave the screen showing the old colours and the
+// control describing new ones. The host answers with the state it produced, so
+// the select is written from what the client actually did rather than from what
+// was asked for.
+const appearance = $('appearance');
+if (appearance) {
+  appearance.addEventListener('change', async () => {
+    const out = $('appearance-result');
+    const res = await call('saveSettings', { appearance: appearance.value });
+    state = res;
+    const mode = (state.appearance && state.appearance.mode) || 'system';
+    appearance.value = mode;
+    setResult(out, 'Appearance set to ' + appearance.options[appearance.selectedIndex].textContent.toLowerCase() + '.', 'ok');
+  });
+}
 
 /* ----------------------------------------------------------------- dismiss */
 

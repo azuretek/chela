@@ -17,6 +17,13 @@ import WebKit
 struct SettingsSurface: UIViewRepresentable {
     let host: SettingsHost
 
+    /// Which appearance the app is in. The page's own palette resolves from
+    /// `prefers-color-scheme`, which a web view answers from its own traits, so
+    /// this is what makes the surface the same colour as the rest of the app the
+    /// moment the choice is made in it. `system` leaves the trait collection to
+    /// the device, so a live change still reaches the page.
+    let appearance: AppearanceMode
+
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         let scripts = WKUserContentController()
@@ -37,6 +44,24 @@ struct SettingsSurface: UIViewRepresentable {
         webView.isOpaque = false
         webView.backgroundColor = .systemBackground
         webView.scrollView.backgroundColor = .systemBackground
+        webView.overrideUserInterfaceStyle = appearance.userInterfaceStyle
+        // The page paints the strips too, rather than leaving them to the native
+        // layer.
+        //
+        // A web view insets its own content by the safe area by default, which is
+        // right for a page that cannot know where the status bar is and wrong for
+        // one that can: the inset region is outside the page, so the strips above
+        // and below it were painted by `scrollView.backgroundColor` while the page
+        // painted itself up to an invisible line. In light mode that read as a
+        // white band under a cream page, and in dark mode as a black one, which is
+        // the shape of the report this answers. With the inset off, the page fills
+        // its frame and insets its OWN content through `env(safe-area-inset-*)`,
+        // which ui.css does and which the page's viewport meta
+        // (`viewport-fit=cover`) is what makes non-zero. So the colour at the top
+        // and bottom of the screen is the page's own background by construction,
+        // rather than a value guessed by the native layer and free to disagree
+        // with it.
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
         // The page scrolls its own card, and it is a settings form rather than
         // reading matter, so the rubber-band overscroll would only ever reveal
         // background.
@@ -58,6 +83,13 @@ struct SettingsSurface: UIViewRepresentable {
     func updateUIView(_ webView: WKWebView, context: Context) {
         // Nothing to push: the page re-reads its own state when the host raises an
         // event, and every command answers with the state it produced.
+        //
+        // The appearance is the one exception, and it is not state the page reads:
+        // it is the trait its own palette resolves against, so the surface can be
+        // repainted the moment the row is used rather than at the next open.
+        if webView.overrideUserInterfaceStyle != appearance.userInterfaceStyle {
+            webView.overrideUserInterfaceStyle = appearance.userInterfaceStyle
+        }
     }
 
     /// Shown when the page is not in the bundle, which is a build fault rather
