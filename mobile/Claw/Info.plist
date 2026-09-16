@@ -10,6 +10,24 @@
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<!-- Which app icon this bundle uses, and it is here because App Store
+	     Connect rejected an upload without it (ITMS-90713).
+
+	     Xcode writes this key itself when the asset catalog holds a real app
+	     icon, but it writes it nested under CFBundleIcons, and an app whose
+	     AppIcon set is empty gets neither copy: the build succeeds, the
+	     plist looks fine, and Apple is the first thing to notice. Declaring
+	     it here means the key exists in the source rather than appearing as
+	     a side effect of the catalog, and the comment in project.yml next to
+	     ASSETCATALOG_COMPILER_APPICON_NAME is still the place the icon set is
+	     chosen.
+
+	     The value is the build setting rather than the literal `AppIcon`, so
+	     there is one owner: renaming the icon set in project.yml moves this
+	     key with it instead of leaving a stale name that Apple would reject
+	     for naming an icon the bundle does not contain. -->
+	<key>CFBundleIconName</key>
+	<string>$(ASSETCATALOG_COMPILER_APPICON_NAME)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
