@@ -166,7 +166,11 @@ for (const key of [...entries].filter((k) => /^\/src\/.*\.js$/.test(k))) {
 
 if (problems.length === 0) {
   const resolved = notes.filter((n) => n.includes('->')).length;
-  console.log(`check-package: OK (${entries.size} entries, ${resolved} relative imports resolved, ${notes.filter((n) => n.startsWith('core present')).join(', ')})`);
+  // The evidence is printed rather than counted. A check whose finding nobody can
+  // see is a check nobody can tell is working, and the two lines it names are the
+  // whole of what the failures above are about.
+  const found = notes.filter((n) => n.startsWith('core present') || n.startsWith('the shared web surface'));
+  console.log(`check-package: OK (${entries.size} entries, ${resolved} relative imports resolved, ${found.join(', ')})`);
   process.exit(0);
 }
 
