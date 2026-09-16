@@ -63,8 +63,60 @@ export function statusLine({ action, reason, channel = null, checkedAt = null, r
   return `Updates: ${follows}, ${behaviour}; ${last}`;
 }
 
+/**
+ * How far a download has got, as a fraction, or null when that is not knowable.
+ *
+ * electron-updater reports a `percent` that is already 0 to 100, and reports it
+ * as a float: 41.66666. The fraction is what the banner draws, so it is clamped
+ * and left unrounded here, and rounding to something a person reads is the
+ * display's job rather than this function's.
+ *
+ * Read defensively rather than destructured in the signature, because the one
+ * thing an unknown or absent progress report must not do is throw inside an
+ * event handler: the banner would lose the notice it was already showing.
+ *
+ * @param {object|null} [info]  electron-updater's DownloadProgress
+ */
+export function downloadProgress(info) {
+  const percent = info ? info.percent : null;
+  if (!Number.isFinite(percent)) return null;
+  return Math.min(1, Math.max(0, percent / 100));
+}
+
+/** A byte count in the largest unit that still reads as a number. */
+function size(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return null;
+  const mb = bytes / (1024 * 1024);
+  if (mb < 10) return `${mb.toFixed(1)} MB`;
+  if (mb < 1000) return `${Math.round(mb)} MB`;
+  return `${(mb / 1024).toFixed(2)} GB`;
+}
+
+/**
+ * The line under "Downloading ...": how much has arrived, and how fast.
+ *
+ * Every part is optional, because electron-updater does not promise a total or
+ * a rate and the fields arrive as zero when it does not know. A sentence that
+ * says "0 MB of 0 MB" would be worse than one that says less, so a part with
+ * nothing behind it is left out rather than filled in.
+ *
+ * @param {object|null} [info]  electron-updater's DownloadProgress
+ * @returns {string|null}
+ */
+export function transferDetail(info) {
+  const { transferred = 0, total = 0, bytesPerSecond = 0 } = info || {};
+  const arrived = size(transferred);
+  const whole = size(total);
+  const rate = size(bytesPerSecond);
+  const parts = [];
+  if (arrived && whole) parts.push(`${arrived} of ${whole}`);
+  else if (arrived) parts.push(arrived);
+  if (rate) parts.push(`${rate}/s`);
+  return parts.length ? parts.join(', ') : null;
+}
+
 export default {
   capability, policy, availableMessage, shouldReportNoUpdate, channelOf, allowPrerelease,
-  checkIntervalMs, ago, statusLine,
+  checkIntervalMs, ago, statusLine, downloadProgress, transferDetail,
   INSTALL, MANUAL, NOTIFY, NONE, MAC_SIGNED, STABLE_INTERVAL_MS, PRERELEASE_INTERVAL_MS,
 };

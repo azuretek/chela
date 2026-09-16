@@ -1461,6 +1461,7 @@ function initUpdates() {
   // automatic-updates preference can change while the app runs, and a handler
   // holding the plan from startup would keep acting on the old answer.
   updater.on('update-available', (info) => onUpdateAvailable(info));
+  updater.on('download-progress', (info) => onDownloadProgress(info));
   updater.on('update-downloaded', (info) => onUpdateDownloaded(info));
   updater.on('error', (err) => {
     // Never unprompted. A machine that is offline, or behind a proxy, or hitting
@@ -1598,9 +1599,17 @@ function onUpdateAvailable(info) {
   pendingManualCheck = false;
   offeredUpdate = info;
   setLastCheck(`${info.version} available`);
-  // Windows downloads in the background and speaks once it can actually offer
-  // the restart, so there is nothing useful to say yet.
-  if (plan.action === updates.INSTALL) return;
+  // A build that downloads without being asked gets the progress notice now.
+  // It used to say nothing here, on the reasoning that the only useful news was
+  // the restart at the end; a download with a bar in the banner is news all the
+  // way through, and it is the same thing the manual offer shows.
+  if (plan.action === updates.INSTALL) {
+    // The answer to any manual check is superseded by this, which is a better
+    // answer to the same question.
+    clearNotice(UPDATE_ANSWER);
+    beginUpdateDownload(info.version);
+    return;
+  }
 
   const { message, detail } = updates.availableMessage({
     action: plan.action, version: info.version, current: app.getVersion(), reason: plan.reason,
@@ -1629,11 +1638,7 @@ async function downloadOfferedUpdate() {
   const version = offeredUpdate.version;
   // Straight to downloadUpdate rather than flipping autoDownload: this is a
   // one-off yes to this version, not a change to the preference.
-  setNotice('update-available', {
-    tone: noticeStore.INFO,
-    message: `Downloading Claw Desktop ${version}.`,
-    detail: 'This carries on in the background; you will be told when it is ready.',
-  });
+  beginUpdateDownload(version);
   setLastCheck(`downloading ${version}`);
   try {
     await updater.downloadUpdate();
@@ -1647,22 +1652,77 @@ async function downloadOfferedUpdate() {
   }
 }
 
+/**
+ * The notice shown while an update is arriving.
+ *
+ * One shape, raised from two places: a build that downloads on its own (Windows,
+ * and a macOS signed with a Developer ID) and the manual offer being taken up.
+ * Both put the same thing on screen, because from this side of it something is
+ * arriving either way and the only question the notice answers is how far it
+ * has got.
+ *
+ * Not dismissible, and that is a property of the PHASE rather than of the
+ * notice: the ready notice replaces this one within seconds, and a progress bar
+ * that reappeared because the next whole percent is not news the reader has
+ * already been told would be worse than one with no X at all. The ready notice
+ * is dismissible, because that is the phase with something to lose.
+ */
+function downloadingNotice(version, info) {
+  return {
+    tone: noticeStore.INFO,
+    message: `Downloading Claw Desktop ${version}.`,
+    detail: updates.transferDetail(info) || 'Starting the download.',
+    dismissible: false,
+    progress: updates.downloadProgress(info),
+  };
+}
+
+// The whole percent last drawn. A number rather than nullable, because the
+// first event of a download is the one that has to be allowed through.
+let lastProgressPercent = 0;
+
+/** Start a download's notice at zero, and let the next percent through. */
+function beginUpdateDownload(version) {
+  lastProgressPercent = 0;
+  setNotice('update-available', downloadingNotice(version, { percent: 0 }));
+}
+
+/**
+ * How far the download has got.
+ *
+ * Throttled to whole percents, because electron-updater fires this several
+ * times a second and every raise re-renders a card in another process. The
+ * store would also report each one as a change, since the detail text moves
+ * with the byte count, so without this a 130MB download sends hundreds of
+ * renders to say one thing.
+ */
+function onDownloadProgress(info) {
+  const percent = Math.round(Number(info && info.percent) || 0);
+  if (percent === lastProgressPercent) return;
+  lastProgressPercent = percent;
+  const version = (offeredUpdate && offeredUpdate.version) || 'the update';
+  setNotice('update-available', downloadingNotice(version, info));
+}
+
 function onUpdateDownloaded(info) {
   updateReady = info.version;
   offeredUpdate = info;
+  lastProgressPercent = 0;
   clearNotice(UPDATE_ANSWER);
-  setLastCheck(`${info.version} downloaded, restart to apply`);
-  buildTray(); // so "Restart to update" appears in the tray as well
-  // Not dismissible. Every other notice can be waved away because the condition
-  // it describes carries on regardless and the app can raise it again; this one
-  // is the only route to a restart that is already paid for, and losing it means
-  // waiting for the next check to find the same version again.
+  setLastCheck(`${info.version} downloaded, install to apply`);
+  buildTray(); // so "Install update" appears in the tray as well
+  // Dismissible, by Abi's call on 2026-09-15. It used to refuse the X, on the
+  // reasoning that it was the only route to a restart that had already been
+  // paid for. It is not the only route: the tray and the menu bar both carry
+  // the same offer for as long as updateReady is set, and reading a notice has
+  // never cleared the condition behind it, so the app still knows the update is
+  // sitting on disk. A card with no way out is the one people learn to ignore,
+  // which costs more than the restart it was protecting.
   setNotice('update-available', {
     tone: noticeStore.OK,
     message: `Claw Desktop ${info.version} is ready.`,
-    detail: 'Restart to finish updating, or keep working and restart later.',
-    dismissible: false,
-    action: { label: 'Restart now', command: 'update-restart' },
+    detail: 'Install it now, or keep working and install it later.',
+    action: { label: 'Install update', command: 'update-restart' },
   });
 }
 
@@ -1806,11 +1866,11 @@ function buildTray() {
   const cmd = menuCommands();
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Open Claw Desktop', click: showMainWindow },
-    // Only once there is genuinely something to restart into. A permanently
-    // present "Restart to update" that usually does nothing teaches people to
-    // ignore it, which is the opposite of what it is for.
+    // Only once there is genuinely something to install. A permanently present
+    // "Install update" that usually does nothing teaches people to ignore it,
+    // which is the opposite of what it is for.
     ...(updateReady ? [{
-      label: `Restart to update to ${updateReady}`,
+      label: `Install update to ${updateReady}`,
       click: () => { quitting = true; updater.quitAndInstall(false, true); },
     }] : []),
     // The tray copies bring the window forward first. Reloading something
@@ -2166,8 +2226,8 @@ function registerIpc() {
     if (notices.markRead(String(id))) refreshBanner();
   });
   // Closing the bar is the same act aimed at everything on it. Anything not
-  // dismissible is left alone, so a finished update download does not go down
-  // with the sweep.
+  // dismissible is left alone, which today means a download in flight: it is
+  // replaced within seconds, so a sweep cannot lose it.
   ipcMain.handle('app:mark-notices-read', () => {
     if (notices.markAllRead()) refreshBanner();
   });

@@ -218,12 +218,12 @@ test('marking all read empties the banner in one go', () => {
 });
 
 test('a notice that cannot be dismissed cannot be bulk-read either', () => {
-  // The finished update download. Losing it means waiting for the next check to
-  // find a version already sitting on disk, and a bulk action is exactly how it
-  // would get lost.
+  // The download in flight, the only notice that refuses to be dismissed: it is
+  // replaced within seconds by the one with the install offer, so there is
+  // nothing for a sweep to lose.
   const n = notices.create();
   n.set('a', { message: 'ordinary' });
-  n.set('update-available', { tone: notices.OK, message: 'Ready to restart', dismissible: false });
+  n.set('update-available', { tone: notices.INFO, message: 'Downloading', progress: 0.4, dismissible: false });
 
   n.markAllRead();
   assert.deepEqual(n.unread().map((x) => x.id), ['update-available'], 'it survives the sweep');
@@ -233,7 +233,7 @@ test('a notice that cannot be dismissed can still be read one at a time', () => 
   // markAllRead protects it from a sweep aimed at everything else. An explicit
   // instruction about that one notice is not that.
   const n = notices.create();
-  n.set('update-available', { tone: notices.OK, message: 'Ready', dismissible: false });
+  n.set('update-available', { tone: notices.INFO, message: 'Downloading', dismissible: false });
   assert.equal(n.markRead('update-available'), true);
   assert.equal(n.unread().length, 0);
 });

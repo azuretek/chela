@@ -307,3 +307,43 @@ test('a version that cannot be parsed falls back to the slow interval', () => {
     assert.equal(updates.checkIntervalMs(v), updates.STABLE_INTERVAL_MS);
   }
 });
+
+/* ------------------------------------------------- the download, in words */
+
+test('progress is a fraction, and an unreadable one is not a number', () => {
+  assert.equal(updates.downloadProgress({ percent: 0 }), 0);
+  // Divided, so the exact float is not the point: the fraction is.
+  assert.ok(Math.abs(updates.downloadProgress({ percent: 41.6666 }) - 0.416666) < 1e-9);
+  assert.equal(updates.downloadProgress({ percent: 100 }), 1);
+  // electron-updater sends nothing useful before the first byte, and a bar
+  // drawn from NaN is a bar that disappears rather than one that starts empty.
+  for (const info of [{}, { percent: NaN }, { percent: Infinity }, undefined, null]) {
+    assert.equal(updates.downloadProgress(info), null, `should not be a number: ${JSON.stringify(info)}`);
+  }
+  assert.equal(updates.downloadProgress({ percent: 250 }), 1, 'clamped');
+});
+
+test('the transfer line says what arrived and how fast, and drops what it cannot know', () => {
+  assert.equal(
+    updates.transferDetail({
+      transferred: 58 * 1024 * 1024,
+      total: 130 * 1024 * 1024,
+      bytesPerSecond: 4.2 * 1024 * 1024,
+    }),
+    '58 MB of 130 MB, 4.2 MB/s',
+  );
+  // No total yet. "58 MB of 0 MB" would be a sentence that contradicts itself.
+  assert.equal(updates.transferDetail({ transferred: 58 * 1024 * 1024 }), '58 MB');
+  // Nothing known at all: null, so the caller can say something true instead of
+  // filling the line with zeroes.
+  assert.equal(updates.transferDetail({}), null);
+  assert.equal(updates.transferDetail(), null);
+  assert.equal(updates.transferDetail(undefined), null);
+  assert.equal(updates.transferDetail(null), null);
+  // The two ends of the scale stay readable rather than becoming "0 MB".
+  assert.equal(updates.transferDetail({ transferred: 512 * 1024, total: 1024 * 1024 }), '0.5 MB of 1.0 MB');
+  assert.equal(
+    updates.transferDetail({ transferred: 2.5 * 1024 ** 3, total: 3 * 1024 ** 3 }),
+    '2.50 GB of 3.00 GB',
+  );
+});

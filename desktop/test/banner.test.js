@@ -21,7 +21,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE = path.join(HERE, '..', 'src', 'ui', 'banner.js');
 
 function makeNode(tag) {
-  return {
+  const node = {
     tag,
     id: '',
     className: '',
@@ -53,12 +53,35 @@ function makeNode(tag) {
     // do here; what matters is that an empty stack reports zero.
     getBoundingClientRect() { return { height: this.kids.length * 40 }; },
   };
+  // The real element has one, and the banner uses it to mark a card that is new
+  // to the stack. Without it here, a real change would arrive as a TypeError
+  // rather than as a test that could fail honestly.
+  node.classList = {
+    add(name) {
+      const parts = new Set(String(node.className).split(/\s+/).filter(Boolean));
+      parts.add(name);
+      node.className = [...parts].join(' ');
+    },
+    contains: (name) => String(node.className).split(/\s+/).includes(name),
+  };
+  return node;
 }
 
 function find(node, id) {
   if (node.id === id) return node;
   for (const kid of node.kids) {
     const hit = find(kid, id);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/** The first descendant carrying this class. A card's parts are nested inside
+    its own column, so searching one level would miss them. */
+function byClass(node, className) {
+  for (const kid of node.kids) {
+    if (String(kid.className).split(/\s+/).includes(className)) return kid;
+    const hit = byClass(kid, className);
     if (hit) return hit;
   }
   return null;
@@ -107,8 +130,10 @@ function mount() {
 }
 
 const failure = { id: 'connection', tone: 'error', message: 'Cannot connect', detail: 'Refused.', dismissible: true };
-// The finished update download, the one notice that refuses to be dismissed.
-const pinned = { id: 'update-available', tone: 'ok', message: 'Ready to restart', dismissible: false };
+// A download in flight, the one notice that refuses to be dismissed. It is
+// replaced within seconds by the notice carrying the install offer, and a bar
+// that reappeared on the next whole percent would be worse than one with no X.
+const pinned = { id: 'update-available', tone: 'info', message: 'Downloading', progress: 0.4, dismissible: false };
 
 test('a dismissible notice gets a way to close the whole bar', () => {
   const b = mount();
@@ -167,6 +192,47 @@ test('a notice that cannot be dismissed is drawn without an X', async () => {
   await b.render();
   const card = b.node('n-update-available');
   assert.ok(!card.kids.some((k) => k.className === 'banner__close'));
+});
+
+test('a download in flight draws a bar and its percentage', async () => {
+  // A native <progress> with a value rather than a styled div: this page runs
+  // under `style-src 'self'`, so an inline width would be refused and the bar
+  // would sit at zero looking exactly like a stalled download.
+  const b = mount();
+  b.set([pinned]);
+  await b.render();
+  const row = byClass(b.node('n-update-available'), 'banner__progress');
+  assert.ok(row, 'no progress row was drawn');
+  const [bar, label] = row.kids;
+  assert.equal(bar.tag, 'progress');
+  assert.equal(bar.max, 100);
+  assert.equal(bar.value, 40);
+  assert.equal(label.textContent, '40%');
+});
+
+test('a notice that is not a download draws no bar', async () => {
+  // A bar at zero on a condition that has no progress reads as one that has
+  // stalled, which is a worse thing to tell someone than nothing.
+  const b = mount();
+  b.set([failure]);
+  await b.render();
+  const card = b.node('n-connection');
+  assert.ok(!byClass(card, 'banner__progress'));
+});
+
+test('the slide is for a card arriving, not for one changing', async () => {
+  // A card is rebuilt whenever anything about it moves, and a download's
+  // progress moves once a percent. Animating each rebuild replayed the slide on
+  // every one, which reads as the banner flickering.
+  const b = mount();
+  const first = { id: 'update-available', tone: 'info', message: 'Downloading', progress: 0.1, dismissible: false };
+  b.set([first]);
+  await b.render();
+  assert.ok(b.node('n-update-available').classList.contains('banner--enter'), 'a new card did not slide');
+
+  b.set([{ ...first, progress: 0.2 }]);
+  await b.render();
+  assert.ok(!b.node('n-update-available').classList.contains('banner--enter'), 'an updated card slid again');
 });
 
 test('an empty bar reports zero height, so the view stops eating clicks', async () => {

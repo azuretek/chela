@@ -59,14 +59,21 @@ export function create() {
    * already knows how to run. It is deliberately singular, a notice that needs
    * two buttons is a question, and a question is a dialog.
    *
+   * `progress` is a fraction, 0 to 1, or null for a notice that is not about
+   * something arriving. It is part of the notice rather than a separate channel
+   * to the banner because the bar and the sentence above it describe one
+   * condition, and two channels could disagree about which phase it is in.
+   *
    * @param {string} id  stable per condition, not per occurrence
    * @param {{tone?: string, message: string, detail?: string, dismissible?: boolean,
+   *          progress?: number|null,
    *          action?: {label: string, command: string}}} notice
    * @returns {boolean} whether anything actually changed
    */
-  function set(id, { tone = ERROR, message, detail = null, dismissible = true, action = null }) {
+  function set(id, { tone = ERROR, message, detail = null, dismissible = true, action = null, progress = null }) {
     const previous = notices.get(id);
     if (previous && previous.tone === tone && previous.message === message && previous.detail === detail
+      && previous.progress === progress
       && sameAction(previous.action, action)) {
       // Identical to what is already on screen. Reporting no change matters:
       // the caller uses it to avoid re-rendering, and a banner that re-renders
@@ -79,6 +86,7 @@ export function create() {
       message,
       detail,
       dismissible,
+      progress,
       action: action ? { label: action.label, command: action.command } : null,
       // Unread, always, because reaching here means something changed. A
       // condition that has been read and then says something different is new

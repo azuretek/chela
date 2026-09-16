@@ -320,25 +320,31 @@ body.banner-body { background: transparent; overflow: hidden; }
   border-radius: var(--radius);
   background: var(--panel);
   box-shadow: var(--shadow-lg);
-  /* The slide, as a keyframe animation rather than a class toggled on the next
-     frame. `transform` and `opacity` only, so layout height is final on the
-     first frame and the view is never resized mid-animation.
-
-     The reason it is not a transition: a transition needs a start state and a
-     second frame to animate away from, and the frame never arrives if the view
-     has not painted yet -- which is exactly the state a brand new banner view
-     is in. That left the card parked above the viewport, permanently invisible,
-     in a view that was still eating clicks. An animation with `both` fill runs
-     from its own keyframes and, if it never runs at all, leaves the element at
-     its ordinary un-transformed position. Visible is the failure mode. */
-  animation: banner-in .22s cubic-bezier(.2, .8, .3, 1) both;
 }
+
+/* The slide, as a keyframe animation rather than a class toggled on the next
+   frame. `transform` and `opacity` only, so layout height is final on the
+   first frame and the view is never resized mid-animation.
+
+   The reason it is not a transition: a transition needs a start state and a
+   second frame to animate away from, and the frame never arrives if the view
+   has not painted yet -- which is exactly the state a brand new banner view
+   is in. That left the card parked above the viewport, permanently invisible,
+   in a view that was still eating clicks. An animation with `both` fill runs
+   from its own keyframes and, if it never runs at all, leaves the element at
+   its ordinary un-transformed position. Visible is the failure mode.
+
+   It is on this class rather than on `.banner` because a card is rebuilt
+   whenever anything about it changes, and a download's progress changes once a
+   percent: animating every rebuild replayed the slide on each one, which reads
+   as a flicker. Only a card that is new to the stack slides. */
+.banner--enter { animation: banner-in .22s cubic-bezier(.2, .8, .3, 1) both; }
 @keyframes banner-in {
   from { transform: translateY(-140%); opacity: 0; }
   to   { transform: none; opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .banner { animation: none; }
+  .banner--enter { animation: none; }
 }
 
 /* Info is deliberately not the accent colour. This app's accent is its brand
@@ -351,6 +357,26 @@ body.banner-body { background: transparent; overflow: hidden; }
 
 .banner__message { font-weight: 600; color: var(--text-strong); }
 .banner__detail  { color: var(--muted); font-size: 12px; }
+
+/* The download bar. `appearance: none` and the two pseudo-elements are the
+   Electron-only way to draw it here: this page is Chromium's, so the WebKit and
+   Firefox spellings would be dead weight. The percentage sits beside the bar
+   rather than inside it, because a number over a filled track is unreadable at
+   the midpoint and this banner is 11px of type. */
+.banner__progress { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.banner__bar {
+  flex: 1;
+  height: 4px;
+  min-width: 0;
+  appearance: none;
+  border: 0;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--border-strong);
+}
+.banner__bar::-webkit-progress-bar { background: var(--border-strong); border-radius: 2px; }
+.banner__bar::-webkit-progress-value { background: var(--muted); border-radius: 2px; transition: width .2s ease; }
+.banner__percent { flex: none; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 
 /* The one offer a notice makes. Styled as a link rather than a button because
    it navigates rather than acts, pressing it does not resolve the condition,
