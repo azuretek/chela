@@ -41,6 +41,12 @@ import secrets from './secrets.js';
 import defaults from './defaults.js';
 import { withTokenHandoff } from '../../core/gateway-url.js';
 import { product, releasesUrl } from '../../core/naming.js';
+// The shared "App settings" affordance: the ONE injected script that adds a
+// control to the Control UI's sidebar footer and calls a host bridge to open our
+// own settings surface. Installed into the gateway page here, answered by the
+// bridge in preload.cjs; the iOS client installs the same script through a
+// WKUserScript. See core/app-settings-affordance.js.
+import * as appSettingsAffordance from '../../core/app-settings-affordance.js';
 // The settings surface's spec, read here rather than by the page: the page is a
 // file:// document with `default-src 'none'`, so it cannot fetch a JSON file, and
 // the spec has to arrive inside the state this process already pushes. The iOS
@@ -175,6 +181,45 @@ function installPromptMetadata(wc) {
   if (!wc || wc.isDestroyed() || originOf(wc.getURL()) !== activeOrigin()) return;
   wc.executeJavaScript(promptMetadata.clientScript(promptMetadataConfig()), true)
     .catch((err) => console.warn(`[claw-desktop] prompt metadata hook failed: ${err.message}`));
+}
+
+/**
+ * The label and resolved tokens the affordance styles itself with. The tokens
+ * are whatever the live theme has reported for this page; an empty map is fine,
+ * the script falls back to the page's own `currentColor` and neutral values, so
+ * the control still reads as part of the footer before the first theme report.
+ */
+function appSettingsAffordanceOptions() {
+  const tokens = currentTheme.tokens || {};
+  return {
+    label: 'App settings',
+    tooltip: `${chrome.APP_NAME} settings`,
+    tokens: {
+      border: tokens['--border'],
+      radius: tokens['--radius-sm'] || tokens['--radius'],
+      muted: tokens['--muted'],
+      text: tokens['--text-strong'] || tokens['--text'],
+      hover: tokens['--bg-hover'] || tokens['--panel-hover'],
+    },
+  };
+}
+
+/**
+ * Install the shared App-settings affordance into the gateway page.
+ *
+ * The bridge the script calls is `window.__clawAppSettings.open`, which the
+ * preload installs on the remote gateway page (see preload.cjs): it is the only
+ * property that page's bridge exposes, and it runs `openSettings()` here over
+ * IPC. The affordance itself is client-agnostic; only that open() differs
+ * between the desktop and the phone.
+ *
+ * Fail-soft is the script's own job: a footer it cannot find leaves the page
+ * untouched and app settings still reachable from the menu bar and the tray.
+ */
+function installAppSettingsAffordance(wc) {
+  if (!wc || wc.isDestroyed() || originOf(wc.getURL()) !== activeOrigin()) return;
+  wc.executeJavaScript(appSettingsAffordance.installation(appSettingsAffordanceOptions()), true)
+    .catch((err) => console.warn(`[claw-desktop] app settings affordance failed: ${err.message}`));
 }
 
 /**
@@ -839,6 +884,7 @@ function createMainWindow() {
   wc.on('dom-ready', () => {
     reachMilestone(progress.DOM);
     installPromptMetadata(wc);
+    installAppSettingsAffordance(wc);
   });
 
   wc.on('did-finish-load', () => {

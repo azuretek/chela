@@ -57,6 +57,14 @@ targets:
       # desktop reads.
       - path: ../core/spec/prompt-metadata.json
         buildPhase: resources
+      # The App-settings affordance, bundled rather than mirrored, for the same
+      # reason the client-context spec above is: it holds the ONE injected script
+      # that adds the footer control, and a mirror of a script is a second copy
+      # of it. AppSettingsAffordance reads this at runtime and installs it through
+      # a WKUserScript, and AppSettingsAffordanceParityTests asserts the bundled
+      # copy is byte for byte the repository's.
+      - path: ../core/spec/app-settings-affordance.json
+        buildPhase: resources
       # The shared settings surface, bundled rather than mirrored.
       #
       # The same three files the desktop loads out of core/ui, so this client

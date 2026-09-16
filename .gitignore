@@ -26,3 +26,9 @@ mobile/.team
 # Device build output from mobile/build-device.sh. Regenerated on every run, so
 # a committed copy would be pure drift, and it is large.
 mobile/build-device/
+
+# Xcode build output, when a build is pointed at a derivedDataPath under mobile/
+# (a screenshot or verification run does this). Regenerated on every run and
+# large; the default DerivedData is outside the repo, and this keeps an explicit
+# path from ever being committed.
+mobile/build/

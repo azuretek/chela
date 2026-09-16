@@ -8,6 +8,19 @@ const { contextBridge, ipcRenderer } = require('electron');
 // should not be able to rewrite gateway settings or read pinned fingerprints.
 const isLocalPage = location.protocol === 'file:';
 
+// The App-settings affordance runs in the REMOTE gateway page's main world (see
+// core/app-settings-affordance.js), which gets no other bridge: it is a website.
+// The one thing it may do is ask this app to open its own settings surface, and
+// that is the whole of what is exposed here. `open` is a single named call to an
+// IPC that runs openSettings() in main; there is no state to read and nothing to
+// write, so a hostile gateway calling it can do no more than a user pressing the
+// footer control could. The injected script reads `window.__clawAppSettings` and
+// merges its own config onto it, so exposing `open` here before the script runs
+// is what wires the desktop's half of the bridge.
+contextBridge.exposeInMainWorld('__clawAppSettings', {
+  open: () => { ipcRenderer.invoke('app:open-settings'); },
+});
+
 if (isLocalPage) {
   contextBridge.exposeInMainWorld('clawDesktop', {
     getState: () => ipcRenderer.invoke('app:state'),

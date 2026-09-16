@@ -111,7 +111,12 @@ struct ContentView: View {
                     appearance: appearance.mode,
                     themeColour: $themeColour,
                     notices: notices,
-                    connection: connection
+                    connection: connection,
+                    // The App-settings affordance injected into the Control UI's
+                    // footer posts here when pressed, and raises the same sheet the
+                    // corner button does. The corner button stays as the fallback
+                    // route that does not depend on the injected node existing.
+                    onOpenAppSettings: { showingSettings = true }
                 )
                 .background(themeColour)
                 .overlay(alignment: .top) { NoticeStack(board: notices) }
