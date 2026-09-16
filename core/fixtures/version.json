@@ -1,0 +1,22 @@
+{
+  "description": "Golden version-comparison pairs, generated from and asserted by desktop/test/version.test.js, and reproduced by the iOS client's Version.swift (mobile/ClawTests/VersionParityTests.swift). Each case is two versions and the sign of compare(a, b): -1 when a is older, 0 when equal, 1 when a is newer. isNewer(a, b) is compare(a, b) === 1. This is the comparison electron-updater delegates to semver on the desktop, pinned here so the phone's update check reaches the same answer without a second comparator.",
+  "cases": [
+    { "name": "equal releases", "a": "1.0.0", "b": "1.0.0", "compare": 0 },
+    { "name": "a higher patch", "a": "1.0.1", "b": "1.0.0", "compare": 1 },
+    { "name": "a lower patch", "a": "1.0.0", "b": "1.0.1", "compare": -1 },
+    { "name": "patch compares numerically, not as a string", "a": "1.0.10", "b": "1.0.9", "compare": 1 },
+    { "name": "minor outranks patch", "a": "1.1.0", "b": "1.0.99", "compare": 1 },
+    { "name": "major outranks minor", "a": "2.0.0", "b": "1.99.99", "compare": 1 },
+    { "name": "a release outranks its own prerelease", "a": "1.0.1", "b": "1.0.1-dev.5", "compare": 1 },
+    { "name": "a prerelease is below its release", "a": "1.0.1-dev.5", "b": "1.0.1", "compare": -1 },
+    { "name": "equal prereleases", "a": "1.0.1-dev.5.abc1234567", "b": "1.0.1-dev.5.abc1234567", "compare": 0 },
+    { "name": "the dev count compares numerically", "a": "1.0.1-dev.10.aaaaaaaaaa", "b": "1.0.1-dev.9.bbbbbbbbbb", "compare": 1 },
+    { "name": "a lower dev count is older whatever the sha", "a": "1.0.1-dev.9.zzzzzzzzzz", "b": "1.0.1-dev.10.aaaaaaaaaa", "compare": -1 },
+    { "name": "on a tie the sha orders lexically", "a": "1.0.1-dev.5.bbbbbbbbbb", "b": "1.0.1-dev.5.aaaaaaaaaa", "compare": 1 },
+    { "name": "a longer prerelease outranks a prefix of it", "a": "1.0.1-dev.5.abc1234567", "b": "1.0.1-dev.5", "compare": 1 },
+    { "name": "a numeric identifier ranks below a non-numeric one", "a": "1.0.1-dev.5", "b": "1.0.1-dev.alpha", "compare": -1 },
+    { "name": "a dirty build outranks the clean build of the same commit", "a": "1.0.1-dev.5.abc1234567.dirty", "b": "1.0.1-dev.5.abc1234567", "compare": 1 },
+    { "name": "the next patch dev build outranks the release it follows", "a": "1.0.1-dev.148.abc1234567", "b": "1.0.0", "compare": 1 },
+    { "name": "a dev build is below the patch it is heading towards", "a": "1.0.1-dev.148.abc1234567", "b": "1.0.1", "compare": -1 }
+  ]
+}

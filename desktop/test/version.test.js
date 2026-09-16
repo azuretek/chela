@@ -11,7 +11,9 @@
 
 import test from 'node:test';
 import assert from 'node:assert';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { createRequire } from 'node:module';
 
 import * as version from '../scripts/version.js';
@@ -44,6 +46,45 @@ test('rejects anything that is not a version we would release', () => {
 
 test('tolerates surrounding whitespace, which is how a version arrives from a shell', () => {
   assert.equal(version.parse('  1.2.3\n').major, 1);
+});
+
+/* ------------------------------------------------------------------- compare */
+
+// The shared comparison, pinned by the same golden fixture the iOS port proves
+// itself against (core/fixtures/version.json). This test is the JS half of that
+// contract: the phone's update check cannot reach a different "is this newer"
+// than the desktop does, because both reproduce these pairs.
+const VERSION_FIXTURE = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..', '..', 'core', 'fixtures', 'version.json',
+);
+
+test('compare() reproduces every fixture, in both directions', () => {
+  const { cases } = JSON.parse(readFileSync(VERSION_FIXTURE, 'utf8'));
+  assert.ok(cases.length > 0, 'expected version fixtures');
+  for (const { name, a, b, compare } of cases) {
+    assert.equal(Math.sign(version.compare(a, b)), compare, `${name}: compare(${a}, ${b})`);
+    // The reverse must be the exact negation, which is the property an ordering
+    // has and a broken comparator most often lacks.
+    assert.equal(Math.sign(version.compare(b, a)), -compare, `${name}: compare(${b}, ${a}) must be the negation`);
+  }
+});
+
+test('isNewer() is compare() > 0', () => {
+  assert.equal(version.isNewer('1.0.1', '1.0.0'), true);
+  assert.equal(version.isNewer('1.0.0', '1.0.1'), false);
+  // Equal is not newer, which is the case the "absent when the feed matches"
+  // proof rests on.
+  assert.equal(version.isNewer('1.0.0', '1.0.0'), false);
+  assert.equal(version.isNewer('1.0.1-dev.5', '1.0.1'), false, 'a dev build is not newer than its release');
+  assert.equal(version.isNewer('1.0.1', '1.0.1-dev.5'), true, 'the release is newer than its dev build');
+});
+
+test('compare() throws on a version it cannot read, rather than sorting it arbitrarily', () => {
+  // A feed that handed the check a value this cannot parse is a fault to
+  // surface, not a silent "not newer" that would leave a real update unnoticed.
+  assert.throws(() => version.compare('1.0', '1.0.0'), /not a version/);
+  assert.throws(() => version.compare('1.0.0', 'latest'), /not a version/);
 });
 
 /* -------------------------------------------------------------- tags <-> refs */
