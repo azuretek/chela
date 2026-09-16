@@ -29,6 +29,13 @@ struct WebView: UIViewRepresentable {
     /// this view raises, and the banner in ContentView draws.
     let notices: NoticeBoard
 
+    /// What the settings page's gateway rows read for their badge.
+    ///
+    /// This view is the only thing that knows whether a load is in flight, so it
+    /// is where the phase is set, and the settings host reads it rather than
+    /// sniffing the web view for it.
+    let connection: ConnectionState
+
     /// Remembers what has been asked for, so a SwiftUI update cannot reload the
     /// page under the user. `updateUIView` runs on every layout pass, and the
     /// web view's own `url` is not a usable guard for that: it stays nil until
@@ -43,16 +50,28 @@ struct WebView: UIViewRepresentable {
         var requested: URL?
         private let themeColour: Binding<Color>
         private let notices: NoticeBoard
+        private let connection: ConnectionState
         /// The gateway's name, for the notice a failed load raises. Carried
         /// rather than read from `Gateway`, which no longer has a default to
         /// read, and rather than re-derived from a URL that a provisional
         /// failure may not have delivered yet.
         private let gatewayName: String
+        /// The same gateway's id, for the row that reports the phase. A name can
+        /// be edited; the id cannot, and a row is looked up by id.
+        private let gatewayId: String
 
-        init(themeColour: Binding<Color>, notices: NoticeBoard, gatewayName: String) {
+        init(
+            themeColour: Binding<Color>,
+            notices: NoticeBoard,
+            connection: ConnectionState,
+            gatewayName: String,
+            gatewayId: String
+        ) {
             self.themeColour = themeColour
             self.notices = notices
+            self.connection = connection
             self.gatewayName = gatewayName
+            self.gatewayId = gatewayId
         }
 
         func userContentController(
@@ -74,7 +93,10 @@ struct WebView: UIViewRepresentable {
         /// The page loaded. Whatever a previous failure said about this gateway is
         /// no longer true, so the notice the banner is showing comes down.
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            Task { @MainActor in notices.connectionRecovered() }
+            Task { @MainActor in
+                notices.connectionRecovered()
+                connection.connected(gatewayId)
+            }
         }
 
         /// The page could not be fetched at all.
@@ -106,6 +128,7 @@ struct WebView: UIViewRepresentable {
                     label: gatewayName,
                     description: "The page stopped responding and will be reloaded."
                 )
+                connection.failed(gatewayId)
                 webView.reload()
             }
         }
@@ -116,6 +139,7 @@ struct WebView: UIViewRepresentable {
             let description = urlError?.localizedDescription ?? error.localizedDescription
             Task { @MainActor in
                 notices.connectionFailed(label: gatewayName, description: description)
+                connection.failed(gatewayId)
             }
         }
     }
@@ -156,7 +180,13 @@ struct WebView: UIViewRepresentable {
     """
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(themeColour: $themeColour, notices: notices, gatewayName: gateway.name)
+        Coordinator(
+            themeColour: $themeColour,
+            notices: notices,
+            connection: connection,
+            gatewayName: gateway.label,
+            gatewayId: gateway.id
+        )
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -222,6 +252,17 @@ struct WebView: UIViewRepresentable {
     func updateUIView(_ webView: WKWebView, context: Context) {
         guard context.coordinator.requested != gateway.url else { return }
         context.coordinator.requested = gateway.url
-        webView.load(URLRequest(url: gateway.url))
+        // Recorded before the load rather than after it, because the settings page
+        // shows this row while the load is in flight: a phase set on completion
+        // would only ever report the two ends of a connect and never the middle,
+        // which is the state someone opening Settings to check is the one they
+        // would find missing.
+        connection.connecting(gateway.id)
+        // The stored token rides on the fragment, so nobody is asked to paste one
+        // into the page. Read here rather than held, for the same reason
+        // `SettingsCredentials` hands out no getter: the value exists for the
+        // length of this call.
+        let token = SettingsCredentials.values(gateway.id).token
+        webView.load(URLRequest(url: GatewayURL.withTokenHandoff(gateway.url, token)))
     }
 }

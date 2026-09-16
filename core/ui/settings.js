@@ -48,11 +48,18 @@ const params = new URLSearchParams(location.search);
 const firstRun = params.has('firstRun');
 // This page is the window's own content rather than a dialog over it, which on
 // the desktop is a first run and nothing else now (a failed connection leaves you
-// where you were and raises a notice), and on iOS is always: the page fills a
-// sheet, which is the phone's version of a window of its own. Kept separate from
-// firstRun, which additionally hides the preferences, so the two can differ
-// again.
-const asPage = params.has('page');
+// where you were and raises a notice), and on iOS is the state with no gateway
+// configured at all, where there is nothing behind the page to go back to. Kept
+// separate from firstRun, which additionally hides the preferences, so the two can
+// differ again.
+//
+// The URL is where the desktop says this, because a decision that changes where
+// the card sits belongs before first paint. iOS cannot: a query on a file URL
+// renders a blank document in its web view, which took a white screen and a
+// simulator to find. So its host states the same fact on the host object, at
+// document start, which lands at the same moment. See the bootstrap in
+// mobile/Claw/SettingsHost.swift.
+const asPage = params.has('page') || host.asPage === true;
 const $ = (id) => document.getElementById(id);
 
 // Applied before first paint, from the URL rather than from a getState(), because
@@ -887,8 +894,10 @@ on('state', async () => {
   applySurface();
   // A notice can name the tab that answers it, so "Review" on a refused
   // certificate lands on the fingerprints rather than on Gateways with the work
-  // of finding them left to you.
-  showTab(visibleTabs().includes(params.get('tab')) ? params.get('tab') : visibleTabs()[0]);
+  // of finding them left to you. The URL carries it on the desktop; the host
+  // carries it on iOS, for the reason `asPage` above explains.
+  const wanted = params.get('tab') || host.tab;
+  showTab(visibleTabs().includes(wanted) ? wanted : visibleTabs()[0]);
   render();
   // After the first paint rather than before it: the page is useful without the
   // log, and reading three months of files should not hold up the card.

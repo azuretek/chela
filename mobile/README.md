@@ -76,15 +76,55 @@ Where it lives:
 
 | Where | What it does |
 |---|---|
-| `Claw/GatewaySetupView.swift` | Asks for the address, once, on first run. |
-| `Claw/GatewayStore.swift` | Validates it and stores it in `UserDefaults`, and is the only reader and writer of the key. |
 | `Claw/Gateway.swift` | Turns what someone typed into the address the web view loads, or refuses it. |
+| `Claw/ConfigModel.swift` | The list's rules: add, edit, remove, and which one is active. A port of `core/config-model.js`, proven against `core/fixtures/config-model.json`. |
+| `Claw/GatewayStore.swift` | The persistence, and the only reader and writer of the key. `UserDefaults`, and it reads the single address an older build left behind. |
+| `Claw/GatewayURL.swift` | Hands a stored token over on the URL fragment, ported from `core/gateway-url.js`. |
+| `Claw/SettingsCredentials.swift` | The token and password, in the Keychain, write-only from the page. |
 
 A bare host is accepted and given `https`, because that is what a phone keyboard
 makes easy to type. When a load fails the connection notice offers **Open
-Settings**, which brings the same surface back with the current address in it,
-so a typo is recoverable without reinstalling the app. Phase 6 replaces this
-single value with a list and a picker.
+Settings**, which opens the surface below on the gateway list, so a typo is
+recoverable without reinstalling the app.
+
+## The settings surface
+
+The phone renders the DESKTOP's settings page. `core/ui/settings.html`, with
+`core/ui/settings.js` and `core/ui/ui.css`, is bundled into this app and loaded in
+a `WKWebView`, so there is one implementation of every tab rather than a native
+screen per client. That is the same arrangement as the shared core, one step
+further out: one page, rendered by both, rather than two that agree until somebody
+edits one.
+
+What differs between the clients is which tabs and which settings apply, and that
+is data in `core/spec/settings.json`, handed to the page at runtime by whichever
+host is running it. On this client the host is `Claw/SettingsHost.swift`: it
+answers the command names the desktop's preload answers, over a
+`WKScriptMessageHandler` instead of IPC, and the page never asks which client it is.
+
+So the phone has **Gateways** and **Behaviour** in full, and does not have:
+
+- **Certificates**, because deciding a refused certificate needs the navigation
+delegate to evaluate trust, which is not built. The rules are already shared and
+already ported, so turning it on is that work plus one word in that spec.
+- **Problems**, because it is the on-disk record: a raise and its clear paired into
+one row, a file per month, three months kept. The live conditions are already
+shared here, and nothing writes them down.
+- the desktop-only settings on Behaviour (tray, launch at login, the global
+shortcut, automatic updates), and the extra request headers on a gateway, each with
+its reason written beside it in that spec.
+
+Every one of those absences is a decision recorded there rather than a gap, and
+`ClawTests/SettingsSpecTests.swift` asserts the split agrees with what this client
+implements, in both directions. `-claw-settings-tab <id>` opens a named tab in a
+debug build, for the same reason `-claw-seed-notices` exists: a simulator cannot be
+tapped by a script, and a screen nobody has looked at is a screen nobody has
+checked.
+
+Two facts reach the page on the host object rather than in its URL, and that is not
+a preference: a file URL with a query renders a blank document in this web view,
+with no error anywhere. The desktop passes both as query parameters, and stating
+them at document start lands at the same moment, before first paint.
 
 ## The app icon
 

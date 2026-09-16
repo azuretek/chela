@@ -2,16 +2,20 @@ import Foundation
 
 /// A gateway the app can open.
 ///
-/// A record rather than a bare `URL`, even though there is exactly one of them
-/// this phase: Phase 6 turns this into a list the user switches between, and
-/// that needs a label to show and a URL to load. Keeping the pair together now
-/// means the list, its store and its picker are additive later, rather than a
-/// rewrite of every call site that only ever wanted a URL.
-struct Gateway: Equatable {
-    /// What a picker would show. The host name by default, since that is what
-    /// tells two gateways on the same tailnet apart.
-    let name: String
-    let url: URL
+/// A record rather than a bare `URL`: a row in the settings list is shown under a
+/// label, edited, and then removed or connected by identity. `label` is what the
+/// list shows and what someone can change; `url` is what the app loads; `id` is
+/// what an edit or a removal names, because two gateways can share a host and the
+/// same one can be re-addressed, and an operation matching on the address would
+/// act on the wrong row in the first case and lose that row's credentials in the
+/// second.
+///
+/// `ConfigModel` holds the rules for adding, editing and removing these, and the
+/// list itself lives in `GatewayStore`.
+struct Gateway: Equatable, Codable {
+    let id: String
+    var label: String
+    var url: URL
 }
 
 extension Gateway {
@@ -45,8 +49,14 @@ extension Gateway {
     /// `<host>.<tailnet>.ts.net`, so it loads as ordinary HTTPS with no trust
     /// prompt, which is also why `Info.plist` carries no ATS exception. `http`
     /// stays reachable for the gateway's own `:18789` listener, whose
-    /// self-signed certificate is Phase 4's problem rather than this function's.
-    static func parse(_ raw: String) -> Gateway? {
+    /// self-signed certificate is a later phase's problem rather than this
+    /// function's.
+    ///
+    /// The id is a parameter with a default rather than generated inside and
+    /// inaccessible: `core/config-model.js` passes an id generator in for the
+    /// same reason, because a fixture compared between two ports cannot contain a
+    /// generated value.
+    static func parse(_ raw: String, id: String = UUID().uuidString) -> Gateway? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let candidate = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
@@ -56,6 +66,9 @@ extension Gateway {
               let host = url.host,
               !host.isEmpty
         else { return nil }
-        return Gateway(name: host, url: url)
+        // The label starts as the host, which is what tells two gateways on one
+        // tailnet apart and what `desktop/src/defaults.js` names its own
+        // suggestions from. It is editable afterwards.
+        return Gateway(id: id, label: host, url: url)
     }
 }
