@@ -1,0 +1,28 @@
+{
+  "description": "The device-identity persistence bridge's install statements. core/test/device-identity.test.js asserts the JS reproduces every case and mobile/ClawTests/DeviceIdentityParityTests.swift asserts the Swift port does, so both clients seed and capture the page's device keypair the same way. The identities here are examples; a real one is the opaque JSON the Control UI keeps in localStorage and is never generated in the tree. The keypair itself, and the crypto around it, belong to the page: this bridge only makes the localStorage value it reads and writes survive a reinstall.",
+  "why": [
+    "The seed statement is the one a port is most likely to get wrong, so its two shapes are pinned: a persisted identity is assigned to the seed global and then the seed script restores it into localStorage before the page boots; a missing identity assigns null and the seed script does nothing, which is the first-ever launch where the page mints its own. An empty-string identity is treated as none, so a cleared store never seeds an empty value the page would then have to reject.",
+    "The capture script is not in this fixture, by design: its one owner is core/spec/device-identity.json, which both clients read, exactly as with the other injected scripts in this tree. What a fixture can carry is the seed statement's exact bytes, so a port that built a different assignment fails here."
+  ],
+  "storageKey": "openclaw-device-identity-v1",
+  "seedGlobal": "__clawDeviceIdentitySeed",
+  "messageName": "clawDeviceIdentity",
+  "pollIntervalMs": 1000,
+  "seed": [
+    {
+      "name": "a persisted identity is assigned to the seed global before the seed script runs",
+      "input": { "identity": "{\"version\":1,\"deviceId\":\"example-device-id\",\"publicKey\":\"example-public-key\",\"privateKey\":\"example-private-key\",\"createdAtMs\":0}" },
+      "output": "window.__clawDeviceIdentitySeed = \"{\\\"version\\\":1,\\\"deviceId\\\":\\\"example-device-id\\\",\\\"publicKey\\\":\\\"example-public-key\\\",\\\"privateKey\\\":\\\"example-private-key\\\",\\\"createdAtMs\\\":0}\";\n(function () {\n  try {\n    var seed = window.__clawDeviceIdentitySeed;\n    if (typeof seed !== 'string' || seed === '') return;\n    var storage = window.localStorage;\n    if (!storage) return;\n    if (storage.getItem('openclaw-device-identity-v1')) return;\n    storage.setItem('openclaw-device-identity-v1', seed);\n  } catch (error) {}\n})();"
+    },
+    {
+      "name": "no persisted identity assigns null and the seed script does nothing",
+      "input": {},
+      "output": "window.__clawDeviceIdentitySeed = null;\n(function () {\n  try {\n    var seed = window.__clawDeviceIdentitySeed;\n    if (typeof seed !== 'string' || seed === '') return;\n    var storage = window.localStorage;\n    if (!storage) return;\n    if (storage.getItem('openclaw-device-identity-v1')) return;\n    storage.setItem('openclaw-device-identity-v1', seed);\n  } catch (error) {}\n})();"
+    },
+    {
+      "name": "an empty identity is treated as none",
+      "input": { "identity": "" },
+      "output": "window.__clawDeviceIdentitySeed = null;\n(function () {\n  try {\n    var seed = window.__clawDeviceIdentitySeed;\n    if (typeof seed !== 'string' || seed === '') return;\n    var storage = window.localStorage;\n    if (!storage) return;\n    if (storage.getItem('openclaw-device-identity-v1')) return;\n    storage.setItem('openclaw-device-identity-v1', seed);\n  } catch (error) {}\n})();"
+    }
+  ]
+}

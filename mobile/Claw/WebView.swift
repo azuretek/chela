@@ -96,6 +96,13 @@ struct WebView: UIViewRepresentable {
         /// The token handoff user script currently installed, so it can be removed
         /// before the next one is added rather than stacking a script per load.
         var nativeAuthScript: WKUserScript?
+        /// The device-identity seed script currently installed, so it can be
+        /// removed before the next one is added rather than stacking a script per
+        /// load. Reinstalled on every load like the token handoff, because the
+        /// persisted identity is read fresh from the Keychain each connect, so a
+        /// value captured on a previous run is seeded into the page before it
+        /// boots and the gateway recognises the already-paired device.
+        var deviceIdentitySeedScript: WKUserScript?
         /// The pairing observer's host bridge, held here so the content
         /// controller's strong reference to it does not outlive this coordinator.
         /// It reads the observer's reports and drives the pairing state.
@@ -395,6 +402,23 @@ struct WebView: UIViewRepresentable {
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         ))
+        // The device-identity capture, and the same bytes the desktop's owner
+        // holds: the script is read from core/spec/device-identity.json rather
+        // than ported, so there is one copy of it. It reads the page's device
+        // keypair from localStorage and posts it to the handler registered here
+        // whenever it changes, and `DeviceIdentityBridge` writes it to the
+        // Keychain, which survives an app uninstall. The seed script that
+        // restores it is (re)installed per load in `installNativeAuth`'s
+        // neighbour below, at document start, before the page reads the storage
+        // key. At document START, before the page constructs its own storage
+        // reads, for the same reason the other hooks are.
+        let deviceIdentityBridge = DeviceIdentityBridge()
+        scripts.add(deviceIdentityBridge, name: DeviceIdentityBridge.messageName)
+        scripts.addUserScript(WKUserScript(
+            source: DeviceIdentity.captureScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
         // The device-pairing observer, and the same bytes a later Android client
         // would run: the script is read from core/spec/pairing.json rather than
         // ported, so there is one copy of it. It wraps the page's `WebSocket` and
@@ -426,6 +450,10 @@ struct WebView: UIViewRepresentable {
             scripts,
             gatewayId: gateway.id,
             previous: &context.coordinator.nativeAuthScript
+        )
+        Self.installDeviceIdentitySeed(
+            scripts,
+            previous: &context.coordinator.deviceIdentitySeedScript
         )
         configuration.userContentController = scripts
         // WebKit's default user agent stops at `Mobile/15E148`, which says
@@ -470,6 +498,8 @@ struct WebView: UIViewRepresentable {
             .removeScriptMessageHandler(forName: AppSettingsBridge.messageName)
         webView.configuration.userContentController
             .removeScriptMessageHandler(forName: PairingBridge.messageName)
+        webView.configuration.userContentController
+            .removeScriptMessageHandler(forName: DeviceIdentityBridge.messageName)
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
@@ -509,6 +539,10 @@ struct WebView: UIViewRepresentable {
                         gatewayId: gateway.id,
                         previous: &context.coordinator.nativeAuthScript
                     )
+                    Self.installDeviceIdentitySeed(
+                        controller,
+                        previous: &context.coordinator.deviceIdentitySeedScript
+                    )
                 }
                 webView.reload()
             }
@@ -538,6 +572,10 @@ struct WebView: UIViewRepresentable {
                 controller,
                 gatewayId: gateway.id,
                 previous: &context.coordinator.nativeAuthScript
+            )
+            Self.installDeviceIdentitySeed(
+                controller,
+                previous: &context.coordinator.deviceIdentitySeedScript
             )
         }
         // The plain gateway URL: the credential travels in the injected global,
@@ -579,6 +617,48 @@ struct WebView: UIViewRepresentable {
                 token: token,
                 deviceFamily: NativeControlAuth.currentDeviceFamily()
             ),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        let kept = controller.userScripts.filter { $0 !== previous }
+        controller.removeAllUserScripts()
+        for existing in kept { controller.addUserScript(existing) }
+        controller.addUserScript(script)
+        previous = script
+    }
+
+    /// Read the persisted device identity from the Keychain and (re)install the
+    /// document-start script that seeds it into the page's `localStorage` before
+    /// the page boots and reads it.
+    ///
+    /// This is what makes an approved device STAY approved across a reinstall. The
+    /// gateway recognises a paired device by the keypair the page presents, and
+    /// the page keeps that keypair in `localStorage`, which a `WKWebView` wipes on
+    /// uninstall. The capture handler wrote the page's identity to the Keychain on
+    /// a previous run; this restores it, so the reinstalled page presents the same
+    /// public key and the gateway does not raise a fresh pairing request. With
+    /// nothing captured yet (the first-ever launch) the seed is `null` and does
+    /// nothing, and the page mints its own, which the capture then persists.
+    ///
+    /// Reinstalled per load, the same way and for the same reason as the token
+    /// handoff: the identity is read fresh each connect, so a value captured after
+    /// the last load is seeded on the next one, and the previous seed script is
+    /// removed first rather than stacking a second copy. The seed writes only into
+    /// an empty slot (its own guard), so a load whose page already has the
+    /// identity is left untouched.
+    ///
+    /// A `WKUserScript` cannot be removed one at a time, so this clears the
+    /// controller and re-adds the scripts it should carry, the same dance
+    /// `installNativeAuth` does; only the seed script changes and the rest are
+    /// replayed as they were.
+    @MainActor
+    static func installDeviceIdentitySeed(
+        _ controller: WKUserContentController,
+        previous: inout WKUserScript?
+    ) {
+        let identity = DeviceIdentityStore.read()
+        let script = WKUserScript(
+            source: DeviceIdentity.seedInstallation(identity: identity),
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         )
