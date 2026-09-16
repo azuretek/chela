@@ -19,6 +19,7 @@ import {
   blank, activeGateway, addGateway, updateGateway, removeGateway, trustCert,
 } from '../config-model.js';
 import { withTokenHandoff } from '../gateway-url.js';
+import * as updates from '../updates.js';
 import {
   clean, clientIdentity, formatBlock, inject, shouldInject, transformFrame,
 } from '../prompt-metadata.js';
@@ -329,4 +330,30 @@ test('gateway-url.withTokenHandoff() reproduces every fixture', () => {
       `${fixture.name}: the handoff disagrees`,
     );
   }
+});
+
+/*
+ * What a check answers, in both directions.
+ *
+ * `checkAnswer` is the composition both clients raise a notice from, so a case
+ * that returns null is as much a part of the contract as one that returns a
+ * sentence: null is the scheduled check that found nothing, which is the silence
+ * a background check is supposed to keep, and it is pinned here so neither
+ * client can turn it into a banner.
+ */
+test('updates.checkAnswer() reproduces every fixture', () => {
+  const { answers } = load('updates.json');
+  assert.ok(answers.length > 0, 'expected update answer fixtures');
+  for (const fixture of answers) {
+    assert.deepStrictEqual(
+      updates.checkAnswer(fixture.input),
+      fixture.output,
+      `${fixture.name}: the answer disagrees`,
+    );
+  }
+  // Both directions are present, because a fixture set that only covered one of
+  // them would let the other rot while this test stayed green.
+  const outcomes = new Set(answers.map((a) => a.input.outcome));
+  assert.ok(outcomes.has('available') && outcomes.has('current'),
+    `the fixtures must cover an available and a current answer; got ${[...outcomes].join(', ')}`);
 });
