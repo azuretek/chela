@@ -181,5 +181,25 @@ final class GatewayStore: ObservableObject {
             autoUpdate: true
         )
     }
+
+    /// Store the gateway token a debug run was launched with into the Keychain,
+    /// so a simulator can exercise a real authenticated connection.
+    ///
+    /// A simulator's Keychain is empty, and the settings page stores a token
+    /// write-only, so there is otherwise no way to prove the phone authenticates
+    /// end to end. This reads the token from the process ENVIRONMENT, not from a
+    /// launch argument, so the credential never appears in the argv a process
+    /// listing shows; it is stored through the same write-only path the settings
+    /// page uses and then dropped, never held and never logged. Compiled out of a
+    /// release build entirely, so no shipped app can be seeded this way.
+    ///
+    /// Paired with `-claw-gateway-url`: the gateway it belongs to is the one the
+    /// run was pointed at, which is the active gateway that `screenshotGateway`
+    /// returned, so the id they share is read back from the seeded config.
+    static func seedDebugTokenFromEnvironment() {
+        guard let config = screenshotGateway(), let gatewayId = config.activeGatewayId else { return }
+        guard let token = ProcessInfo.processInfo.environment["OPENCLAW_SEED_TOKEN"], !token.isEmpty else { return }
+        SettingsCredentials.set(gatewayId, field: "token", value: token)
+    }
     #endif
 }

@@ -1,0 +1,30 @@
+{
+  "description": "The native token handoff: the one JS global a native client sets on the Control UI's window, at document start, so the Control UI authenticates as the operator who entered the token rather than as nobody. core/native-control-auth.js reads this file (the iOS client bundles it and installs the assignment through a WKUserScript at document start; a later Android client feeds the same global the same way), so the wire contract, the global name and the object's shape, has ONE owner in the tree rather than one per client. The token itself is never here: it is read from each client's own secure store at connect time and put on the object at install, so this file describes the envelope and never the credential.",
+  "why": [
+    "The Control UI already reads this global. resolveApplicationStartupSettings in the OpenClaw checkout at ui/src/app/startup-settings.ts reads window.__OPENCLAW_NATIVE_CONTROL_AUTH__ synchronously during bootstrap, before the gateway socket is opened, then deletes it. So a native client that sets this global before the page's own script runs is feeding a mechanism the page was built to consume, not inventing a parallel one. That is why the injection is at document START, the same timing the client-context hook uses and for the same reason: installed at document end it would be racing a socket the page had already opened.",
+    "It is the purpose-built native path, not the URL fragment. A token on the #token= fragment is read by the same page and also works (the desktop uses it), but it rides on the navigation URL and carries no client identity: the connection borrows the generic Control-UI defaults. This global keeps the credential out of the URL entirely and carries a client descriptor beside it (id, mode, platform, deviceFamily, scopes), so the gateway's own logs can tell this native client from a browser on the same device. Neither path weakens the gateway's auth: the token is still checked, and the client id grants no admission of its own (see authorizeTokenAuth in the checkout at src/gateway/auth.ts, where token_missing means the client sent no token at all).",
+    "The client descriptor is per-client and is NOT owned here. The id (openclaw-ios for the phone, openclaw-android later), the platform and the deviceFamily are each client's own facts, so this file names the fields and their shape and each client fills them in. What is shared is the global name and the object's shape, which is exactly what lets a second client feed the same mechanism without a second contract.",
+    "An ARRAY of lines for the install statement's template, the same shape as the client-context hook, so a maintainable assignment survives an edit and both engines run identical bytes around the one value that differs, the JSON the client builds.",
+    "scopes carries the operator scope set the Control UI itself requests, because startup-settings.ts only builds the native client descriptor when scopes is non-empty, and the connection needs the same operator scopes a browser sign-in would have. The values mirror CONTROL_UI_OPERATOR_SCOPES in the checkout at ui/src/api/gateway.ts."
+  ],
+  "global": "__OPENCLAW_NATIVE_CONTROL_AUTH__",
+  "fields": {
+    "token": "The gateway token, the credential the operator entered. Read from the client's own secure store at connect time and never stored in this file or in the config. Omit or leave empty to hand no credential over.",
+    "client": {
+      "id": "The canonical native client id from the gateway client registry: openclaw-ios for the phone, openclaw-android for a later Android client. Per-client, filled in by the client.",
+      "mode": "The coarse client category. Native UI clients use ui.",
+      "platform": "The runtime platform string, such as ios or android. Per-client.",
+      "deviceFamily": "The device family used for display and routing hints, such as iPhone or iPad. Per-client.",
+      "scopes": "The operator scopes this connection requests, which must be non-empty for the Control UI to build the native client descriptor at all."
+    }
+  },
+  "mode": "ui",
+  "scopes": [
+    "operator.admin",
+    "operator.read",
+    "operator.write",
+    "operator.approvals",
+    "operator.questions",
+    "operator.pairing"
+  ]
+}

@@ -74,6 +74,14 @@ struct WebView: UIViewRepresentable {
         /// controller's strong reference to it does not outlive this coordinator.
         /// It answers the one message the injected footer control posts.
         let appSettings: AppSettingsBridge
+        /// The web view's content controller, held so the token handoff script can
+        /// be replaced before each load. The token is read fresh every connect, so
+        /// a rotated one self-heals; holding the controller rather than the token
+        /// is what keeps a credential out of this object between loads.
+        weak var contentController: WKUserContentController?
+        /// The token handoff user script currently installed, so it can be removed
+        /// before the next one is added rather than stacking a script per load.
+        var nativeAuthScript: WKUserScript?
         private let themeColour: Binding<Color>
         private let notices: NoticeBoard
         private let connection: ConnectionState
@@ -346,6 +354,23 @@ struct WebView: UIViewRepresentable {
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         ))
+        // The gateway token, handed to the Control UI the way the page itself
+        // expects it: `window.__OPENCLAW_NATIVE_CONTROL_AUTH__`, set at document
+        // START, before the page reads it during boot and before it opens its
+        // socket. Without this the page authenticates as nobody and the gateway
+        // logs `auth=none reason=token_missing`. See `NativeControlAuth`, and
+        // `installNativeAuth` below for why it is (re)installed here rather than
+        // added once: the token is read fresh on every connect, so a rotated one
+        // self-heals and none is ever held in this object.
+        //
+        // The content controller is kept on the coordinator so the token script
+        // can be replaced before each load without rebuilding the web view.
+        context.coordinator.contentController = scripts
+        Self.installNativeAuth(
+            scripts,
+            gatewayId: gateway.id,
+            previous: &context.coordinator.nativeAuthScript
+        )
         configuration.userContentController = scripts
         // WebKit's default user agent stops at `Mobile/15E148`, which says
         // nothing about which client asked for the page. Naming ourselves is
@@ -414,11 +439,64 @@ struct WebView: UIViewRepresentable {
         // which is the state someone opening Settings to check is the one they
         // would find missing.
         connection.connecting(gateway.id)
-        // The stored token rides on the fragment, so nobody is asked to paste one
-        // into the page. Read here rather than held, for the same reason
-        // `SettingsCredentials` hands out no getter: the value exists for the
-        // length of this call.
-        let token = SettingsCredentials.values(gateway.id).token
-        webView.load(URLRequest(url: GatewayURL.withTokenHandoff(gateway.url, token)))
+        // The token handoff is reinstalled before the load, reading the stored
+        // token fresh: a token the gateway has since rotated self-heals on the
+        // next connect, and none is held between loads. The script runs at
+        // document start on the navigation this `load` begins, before the page
+        // reads the global and before it opens its socket.
+        if let controller = context.coordinator.contentController {
+            Self.installNativeAuth(
+                controller,
+                gatewayId: gateway.id,
+                previous: &context.coordinator.nativeAuthScript
+            )
+        }
+        // The plain gateway URL: the credential travels in the injected global,
+        // not on the address, so nothing about a real token reaches the
+        // navigation URL, a request log or a Referer header.
+        webView.load(URLRequest(url: gateway.url))
+    }
+
+    /// Read the stored token and (re)install the document-start script that sets
+    /// `window.__OPENCLAW_NATIVE_CONTROL_AUTH__`, so the Control UI authenticates
+    /// as the operator who entered it.
+    ///
+    /// The token is read here and used to build the script, then dropped: it is
+    /// never held on the coordinator or anywhere else, for the same reason
+    /// `SettingsCredentials` hands out no getter, the value exists for the length
+    /// of this call. The previous script is removed first so a reconnect does not
+    /// stack a second copy that would set the global twice; only the token script
+    /// is rebuilt, and the theme, client-context and affordance scripts the
+    /// controller also holds are left in place.
+    ///
+    /// A `WKUserScript` cannot be removed one at a time, so this clears the
+    /// controller and re-adds the scripts it should carry. That is why the
+    /// controller is asked for its current scripts rather than the caller
+    /// tracking every one: the token script is the only one that changes, and the
+    /// rest are replayed exactly as they were.
+    @MainActor
+    static func installNativeAuth(
+        _ controller: WKUserContentController,
+        gatewayId: String,
+        previous: inout WKUserScript?
+    ) {
+        let token = SettingsCredentials.values(gatewayId).token
+        let script = WKUserScript(
+            // The device family is read live here, on the main actor, rather than
+            // taken from the constant default: an iPad in desktop mode reports the
+            // same idiom the browser would, so a paired device reads the same on
+            // both. This build is iPhone-only today, so it resolves to iPhone.
+            source: NativeControlAuth.installation(
+                token: token,
+                deviceFamily: NativeControlAuth.currentDeviceFamily()
+            ),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        let kept = controller.userScripts.filter { $0 !== previous }
+        controller.removeAllUserScripts()
+        for existing in kept { controller.addUserScript(existing) }
+        controller.addUserScript(script)
+        previous = script
     }
 }
