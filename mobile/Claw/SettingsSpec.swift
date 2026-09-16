@@ -82,6 +82,19 @@ enum SettingsSpec {
         ProcessInfo.processInfo.arguments.contains("-claw-open-about")
     }
 
+    /// Whether this run should scroll the settings page to its foot after it
+    /// loads, from `-claw-settings-scroll-bottom`.
+    ///
+    /// The same reasoning as `screenshotTab`: a simulator cannot be swiped by a
+    /// script, so a tab long enough to scroll (Gateways, with its list) keeps its
+    /// footer below the fold, and the About footer that sits under every tab could
+    /// then be proven only on a short one. This scrolls the page's own scroll
+    /// region to the end so a screenshot can show the footer on a long tab too.
+    /// Compiled out of a release build, and inert without the argument.
+    static var screenshotScrollsToBottom: Bool {
+        ProcessInfo.processInfo.arguments.contains("-claw-settings-scroll-bottom")
+    }
+
     /// Whether this run should drive the update check from a seeded feed rather
     /// than the network, from `-claw-seed-update-feed <version>`.
     ///
@@ -138,6 +151,7 @@ enum SettingsSpec {
     static var screenshotTab: String? { nil }
     static var screenshotOpensSettings: Bool { false }
     static var screenshotOpensAbout: Bool { false }
+    static var screenshotScrollsToBottom: Bool { false }
     static var screenshotSeedsUpdateFeed: Bool { false }
     static var screenshotUpdateFeedVersion: String? { nil }
     static var screenshotSeedsPairing: Bool { false }

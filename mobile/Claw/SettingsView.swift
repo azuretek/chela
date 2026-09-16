@@ -76,9 +76,47 @@ struct SettingsSurface: UIViewRepresentable {
             webView.loadHTMLString(Self.missingPageHTML, baseURL: nil)
             return webView
         }
+        #if DEBUG
+        // A screenshot run for a tab long enough to scroll (Gateways, with its
+        // list) keeps the About footer that sits under every tab below the fold,
+        // and a simulator cannot be swiped by a script. So on this launch argument
+        // the page is scrolled to its foot once it has laid out, which is what lets
+        // a screenshot show the footer on a long tab as well as a short one. Inert
+        // without the argument and compiled out of a release build; the delegate is
+        // set only in that case so it does not shadow the page's own behaviour
+        // otherwise. See `SettingsSpec.screenshotScrollsToBottom`.
+        if SettingsSpec.screenshotScrollsToBottom {
+            webView.navigationDelegate = context.coordinator
+        }
+        #endif
         webView.loadFileURL(page, allowingReadAccessTo: directory)
         return webView
     }
+
+    #if DEBUG
+    func makeCoordinator() -> ScreenshotScroller { ScreenshotScroller() }
+
+    /// Scrolls the settings page to its foot after it loads, for a screenshot run.
+    /// The only reason `SettingsSurface` has a navigation delegate at all, and it
+    /// is attached only under the launch argument, so it changes nothing about the
+    /// page in ordinary use.
+    final class ScreenshotScroller: NSObject, WKNavigationDelegate {
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            // After a beat: the file page loads, then its own script renders the
+            // gateway list into the DOM, so the content is not its full height
+            // until a frame or two later. The scroll region is the page's own
+            // `.modal__body` (CSS `overflow-y: auto`), not the web view's outer
+            // scroll view, which is why this scrolls that element rather than
+            // `webView.scrollView`. Clamped by the browser to the element's own
+            // range, so a short tab simply stays at the top.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                webView.evaluateJavaScript(
+                    "(function(){var b=document.querySelector('.modal__body');if(b){b.scrollTop=b.scrollHeight;}})()"
+                )
+            }
+        }
+    }
+    #endif
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         // Nothing to push: the page re-reads its own state when the host raises an

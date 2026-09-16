@@ -1903,11 +1903,20 @@ function aboutState() {
     // and because what this client runs on is this client's to describe: the
     // phone's About renders its own list from its own host. A `{ label, value }`
     // per row, all strings. See renderFacts in core/ui/about.js.
+    //
+    // The build stamp, the runtime and the config path used to be a raw string
+    // in the settings footer; that footer is now the way into this page, so its
+    // diagnostic detail lives here instead. The commit and build date ride on the
+    // header `build` line above (buildInfo.describe), and these rows carry the
+    // rest. The config path is read at runtime from the real environment rather
+    // than hardcoded, which is the whole reason it cannot live in a committed
+    // file: config.path() answers where this install actually keeps it.
     facts: [
       { label: 'Version', value: app.getVersion() },
       { label: 'Channel', value: updates.channelOf(app.getVersion()) || 'stable' },
       { label: 'Electron', value: `${process.versions.electron} · Chromium ${process.versions.chrome}` },
       { label: 'Platform', value: `${PLATFORM_NAMES[process.platform] || process.platform} ${process.arch}` },
+      { label: 'Config', value: config.path() },
     ],
     releasesUrl: RELEASES_URL,
   };

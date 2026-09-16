@@ -237,26 +237,6 @@
       <div class="result" id="save-result"></div>
     </div>
 
-    <!-- The way into About from inside settings, and the only way to reach it on
-         a client with no menu bar: iOS has none, and the Windows desktop hides
-         its behind an Alt press nobody discovers. Settings is reachable
-         everywhere now (the App-settings affordance in the Control UI footer),
-         so About hangs off it. It opens the ONE About page, core/ui/about.html,
-         over the top of this surface rather than drawing a copy of it here: the
-         desktop reuses showAbout(), the same overlay the menu and tray open, and
-         iOS presents the same page in a sheet. The button is wired once in
-         settings.js and hidden on a client whose host does not answer the
-         command, the same guard the Control-UI card below uses. The macOS menu
-         route to About is untouched; this adds a route, it does not remove one. -->
-    <div class="card" id="about-entry" hidden>
-      <div class="stack">
-        <span class="name">About Claw Control UI</span>
-        <span class="muted-sm">Which build this is, what it does about new versions, and the details a bug report asks for.</span>
-      </div>
-      <div class="row about-entry__action">
-        <button id="open-about" type="button">Open About</button>
-      </div>
-    </div>
   </div>
 
   <!-- What the banner said, after it stopped saying it. The banner keeps one
@@ -269,11 +249,25 @@
   </div>
   </section>
 
-  <!-- Outside #prefs on purpose: that section is hidden on a first run, and
-       "which build is this?" is worth being able to answer during setup as
-       much as after it. -->
-  <hr>
-  <p class="muted-sm" id="about"></p>
+  <!-- The way into About, as a footer under every tab rather than a card on one
+       of them. It is outside every panel and outside #prefs on purpose: outside
+       the panels so it stays put whichever tab is showing, and outside #prefs so
+       it survives a first run, when "which build is this?" is worth answering
+       during setup as much as after it.
+
+       It opens the ONE About page, core/ui/about.html, over the top of this
+       surface rather than drawing a copy of it here: the desktop reuses
+       showAbout(), the same overlay the menu and tray open, and iOS presents the
+       same page in a sheet. About is where the build, the runtime and the config
+       path now live; the raw string that used to sit here carried all three and
+       is gone, so nothing diagnostic is lost, it is one click behind this footer
+       instead. The button is wired once in settings.js and the whole footer is
+       hidden on a client whose host does not answer `openAbout`, the same guard
+       the Control-UI card uses. The macOS menu route to About is untouched; this
+       is a route, not a replacement for one. -->
+  <footer class="settings-footer" id="about-footer" hidden>
+    <button class="about-footer__link" id="open-about" type="button">About Claw Control UI</button>
+  </footer>
 
       </div>
     </div>
