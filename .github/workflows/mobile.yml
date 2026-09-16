@@ -48,10 +48,15 @@ concurrency:
 
 jobs:
   ios:
-    # Xcode 27 does not run on an older macOS, and `macos-latest` is not pinned
-    # to this one yet. The version is named so the toolchain this build claims
-    # to use is a property of the file rather than of whatever the alias
+    # The image is named rather than `macos-latest`, so the platform this build
+    # runs on is a property of the file rather than of whatever the alias
     # resolves to that week.
+    #
+    # macos-26, and deliberately NOT the `xcode-27` preview label, which is a
+    # separate image GitHub publishes outside its SLA. Nothing here needs the
+    # iOS 27 SDK: the deployment target is iOS 17 and Abi's phone runs iOS 26,
+    # so the SDK this image carries is the right one. Pinning a preview image
+    # would make the gate itself the flaky component.
     runs-on: macos-26
     # Every xcodebuild step runs in mobile/, where project.yml and the generated
     # project live. Paths on steps that do not care are unaffected.
@@ -67,46 +72,60 @@ jobs:
       # already the merge commit this gate is supposed to judge.
       - uses: actions/checkout@v4
 
-      # The runner's default Xcode is not necessarily 27. A preview image pins
-      # the generally available Xcode as the default, so building without
-      # choosing would compile the client against an older SDK, with a
-      # different compiler and a different simulator set, and it would look
-      # like it worked.
+      # Which Xcode is used is chosen here rather than left to the image's
+      # default, and the newest installed one wins.
       #
-      # The toolchain is therefore chosen by reading the version back out of
-      # each installed bundle, never by matching a filename: the bundle name is
-      # not stable. This repo's own development machine has it at
-      # /Applications/Xcode-27.0.0.app, which is versioned, and the runner's
-      # may be unversioned or use an underscore instead.
+      # This deliberately does NOT pin a version, and that is a correction. An
+      # earlier revision required Xcode 27 by name, on the belief that macos-26
+      # carried it. The first real run proved otherwise: this image ships 26.0.1
+      # through 26.6, and Xcode 27 lives on the separate `xcode-27` preview
+      # image. Pinning a version the runner does not have fails every run, and
+      # pinning one it does have fails the day GitHub rolls the image forward.
       #
-      # A missing Xcode 27 is a hard failure that lists what is installed. The
-      # one thing this must never do is continue on an older Xcode.
-      - name: Select Xcode 27
+      # The requirement that is actually true is a floor: Swift 6 language mode
+      # (SWIFT_VERSION 6.0 in project.yml) needs the Xcode 16 toolchain or
+      # newer. That is what gets checked.
+      #
+      # The version is read back out of each bundle rather than matched by
+      # filename, because the bundle name is not stable. This repo's own
+      # development machine has it at /Applications/Xcode-27.0.0.app, while the
+      # runner has /Applications/Xcode_26.6.app alongside an unversioned
+      # /Applications/Xcode.app pointing at the same build.
+      - name: Select Xcode
         run: |
           set -eo pipefail
 
-          chosen=""
-          for bundle in /Applications/Xcode*.app; do
-            [ -d "$bundle" ] || continue
-            version="$(DEVELOPER_DIR="$bundle/Contents/Developer" xcodebuild -version 2>/dev/null | head -1 || true)"
-            echo "found $bundle: ${version:-unknown}"
-            case "$version" in
-              "Xcode 27"*) chosen="$bundle/Contents/Developer"; break ;;
-            esac
-          done
+          chosen_line="$(
+            for bundle in /Applications/Xcode*.app; do
+              [ -d "$bundle" ] || continue
+              version="$(DEVELOPER_DIR="$bundle/Contents/Developer" xcodebuild -version 2>/dev/null | head -1 | sed 's/^Xcode //' || true)"
+              [ -n "$version" ] || continue
+              printf '%s %s\n' "$version" "$bundle"
+            done | sort -V | tail -1
+          )"
 
-          if [ -z "$chosen" ]; then
-            echo "::error::no Xcode 27 under /Applications; the iOS client is built against Xcode 27 and this workflow will not fall back to an older SDK"
-            ls -d /Applications/Xcode*.app 2>/dev/null || echo "no Xcode bundles found at all"
-            xcodebuild -version || true
+          if [ -z "$chosen_line" ]; then
+            echo "::error::no usable Xcode found under /Applications"
+            ls -d /Applications/Xcode*.app 2>/dev/null || echo "no Xcode bundles at all"
             exit 1
           fi
+
+          version="${chosen_line%% *}"
+          bundle="${chosen_line#* }"
+          major="${version%%.*}"
+
+          if [ "$major" -lt 16 ]; then
+            echo "::error::newest Xcode is $version, and the project needs the Xcode 16 toolchain or newer for Swift 6 language mode"
+            exit 1
+          fi
+
+          chosen="$bundle/Contents/Developer"
 
           # DEVELOPER_DIR is exported for every later step rather than used for
           # this one only. It is what xcodebuild, xcrun and simctl all read, so
           # the simulator list below comes from the same toolchain that builds.
           echo "DEVELOPER_DIR=$chosen" >> "$GITHUB_ENV"
-          echo "using $chosen"
+          echo "using $bundle (Xcode $version)"
           "$chosen/usr/bin/xcodebuild" -version
           xcrun simctl list runtimes
 
