@@ -2,7 +2,7 @@
 
 The platform-agnostic rules every Claw client shares. No Electron, no SwiftUI,
 no disk, no clock: pure functions and the data they read, so the desktop app and
-the future iOS app behave identically where it counts and cannot drift apart.
+the iOS app behave identically where it counts and cannot drift apart.
 
 ## What lives here
 
@@ -15,6 +15,7 @@ the future iOS app behave identically where it counts and cannot drift apart.
 | `config-model.js` | The gateway config shape and the pure CRUD over its gateway list (no persistence, that is each client's disk). |
 | `gateway-url.js` | The token handoff: build the Control UI URL with the token on the `#token=` fragment. |
 | `updates.js` | What this build may do about a new version: the action, whether to check, whether to download, and why. Takes `platform`, `packaged`, `macSigned` and `appImage` as arguments, so a stray environment variable cannot change the answer. |
+| `prompt-metadata.js` | The client-context block every client puts on every outgoing prompt: the marker, the header, the field order, the value rules, and the script each client installs to put it on a `chat.send` frame. Platform-free, so only the gathered facts differ. |
 
 ## One source of truth
 
@@ -25,10 +26,16 @@ The data each module needs lives in `spec/*.json`, and the JS reads from it:
 - `spec/connection.json`: the phase names, `ERR_ABORTED`, and the error-code hints.
 - `spec/notices.json`: the tones and their sort rank.
 - `spec/updates.json`: the four action names and the two check intervals.
+- `spec/prompt-metadata.json`: the marker, the per-client headers, the block's field order, the value rules, and the injected script itself.
 
 A Swift port reads the same JSON, so the data cannot say one thing on desktop
 and another on the phone. Change a quip or a milestone floor once, in the spec,
 and both clients move together.
+
+The one spec that is not mirrored is `prompt-metadata.json`, because it holds a
+script rather than a value: the phone bundles that file and reads the script out
+of it, so the two clients run one copy of one script instead of two dialects that
+agree until somebody edits one. See `mobile/README.md`.
 
 ## Parity is proven, not asserted
 
@@ -42,6 +49,12 @@ port is most likely to get subtly wrong:
 - `fixtures/updates.json`: `policy()` across every platform's install
   capability, including the automatic-updates preference that may only ever
   narrow it.
+- `fixtures/prompt-metadata.json`: `clean()`, `formatBlock()`, `shouldInject()`,
+  `inject()`, `transformFrame()` and `clientIdentity()` across the block's value
+  rules, the two reasons not to inject at all, and a phone block that has fewer
+  fields than a desktop one. The injected script is deliberately not repeated
+  here: its one owner is `spec/prompt-metadata.json`, and the fixture names that
+owner and the shape of it.
 
 `test/*.test.js` asserts the JS reproduces every fixture exactly. The iOS
 client's Swift tests reproduce the same fixtures, which is what turns "these

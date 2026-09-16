@@ -1,7 +1,7 @@
 {
   "name": "claw-core",
   "version": "1.0.0",
-  "description": "Platform-agnostic rules shared by every Claw client: gateway config model, token handoff, connection state, loading progress, notices.",
+  "description": "Platform-agnostic rules shared by every Claw client: gateway config model, token handoff, connection state, loading progress, notices, the client-context prompt block.",
   "type": "module",
   "private": true,
   "author": "Abi Renhart",
@@ -13,6 +13,7 @@
     "./notices.js": "./notices.js",
     "./updates.js": "./updates.js",
     "./naming.js": "./naming.js",
+    "./prompt-metadata.js": "./prompt-metadata.js",
     "./config-model.js": "./config-model.js",
     "./gateway-url.js": "./gateway-url.js"
   },
