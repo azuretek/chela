@@ -48,6 +48,13 @@ struct WebView: UIViewRepresentable {
     /// sniffing the web view for it.
     let connection: ConnectionState
 
+    /// Raised when the App-settings affordance in the Control UI's footer is
+    /// pressed. This view owns the gateway page the affordance is injected into,
+    /// so it is where the bridge that answers it is registered; the ask is
+    /// relayed up to the view that owns the settings sheet. See
+    /// `AppSettingsAffordance` and `AppSettingsBridge`.
+    let onOpenAppSettings: () -> Void
+
     /// Remembers what has been asked for, so a SwiftUI update cannot reload the
     /// page under the user. `updateUIView` runs on every layout pass, and the
     /// web view's own `url` is not a usable guard for that: it stays nil until
@@ -63,6 +70,10 @@ struct WebView: UIViewRepresentable {
         /// The last appearance pushed down to this web view, so `updateUIView`
         /// only touches the view and the page when it actually changed.
         var appliedAppearance: AppearanceMode?
+        /// The App-settings affordance's host bridge, held here so the content
+        /// controller's strong reference to it does not outlive this coordinator.
+        /// It answers the one message the injected footer control posts.
+        let appSettings: AppSettingsBridge
         private let themeColour: Binding<Color>
         private let notices: NoticeBoard
         private let connection: ConnectionState
@@ -80,13 +91,15 @@ struct WebView: UIViewRepresentable {
             notices: NoticeBoard,
             connection: ConnectionState,
             gatewayName: String,
-            gatewayId: String
+            gatewayId: String,
+            onOpenAppSettings: @escaping () -> Void
         ) {
             self.themeColour = themeColour
             self.notices = notices
             self.connection = connection
             self.gatewayName = gatewayName
             self.gatewayId = gatewayId
+            self.appSettings = AppSettingsBridge(onOpen: onOpenAppSettings)
         }
 
         func userContentController(
@@ -288,7 +301,8 @@ struct WebView: UIViewRepresentable {
             notices: notices,
             connection: connection,
             gatewayName: gateway.label,
-            gatewayId: gateway.id
+            gatewayId: gateway.id,
+            onOpenAppSettings: onOpenAppSettings
         )
     }
 
@@ -317,6 +331,18 @@ struct WebView: UIViewRepresentable {
         // already opened, and the frames it missed would be silent.
         scripts.addUserScript(WKUserScript(
             source: PromptMetadata.installation(),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
+        // The App-settings affordance, the same bytes the desktop installs, read
+        // from core/spec/app-settings-affordance.json rather than ported. Its
+        // host bridge posts to the handler registered above; open() is wired onto
+        // the same global the config sits on. At document START so the bridge is
+        // in place before the footer renders, and the script's own DOMContentLoaded
+        // guard is what waits for the footer rather than a fixed delay.
+        scripts.add(context.coordinator.appSettings, name: AppSettingsBridge.messageName)
+        scripts.addUserScript(WKUserScript(
+            source: AppSettingsAffordance.installation(),
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         ))
@@ -359,6 +385,8 @@ struct WebView: UIViewRepresentable {
         // without this the coordinator outlives the view it was made for.
         webView.configuration.userContentController
             .removeScriptMessageHandler(forName: themeMessageName)
+        webView.configuration.userContentController
+            .removeScriptMessageHandler(forName: AppSettingsBridge.messageName)
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {

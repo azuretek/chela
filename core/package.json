@@ -14,6 +14,7 @@
     "./updates.js": "./updates.js",
     "./naming.js": "./naming.js",
     "./prompt-metadata.js": "./prompt-metadata.js",
+    "./app-settings-affordance.js": "./app-settings-affordance.js",
     "./config-model.js": "./config-model.js",
     "./gateway-url.js": "./gateway-url.js"
   },

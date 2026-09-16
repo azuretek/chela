@@ -139,6 +139,15 @@ final class GatewayStore: ObservableObject {
     /// trying to merge the two would be inventing topology from two sources
     /// rather than reading one.
     private static func load(from defaults: UserDefaults, key: String, legacyKey: String) -> Config {
+        #if DEBUG
+        // A screenshot run points the app at a gateway from a launch argument,
+        // because a simulator cannot be typed into by a script and the seeded
+        // UserDefaults a `simctl` run writes are not the sandbox the app reads.
+        // The same reasoning as `-claw-open-settings` and `-claw-seed-notices`,
+        // and compiled out of a release build so no launch argument can point a
+        // shipped app anywhere. `-claw-gateway-url <url>` is the whole of it.
+        if let seeded = screenshotGateway() { return seeded }
+        #endif
         if let data = defaults.data(forKey: key), let stored = try? JSONDecoder().decode(Config.self, from: data) {
             return stored
         }
@@ -155,4 +164,22 @@ final class GatewayStore: ObservableObject {
         }
         return Config.blank { UUID().uuidString }
     }
+
+    #if DEBUG
+    /// The gateway a screenshot run was launched with, or nil. Inert without the
+    /// argument, and absent from a release build entirely.
+    private static func screenshotGateway() -> Config? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: "-claw-gateway-url"), index + 1 < arguments.count,
+              let gateway = Gateway.parse(arguments[index + 1])
+        else { return nil }
+        return Config(
+            gateways: [gateway],
+            activeGatewayId: gateway.id,
+            trustedCerts: [:],
+            promptMetadata: false,
+            autoUpdate: true
+        )
+    }
+    #endif
 }
