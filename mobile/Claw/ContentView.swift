@@ -78,6 +78,15 @@ struct ContentView: View {
     /// How the one connection is going, for the settings page's gateway rows.
     @StateObject private var connection = ConnectionState()
 
+    /// Whether the gateway is refusing this device until an operator approves it.
+    /// Fed by the pairing observer the web view installs, which watches the page's
+    /// own gateway socket: a pairing refusal is a socket close inside the page,
+    /// not a navigation failure, so it is the one connection state the web view's
+    /// navigation delegate cannot see. When this says pairing, the pairing screen
+    /// is shown over the page; the moment the socket opens (once approved) it
+    /// moves to authenticated on its own and the page comes back. See `Pairing`.
+    @StateObject private var pairing = PairingState()
+
     /// Starts as the system background, which is what shows for the first frame,
     /// before the page has a document to read a colour out of.
     @State private var themeColour = Color(uiColor: .systemBackground)
@@ -113,6 +122,7 @@ struct ContentView: View {
                     themeColour: $themeColour,
                     notices: notices,
                     connection: connection,
+                    pairing: pairing,
                     // The App-settings affordance injected into the Control UI's
                     // footer posts here when pressed, and raises the same sheet the
                     // corner button does. The corner button stays as the fallback
@@ -120,6 +130,22 @@ struct ContentView: View {
                     onOpenAppSettings: { showingSettings = true }
                 )
                 .background(themeColour)
+                // The pairing screen sits over the page while the gateway is
+                // refusing this device. Full cover rather than a banner, because
+                // there is no Control UI behind it to reach: the gateway held the
+                // socket, and the one thing to do is approve the device on the
+                // gateway host. It is removed the instant the socket opens, which
+                // the page's own reconnect drives once the device is approved, so
+                // recovery needs no relaunch and no button here. The settings
+                // button stays reachable above it, since a wrong gateway address
+                // is fixed there and a refusal on the wrong host looks the same.
+                .overlay {
+                    if pairing.isPairing {
+                        PairingView(state: pairing, deviceLabel: Self.deviceLabel)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.2), value: pairing.isPairing)
                 .overlay(alignment: .top) { NoticeStack(board: notices) }
                 .overlay(alignment: .topTrailing) { SettingsButton { showingSettings = true } }
                 .sheet(isPresented: $showingSettings) {
@@ -210,6 +236,13 @@ struct ContentView: View {
     /// so what a screenshot exercises is the real notice rather than a mock. That
     /// is what lets the two banner screenshots (a newer version, and one that
     /// matches this build) be produced without a live release or a real network.
+    /// The device this build reports, for the pairing screen to show beside the
+    /// request id. The same hardware identifier the client-context block uses,
+    /// which names a model rather than a person and is what the kernel reports, so
+    /// an operator reading `openclaw devices list` on the host can line the two up.
+    /// Built once: it cannot change while the app runs.
+    static let deviceLabel: String = PromptMetadata.machineIdentifier()
+
     private func startUpdateCheck() {
         let check: UpdateCheck
         #if DEBUG

@@ -76,6 +76,17 @@ targets:
       # NativeControlAuthParityTests asserts this port reproduces the fixture.
       - path: ../core/spec/native-control-auth.json
         buildPhase: resources
+      # The device-pairing contract, bundled rather than mirrored for its ONE
+      # injected script: the observer that watches the page's gateway socket and
+      # reports a pairing close to the native layer. PairingState reads this at
+      # runtime for that script (and for the copy the pairing screen shows),
+      # while the parser rules are Swift constants proven against
+      # core/fixtures/pairing.json, the same split as NativeControlAuth. A mirror
+      # of the script would be a second copy of it, which is the fork the shared
+      # file exists to prevent, so PairingParityTests asserts the bundled copy is
+      # the repository's.
+      - path: ../core/spec/pairing.json
+        buildPhase: resources
       # The shared settings surface, bundled rather than mirrored.
       #
       # The same three files the desktop loads out of core/ui, so this client

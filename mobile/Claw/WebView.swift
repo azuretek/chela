@@ -48,6 +48,14 @@ struct WebView: UIViewRepresentable {
     /// sniffing the web view for it.
     let connection: ConnectionState
 
+    /// Whether the gateway is refusing this device until it is approved. Fed by
+    /// the injected observer, which watches the page's own gateway socket: a
+    /// pairing refusal closes that socket with the policy code, which is an event
+    /// inside the page rather than a navigation failure, so it is the one
+    /// connection state this view cannot learn from the navigation delegate. See
+    /// `PairingBridge` and `Pairing`.
+    let pairing: PairingState
+
     /// Raised when the App-settings affordance in the Control UI's footer is
     /// pressed. This view owns the gateway page the affordance is injected into,
     /// so it is where the bridge that answers it is registered; the ask is
@@ -70,6 +78,12 @@ struct WebView: UIViewRepresentable {
         /// The last appearance pushed down to this web view, so `updateUIView`
         /// only touches the view and the page when it actually changed.
         var appliedAppearance: AppearanceMode?
+        /// The last pairing retry beat this view acted on, so a bump of the
+        /// state's `retryTick` reloads the page exactly once. Auto-recovery drives
+        /// this: while the pairing screen is up the state ticks on a cadence, and
+        /// each new tick reloads the page to make a fresh connect attempt that
+        /// picks up an approval without a relaunch.
+        var appliedRetryTick: Int = 0
         /// The App-settings affordance's host bridge, held here so the content
         /// controller's strong reference to it does not outlive this coordinator.
         /// It answers the one message the injected footer control posts.
@@ -82,6 +96,10 @@ struct WebView: UIViewRepresentable {
         /// The token handoff user script currently installed, so it can be removed
         /// before the next one is added rather than stacking a script per load.
         var nativeAuthScript: WKUserScript?
+        /// The pairing observer's host bridge, held here so the content
+        /// controller's strong reference to it does not outlive this coordinator.
+        /// It reads the observer's reports and drives the pairing state.
+        let pairingBridge: PairingBridge
         private let themeColour: Binding<Color>
         private let notices: NoticeBoard
         private let connection: ConnectionState
@@ -94,10 +112,17 @@ struct WebView: UIViewRepresentable {
         /// be edited; the id cannot, and a row is looked up by id.
         private let gatewayId: String
 
+        /// The pairing state the observer's bridge drives, held so the navigation
+        /// legs can report `connecting` before a load and `failed` when a load
+        /// itself fails, keeping those apart from the pairing state the socket
+        /// close carries.
+        private let pairing: PairingState
+
         init(
             themeColour: Binding<Color>,
             notices: NoticeBoard,
             connection: ConnectionState,
+            pairing: PairingState,
             gatewayName: String,
             gatewayId: String,
             onOpenAppSettings: @escaping () -> Void
@@ -105,9 +130,11 @@ struct WebView: UIViewRepresentable {
             self.themeColour = themeColour
             self.notices = notices
             self.connection = connection
+            self.pairing = pairing
             self.gatewayName = gatewayName
             self.gatewayId = gatewayId
             self.appSettings = AppSettingsBridge(onOpen: onOpenAppSettings)
+            self.pairingBridge = PairingBridge(state: pairing)
         }
 
         func userContentController(
@@ -132,6 +159,14 @@ struct WebView: UIViewRepresentable {
             Task { @MainActor in
                 notices.connectionRecovered()
                 connection.connected(gatewayId)
+                // The page's HTML loaded, which is NOT the same as the gateway
+                // socket opening: a device the gateway has not approved still
+                // gets the page, then has its socket closed for pairing. So this
+                // leg does not move the pairing state to authenticated; the
+                // observer does that on the socket's `open`. All this does is
+                // leave the pairing state as it was, so a reload that succeeds
+                // (the auto-recovery retry) does not itself clear a pairing screen
+                // before the socket has actually opened.
             }
         }
 
@@ -176,6 +211,11 @@ struct WebView: UIViewRepresentable {
             Task { @MainActor in
                 notices.connectionFailed(label: gatewayName, description: description)
                 connection.failed(gatewayId)
+                // A load that never reached a page is a network/host failure, not
+                // pairing: the gateway did not get far enough to refuse the
+                // device. Kept distinct so the pairing screen does not show for a
+                // dropped connection.
+                pairing.failed()
             }
         }
     }
@@ -308,6 +348,7 @@ struct WebView: UIViewRepresentable {
             themeColour: $themeColour,
             notices: notices,
             connection: connection,
+            pairing: pairing,
             gatewayName: gateway.label,
             gatewayId: gateway.id,
             onOpenAppSettings: onOpenAppSettings
@@ -351,6 +392,21 @@ struct WebView: UIViewRepresentable {
         scripts.add(context.coordinator.appSettings, name: AppSettingsBridge.messageName)
         scripts.addUserScript(WKUserScript(
             source: AppSettingsAffordance.installation(),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
+        // The device-pairing observer, and the same bytes a later Android client
+        // would run: the script is read from core/spec/pairing.json rather than
+        // ported, so there is one copy of it. It wraps the page's `WebSocket` and
+        // posts to the handler registered here when the gateway socket opens or
+        // closes for a pairing reason, which is the one connection state the
+        // navigation delegate cannot see: the page's HTML loaded, so the socket
+        // close is an event inside the page. At document START, before the page
+        // constructs its socket, for the same reason the client-context hook is;
+        // installed later it would wrap a socket the page had already opened.
+        scripts.add(context.coordinator.pairingBridge, name: PairingBridge.messageName)
+        scripts.addUserScript(WKUserScript(
+            source: Pairing.observerScript,
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         ))
@@ -412,6 +468,8 @@ struct WebView: UIViewRepresentable {
             .removeScriptMessageHandler(forName: themeMessageName)
         webView.configuration.userContentController
             .removeScriptMessageHandler(forName: AppSettingsBridge.messageName)
+        webView.configuration.userContentController
+            .removeScriptMessageHandler(forName: PairingBridge.messageName)
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
@@ -431,6 +489,31 @@ struct WebView: UIViewRepresentable {
             webView.evaluateJavaScript("window.\(Self.themeReportHook) && window.\(Self.themeReportHook)()")
         }
 
+        // The pairing reconnect beat. Before the load guard below, because a
+        // reload has to happen even though the URL has not changed: the guard
+        // exists to stop a SwiftUI layout pass reloading the page under someone,
+        // and a retry is the one time a reload of the same URL is exactly what is
+        // wanted. Each new tick reissues the load, which re-runs the page's own
+        // connect; the token handoff is reinstalled on that load through the same
+        // path a first connect uses, so an approval that also rotated nothing
+        // still reconnects cleanly. Guarded on the tick value so a pass that did
+        // not carry a new beat does nothing.
+        if context.coordinator.appliedRetryTick != pairing.retryTick {
+            context.coordinator.appliedRetryTick = pairing.retryTick
+            if context.coordinator.requested == gateway.url {
+                connection.connecting(gateway.id)
+                pairing.connecting()
+                if let controller = context.coordinator.contentController {
+                    Self.installNativeAuth(
+                        controller,
+                        gatewayId: gateway.id,
+                        previous: &context.coordinator.nativeAuthScript
+                    )
+                }
+                webView.reload()
+            }
+        }
+
         guard context.coordinator.requested != gateway.url else { return }
         context.coordinator.requested = gateway.url
         // Recorded before the load rather than after it, because the settings page
@@ -439,6 +522,12 @@ struct WebView: UIViewRepresentable {
         // which is the state someone opening Settings to check is the one they
         // would find missing.
         connection.connecting(gateway.id)
+        // The pairing state moves to connecting too, so a reload started by the
+        // auto-recovery retry (see `ContentView`) clears any earlier refusal for
+        // the duration of the attempt: the screen stays up because the phase is
+        // driven by the socket, not by this, but a fresh attempt is honestly
+        // "connecting" until the socket says otherwise.
+        pairing.connecting()
         // The token handoff is reinstalled before the load, reading the stored
         // token fresh: a token the gateway has since rotated self-heals on the
         // next connect, and none is held between loads. The script runs at
