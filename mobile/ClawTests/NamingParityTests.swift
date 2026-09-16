@@ -49,6 +49,15 @@ final class NamingParityTests: XCTestCase {
         )
     }
 
+    func testTheRepoSlugMirrorsTheSpec() throws {
+        // The update feed URL is built from this, so a rename that moved the repo
+        // in the spec without moving it here would point the phone's update
+        // check at a feed that no longer exists.
+        let repo = try spec().repo
+        XCTAssertEqual(Naming.repoOwner, repo.owner, "Naming.repoOwner disagrees with core/spec/naming.json")
+        XCTAssertEqual(Naming.repoName, repo.name, "Naming.repoName disagrees with core/spec/naming.json")
+    }
+
     func testTheClientTokenMirrorsTheSpec() throws {
         XCTAssertEqual(
             Naming.mobileToken,

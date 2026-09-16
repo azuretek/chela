@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The whole app: the Control UI, full screen and nothing else.
 ///
@@ -177,14 +178,63 @@ struct ContentView: View {
             )
         }
         // The notice model carries a command NAME rather than a callback, so this
-        // is where the one command this client has is answered. "Open Settings" on
-        // a failed connection lands on the surface that can fix the address.
+        // is where the commands this client has are answered. "Open Settings" on a
+        // failed connection lands on the surface that can fix the address, and the
+        // update notice's action opens TestFlight, which is where a newer build
+        // waits: iOS cannot install its own update, so the honest offer is to send
+        // the user to where the build is rather than to download anything here.
         notices.onCommand = { command in
-            if command == NoticeBoard.settingsCommand { showingSettings = true }
+            switch command {
+            case NoticeBoard.settingsCommand:
+                showingSettings = true
+            case UpdateCheck.openTestFlightCommand:
+                UIApplication.shared.open(UpdateCheck.testFlightURL)
+            default:
+                break
+            }
         }
         // A screenshot run on a simulator, which cannot press the button above.
         // Debug only, and inert without the argument. See `SettingsSpec`.
         if SettingsSpec.screenshotOpensSettings { showingSettings = true }
+        // Look for a newer build once per launch, against the public feed. It is
+        // detached and every non-answer is silent (see `UpdateCheck.run`), so a
+        // slow or unreachable feed neither blocks the first frame nor puts
+        // anything on screen; only a genuinely newer version raises the banner.
+        startUpdateCheck()
+    }
+
+    /// Kick off the once-per-launch update check.
+    ///
+    /// The real check fetches the public feed; a screenshot run hands it a seeded
+    /// feed body instead, through the same `UpdateFeed` reader and the same raiser,
+    /// so what a screenshot exercises is the real notice rather than a mock. That
+    /// is what lets the two banner screenshots (a newer version, and one that
+    /// matches this build) be produced without a live release or a real network.
+    private func startUpdateCheck() {
+        let check: UpdateCheck
+        #if DEBUG
+        if let advertised = SettingsSpec.screenshotUpdateFeedVersion {
+            // The seeded feed: a document naming the version the launch argument
+            // gave, handed to the real check as if fetched, against a fixed dev
+            // build so the channel gate and the comparison are deterministic. A
+            // version equal to `screenshotCurrentVersion` produces no banner (the
+            // "absent when it matches" case); a newer one produces it (the
+            // "appears when newer" case). Both go through the real `UpdateFeed`
+            // reader and the real raiser, so what a screenshot draws is the notice
+            // and not a mock of it.
+            let body = Data(#"{"version":"\#(advertised)"}"#.utf8)
+            check = UpdateCheck(
+                board: notices,
+                currentVersion: SettingsSpec.screenshotCurrentVersion,
+                fetch: { _ in body }
+            )
+        } else {
+            check = UpdateCheck(board: notices)
+        }
+        #else
+        check = UpdateCheck(board: notices)
+        #endif
+        Task { await check.run() }
     }
 }
 

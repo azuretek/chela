@@ -26,6 +26,14 @@ enum Naming {
     /// here, and the desktop's equivalent is `claw-desktop`.
     static let mobileToken = "claw-mobile"
 
+    /// The repo slug, mirrored from `spec/naming.json`'s `repo`. It is what the
+    /// public update feed URL is built from (`UpdateFeed.feedURL`), the same way
+    /// the desktop builds `releasesUrl` from `repo` in `core/naming.js`. A rename
+    /// moves it here and in the spec together, and `NamingParityTests` is what
+    /// fails if only one moves.
+    static let repoOwner = "azuretek"
+    static let repoName = "claw-control-ui"
+
     /// How this client names itself where a person and a machine both read it.
     ///
     /// The product makes it recognisable in a transcript and the shorthand tells

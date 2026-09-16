@@ -68,9 +68,42 @@ enum SettingsSpec {
     static var screenshotOpensSettings: Bool {
         ProcessInfo.processInfo.arguments.contains("-claw-open-settings")
     }
+
+    /// Whether this run should drive the update check from a seeded feed rather
+    /// than the network, from `-claw-seed-update-feed <version>`.
+    ///
+    /// The same reasoning as `screenshotOpensSettings`: the update banner is
+    /// raised only when a public feed advertises a newer build, which a screenshot
+    /// run cannot arrange against the real network without a live release. So the
+    /// screenshot run hands the real `UpdateCheck` a feed body naming a version,
+    /// through the real `UpdateFeed` reader and the real raiser, and what it draws
+    /// is the banner rather than a mock of it. The presence of the flag says to
+    /// seed rather than fetch; `screenshotUpdateFeedVersion` is what the seeded
+    /// feed advertises, so the same mechanism produces both the "appears when
+    /// newer" and the "absent when it matches" screenshots.
+    static var screenshotSeedsUpdateFeed: Bool {
+        screenshotUpdateFeedVersion != nil
+    }
+
+    /// The version the seeded feed advertises, from `-claw-seed-update-feed`.
+    static var screenshotUpdateFeedVersion: String? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: "-claw-seed-update-feed"), index + 1 < arguments.count else { return nil }
+        return arguments[index + 1]
+    }
+
+    /// The build the seeded update check runs as, fixed to a dev version so the
+    /// channel gate (dev-only feed) and the comparison are deterministic on a
+    /// simulator, whose real `Naming.buildVersion` is only the marketing-version
+    /// fallback. The two screenshots differ only in what the seeded feed
+    /// advertises against this: an equal version draws no banner, a higher one
+    /// draws it.
+    static let screenshotCurrentVersion = "1.0.1-dev.148.abc1234567"
     #else
     static var screenshotTab: String? { nil }
     static var screenshotOpensSettings: Bool { false }
+    static var screenshotSeedsUpdateFeed: Bool { false }
+    static var screenshotUpdateFeedVersion: String? { nil }
     #endif
 
     /// The split of the settings surface, read from the bundled spec.
