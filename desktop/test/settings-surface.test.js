@@ -19,6 +19,15 @@
 // pages are no longer in desktop/src/ui, so what the tests below assert most
 // carefully is that the markup and the spec still name the same things.
 //
+// A fifth is the surface's own copy and layout, which exist only on screen: a
+// credential line that composes the right words into an element nobody can see, a
+// narrow-width rule that never fires, and a card that was meant to move but is
+// still duplicated per tab all read as correct from a diff of the source. The
+// last four tests hold the wording, the two halves of the row's structure and the
+// one-card rule. The MEASUREMENTS, meaning the boxes and the screenshots, are in
+// scripts/test-settings-surface.js, which runs the real app, because a stylesheet
+// assertion cannot tell a rule that applies from one that is overridden.
+//
 // Run with: npm test
 
 import test from 'node:test';
@@ -40,6 +49,45 @@ const preload = read(DESKTOP, 'src', 'preload.cjs');
 
 const ids = (list) => list.map((e) => e.id);
 const clientNames = Object.keys(spec.clients);
+
+/**
+ * The page's source with its comments removed.
+ *
+ * A rule about what the page SAYS is a rule about the code that runs, and this
+ * file has to be able to quote what it replaced: the credential line's old
+ * sentence is worth keeping in the comment that explains why it went, and a
+ * raw search of the file would read that quotation as the sentence still being
+ * there. Strings are kept, so a line composed into an element is still found.
+ * Deliberately a small scanner rather than a regex: `//` inside a URL string is
+ * not a comment, and treating it as one would silently drop code from the
+ * search, which is the one way a check like this can pass while missing things.
+ */
+function codeOnly(src) {
+  let out = '';
+  let quote = null;
+  for (let i = 0; i < src.length;) {
+    const c = src[i];
+    const next = src[i + 1];
+    if (quote) {
+      out += c;
+      if (c === '\\') { out += next ?? ''; i += 2; continue; }
+      if (c === quote) quote = null;
+      i += 1;
+      continue;
+    }
+    if (c === '/' && next === '/') { while (i < src.length && src[i] !== '\n') i += 1; continue; }
+    if (c === '/' && next === '*') {
+      i += 2;
+      while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) i += 1;
+      i += 2;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') quote = c;
+    out += c;
+    i += 1;
+  }
+  return out;
+}
 
 test('the spec describes a surface at all', () => {
   // A spec that lost a section would turn every assertion below into one that
@@ -198,4 +246,106 @@ test('the desktop implements every command its half of the spec declares', () =>
   for (const event of events) {
     assert.ok(ids(spec.events).includes(event), `preload.cjs raises ${event}, which the spec does not declare`);
   }
+});
+
+test('the credentials line reports the token and the device, and promises nothing', () => {
+  // What was there said "No saved credentials, you will be asked to sign in", and
+  // both halves of it were claims rather than observations: a gateway that needs
+  // no credential never asks, so the sentence promised a sign-in that would not
+  // happen, and "no saved credentials" described this app's storage rather than
+  // this connection. What replaced it is the state, so the sentence must be gone
+  // and both facts must still be composed from the state that already exists.
+  assert.doesNotMatch(codeOnly(page), /No saved credentials/i,
+    'the credentials line is back to saying there are no saved credentials');
+  assert.doesNotMatch(codeOnly(page), /asked to sign in/i,
+    'the credentials line is back to promising a sign-in');
+
+  for (const fact of ['Token saved', 'No token saved', 'Device approved', 'Device needs approval']) {
+    assert.ok(page.includes(`'${fact}'`), `the credentials line never says ${fact}`);
+  }
+
+  // Both facts come from state the clients already send: the credential summary,
+  // and the connection phase the row's own "Needs approval" badge is drawn from.
+  assert.match(page, /conn\.phase === 'pending'/,
+    'the device half no longer reads the phase the badge uses');
+  assert.match(page, /conn\.phase === 'connected'/, 'the device half never reads the approved phase');
+  // And it is ONE wording: the line is the same on every client, so it must not
+  // have grown a branch on which client is running it, which the test above
+  // already forbids by name.
+  assert.match(page, /facts\.join\(' · '\)/, 'the credential line is no longer composed in one place');
+});
+
+test('a gateway row is content, state and actions, as three groups', () => {
+  // The grouping is what a narrow window needs: the buttons can be moved onto a
+  // line of their own only if they are a thing that can be moved, and the state's
+  // pill can be centred without being stretched only if the centred thing is the
+  // group around it. Both are invisible at full width, which is exactly why this
+  // is asserted here rather than left to the screenshots.
+  const row = /const row = el\('div', \{ className: 'row' \}, \[([\s\S]*?)\n    \]\);/.exec(page);
+  assert.ok(row, 'the gateway row is no longer built as one literal, so this test cannot see it');
+  const body = row[1];
+
+  const statusAt = body.indexOf('row__status');
+  const actionsAt = body.indexOf('row__actions');
+  const badgeAt = body.indexOf('badge badge--');
+  const firstButtonAt = body.indexOf("el('button'");
+
+  assert.ok(statusAt >= 0, 'the row no longer groups its connection state');
+  assert.ok(actionsAt > statusAt, 'the row no longer groups its buttons after the state');
+  assert.ok(badgeAt > statusAt && badgeAt < actionsAt, 'the badge is no longer inside the state group');
+  assert.ok(firstButtonAt > actionsAt, 'a button is still a loose child of the row');
+  assert.equal([...body.matchAll(/el\('button'/g)].length, 3, 'the row is not three buttons any more');
+});
+
+test('the narrow-width rule stacks the row inside the width query only', () => {
+  const css = read(REPO, 'core', 'ui', 'ui.css');
+  const query = '@media (max-width: 601px)';
+  const at = css.indexOf(query);
+  assert.ok(at > 0, 'the narrow-width media query is gone');
+  const narrow = new RegExp(`@media \\(max-width: 601px\\) \\{([\\s\\S]*?)\\n\\}`).exec(css);
+  assert.ok(narrow, 'the narrow-width media query has no readable block');
+  const block = narrow[1];
+
+  // The state gets a line, centred, and the buttons get the line below it: a
+  // full-width badge would have centred its TEXT and stretched the pill with it.
+  assert.match(block, /\.row__status[^{]*\{[^}]*justify-content: center/,
+    'the state is no longer centred in the narrow layout');
+  assert.match(block, /\.row__actions[^{]*\{[^}]*flex-basis: 100%/,
+    'the buttons no longer take a line of their own in the narrow layout');
+  assert.match(block, /\.row__actions > button[^{]*\{[^}]*flex: none/,
+    'the buttons now stretch to fill the wrapped line');
+
+  // And the wide row is untouched by any of it: the groups' own rule sits outside
+  // the query, so a wide window draws the same row it drew before.
+  const base = css.indexOf('.row__status,');
+  assert.ok(base >= 0 && base < at, 'the groups\' base rule moved inside the width query');
+  const baseRow = /\.row \{([^}]*)\}/.exec(css.slice(css.indexOf('.row {') , at));
+  assert.match(baseRow ? baseRow[1] : '', /^[\s\S]*display: flex; align-items: center; gap: 12px;/,
+    'the wide row rule is not the one-line flex row it was');
+  assert.ok(!/flex-wrap/.test(baseRow ? baseRow[1] : ''), 'the row wraps at full width now');
+});
+
+test('the Control-UI settings card is one node, outside every panel, beside About', () => {
+  // It was inside the Gateways panel, which is a card nobody on the Certificates
+  // tab can see, and the fix is a move rather than a second copy: one node, in the
+  // footer with About, on screen whichever tab is showing.
+  const copies = html.split('id="control-ui-settings"').length - 1;
+  assert.equal(copies, 1, `the card appears ${copies} times in settings.html`);
+
+  const cardAt = html.indexOf('id="control-ui-settings"');
+  const prefsEnd = html.lastIndexOf('</section>');
+  assert.ok(prefsEnd > 0 && cardAt > prefsEnd,
+    'the card is still inside a panel, so it is still only on one tab');
+
+  const footerAt = html.indexOf('id="about-footer"');
+  assert.ok(footerAt > cardAt, 'the About footer no longer follows the card, so they are not together');
+  const between = html.slice(cardAt, footerAt);
+  assert.ok(!/class="panel"/.test(between), 'a panel still opens between the card and the footer');
+
+  // The existing card and its one action, reused: a second button for one command
+  // would be a second thing to keep wired.
+  assert.equal(html.split('id="open-control-ui-settings"').length - 1, 1,
+    'the card has more than one action button');
+  assert.equal((page.match(/\$\('control-ui-settings'\)/g) || []).length, 1,
+    'the page looks up more than one copy of the card');
 });

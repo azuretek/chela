@@ -86,27 +86,6 @@
   </nav>
 
   <section class="panel" id="panel-gateways" role="tabpanel" aria-labelledby="tab-gateways" tabindex="0">
-    <!-- For someone who opened THIS screen meaning to reach the gateway's own
-         settings. This screen configures the app and how it connects; the
-         gateway's settings, its agents, models and channels, live inside the
-         Control UI, which is the page this app draws behind these settings. The
-         action closes this surface and returns there: the desktop hides the
-         overlay it opened this in, iOS dismisses the sheet, and either way the
-         Control UI is what is left on screen. It reuses `closeSettings`, the
-         command both clients already answer, rather than a new one, so it does
-         not duplicate the Control UI's settings, it just steps out of the way of
-         them. Hidden when there is no gateway yet (a first run), where there is
-         no Control UI behind this to return to. -->
-    <div class="card" id="control-ui-settings" hidden>
-      <div class="stack">
-        <span class="name">Looking for the gateway's own settings?</span>
-        <span class="muted-sm">This screen configures this app and how it connects. The gateway's own settings, its agents, models and channels, live inside the Control UI.</span>
-      </div>
-      <div class="row control-ui-settings__action">
-        <button id="open-control-ui-settings" type="button">Go to the Control UI</button>
-      </div>
-    </div>
-
     <div class="gateway-filter" role="search">
       <div class="gateway-filter__icon" aria-hidden="true"></div>
       <input
@@ -260,6 +239,36 @@
     <div id="notice-history"></div>
   </div>
   </section>
+
+  <!-- For someone who opened THIS screen meaning to reach the gateway's own
+       settings. This screen configures the app and how it connects; the
+       gateway's settings, its agents, models and channels, live inside the
+       Control UI, which is the page this app draws behind these settings. The
+       action closes this surface and returns there: the desktop hides the
+       overlay it opened this in, iOS dismisses the sheet, and either way the
+       Control UI is what is left on screen. It reuses `openControlUiSettings`,
+       the command both clients already answer, so it does not duplicate the
+       Control UI's settings, it just steps out of the way of them.
+
+       It sits here, with the About footer and outside every panel, rather than
+       inside the Gateways tab where it started. The person it is for is someone
+       who opened Settings looking for the gateway's own settings, and which tab
+       they happen to be on when they realise that is not something this page
+       gets to choose: behind the Certificates tab, a card on Gateways is a card
+       nobody sees. Outside the panels and outside #prefs for the same reasons
+       the footer is: it stays put whichever tab is showing, and it survives a
+       first run. ONE card, not one per tab: this is the only copy of it in the
+       document, and the tests assert that. Hidden when there is no gateway yet
+       (a first run), where there is no Control UI behind this to return to. -->
+  <div class="card" id="control-ui-settings" hidden>
+    <div class="stack">
+      <span class="name">Looking for the gateway's own settings?</span>
+      <span class="muted-sm">This screen configures this app and how it connects. The gateway's own settings, its agents, models and channels, live inside the Control UI.</span>
+    </div>
+    <div class="row control-ui-settings__action">
+      <button id="open-control-ui-settings" type="button">Go to the Control UI</button>
+    </div>
+  </div>
 
   <!-- The way into About, as a footer under every tab rather than a card on one
        of them. It is outside every panel and outside #prefs on purpose: outside

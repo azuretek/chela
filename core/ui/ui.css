@@ -327,6 +327,14 @@ a  { color: var(--accent); }
 }
 
 .row { display: flex; align-items: center; gap: 12px; }
+/* The two groups a gateway row is built from, beside its content: the connection
+   state and the actions. Flex boxes of their own rather than loose children, so
+   a narrow window can move each onto a line of its own (see the narrow-width rule
+   below). At full width the row lays out exactly as it did when they were loose:
+   the same items, the same 12px gaps, the buttons `flex: none` only where they
+   already were. */
+.row__status,
+.row__actions { display: flex; align-items: center; gap: 12px; }
 .row + .row { margin-top: 10px; }
 .grow { flex: 1; min-width: 0; }
 .stack { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -708,11 +716,12 @@ label.check .stack span:last-child { color: var(--muted); font-size: 12px; }
    presentations.
 
    So below this width the gateway row stacks: the content takes the full width,
-   and the badge and the buttons wrap onto a line beneath it. It is purely a
-   width query, so the desktop at its normal size is untouched (its modal is
-   720px, well above this floor) and only a genuinely narrow window, where the
-   row does not fit either, gets the same wrapping, which is what it should do.
-   601px rather than 480 so a small phone in landscape is still covered. */
+   the connection state gets a line of its own and is CENTRED on it, and the
+   buttons take the line below that, all of them together. It is purely a width
+   query, so the desktop at its normal size is untouched (its modal is 720px,
+   well above this floor) and only a genuinely narrow window, where the row does
+   not fit either, gets the same stacking, which is what it should do. 601px
+   rather than 480 so a small phone in landscape is still covered. */
 @media (max-width: 601px) {
   /* The gateway row wraps: content first at full width, actions beneath it.
      Scoped to the gateway list (`#gateways`) and the notice history so a
@@ -728,16 +737,32 @@ label.check .stack span:last-child { color: var(--muted); font-size: 12px; }
   #notice-history > .card > .row > .stack.grow {
     flex-basis: 100%;
   }
-  /* The badge and the buttons share the line below, pushed to the trailing edge
-     the way they sat at the end of the row before it wrapped. `margin-left:
-     auto` on the first of them opens the gap the `.grow` used to. */
-  #gateways > .card > .row > .badge {
-    margin-left: auto;
+  /* The connection state then gets a line to itself, and its own box centres the
+     pill on it. A full-basis badge would have been simpler and wrong: the badge
+     is a pill, and one stretched across the card reads as a rule rather than as
+     a state. Centring the GROUP and leaving the badge its own width is what
+     keeps the pill a pill. */
+  #gateways > .card > .row > .row__status {
+    flex-basis: 100%;
+    justify-content: center;
+  }
+  /* And the buttons take the line below it, together, the way they sat at the end
+     of the row before it wrapped. Their own full-basis group is what puts them
+     on a new line rather than beside the state: the state's line is already
+     filled, so the row breaks here whatever room happens to be left. */
+  #gateways > .card > .row > .row__actions {
+    flex-basis: 100%;
   }
   /* The buttons keep their own size and do not stretch to fill the wrapped
      line, so Connect and Edit stay the width of their labels. */
-  #gateways > .card > .row > button {
+  #gateways > .card > .row > .row__actions > button {
     flex: none;
+  }
+  /* The notice history's rows are a badge and nothing to press, and they are not
+     the case this rule is about: there the badge stays a trailing-edge mark on
+     the row it belongs to. */
+  #notice-history > .card > .row > .badge {
+    margin-left: auto;
   }
 }
 
