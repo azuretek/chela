@@ -217,3 +217,15 @@ constants rather than reading it at runtime, because a built app cannot read a
 file that lives in the repo and a bundled second copy would be one more thing to
 keep in step. The fixtures are what enforce that: change the spec, regenerate,
 and the Swift test fails until the port moves with it.
+
+One spec is the exception, and it is the interesting one. `spec/
+prompt-metadata.json` holds the script the clients inject to put the
+client-context block on every outgoing prompt, and a script cannot be mirrored:
+a Swift copy of it would be a second copy of the same script in another
+language, which is exactly the drift the shared file exists to prevent. So the
+app BUNDLES that one spec (`project.yml` copies it in as a resource) and reads
+it at runtime, and `PromptMetadataParityTests` asserts that what it reads is
+byte-identical to the repo's copy and to what the desktop installs. Everything
+else about the block (the marker, the field order, the value rules, the identity)
+is ported and proven against the fixtures in `core/fixtures/prompt-metadata.json`
+like any other rule.

@@ -166,13 +166,26 @@ struct WebView: UIViewRepresentable {
             injectionTime: .atDocumentEnd,
             forMainFrameOnly: true
         ))
+        // The client-context hook, and the same bytes the desktop installs: the
+        // script is read from core/spec/prompt-metadata.json rather than ported,
+        // so the two clients cannot drift into two dialects.
+        //
+        // At document START, unlike the theme relay above, because it replaces
+        // `WebSocket.prototype.send` before the page opens a socket. Installed
+        // at the end of the document it would be racing a socket the page had
+        // already opened, and the frames it missed would be silent.
+        scripts.addUserScript(WKUserScript(
+            source: PromptMetadata.installation(),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
         configuration.userContentController = scripts
         // WebKit's default user agent stops at `Mobile/15E148`, which says
         // nothing about which client asked for the page. Naming ourselves is
         // what lets a gateway's own logs tell this app from Safari on the same
         // phone, and the Control UI only ever reads the user agent to detect a
         // legacy browser, so replacing the token is safe as well as useful.
-        configuration.applicationNameForUserAgent = "\(Naming.mobileToken)/\(Self.version)"
+        configuration.applicationNameForUserAgent = "\(Naming.mobileToken)/\(Naming.buildVersion)"
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         // Not opaque, and painted with the system background rather than left
@@ -202,23 +215,5 @@ struct WebView: UIViewRepresentable {
         guard context.coordinator.requested != url else { return }
         context.coordinator.requested = url
         webView.load(URLRequest(url: url))
-    }
-
-    /// The app's own identity, so the token stays true across releases. Read
-    /// from the bundle rather than written twice: the release workflow derives
-    /// the value and `project.yml` names the setting it arrives in.
-    ///
-    /// The full identity rather than `CFBundleShortVersionString`, because that
-    /// one is trimmed to the three integers App Store Connect accepts and so
-    /// cannot name a dev build: every build of a patch cycle carries the same
-    /// `1.0.1`. This is what lets a gateway's own logs tell one build of the
-    /// app from the next, and it is the value the update check will compare
-    /// against a feed. The fallback is for a build the workflow did not stamp.
-    private static var version: String {
-        if let identity = Bundle.main.object(forInfoDictionaryKey: "ClawBuildVersion") as? String,
-           !identity.isEmpty {
-            return identity
-        }
-        return Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 }

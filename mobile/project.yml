@@ -45,6 +45,18 @@ targets:
     platform: iOS
     sources:
       - path: Claw
+      # The client-context spec, bundled rather than mirrored.
+      #
+      # Everything else this app shares with the desktop is mirrored as Swift
+      # constants and proven against the spec by a parity test, which works for a
+      # name or a number: two copies of a value can be compared. The spec holds
+      # the injected script, and a mirror of a script is a second copy of it in
+      # another language, which is the fork the shared file exists to prevent. So
+      # the app carries the one owner and reads it, and
+      # `PromptMetadataParityTests` asserts that what it reads is what the
+      # desktop reads.
+      - path: ../core/spec/prompt-metadata.json
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.azuretek.claw-mobile

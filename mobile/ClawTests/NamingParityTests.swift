@@ -83,4 +83,31 @@ final class NamingParityTests: XCTestCase {
         XCTAssertEqual(Bundle.main.bundleIdentifier, expected)
         XCTAssertNotEqual(expected, try spec().product)
     }
+
+    /// How this client names itself where the desktop's own label is built the
+    /// same way from the same two values (`clientLabel` in `core/naming.js`).
+    /// The prompt block carries this string, so a rename that moved the product
+    /// name without moving it would misname the client to the agent.
+    func testTheClientLabelIsTheProductAndTheShorthand() throws {
+        let spec = try spec()
+        XCTAssertEqual(Naming.clientLabel, "\(spec.product) (\(spec.clients.mobile.shorthand))")
+        XCTAssertTrue(Naming.clientLabel.hasSuffix("(claw-mobile)"))
+    }
+
+    /// The app's own version, which is the plist the release workflow stamps
+    /// rather than a second place to keep the number in step.
+    func testTheBuildVersionComesFromTheBundle() throws {
+        let plist = try Fixtures.root().appendingPathComponent("mobile/Claw/Info.plist")
+        let data = try Data(contentsOf: plist)
+        let raw = try PropertyListSerialization.propertyList(from: data, format: nil)
+        let entries = try XCTUnwrap(raw as? [String: Any], "mobile/Claw/Info.plist is not a dictionary")
+
+        // The source plist names the build setting rather than a literal, so the
+        // built bundle is the only place a value exists.
+        XCTAssertEqual(entries["ClawBuildVersion"] as? String, "$(CLAW_BUILD_VERSION)")
+        let stamped = Bundle.main.object(forInfoDictionaryKey: "ClawBuildVersion") as? String
+        XCTAssertFalse(Naming.buildVersion.isEmpty)
+        XCTAssertNotEqual(Naming.buildVersion, "0", "the build was not stamped with a version")
+        XCTAssertEqual(Naming.buildVersion, stamped ?? "", "the reader and the bundle disagree")
+    }
 }
