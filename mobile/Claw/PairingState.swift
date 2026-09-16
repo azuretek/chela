@@ -190,9 +190,17 @@ enum Pairing {
     /// `open` always wins: an approval that lands while the pairing screen is up
     /// moves straight to authenticated, which is the whole point of auto-recovery.
     /// A `close` that is not pairing is an ordinary failure, kept distinct.
+    ///
+    /// A `connect` from `pairing-required` HOLDS pairing-required rather than
+    /// dropping to connecting. This is the anti-flap rule, ported from
+    /// `core/pairing.js` and proven against the shared fixtures: a retry attempt
+    /// while the screen is up must not pull the visible state off pairing, or the
+    /// screen flashes once per retry. The device stays unapproved until an `open`,
+    /// and the fresh attempt happens underneath the overlay. From any other phase
+    /// a `connect` is still `connecting`, the first-connect case.
     static func nextPhase(_ phase: Phase, _ event: Event) -> Phase {
         switch event {
-        case .connect: return .connecting
+        case .connect: return phase == .pairingRequired ? .pairingRequired : .connecting
         case .open: return .authenticated
         case .close(let refusal): return refusal != nil ? .pairingRequired : .failed
         case .fail: return .failed
@@ -269,14 +277,28 @@ final class PairingState: ObservableObject {
     /// Whether the pairing screen should be up.
     var isPairing: Bool { phase == .pairingRequired }
 
-    /// A fresh connect attempt: nothing is known yet, and any earlier refusal is
-    /// no longer the current truth. Called before each load. The retry timer is
-    /// stopped here because a load is now in flight; if it comes back pairing, the
-    /// timer is armed again by `closed`.
+    /// A connect attempt is starting. Two cases, and the reducer decides which.
+    ///
+    /// A FIRST connect (from any phase but pairing-required) moves to connecting,
+    /// and any earlier refusal is no longer the current truth, so it is cleared
+    /// and the retry timer is stopped because a fresh load is in flight.
+    ///
+    /// A RETRY connect while the pairing screen is up (from pairing-required)
+    /// HOLDS pairing-required, which is the anti-flap rule the shared reducer now
+    /// owns: the device is still unapproved, so the screen must not drop to
+    /// connecting and flash. In that case the refusal is KEPT (the command and
+    /// requestId on screen do not change) and the retry timer is LEFT RUNNING
+    /// (the next beat is still needed until an approval lands). The fresh attempt
+    /// happens underneath the overlay, which is full-cover, so nothing on screen
+    /// moves.
     func connecting() {
-        phase = Pairing.nextPhase(phase, .connect)
-        refusal = nil
-        stopRetry()
+        let next = Pairing.nextPhase(phase, .connect)
+        phase = next
+        if next != .pairingRequired {
+            refusal = nil
+            stopRetry()
+        }
+        // Else: hold the screen. Refusal and the retry timer are left as they are.
     }
 
     /// The gateway socket opened. The device is approved and connected, so the

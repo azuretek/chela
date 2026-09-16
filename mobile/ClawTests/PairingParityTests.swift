@@ -54,11 +54,20 @@ final class PairingParityTests: XCTestCase {
         let output: String
     }
 
+    private struct SequenceCase: Decodable {
+        let name: String
+        let from: String
+        let events: [EventCase]
+        let phases: [String]
+        let never: [String]
+    }
+
     private struct Fixture: Decodable {
         let policyCloseCode: Int
         let close: [CloseCase]
         let requestId: [RequestIdCase]
         let phase: [PhaseCase]
+        let sequence: [SequenceCase]
         let command: [CommandCase]
     }
 
@@ -145,6 +154,82 @@ final class PairingParityTests: XCTestCase {
         // Auto-recovery, as a state rule: an `open` from pairing-required is
         // authenticated. The screen comes down the moment the socket opens.
         XCTAssertEqual(Pairing.nextPhase(.pairingRequired, .open), .authenticated)
+    }
+
+    func testARetryConnectWhilePairingHoldsTheScreen() {
+        // The anti-flap rule at the reducer level: a retry attempt while the
+        // pairing screen is up is a `connect`, and answering it with `connecting`
+        // is what made the screen flash once per retry. The device is still
+        // unapproved, so the visible state holds until an `open` or a non-pairing
+        // close. From any other phase a connect is still a first-connect.
+        XCTAssertEqual(Pairing.nextPhase(.pairingRequired, .connect), .pairingRequired)
+        XCTAssertEqual(Pairing.nextPhase(.connecting, .connect), .connecting)
+        XCTAssertEqual(Pairing.nextPhase(.failed, .connect), .connecting)
+    }
+
+    func testThePairingScreenDoesNotFlapAcrossRetries() throws {
+        // The flap reproduced at the level it happened: a run of retries, each a
+        // `connect` followed by another pairing `close`, must leave the visible
+        // phase on pairing-required throughout and never once pass through
+        // `connecting`. Only an `open` or a non-pairing close ends it. Same golden
+        // cases the JS side asserts, so both clients hold the screen identically.
+        let fixture = try fixture()
+        XCTAssertFalse(fixture.sequence.isEmpty, "expected sequence fixtures")
+        for c in fixture.sequence {
+            guard var phase = Pairing.Phase(rawValue: c.from) else {
+                XCTFail("\(c.name): unrepresentable start phase \(c.from)")
+                continue
+            }
+            XCTAssertEqual(c.events.count, c.phases.count, "\(c.name): one expected phase per event")
+            var seen: [String] = []
+            for (i, e) in c.events.enumerated() {
+                guard let ev = event(e) else {
+                    XCTFail("\(c.name): unrepresentable event \(e.type)")
+                    continue
+                }
+                phase = Pairing.nextPhase(phase, ev)
+                seen.append(phase.rawValue)
+                XCTAssertEqual(phase.rawValue, c.phases[i], "\(c.name): step \(i)")
+            }
+            for banned in c.never {
+                XCTAssertFalse(seen.contains(banned), "\(c.name): passed through \(banned), which is the flap")
+            }
+        }
+    }
+
+    func testPairingStateHoldsRefusalAndScreenAcrossARetry() {
+        // The live state object, not just the reducer: a retry has to keep the
+        // screen up AND keep the command on it. `connecting()` while pairing must
+        // leave `isPairing` true and the refusal (its requestId, its command)
+        // unchanged, so nothing on the pairing screen moves while the reconnect
+        // happens underneath it.
+        let state = PairingState()
+        state.closed(Pairing.Refusal(reason: "not-paired", requestId: "req-7f3a2b"))
+        XCTAssertTrue(state.isPairing)
+        XCTAssertEqual(state.refusal?.requestId, "req-7f3a2b")
+        let commandBefore = state.approveCommand
+
+        // A retry beat: the web view calls connecting() before it reloads.
+        state.connecting()
+        XCTAssertTrue(state.isPairing, "the pairing screen must stay up across a retry")
+        XCTAssertEqual(state.refusal?.requestId, "req-7f3a2b", "the refusal must survive a retry")
+        XCTAssertEqual(state.approveCommand, commandBefore, "the command on screen must not change")
+
+        // The approval finally lands: only now does the screen come down.
+        state.opened()
+        XCTAssertFalse(state.isPairing)
+        XCTAssertEqual(state.phase, .authenticated)
+    }
+
+    func testPairingStateFirstConnectClearsRefusal() {
+        // The other half: a genuine first connect (not from pairing-required) does
+        // clear the refusal, so a stale command cannot linger into a fresh attempt.
+        let state = PairingState()
+        state.closed(Pairing.Refusal(reason: "not-paired", requestId: "req-1"))
+        state.opened() // leave pairing so the next connect is a first-connect
+        state.connecting()
+        XCTAssertEqual(state.phase, .connecting)
+        XCTAssertNil(state.refusal)
     }
 
     func testALoadFailureIsFailedNotPairing() {

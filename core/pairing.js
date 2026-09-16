@@ -112,6 +112,17 @@ export function readPairingClose({ code, reason } = {}) {
  * `close` that is not pairing is an ordinary failure, kept distinct so its copy
  * (raised elsewhere) is the network/auth one and never the pairing one.
  *
+ * A `connect` from `pairing-required` HOLDS the pairing state rather than
+ * dropping back to `connecting`. This is the anti-flap rule, and it is here in
+ * the shared reducer because the flap was here: while the pairing screen is up
+ * the client reconnects on a cadence to pick up an approval, and each attempt is
+ * a `connect`. Answering it with `connecting` pulled the visible state off
+ * pairing-required on every retry, and the next close put it back, so the screen
+ * flashed once per retry. The device is still unapproved until an `open` says
+ * otherwise, so the honest visible state through a retry is the pairing screen
+ * it was already showing: the fresh attempt happens underneath it. `connect` is
+ * still `connecting` from any other phase, which is the first-connect case.
+ *
  * @param {string} phase   current phase
  * @param {{type: string, pairing?: ({reason: string, requestId: (string|null)}|null)}} event
  * @returns {string} the next phase
@@ -119,7 +130,7 @@ export function readPairingClose({ code, reason } = {}) {
 export function nextPhase(phase, event) {
   switch (event?.type) {
     case 'connect':
-      return CONNECTING;
+      return phase === PAIRING_REQUIRED ? PAIRING_REQUIRED : CONNECTING;
     case 'open':
       return AUTHENTICATED;
     case 'close':
