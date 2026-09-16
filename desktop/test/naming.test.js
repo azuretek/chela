@@ -31,7 +31,12 @@ import * as naming from '../../core/naming.js';
 
 const DESKTOP = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ROOT = path.join(DESKTOP, '..');
-const read = (...parts) => fs.readFileSync(path.join(...parts), 'utf8');
+// Line endings are normalised because a Windows checkout gets CRLF from
+// autocrlf and this file has no .gitattributes to stop it, so a regex written
+// against `\n` matches there and not here. Measured: the publish-block pattern
+// below passed on macOS and failed the Windows leg of CI. What these assertions
+// care about is the text, not how the checkout stores its line breaks.
+const read = (...parts) => fs.readFileSync(path.join(...parts), 'utf8').replace(/\r\n/g, '\n');
 
 /* ------------------------------------------------------- the non-JS surfaces */
 
