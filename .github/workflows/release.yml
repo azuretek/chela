@@ -333,6 +333,68 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The release body is generated from this repo's own commits, so this job
+      # needs a checkout and every tag with it. It used to have neither: it only
+      # moved files from the build runners into the Release.
+      #
+      # Depth 0 because the range starts at the previous tag and git cannot
+      # describe a tag it never fetched.
+      #
+      # This runs BEFORE the artifacts are downloaded, not after: checkout cleans
+      # the workspace by default, and its `git clean` would delete the download
+      # directory. A reversed order fails loudly rather than silently, because
+      # `fail_on_unmatched_files` below then finds nothing to attach.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      # Settle what this release covers, before anything is generated from it.
+      #
+      # Deliberately not git-cliff's `--unreleased`: a dev build's tag does not
+      # exist yet (the release step below creates it), and a stable release has
+      # to cover its whole cycle rather than the single commit release-it just
+      # made. One rule per kind of build, both ending at HEAD.
+      - name: Range
+        id: range
+        env:
+          TAGGED: ${{ needs.version.outputs.tagged }}
+        run: |
+          set -eo pipefail
+
+          # HEAD^ rather than HEAD, for both kinds: on a rerun of a commit that
+          # is already tagged, describing HEAD returns the tag that is ON it and
+          # the range comes out empty. The parent commit is the last released
+          # one in either case, because every push to main is built and tagged.
+          if [ "$TAGGED" = 'true' ]; then
+            # A release covers everything since the last stable tag, dev builds
+            # included, because that is the cycle it is shipping.
+            previous="$(git describe --tags --abbrev=0 --exclude '*-dev.*' HEAD^ 2>/dev/null || true)"
+          else
+            # A dev build covers the push that triggered it. These are per-push
+            # notes by design: the previous tag is the immediately prior build,
+            # so the range is the commits landed since, not an accumulation.
+            previous="$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)"
+          fi
+
+          # No earlier tag at all means the first release from this history, and
+          # the honest notes for it are all of it. An empty range is passed as an
+          # empty argument, which is how git-cliff is told to walk from the root.
+          if [ -n "$previous" ]; then range="$previous..HEAD"; else range=""; fi
+          echo "release notes cover ${range:-the whole history; there is no earlier tag}"
+          echo "range=$range" >> "$GITHUB_OUTPUT"
+
+      # The notes themselves, from `cliff.toml` at the repo root, which carries
+      # the reasoning for every setting in it. The action downloads and runs
+      # git-cliff; the version is pinned rather than left to the action's own
+      # default so a release body cannot change because that default moved.
+      - uses: orhun/git-cliff-action@v4
+        id: notes
+        with:
+          config: cliff.toml
+          version: v2.14.1
+          args: -v ${{ steps.range.outputs.range }}
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -355,8 +417,13 @@ jobs:
           # GitHub never marks a prerelease as "Latest", so the front page keeps
           # pointing at the newest stable release on its own.
           prerelease: ${{ needs.version.outputs.tagged != 'true' }}
+          # The body is generated from the commits by the step above, and it is
+          # the whole point of that step: `generate_release_notes` asked GitHub
+          # for notes grouped by MERGED PULL REQUEST, this repo commits straight
+          # to main, and so every release body was the compare link and nothing
+          # else. The setting worked; it had no pull requests to work on.
+          body_path: ${{ steps.notes.outputs.changelog }}
           files: artifacts/**/*
-          generate_release_notes: true
           # A release that publishes with no installers attached looks finished
           # and is useless; fail loudly instead.
           fail_on_unmatched_files: true

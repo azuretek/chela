@@ -11,12 +11,14 @@
 // steps were never the hard part -- the preflight is, and a maintained tool has
 // years of other people's mistakes encoded in its checks.
 //
-// Why not semantic-release or release-please: both decide the version by parsing
-// Conventional Commits, and this repo does not write them (1 of 27 subjects
-// matches). Adopting either means rewriting a deliberate commit style to satisfy
-// a parser, and until then every release would be classified "no release".
-// release-it asks for the bump instead, which is the honest interface for a
-// repo whose commit messages are prose.
+// Why not semantic-release or release-please: both decide the VERSION by parsing
+// Conventional Commits, and that decision is the one kept human here. The repo
+// does write those commits, cliff.toml groups the release notes by them, and
+// that is the reason to refuse the version parse rather than a reason to adopt
+// it: whether a change earns a minor or a patch is a judgement about what is
+// shipping. The older half of the history is the other reason: of its first 27
+// subjects, 1 parsed. release-it asks for the bump instead, which is the honest
+// interface.
 //
 // A CommonJS config rather than .release-it.json so the reasoning above can live
 // with the settings; package.json declares no `type`, so `.cjs` is explicit.
