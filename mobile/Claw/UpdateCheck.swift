@@ -83,10 +83,15 @@ final class UpdateCheck {
     /// away the moment the feed was briefly unreachable. The notice is keyed and
     /// idempotent, so a re-announcement of the same version changes nothing.
     func run() async {
-        // A build that cannot even name its own version has nothing to compare,
-        // and a stable build has no feed to read yet (only dev is published).
+        // A stable build is not distributed yet (TestFlight is the one channel,
+        // and every build on it is a dev build), so it has no releases to read
+        // for itself. The releases feed carries both channels, but a stable build
+        // reading it today would only ever find dev entries it must not be
+        // offered, so the check stands down until stable is a real channel. The
+        // reader itself is channel-correct (it would pick the newest stable
+        // entry); this gate is about there being nothing stable to find.
         let channel = UpdateFeed.channel(for: currentVersion)
-        guard channel == UpdateFeed.devChannel, let url = UpdateFeed.feedURL(channel: channel) else { return }
+        guard channel == UpdateFeed.devChannel, let url = UpdateFeed.feedURL() else { return }
 
         let data: Data
         do {

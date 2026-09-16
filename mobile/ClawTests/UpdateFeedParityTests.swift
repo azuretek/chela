@@ -11,11 +11,11 @@ import XCTest
 /// the reading rule, regenerate the fixture, and this is what makes the Swift move
 /// with it.
 ///
-/// The two mirrored spec values (`pagesPath` and the channel names) are asserted
+/// The mirrored spec values (`releasesPath` and the channel names) are asserted
 /// against `core/spec/feed.json` here too, the same discipline the naming parity
-/// test uses for a value a client cannot import at runtime: the feed URL the phone
-/// reads and the path the workflow publishes to must be one string, and this is
-/// where they are checked to be.
+/// test uses for a value a client cannot import at runtime: the releases feed the
+/// phone reads must be spelled the one way the spec spells it, and this is where
+/// that is checked.
 final class UpdateFeedParityTests: XCTestCase {
     private struct Fixture: Decodable {
         let cases: [Case]
@@ -46,21 +46,20 @@ final class UpdateFeedParityTests: XCTestCase {
         }
     }
 
-    /// The two values mirrored from `spec/feed.json`. The phone builds the feed
-    /// URL from `pagesPath` and the channel name, and the mobile release workflow
-    /// publishes to the same `pagesPath`, so a drift here points the check at a
-    /// file that does not exist.
+    /// The values mirrored from `spec/feed.json`. The phone builds the releases
+    /// URL from `releasesPath` and reads a build's channel by name, so a drift
+    /// here points the check at the wrong URL or the wrong channel.
     func testTheFeedSpecValuesMirrorTheSpec() throws {
         struct FeedSpec: Decodable {
             struct Channels: Decodable {
                 let dev: String
                 let stable: String
             }
-            let pagesPath: String
+            let releasesPath: String
             let channels: Channels
         }
         let spec: FeedSpec = try Fixtures.loadSpec("feed")
-        XCTAssertEqual(UpdateFeed.pagesPath, spec.pagesPath, "UpdateFeed.pagesPath disagrees with core/spec/feed.json")
+        XCTAssertEqual(UpdateFeed.releasesPath, spec.releasesPath, "UpdateFeed.releasesPath disagrees with core/spec/feed.json")
         XCTAssertEqual(UpdateFeed.devChannel, spec.channels.dev, "UpdateFeed.devChannel disagrees with core/spec/feed.json")
         XCTAssertEqual(UpdateFeed.stableChannel, spec.channels.stable, "UpdateFeed.stableChannel disagrees with core/spec/feed.json")
     }
@@ -72,23 +71,52 @@ final class UpdateFeedParityTests: XCTestCase {
         XCTAssertEqual(UpdateFeed.channel(for: "1.0.1"), UpdateFeed.stableChannel)
     }
 
-    /// The URL is the repo slug, the shared path and the channel, and it is public
-    /// so the check needs no gateway auth, which is the whole reason the phone can
-    /// run it before it can authenticate.
+    /// The URL is the releases Atom feed built from the repo slug, on github.com
+    /// rather than api.github.com (so no api rate limit applies to a five-minute
+    /// dev check) and public (so the phone needs no gateway auth to read it),
+    /// which is the whole reason the check can run before the phone can
+    /// authenticate.
     func testTheFeedURLIsPublicAndBuiltFromTheSlug() throws {
-        let url = try XCTUnwrap(UpdateFeed.feedURL(channel: UpdateFeed.devChannel))
+        let url = try XCTUnwrap(UpdateFeed.feedURL())
         XCTAssertEqual(
             url.absoluteString,
-            "https://\(Naming.repoOwner).github.io/\(Naming.repoName)/\(UpdateFeed.pagesPath)/\(UpdateFeed.devChannel).json"
+            "https://github.com/\(Naming.repoOwner)/\(Naming.repoName)/\(UpdateFeed.releasesPath)"
         )
         XCTAssertEqual(url.scheme, "https", "a public https feed, needing no gateway auth")
+        XCTAssertEqual(url.host, "github.com", "github.com, not api.github.com, so no api rate limit applies")
     }
 
-    /// A body that is not JSON, or one naming no version, is a non-answer rather
-    /// than an error the check has to handle: the banner simply stays absent.
+    /// A body that is not the Atom feed, or a feed with no entries, is a
+    /// non-answer rather than an error the check has to handle: the banner simply
+    /// stays absent.
     func testAGarbageBodyDecodesToNoAnnouncement() throws {
-        XCTAssertNil(UpdateFeed.decode(Data("not json at all".utf8)))
-        let empty = try XCTUnwrap(UpdateFeed.decode(Data("{}".utf8)))
-        XCTAssertNil(try UpdateFeed.newerVersion(in: empty, current: "1.0.1"))
+        XCTAssertNil(UpdateFeed.decode(Data("not xml at all".utf8)), "a non-XML body is a non-answer")
+        XCTAssertNil(UpdateFeed.decode(Data("<html><body>rate limited</body></html>".utf8)), "XML that is not an Atom feed is a non-answer")
+        let empty = try XCTUnwrap(UpdateFeed.decode(Data("<feed xmlns=\"http://www.w3.org/2005/Atom\"></feed>".utf8)))
+        XCTAssertNil(try UpdateFeed.newerVersion(in: empty, current: "1.0.1"), "a feed with no entries announces nothing")
+    }
+
+    /// The Atom parser reads each entry's id and title in document order, which is
+    /// newest-first, so the newest matching release is the first the reader meets.
+    func testTheAtomParserReadsEntriesNewestFirst() throws {
+        let atom = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <id>tag:github.com,2008:https://github.com/o/r/releases</id>
+          <title>Release notes from r</title>
+          <entry>
+            <id>tag:github.com,2008:Repository/1/v1.0.1-dev.150.aaaaaaaaaa</id>
+            <title>v1.0.1-dev.150.aaaaaaaaaa</title>
+          </entry>
+          <entry>
+            <id>tag:github.com,2008:Repository/1/v1.0.1-dev.149.bbbbbbbbbb</id>
+            <title>v1.0.1-dev.149.bbbbbbbbbb</title>
+          </entry>
+        </feed>
+        """
+        let document = try XCTUnwrap(UpdateFeed.decode(Data(atom.utf8)))
+        XCTAssertEqual(document.entries.count, 2, "both entries are read, and the feed's own id/title are not entries")
+        let newer = try UpdateFeed.newerVersion(in: document, current: "1.0.1-dev.148.abc1234567")
+        XCTAssertEqual(newer, "1.0.1-dev.150.aaaaaaaaaa", "the newest matching entry, first in document order, is the answer")
     }
 }
