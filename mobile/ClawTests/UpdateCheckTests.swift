@@ -15,12 +15,28 @@ import XCTest
 final class UpdateCheckTests: XCTestCase {
     private func board() -> NoticeBoard { NoticeBoard() }
 
+    /// A releases.atom body naming a single release, the shape the real feed has.
+    /// The tag lives in the entry id, exactly where the reader looks for it.
+    private func atom(_ tag: String) -> Data {
+        Data("""
+        <?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <id>tag:github.com,2008:https://github.com/o/r/releases</id>
+          <title>Release notes from r</title>
+          <entry>
+            <id>tag:github.com,2008:Repository/1/v\(tag)</id>
+            <title>v\(tag)</title>
+          </entry>
+        </feed>
+        """.utf8)
+    }
+
     /// The feed names a newer build: the banner appears, as an INFO notice whose
     /// action opens TestFlight and whose text names neither a download nor a
     /// restart, because iOS can do neither.
     func testANewerFeedRaisesTheUpdateNotice() async throws {
         let board = board()
-        let feed = Data(#"{"version":"1.0.1-dev.150.abc1234567"}"#.utf8)
+        let feed = atom("1.0.1-dev.150.abc1234567")
         let check = UpdateCheck(board: board, currentVersion: "1.0.1-dev.148.abc1234567", fetch: { _ in feed })
 
         await check.run()
@@ -41,7 +57,7 @@ final class UpdateCheckTests: XCTestCase {
     /// The feed names this build: nothing is raised, so the banner stays absent.
     func testAMatchingFeedRaisesNothing() async throws {
         let board = board()
-        let feed = Data(#"{"version":"1.0.1-dev.148.abc1234567"}"#.utf8)
+        let feed = atom("1.0.1-dev.148.abc1234567")
         let check = UpdateCheck(board: board, currentVersion: "1.0.1-dev.148.abc1234567", fetch: { _ in feed })
 
         await check.run()
@@ -53,7 +69,7 @@ final class UpdateCheckTests: XCTestCase {
     /// An older feed build is not newer, so again nothing is raised.
     func testAnOlderFeedRaisesNothing() async throws {
         let board = board()
-        let feed = Data(#"{"version":"1.0.1-dev.147.abc1234567"}"#.utf8)
+        let feed = atom("1.0.1-dev.147.abc1234567")
         let check = UpdateCheck(board: board, currentVersion: "1.0.1-dev.148.abc1234567", fetch: { _ in feed })
 
         await check.run()
@@ -81,7 +97,7 @@ final class UpdateCheckTests: XCTestCase {
         var fetched = false
         let check = UpdateCheck(board: board, currentVersion: "1.0.1", fetch: { _ in
             fetched = true
-            return Data(#"{"version":"2.0.0"}"#.utf8)
+            return self.atom("2.0.0")
         })
 
         await check.run()
@@ -95,7 +111,7 @@ final class UpdateCheckTests: XCTestCase {
     /// does not replay the banner's arrival.
     func testReAnnouncingTheSameVersionIsIdempotent() async throws {
         let board = board()
-        let feed = Data(#"{"version":"1.0.1-dev.150.abc1234567"}"#.utf8)
+        let feed = atom("1.0.1-dev.150.abc1234567")
         let check = UpdateCheck(board: board, currentVersion: "1.0.1-dev.148.abc1234567", fetch: { _ in feed })
 
         await check.run()
