@@ -18,7 +18,7 @@ and the raw tailnet IP to `18790` is usually firewalled. So the iframe has no
 reachable origin. This is the `mcp.apps.sandboxOrigin` case the gateway's own
 config hint describes.
 
-## The fix on this machine (example-host)
+## The fix on the gateway host
 
 Two pieces, both required:
 

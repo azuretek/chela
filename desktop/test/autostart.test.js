@@ -58,7 +58,7 @@ test('the body is a valid desktop entry that runs the app', () => {
   assert.match(body, /^\[Desktop Entry\]$/m);
   assert.match(body, /^Type=Application$/m);
   assert.match(body, /^Name=Claw Control UI$/m);
-  assert.match(body, /^Exec="\/home\/abi\/Claw\.AppImage"$/m);
+  assert.match(body, /^Exec="\/home\/example-user\/Claw\.AppImage"$/m);
   assert.match(body, /^Terminal=false$/m);
   // Redundant per the spec, but it is what GNOME Tweaks writes, and some
   // versions read its absence as disabled.
@@ -73,7 +73,7 @@ test('start-hidden reaches the entry as the flag main.js parses', () => {
 
 test('a path with spaces stays one argument', () => {
   // "~/My Apps/Claw Control UI.AppImage" unquoted would be read as three.
-  assert.match(autostart.entryBody({ exec: '/home/example-user/My Apps/Claw.AppImage' }), /^Exec="\/home\/abi\/My Apps\/Claw\.AppImage"$/m);
+  assert.match(autostart.entryBody({ exec: '/home/example-user/My Apps/Claw.AppImage' }), /^Exec="\/home\/example-user\/My Apps\/Claw\.AppImage"$/m);
 });
 
 test('shell metacharacters in a path are escaped, not executed', () => {
@@ -108,7 +108,7 @@ test('enabling writes the entry', () => {
   assert.equal(r.ok, true);
   assert.equal(r.wrote, true);
   assert.deepEqual(fs.dirs, [path.join('/home/example-user', '.config', 'autostart')]);
-  assert.match(fs.files.get(r.path), /Exec="\/home\/abi\/Claw\.AppImage"/);
+  assert.match(fs.files.get(r.path), /Exec="\/home\/example-user\/Claw\.AppImage"/);
 });
 
 test('disabling removes it rather than writing a disabled one', () => {

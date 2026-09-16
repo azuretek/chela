@@ -105,7 +105,7 @@ test('every route label comes from the page, except Home', () => {
   // said "Home". Answered from the route, not by rewriting the string: "main" is
   // a legitimate title elsewhere, and an agent can be named anything.
   assert.strictEqual(chrome.pageLabel(titled('main'), at('chat/main')), 'Home');
-  assert.strictEqual(chrome.pageLabel(titled('zilla'), at('chat/zilla')), 'Home');
+  assert.strictEqual(chrome.pageLabel(titled('builder'), at('chat/builder')), 'Home');
   assert.strictEqual(chrome.pageLabel(titled('main'), at('chat/main?nav=collapsed')), 'Home');
   assert.strictEqual(chrome.pageLabel(titled('main'), at('chat/main/')), 'Home');
 });

@@ -20,8 +20,8 @@ function sampleBlock() {
     release: '11\nProfessional',
     arch: 'x64',
     hostname: 'example-host\rignored',
-    userInfo: { username: 'Abi' },
-    home: 'C:\\Users\\Abi',
+    userInfo: { username: 'example-user' },
+    home: 'C:\\Users\\example-user',
     locale: 'en-US',
     timezone: 'Europe/London',
   }));
@@ -57,7 +57,7 @@ test('the block is bounded, single-line per field, and cannot forge a header', (
   );
   assert.match(block, /host: example-host ignored/);
   assert.match(block, /os: Windows 11 Professional \(x64\)/);
-  assert.match(block, /home: C:\\Users\\Abi/);
+  assert.match(block, /home: C:\\Users\\example-user/);
   assert.doesNotMatch(block, /[\r\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/);
   for (const line of lines.slice(1)) {
     assert.ok(line.length < metadata.MAX_VALUE_LENGTH + 32, `unbounded line: ${line}`);
