@@ -12,9 +12,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { newerVersion, tagVersion, newestOnChannel, feedUrl, channelFor, DEV_CHANNEL, STABLE_CHANNEL } from '../feed.js';
+import { newerVersion, tagVersion, newestOnChannel, feedUrl, releaseNotesUrl, channelFor, DEV_CHANNEL, STABLE_CHANNEL } from '../feed.js';
 import spec from '../spec/feed.json' with { type: 'json' };
 import naming from '../spec/naming.json' with { type: 'json' };
+import { releasesUrl } from '../naming.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(HERE, '..', 'fixtures');
@@ -33,6 +34,29 @@ test('newerVersion() reproduces every fixture', () => {
     }
     assert.strictEqual(newerVersion(document, current), newer, name);
   }
+});
+
+/*
+ * The link a client puts behind "release notes". It exists because the wrong
+ * answer shipped: the phone's Release notes button opened TestFlight, which is
+ * where a build waits rather than where its notes are. The notes for a release
+ * are the release's own page, and with no version to name it is the channel's
+ * list, which naming.js already owns.
+ */
+test('releaseNotesUrl() reproduces every fixture', () => {
+  const { releaseNotes } = load('feed.json');
+  assert.ok(releaseNotes.length > 0, 'expected release-notes fixtures');
+  const repo = `${naming.repo.owner}/${naming.repo.name}`;
+  for (const { name, version, output } of releaseNotes) {
+    assert.strictEqual(releaseNotesUrl(repo, version), output, name);
+  }
+});
+
+test('a release-notes link is the release page, never a store or a download page', () => {
+  const repo = `${naming.repo.owner}/${naming.repo.name}`;
+  const url = releaseNotesUrl(repo, '1.0.1-dev.149.abc');
+  assert.ok(url.startsWith(`${releasesUrl}/tag/v`), url);
+  assert.ok(!url.includes('testflight'), 'a release-notes link must not point at a distribution channel');
 });
 
 test('tagVersion() recovers the version from an entry id or title, or null', () => {
@@ -70,7 +94,7 @@ test('the feed URL is the releases Atom feed, built from the repo slug', () => {
   // The one string the reader and the spec share is spec.releasesPath, so the
   // URL is asserted against it rather than written out, the same discipline the
   // naming assertions use for a surface that cannot import the value.
-  const repo = { owner: naming.repo.owner, name: naming.repo.name };
+  const repo = `${naming.repo.owner}/${naming.repo.name}`;
   assert.equal(
     feedUrl(repo),
     `https://github.com/${repo.owner}/${repo.name}/${spec.releasesPath}`,

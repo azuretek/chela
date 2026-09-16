@@ -76,6 +76,31 @@ export function configStatement({ label = DEFAULT_LABEL, tooltip = DEFAULT_TOOLT
 }
 
 /**
+ * The call that takes the reader to the CONTROL UI's own settings.
+ *
+ * A separate statement from the installation, the same shape as the config
+ * statement, because it is evaluated at a different moment by a different
+ * caller: installation happens once per page at document start, and this is
+ * asked for when someone presses the button on our settings page. The script
+ * installation left the function on the CONFIG global (which is writable; the
+ * bridge may be frozen), so this only has to look it up and call it.
+ *
+ * It returns whether a control was there to press, which the caller logs rather
+ * than hides: a fail-soft placement is fine for a control nobody pressed, and a
+ * fail-soft navigation is a button that appears to do nothing, which is worth a
+ * line in the app's own stdout.
+ */
+export function controlUiSettingsSource() {
+  return `(function () {
+  try {
+    var config = window.${spec.configGlobal};
+    if (config && typeof config.openControlUiSettings === 'function') return config.openControlUiSettings();
+  } catch (e) { return false; }
+  return false;
+})()`;
+}
+
+/**
  * What a client installs into the gateway page: the configuration, then the
  * shared script. The client installs its bridge on `window.<AFFORDANCE_GLOBAL>`
  * separately (the desktop in its preload, the phone in a shim); the script reads

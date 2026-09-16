@@ -40,6 +40,11 @@ enum UpdateFeed {
     /// `spec/feed.json`'s `releasesPath`. The one string this and the spec share.
     static let releasesPath = "releases.atom"
 
+    /// The path a release's own notes live at, mirrored from `spec/feed.json`'s
+    /// `releaseNotesPath` and asserted against it by `UpdateFeedParityTests`. The
+    /// version is appended to it.
+    static let releaseNotesPath = "releases/tag/v"
+
     /// The public URL the phone reads for the repository's releases.
     ///
     /// Built from the repo slug (`Naming`) rather than written out, so a rename
@@ -50,6 +55,24 @@ enum UpdateFeed {
     /// same URL the desktop's electron-updater provider reads.
     static func feedURL() -> URL? {
         URL(string: "https://github.com/\(Naming.repoOwner)/\(Naming.repoName)/\(releasesPath)")
+    }
+
+    /// The real release notes for a version, or for the channel when there is no
+    /// version to name.
+    ///
+    /// The port of `releaseNotesUrl()` in `core/feed.js`. NOT the store page this
+    /// client's Release notes button used to open: TestFlight is where a newer
+    /// build WAITS, not where its notes are, so a button labelled "Release notes"
+    /// that landed there spent a click without answering the question. The notes
+    /// for a release are the release's own page; with no version to name it is the
+    /// channel's list of releases, which is what a dev build has.
+    static func releaseNotesURL(version: String?) -> URL? {
+        let repo = "\(Naming.repoOwner)/\(Naming.repoName)"
+        let trimmed = version?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let url = trimmed.isEmpty
+            ? "https://github.com/\(repo)/releases"
+            : "https://github.com/\(repo)/\(releaseNotesPath)\(trimmed)"
+        return URL(string: url)
     }
 
     /// The channel a build reads its releases as, from the build's own version.

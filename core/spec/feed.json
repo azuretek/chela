@@ -4,9 +4,11 @@
     "It is the releases Atom feed, not a static document we publish. A release already exists per build (the workflow tags every build), so a second hand-published feed was a copy of the same truth that could drift from it, and its GitHub Pages host was one more thing to enable and keep green. Reading the releases the repository already has removes the copy and the publish step both.",
     "It is github.com/<owner>/<repo>/releases.atom, not api.github.com. The Atom feed is served by the same CDN the release downloads are, with no 60-per-hour unauthenticated rate limit, which a dev build's five-minute check would otherwise share across every device behind one IP. This is the same reason the desktop's electron-updater reads releases.atom rather than the API, so both platforms read releases the same way.",
     "The channels are separated by the release tag's own prerelease body, not by a GitHub flag. Atom does not carry GitHub's `prerelease` boolean, but every tag already names its channel (`1.0.1-dev.N.sha` is dev, `1.0.1` is stable), and channelOf() in updates.js reads exactly that. The dev channel takes the newest entry whose tag has a prerelease body; stable takes the newest with none. A dev build is never shown stable and a stable build never shown dev, without us filtering a flag Atom does not provide.",
-    "Only `dev` has releases with a prerelease body today, and that is honest about the world rather than a gap: TestFlight is the one distribution channel and every build on it is a dev build. `stable` is named so channelFor() on a future release build reads the same feed and simply finds the newest non-prerelease entry."
+    "Only `dev` has releases with a prerelease body today, and that is honest about the world rather than a gap: TestFlight is the one distribution channel and every build on it is a dev build. `stable` is named so channelFor() on a future release build reads the same feed and simply finds the newest non-prerelease entry.",
+    "`releaseNotesPath` is here for the same one-owner reason `releasesPath` is: it is the shape of one URL, the notes a release carries, and the About surface's Release notes link and an update's own release link are the same destination. A client that built it itself would eventually point somewhere other than the other client, and the whole value of that link is that it goes where the notes are."
   ],
   "releasesPath": "releases.atom",
+  "releaseNotesPath": "releases/tag/v",
   "channels": {
     "dev": "dev",
     "stable": "latest"

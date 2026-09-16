@@ -110,21 +110,30 @@ extension NoticeBoard {
     /// That exists for one reason: this client has exactly one condition it can
     /// observe on its own, so three of the four tones cannot be seen in a
     /// simulator without it, and a banner whose tones nobody has looked at is a
-    /// design nobody has checked. It is compiled out of a release build, and it
-    /// seeds the real store through the real raisers, so what it draws is the
-    /// banner and not a mock of it.
+    /// design nobody has checked. It is compiled out of a release build, it is
+    /// inert without the launch argument, and it seeds the real store through the
+    /// real raisers, so what it draws is the banner and not a mock of it.
+    ///
+    /// Every seed carries an action, and that is the notice rule rather than a
+    /// coincidence of this fixture: a notice must be actionable, so sample notices
+    /// for the four tones are built the way a real one has to be. The `ok` seed is
+    /// the tone's one raiser gone: it used to announce that the app had connected
+    /// again, which reported a condition nobody had to do anything about, and that
+    /// notice was removed from both clients.
     static func live() -> NoticeBoard {
         let board = NoticeBoard()
         guard ProcessInfo.processInfo.arguments.contains("-claw-seed-notices") else { return board }
         board.raise("seed-error", NoticeRaise(
             tone: NoticeTone.error,
             message: "Cannot connect to example-host",
-            detail: "The request timed out."
+            detail: "The request timed out.",
+            action: NoticeAction(label: "Open Settings", command: NoticeBoard.settingsCommand)
         ))
         board.raise("seed-warn", NoticeRaise(
             tone: NoticeTone.warn,
             message: "This build cannot install its own updates",
-            detail: "iOS installs apps. \(Naming.product) can tell you a release exists and no more."
+            detail: "iOS installs apps. \(Naming.product) can tell you a release exists and no more.",
+            action: NoticeAction(label: "Open Settings", command: NoticeBoard.settingsCommand)
         ))
         board.raise("seed-info", NoticeRaise(
             tone: NoticeTone.info,
@@ -134,8 +143,9 @@ extension NoticeBoard {
         ))
         board.raise("seed-ok", NoticeRaise(
             tone: NoticeTone.ok,
-            message: "Connected to example-host",
-            detail: "The Control UI is loaded and waiting behind this banner."
+            message: "Settings saved",
+            detail: "Sample good news for the ok tone, which has no live raiser on this client since the reconnection notice was removed.",
+            action: NoticeAction(label: "Open Settings", command: NoticeBoard.settingsCommand)
         ))
         return board
     }

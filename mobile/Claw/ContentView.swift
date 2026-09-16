@@ -118,6 +118,12 @@ struct ContentView: View {
     /// waiting on.
     @State private var host: SettingsHost?
 
+    /// The handle on the gateway page, held for the one thing our settings surface
+    /// asks the page to do itself: open the Control UI's own settings, when the
+    /// reader takes that offer. Weak inside, and this object owns only the ask;
+    /// see `GatewayPage`.
+    @StateObject private var gatewayPage = GatewayPage()
+
     /// The About page's other end, built once for the same reason `host` is: it is
     /// the object `core/ui/about.js` talks to for the life of the About sheet.
     @State private var aboutHost: AboutHost?
@@ -136,7 +142,11 @@ struct ContentView: View {
                     // footer posts here when pressed, and raises the same sheet the
                     // corner button does. The corner button stays as the fallback
                     // route that does not depend on the injected node existing.
-                    onOpenAppSettings: { showingSettings = true }
+                    // The App-settings affordance's bridge, plus the page itself:
+                    // the handle is for the one action that asks the Control UI to
+                    // do something the Control UI owns. See `GatewayPage`.
+                    onOpenAppSettings: { showingSettings = true },
+                    pageControl: gatewayPage
                 )
                 .background(themeColour)
                 // The pairing screen sits over the page while the gateway is
@@ -203,6 +213,35 @@ struct ContentView: View {
         // already connecting, so it has to be told when the phase moves. Passive
         // rather than polled: this is the view that observes it.
         .onChange(of: connection.phase) { _, _ in host?.emit("state") }
+        // The gateway row follows the pairing state, and this is where the two are
+        // joined. An unapproved device is `pending` (the page loaded, the gateway
+        // is holding the session), and only a socket that survived its settle
+        // window is a genuine connect. Without this the row said "Connected" for a
+        // device the gateway was refusing, and the retry cadence made it flicker
+        // between the two every few seconds. The MOVES are the shared reducer's
+        // (see `ConnectionState.nextPhase`), so this view only reports what
+        // happened.
+        .onChange(of: pairing.phase) { _, phase in
+            switch phase {
+            case .pairingRequired:
+                if let id = gateways.activeGateway?.id { connection.pending(id) }
+            case .authenticated:
+                connection.confirm()
+            default:
+                break
+            }
+        }
+        // A REVOKED session goes to the gateway list rather than stopping at the
+        // pairing screen. A first connection is a setup problem and the pairing
+        // screen is the whole answer; the SAME close arriving at a session that was
+        // working means the device is still pointed at a gateway that no longer
+        // accepts it, so the reader is taken to the surface that shows which
+        // gateway that is, with the row now saying the device needs approval. The
+        // rule and the route name come from the shared contract, and the pairing
+        // screen is still there behind this sheet with the approve command.
+        .onChange(of: pairing.route) { _, route in
+            if route == Pairing.routeSettingsGateways { showingSettings = true }
+        }
         // The notice log is the desktop's Problems tab, which this client does not
         // have. Raised anyway, because a host that never raises an event the spec
         // declares is a page left showing what it read at load.
@@ -229,7 +268,14 @@ struct ContentView: View {
                 // settings one that asked for it, and dismissing it lands back on
                 // settings, which is where the desktop's About-over-Settings
                 // overlay lands too.
-                onOpenAbout: { showingAbout = true }
+                onOpenAbout: { showingAbout = true },
+                // "Go to the Control UI": close this surface, then let the page
+                // open its OWN settings, which is what the card promises. Both
+                // halves in one closure, because the order is the action.
+                onOpenControlUiSettings: {
+                    showingSettings = false
+                    gatewayPage.openControlUiSettings()
+                }
             )
         }
         if aboutHost == nil {
@@ -281,6 +327,17 @@ struct ContentView: View {
         // `-claw-gateway-url`. See `SettingsSpec`.
         #if DEBUG
         if SettingsSpec.screenshotSeedsPairing {
+            pairing.closed(SettingsSpec.screenshotPairingRefusal)
+        }
+        // A DEVICE THAT WAS WORKING AND HAD ITS APPROVAL REVOKED, which is the
+        // same 1008 close entered from an established session rather than from a
+        // first connect, and the one state a screenshot run cannot otherwise
+        // reach. Drives the real `PairingState` through the real moves (an
+        // authenticated session, then the refusal), so the route it produces and
+        // the surface it opens are the ones the app would take. Debug only, inert
+        // without the argument. See `SettingsSpec`.
+        if SettingsSpec.screenshotSeedsRevocation {
+            pairing.opened()
             pairing.closed(SettingsSpec.screenshotPairingRefusal)
         }
         #endif

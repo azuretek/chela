@@ -35,6 +35,10 @@ enum Pairing {
     private struct Spec: Decodable {
         let phases: Phases
         let policyCloseCode: Int
+        /// Where a pairing close sends the reader. One owner: `routing` in
+        /// core/spec/pairing.json, read here exactly as the parser rules are, so
+        /// the two clients route one event the same way.
+        let routing: Routing
         let reasonSubstrings: [String: String]
         let requestIdPattern: String
         let requestIdInReason: String
@@ -49,6 +53,12 @@ enum Pairing {
             let pairingRequired: String
             let authenticated: String
             let failed: String
+        }
+
+        struct Routing: Decodable {
+            let pairingScreen: String
+            let settingsGateways: String
+            let settingsTab: String
         }
     }
 
@@ -74,6 +84,7 @@ enum Pairing {
         let empty = Spec(
             phases: .init(connecting: "connecting", pairingRequired: "pairing-required", authenticated: "authenticated", failed: "failed"),
             policyCloseCode: 0,
+            routing: .init(pairingScreen: "", settingsGateways: "", settingsTab: ""),
             reasonSubstrings: [:],
             requestIdPattern: "",
             requestIdInReason: "",
@@ -220,6 +231,26 @@ enum Pairing {
         }
     }
 
+    /// Where a pairing close sends the reader.
+    ///
+    /// The port of `pairingRoute()` in `core/pairing.js`, proven against the same
+    /// fixture cases by `PairingParityTests`. A first connection is a setup
+    /// problem and the pairing screen is the whole answer; the SAME close arriving
+    /// at a session that had already been approved and was working is a
+    /// revocation, which wants the settings surface on the gateways tab, because
+    /// the first question there is which gateway this client is even pointed at.
+    static func route(fromPhase: Phase, toPhase: Phase = .pairingRequired) -> String? {
+        guard toPhase == .pairingRequired else { return nil }
+        return fromPhase == .authenticated ? spec.routing.settingsGateways : spec.routing.pairingScreen
+    }
+
+    /// The two route names, so a caller compares against the spec rather than a
+    /// literal of its own.
+    static var routePairingScreen: String { spec.routing.pairingScreen }
+    static var routeSettingsGateways: String { spec.routing.settingsGateways }
+    /// The tab the settings route names, for the surface that has tabs.
+    static var routeSettingsTab: String { spec.routing.settingsTab }
+
     /// The approve command to show, built from the requestId. The real instruction
     /// the gateway and the Control UI give, reflected rather than invented: the
     /// exact command with an id, the `--latest` form without one.
@@ -264,6 +295,19 @@ final class PairingState: ObservableObject {
     @Published private(set) var phase: Pairing.Phase = .connecting
     @Published private(set) var refusal: Pairing.Refusal?
 
+    /// Where this stay in pairing-required should send the reader, or nil when
+    /// there is no pairing state at all. Published as its own value rather than
+    /// derived by the view, because the view would have to remember the phase the
+    /// wait started from to derive it, and the one place that knows is the move
+    /// that entered the state.
+    @Published private(set) var route: String?
+
+    /// The phase the current stay in pairing-required was entered from. Recorded
+    /// only on an entry: a retry, or a repeat close, must not overwrite the phase
+    /// the wait actually started from, or a revocation would start reporting
+    /// itself as a first connection a few seconds in.
+    private var enteredFrom: Pairing.Phase = .connecting
+
     /// A monotonic counter the web view watches to know it should reload.
     ///
     /// Auto-recovery needs a fresh connect attempt after the device is approved,
@@ -297,6 +341,17 @@ final class PairingState: ObservableObject {
     private var retryTimer: Timer?
     private var confirmTimer: Timer?
 
+    /// Apply a move, recording the entry and the route it produces.
+    ///
+    /// One place, so `route` cannot go stale: every phase change in this object
+    /// goes through here, and the route is recomputed from the shared rule rather
+    /// than set by hand at each call site.
+    private func move(to next: Pairing.Phase) {
+        if next == .pairingRequired && phase != .pairingRequired { enteredFrom = phase }
+        phase = next
+        route = Pairing.route(fromPhase: enteredFrom, toPhase: next)
+    }
+
     /// Whether the pairing screen should be up.
     var isPairing: Bool { phase == .pairingRequired }
 
@@ -316,7 +371,7 @@ final class PairingState: ObservableObject {
     /// moves.
     func connecting() {
         let next = Pairing.nextPhase(phase, .connect)
-        phase = next
+        move(to: next)
         if next != .pairingRequired {
             refusal = nil
             stopRetry()
@@ -344,7 +399,7 @@ final class PairingState: ObservableObject {
     /// open turns out to be another refusal.
     func opened() {
         let next = Pairing.nextPhase(phase, .open)
-        phase = next
+        move(to: next)
         if next == .pairingRequired {
             // Unconfirmed: hold the screen and wait for the settle window. Refusal
             // and the retry timer are left as they are; the command on screen does
@@ -368,7 +423,7 @@ final class PairingState: ObservableObject {
         // approval. Cancel the settle timer first, so a confirm cannot race in
         // after the refusal and clear a screen that should stay up.
         stopConfirm()
-        phase = Pairing.nextPhase(phase, .close(refusal))
+        move(to: Pairing.nextPhase(phase, .close(refusal)))
         self.refusal = refusal
         if phase == .pairingRequired {
             startRetry()
@@ -382,7 +437,7 @@ final class PairingState: ObservableObject {
     /// pairing retry does not run for it; the web view's own reload path handles a
     /// dead page.
     func failed() {
-        phase = Pairing.nextPhase(phase, .fail)
+        move(to: Pairing.nextPhase(phase, .fail))
         refusal = nil
         stopRetry()
         stopConfirm()
@@ -433,7 +488,7 @@ final class PairingState: ObservableObject {
     private func confirmOpen() {
         confirmTimer = nil
         guard isPairing else { return }
-        phase = Pairing.nextPhase(phase, .confirm)
+        move(to: Pairing.nextPhase(phase, .confirm))
         refusal = nil
         stopRetry()
     }

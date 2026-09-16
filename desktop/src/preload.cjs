@@ -194,6 +194,11 @@ if (isLocalPage) {
           connect: ([id]) => ipcRenderer.invoke('app:connect', id),
           saveSettings: ([patch]) => ipcRenderer.invoke('app:save-settings', patch),
           closeSettings: () => ipcRenderer.invoke('app:close-settings'),
+          // Closes this surface and takes the reader to the Control UI's own
+          // settings, which is what the card on the Gateways tab promises. One
+          // command for one action: the page cannot express "close, then press
+          // that control" as two calls without knowing the order matters.
+          openControlUiSettings: () => ipcRenderer.invoke('app:open-control-ui-settings'),
           // Opens the app's own About page over whatever is on screen, the same
           // overlay the menu bar and tray open. It is About's one way in on a
           // build with no reachable menu bar (the Windows desktop hides its

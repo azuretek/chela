@@ -2,6 +2,25 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <!-- The layout width, and it is here for the same two reasons it is in
+       settings.html, the page this one is presented beside.
+
+       Without it a web view falls back to the 980px desktop layout viewport and
+       scales the whole document down to fit its frame. On a 402pt-wide phone that
+       is a factor of about 0.41, so About rendered as a narrow card of ~5px text
+       in the middle of the screen instead of filling it, which is what was still
+       being reported after the sheet itself had already been pinned full height.
+       Measured on an iPhone simulator on 2026-09-16, in both presentations, with
+       the settings page beside it for the control: settings carried this line and
+       filled the screen, About did not and did not. The desktop is unaffected
+       either way, because Chromium ignores this meta outside mobile viewport
+       mode.
+
+       `viewport-fit=cover` is the other half. The phone lays this page out edge
+       to edge (see mobile/Claw/AboutView.swift, which turns the web view's own
+       inset adjustment off), so the page has to inset its own content, and
+       `env(safe-area-inset-*)` only resolves to a non-zero value under it. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: file:;">
   <title>About Claw Control UI</title>

@@ -13,5 +13,11 @@
     { "name": "an entry whose tag does not parse is skipped, not thrown on", "document": { "entries": [ { "id": ".../releases/nightly", "title": "nightly" }, { "id": ".../releases/v1.0.1-dev.149.abc1234567", "title": "v1.0.1-dev.149.abc1234567" } ] }, "current": "1.0.1-dev.148.abc1234567", "newer": "1.0.1-dev.149.abc1234567" },
     { "name": "an entry tag without a v prefix is still read", "document": { "entries": [ { "id": ".../releases/1.0.2", "title": "1.0.2" } ] }, "current": "1.0.1", "newer": "1.0.2" },
     { "name": "a current version this build cannot parse is a surfaced fault", "document": { "entries": [ { "id": ".../releases/v1.0.2", "title": "v1.0.2" } ] }, "current": "latest", "throws": true }
+  ],
+  "releaseNotes": [
+    { "name": "a version names that release's own notes", "version": "1.0.1-dev.149.abc1234567", "output": "https://github.com/azuretek/claw-control-ui/releases/tag/v1.0.1-dev.149.abc1234567" },
+    { "name": "a stable version names its release too", "version": "1.0.2", "output": "https://github.com/azuretek/claw-control-ui/releases/tag/v1.0.2" },
+    { "name": "with no version to name, the channel's list of releases", "version": null, "output": "https://github.com/azuretek/claw-control-ui/releases" },
+    { "name": "an empty or blank version is the same as none", "version": "   ", "output": "https://github.com/azuretek/claw-control-ui/releases" }
   ]
 }

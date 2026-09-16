@@ -228,6 +228,22 @@ body.as-page .modal { border-color: transparent; box-shadow: none; }
 }
 .modal__close:hover { background: var(--bg-hover); color: var(--text-strong); }
 
+/* The same control, as a back arrow at the LEADING edge of the header: this is
+   the way back to whatever the surface was drawn over, and both the glyph and
+   the position say so, where a cross on the trailing edge said "dismiss this"
+   and nothing about where you would land. It keeps the 28px height so the
+   header's own row does not move, and it is a little taller optically because an
+   arrow reads as squashed at the size a single character needs. */
+.modal__back {
+  width: 32px;
+  font-size: 15px;
+  line-height: 1;
+  /* The arrow is the first thing in the header, and the header's padding is the
+     card's. Pulling it in by 6px lines the leading edge of the glyph up with the
+     card's other content rather than with the button's own box. */
+  margin-left: -6px;
+}
+
 /* The only scrolling region on the page, which is what keeps the header and the
    card's rounded corners fixed while the content moves. */
 .modal__body {
@@ -735,33 +751,57 @@ label.check .stack span:last-child { color: var(--muted); font-size: 12px; }
 .control-ui-settings__action { margin-top: 12px; }
 
 /* The About footer, under every tab. It sits below the panels rather than in one
-   of them, so it reads as a footer for the whole surface: a quiet rule above it,
-   the link centred and understated, since it is a way OUT of settings rather than
-   a control on them. A class rather than a style attribute because this page's
-   CSP sets `style-src 'self'`, which applies to style attributes too. The phone
-   pads the bottom for the home indicator on `.scrim`; this only owns the space
-   above itself. */
+   of them, so it reads as a footer for the whole surface, and it is centred: a
+   way OUT of settings rather than a control on them. A class rather than a style
+   attribute because this page's CSP sets `style-src 'self'`, which applies to
+   style attributes too. The phone pads the bottom for the home indicator on
+   `.scrim`; this only owns the space above itself. */
 .settings-footer {
-  margin-top: 20px;
+  margin: 22px 0 4px;
   padding-top: 14px;
   border-top: 1px solid var(--border);
   display: flex;
   justify-content: center;
 }
-/* A link rather than a filled button: the diagnostic detail it opens is
-   reference, not an action, so it should not compete with Save or Connect. It is
-   still a real button for the keyboard and for touch, sized so a thumb lands on
-   it at phone width. */
+/* A bordered control rather than a line of quiet text, and the reason is that
+   this is the ONLY route to About on a client with no menu bar: a phone has
+   none, and on Windows the desktop's menu bar hides behind Alt. It was a
+   `--muted`, borderless, 12px label, which is quiet to the point of being
+   unfindable, and the person who needs About is the person checking for an
+   update.
+   It is still not a banner, and the restraint is deliberate: the same size type
+   as the rows around it, one border and the ordinary button surface, sitting in
+   the footer where a footer belongs, below the panels it belongs to. It does not
+   take the accent fill or the primary colour, which belong to the actions that
+   change something (Save, Connect), and About changes nothing. */
 .about-footer__link {
-  background: transparent;
-  border: 0;
-  padding: 6px 10px;
-  color: var(--muted);
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 550;
   cursor: pointer;
   border-radius: var(--radius-sm);
+  /* A thumb, and the smallest tap target the platform accepts for one. */
+  min-height: 34px;
 }
-.about-footer__link:hover { color: var(--accent); background: var(--bg-hover); }
+.about-footer__link:hover { border-color: var(--border-hover); background: var(--bg-hover); color: var(--text-strong); }
+/* The build beside the name. This is the answer to the question that sends
+   someone looking for About, so it is on the control that opens it rather than
+   only one click behind it, and it reads as secondary because the name is what
+   is being offered. */
+.about-footer__build {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 400;
+}
+.about-footer__build:empty { display: none; }
 /* The message dialog renders its buttons reversed so the default lands at the
    trailing edge, which is where all three platforms put it. */
 .actions--end { justify-content: flex-end; margin-top: 18px; }

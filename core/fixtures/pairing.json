@@ -8,7 +8,8 @@
     "The `phase` cases also pin the anti-FLICKER rule, which is a level below the flap: an `open` while pairing-required HOLDS the screen, and only a `confirm` clears it. A 1008 pairing close is deliverable only after a WebSocket handshake completes, so the gateway genuinely opens the socket and then closes it 1008 on every retry, and the page's socket fires `open` before the close. Clearing the screen on that `open` tore the overlay away for the gap between the open and the close, once per retry, which exposed the reloading page underneath and was the flicker. So an unconfirmed open holds, and only an open that SURVIVES the settle window without a pairing close (a `confirm`) is the approval, which is auto-recovery. A `confirm` from any other phase is a no-op.",
     "The `phase` cases also pin the moves that do NOT come from a first connect, because the pairing screen covering only a first connection is the failure this contract exists to make impossible: a pairing close from `authenticated` is `pairing-required`, exactly as it is from `connecting`. A session that was established, approved and working, and then had its approval revoked server-side, is refused with the same 1008 close, and a client that only ever entered pairing from its initial connecting phase showed that user a dead app with no explanation.",
     "The `sequence` cases pin both rules at the level they happened: a run of retries, each a `connect`, an `open`, and another pairing `close`, must leave the visible phase on `pairing-required` throughout and never once pass through `connecting` OR `authenticated`. Passing through `authenticated` on a retry's open is the flicker; passing through `connecting` on a retry's connect is the flap. Only a `confirm` (an approved socket that survived) or a non-pairing close ends the wait. Two of them start from `authenticated`, which is the revocation path: the same run of retries, entered from a working session rather than from a cold start.",
-    "The `command` cases pin the real instruction: the exact `openclaw devices approve <id>` with an id, and the `--latest` form without one."
+    "The `command` cases pin the real instruction: the exact `openclaw devices approve <id>` with an id, and the `--latest` form without one.",
+    "The `routing` cases pin where a pairing close sends the reader: the pairing screen for a first connection, and the settings surface on the gateways tab for a session that was already approved and has had its approval revoked. A client that gets this wrong either buries a revocation behind a screen about setup, or shows a setup screen to someone whose session was working a moment ago."
   ],
   "policyCloseCode": 1008,
   "close": [
@@ -294,6 +295,32 @@
     }
   ],
 
+  "routing": [
+    {
+      "name": "a first connection routes to the pairing screen, there is nothing else to look at",
+      "from": "connecting",
+      "to": "pairing-required",
+      "output": "pairing-screen"
+    },
+    {
+      "name": "a pairing close that arrives after a failure is still a first connection",
+      "from": "failed",
+      "to": "pairing-required",
+      "output": "pairing-screen"
+    },
+    {
+      "name": "a revoked session routes to the settings surface, the gateway itself is the first question",
+      "from": "authenticated",
+      "to": "pairing-required",
+      "output": "settings-gateways"
+    },
+    {
+      "name": "no pairing entry has no route, so nothing moves the reader",
+      "from": "authenticated",
+      "to": "authenticated",
+      "output": null
+    }
+  ],
   "command": [
     {
       "name": "with an id, the exact approve command",

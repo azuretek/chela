@@ -79,6 +79,27 @@ enum AppSettingsAffordance {
         ]
     }
 
+    /// The call that takes the reader to the CONTROL UI's own settings.
+    ///
+    /// The port of `controlUiSettingsSource()` in
+    /// `core/app-settings-affordance.js`, and the same split as everything else
+    /// here: the script that does the pressing is the shared one (bundled and
+    /// installed above), and this is the one line that asks the page to run it.
+    /// The function is left on the CONFIG global by the installation, which is
+    /// why this looks it up there rather than on the bridge: the bridge may be a
+    /// frozen object on another client, and the config global is a plain one.
+    static func controlUiSettingsSource() -> String {
+        """
+        (function () {
+          try {
+            var config = window.\(spec.configGlobal);
+            if (config && typeof config.openControlUiSettings === 'function') return config.openControlUiSettings();
+          } catch (e) { return false; }
+          return false;
+        })()
+        """
+    }
+
     /// The bridge shim, then the configuration, then the shared script.
     ///
     /// The bridge is installed on its own global; the config on a separate plain
