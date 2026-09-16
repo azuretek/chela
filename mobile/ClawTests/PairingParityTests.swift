@@ -135,6 +135,7 @@ final class PairingParityTests: XCTestCase {
         switch e.type {
         case "connect": return .connect
         case "open": return .open
+        case "confirm": return .confirm
         case "fail": return .fail
         case "close":
             let refusal = (e.pairing ?? nil).map {
@@ -150,10 +151,20 @@ final class PairingParityTests: XCTestCase {
         }
     }
 
-    func testAnApprovalThatLandsWhilePairingWinsImmediately() {
-        // Auto-recovery, as a state rule: an `open` from pairing-required is
-        // authenticated. The screen comes down the moment the socket opens.
-        XCTAssertEqual(Pairing.nextPhase(.pairingRequired, .open), .authenticated)
+    func testAnOpenWhilePairingIsUnconfirmedAndOnlyConfirmClearsIt() {
+        // The anti-flicker rule, as a state rule. A 1008 pairing close is
+        // deliverable only after a WebSocket handshake completes, so the gateway
+        // opens the socket and then closes it 1008 on every retry: the page's
+        // socket fires `open` before the pairing close. Clearing the screen on
+        // that `open` tore the overlay away for the gap between open and close,
+        // once per retry, which was the flicker. So an open while pairing-required
+        // HOLDS, and only a `confirm` (an open that survived the settle window
+        // without a pairing close) clears the screen. A first-connect open is
+        // authenticated at once, and a confirm without a held open is a no-op.
+        XCTAssertEqual(Pairing.nextPhase(.pairingRequired, .open), .pairingRequired)
+        XCTAssertEqual(Pairing.nextPhase(.pairingRequired, .confirm), .authenticated)
+        XCTAssertEqual(Pairing.nextPhase(.connecting, .open), .authenticated)
+        XCTAssertEqual(Pairing.nextPhase(.connecting, .confirm), .connecting)
     }
 
     func testARetryConnectWhilePairingHoldsTheScreen() {
@@ -167,12 +178,14 @@ final class PairingParityTests: XCTestCase {
         XCTAssertEqual(Pairing.nextPhase(.failed, .connect), .connecting)
     }
 
-    func testThePairingScreenDoesNotFlapAcrossRetries() throws {
-        // The flap reproduced at the level it happened: a run of retries, each a
-        // `connect` followed by another pairing `close`, must leave the visible
-        // phase on pairing-required throughout and never once pass through
-        // `connecting`. Only an `open` or a non-pairing close ends it. Same golden
-        // cases the JS side asserts, so both clients hold the screen identically.
+    func testThePairingScreenDoesNotFlickerOrFlapAcrossRetries() throws {
+        // Both rules reproduced at the level they happened: a run of retries, each
+        // a `connect`, an `open`, and another pairing `close`, must leave the
+        // visible phase on pairing-required throughout and never once pass through
+        // `connecting` (the flap) OR `authenticated` (the flicker, the overlay
+        // tearing away on a retry's open). Only a `confirm` or a non-pairing close
+        // ends it. Same golden cases the JS side asserts, so both clients hold the
+        // screen identically.
         let fixture = try fixture()
         XCTAssertFalse(fixture.sequence.isEmpty, "expected sequence fixtures")
         for c in fixture.sequence {
@@ -192,41 +205,95 @@ final class PairingParityTests: XCTestCase {
                 XCTAssertEqual(phase.rawValue, c.phases[i], "\(c.name): step \(i)")
             }
             for banned in c.never {
-                XCTAssertFalse(seen.contains(banned), "\(c.name): passed through \(banned), which is the flap")
+                XCTAssertFalse(seen.contains(banned), "\(c.name): passed through \(banned), which is a visible churn")
             }
         }
     }
 
-    func testPairingStateHoldsRefusalAndScreenAcrossARetry() {
+    @MainActor
+    func testPairingStateHoldsRefusalAndScreenAcrossARetryOpenThenClose() {
         // The live state object, not just the reducer: a retry has to keep the
-        // screen up AND keep the command on it. `connecting()` while pairing must
-        // leave `isPairing` true and the refusal (its requestId, its command)
-        // unchanged, so nothing on the pairing screen moves while the reconnect
-        // happens underneath it.
+        // screen up AND keep the command on it, even though every retry now both
+        // opens the socket (which fires `opened`) and then has it closed 1008
+        // (which fires `closed`). Neither must move the screen: `connecting()`
+        // and `opened()` while pairing must leave `isPairing` true and the refusal
+        // unchanged, and the pairing `closed()` that follows the open holds it too.
         let state = PairingState()
         state.closed(Pairing.Refusal(reason: "not-paired", requestId: "req-7f3a2b"))
         XCTAssertTrue(state.isPairing)
         XCTAssertEqual(state.refusal?.requestId, "req-7f3a2b")
         let commandBefore = state.approveCommand
 
-        // A retry beat: the web view calls connecting() before it reloads.
+        // A full retry beat: connect, then the socket opens, then the gateway
+        // closes it 1008. This is the exact sequence that used to flicker.
         state.connecting()
-        XCTAssertTrue(state.isPairing, "the pairing screen must stay up across a retry")
+        XCTAssertTrue(state.isPairing, "the pairing screen must stay up across a retry connect")
+        state.opened()
+        XCTAssertTrue(state.isPairing, "an unconfirmed open must not clear the screen; this was the flicker")
+        XCTAssertEqual(state.phase, .pairingRequired)
+        state.closed(Pairing.Refusal(reason: "not-paired", requestId: "req-7f3a2b"))
+        XCTAssertTrue(state.isPairing, "the pairing close after the open must hold the screen")
         XCTAssertEqual(state.refusal?.requestId, "req-7f3a2b", "the refusal must survive a retry")
         XCTAssertEqual(state.approveCommand, commandBefore, "the command on screen must not change")
-
-        // The approval finally lands: only now does the screen come down.
-        state.opened()
-        XCTAssertFalse(state.isPairing)
-        XCTAssertEqual(state.phase, .authenticated)
     }
 
+    @MainActor
+    func testAnApprovedOpenClearsTheScreenAfterTheSettleWindow() {
+        // Auto-recovery: an open that STAYS open (no pairing close cancels it)
+        // clears the screen once the settle window elapses. Driven through the
+        // real timer rather than a fake, so what passes is the real recovery.
+        let state = PairingState()
+        state.closed(Pairing.Refusal(reason: "not-paired", requestId: "req-7f3a2b"))
+        state.connecting()
+        state.opened()
+        // The open is held until it settles: still pairing right after.
+        XCTAssertTrue(state.isPairing, "an open is unconfirmed until the settle window elapses")
+
+        // Let the settle timer fire (no closed() cancels it): the screen clears.
+        let cleared = expectation(description: "pairing screen clears after settle")
+        DispatchQueue.main.asyncAfter(deadline: .now() + PairingState.confirmInterval + 0.3) {
+            XCTAssertFalse(state.isPairing, "an approved open must clear the screen after settling")
+            XCTAssertEqual(state.phase, .authenticated)
+            XCTAssertNil(state.refusal)
+            cleared.fulfill()
+        }
+        wait(for: [cleared], timeout: PairingState.confirmInterval + 2)
+    }
+
+    @MainActor
+    func testAPairingCloseAfterAnOpenCancelsTheSettleSoTheScreenNeverClears() {
+        // The other half of the anti-flicker guard: a pairing close arriving after
+        // an unconfirmed open must cancel the settle, so a confirm cannot race in
+        // and clear a screen that should stay up. After the close, the settle
+        // window passes and the screen is still up.
+        let state = PairingState()
+        state.closed(Pairing.Refusal(reason: "not-paired", requestId: "req-7f3a2b"))
+        state.connecting()
+        state.opened()                 // arms the settle timer
+        state.closed(Pairing.Refusal(reason: "not-paired", requestId: "req-7f3a2b")) // cancels it
+
+        let held = expectation(description: "pairing screen stays up past the settle window")
+        DispatchQueue.main.asyncAfter(deadline: .now() + PairingState.confirmInterval + 0.3) {
+            XCTAssertTrue(state.isPairing, "a refusal after the open must keep the screen up")
+            XCTAssertEqual(state.phase, .pairingRequired)
+            held.fulfill()
+        }
+        wait(for: [held], timeout: PairingState.confirmInterval + 2)
+    }
+
+    @MainActor
     func testPairingStateFirstConnectClearsRefusal() {
-        // The other half: a genuine first connect (not from pairing-required) does
-        // clear the refusal, so a stale command cannot linger into a fresh attempt.
+        // A genuine first connect (not from pairing-required) clears the refusal,
+        // so a stale command cannot linger into a fresh attempt. A first-connect
+        // open (from connecting, no screen up) authenticates at once, which is how
+        // we leave pairing here to set up the first-connect case.
         let state = PairingState()
         state.closed(Pairing.Refusal(reason: "not-paired", requestId: "req-1"))
-        state.opened() // leave pairing so the next connect is a first-connect
+        state.connecting()
+        state.failed()          // leave pairing cleanly so the next open is a first-connect
+        state.connecting()
+        state.opened()          // from connecting: authenticated at once, no settle needed
+        XCTAssertEqual(state.phase, .authenticated)
         state.connecting()
         XCTAssertEqual(state.phase, .connecting)
         XCTAssertNil(state.refusal)

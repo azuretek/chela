@@ -3,9 +3,10 @@
   "why": [
     "The `close` cases pin the one thing a client must not get wrong: pairing is code 1008 AND a pairing reason, so a 1008 with a non-pairing reason and a close on any other code are NOT pairing and stay ordinary failures. Getting that wrong would show a pairing screen for a dropped connection, or hide a real pairing gate behind a network message.",
     "The `requestId` cases pin the strict id pattern: a well-formed id is read, and a reason with no id, or with an id that would not pass the pattern, yields null rather than arbitrary text on a screen.",
-    "The `phase` cases pin that `open` always wins (an approval that lands moves straight to authenticated, which is auto-recovery), and that a non-pairing close is `failed` while a pairing close is `pairing-required`.",
-    "The `phase` cases also pin the anti-flap rule: a `connect` from pairing-required STAYS pairing-required. A retry attempt happens underneath the pairing screen while the device is still unapproved, and pulling the visible state back to `connecting` on every retry (only to return to `pairing-required` on the next close) is what made the screen flap. The device is not approved until an `open` says so, so a fresh connect underneath holds the screen rather than dropping it.",
-    "The `sequence` cases pin that same rule at the level the flap actually happened: a run of retries, each a `connect` followed by another pairing `close`, must leave the visible phase on `pairing-required` throughout and never once pass through `connecting`. This is the golden case for `the pairing screen does not flap while waiting`, and only an `open` (approved) or a non-pairing close ends it.",
+    "The `phase` cases pin the phase moves, and that a non-pairing close is `failed` while a pairing close is `pairing-required`.",
+    "The `phase` cases pin the anti-flap rule: a `connect` from pairing-required STAYS pairing-required. A retry attempt happens underneath the pairing screen while the device is still unapproved, and pulling the visible state back to `connecting` on every retry (only to return to `pairing-required` on the next close) is what made the screen flap.",
+    "The `phase` cases also pin the anti-FLICKER rule, which is a level below the flap: an `open` while pairing-required HOLDS the screen, and only a `confirm` clears it. A 1008 pairing close is deliverable only after a WebSocket handshake completes, so the gateway genuinely opens the socket and then closes it 1008 on every retry, and the page's socket fires `open` before the close. Clearing the screen on that `open` tore the overlay away for the gap between the open and the close, once per retry, which exposed the reloading page underneath and was the flicker. So an unconfirmed open holds, and only an open that SURVIVES the settle window without a pairing close (a `confirm`) is the approval, which is auto-recovery. A `confirm` from any other phase is a no-op.",
+    "The `sequence` cases pin both rules at the level they happened: a run of retries, each a `connect`, an `open`, and another pairing `close`, must leave the visible phase on `pairing-required` throughout and never once pass through `connecting` OR `authenticated`. Passing through `authenticated` on a retry's open is the flicker; passing through `connecting` on a retry's connect is the flap. Only a `confirm` (an approved socket that survived) or a non-pairing close ends the wait.",
     "The `command` cases pin the real instruction: the exact `openclaw devices approve <id>` with an id, and the `--latest` form without one."
   ],
   "policyCloseCode": 1008,
@@ -119,10 +120,22 @@
       "to": "failed"
     },
     {
-      "name": "open while pairing-required wins, moving straight to authenticated",
+      "name": "open while pairing-required HOLDS the screen, it is unconfirmed until confirm",
       "from": "pairing-required",
       "event": { "type": "open" },
+      "to": "pairing-required"
+    },
+    {
+      "name": "confirm while pairing-required clears the screen, the approved socket survived",
+      "from": "pairing-required",
+      "event": { "type": "confirm" },
       "to": "authenticated"
+    },
+    {
+      "name": "confirm from connecting is a no-op, there is no held open to confirm",
+      "from": "connecting",
+      "event": { "type": "confirm" },
+      "to": "connecting"
     },
     {
       "name": "a retry connect while pairing-required holds the screen, it does NOT drop to connecting",
@@ -157,18 +170,24 @@
   ],
   "sequence": [
     {
-      "name": "the pairing screen does not flap across repeated retries while waiting",
+      "name": "the pairing screen does not flicker across repeated retries while waiting",
       "from": "connecting",
       "events": [
         { "type": "close", "pairing": { "reason": "not-paired", "requestId": "req-7f3a2b" } },
         { "type": "connect" },
+        { "type": "open" },
         { "type": "close", "pairing": { "reason": "not-paired", "requestId": "req-7f3a2b" } },
         { "type": "connect" },
+        { "type": "open" },
         { "type": "close", "pairing": { "reason": "not-paired", "requestId": "req-7f3a2b" } },
         { "type": "connect" },
+        { "type": "open" },
         { "type": "close", "pairing": { "reason": "not-paired", "requestId": "req-7f3a2b" } }
       ],
       "phases": [
+        "pairing-required",
+        "pairing-required",
+        "pairing-required",
         "pairing-required",
         "pairing-required",
         "pairing-required",
@@ -180,16 +199,20 @@
       "never": ["connecting", "failed", "authenticated"]
     },
     {
-      "name": "an approval that lands after several retries ends the wait, and only then",
+      "name": "an approval that lands after several retries ends the wait, and only on confirm",
       "from": "connecting",
       "events": [
         { "type": "close", "pairing": { "reason": "not-paired", "requestId": "req-7f3a2b" } },
         { "type": "connect" },
+        { "type": "open" },
         { "type": "close", "pairing": { "reason": "not-paired", "requestId": "req-7f3a2b" } },
         { "type": "connect" },
-        { "type": "open" }
+        { "type": "open" },
+        { "type": "confirm" }
       ],
       "phases": [
+        "pairing-required",
+        "pairing-required",
         "pairing-required",
         "pairing-required",
         "pairing-required",

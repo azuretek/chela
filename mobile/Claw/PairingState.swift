@@ -181,27 +181,40 @@ enum Pairing {
     enum Event {
         case connect
         case open
+        case confirm
         case close(Refusal?)
         case fail
     }
 
     /// The next phase, given the phase now and what just happened.
     ///
-    /// `open` always wins: an approval that lands while the pairing screen is up
-    /// moves straight to authenticated, which is the whole point of auto-recovery.
     /// A `close` that is not pairing is an ordinary failure, kept distinct.
     ///
     /// A `connect` from `pairing-required` HOLDS pairing-required rather than
     /// dropping to connecting. This is the anti-flap rule, ported from
     /// `core/pairing.js` and proven against the shared fixtures: a retry attempt
     /// while the screen is up must not pull the visible state off pairing, or the
-    /// screen flashes once per retry. The device stays unapproved until an `open`,
-    /// and the fresh attempt happens underneath the overlay. From any other phase
-    /// a `connect` is still `connecting`, the first-connect case.
+    /// screen flashes once per retry. The device stays unapproved until an open is
+    /// confirmed, and the fresh attempt happens underneath the overlay. From any
+    /// other phase a `connect` is still `connecting`, the first-connect case.
+    ///
+    /// An `open` from `pairing-required` HOLDS the screen too, and this is the
+    /// anti-FLICKER rule ported from the same reducer. A 1008 pairing close is
+    /// deliverable only after a WebSocket handshake completes, so the gateway
+    /// opens the socket and then closes it 1008 on every retry: the page's socket
+    /// fires `open` before the pairing close. Clearing the screen on that `open`
+    /// tore the overlay away for the gap between open and close, once per retry,
+    /// which exposed the reloading page underneath and was the flicker. So an
+    /// unconfirmed open holds, and only a `confirm` (an open that survived the
+    /// settle window without a pairing close) clears the screen, which is
+    /// auto-recovery. From any other phase an `open` is authenticated at once,
+    /// because there is no pairing screen to protect, and a `confirm` without a
+    /// held open changes nothing.
     static func nextPhase(_ phase: Phase, _ event: Event) -> Phase {
         switch event {
         case .connect: return phase == .pairingRequired ? .pairingRequired : .connecting
-        case .open: return .authenticated
+        case .open: return phase == .pairingRequired ? .pairingRequired : .authenticated
+        case .confirm: return phase == .pairingRequired ? .authenticated : phase
         case .close(let refusal): return refusal != nil ? .pairingRequired : .failed
         case .fail: return .failed
         }
@@ -261,8 +274,9 @@ final class PairingState: ObservableObject {
     /// native layer drives the retry: while pairing, this counter is bumped on a
     /// sane cadence, and `WebView` reloads the page each time it changes, which
     /// re-runs the page's OWN connect rather than reimplementing it. The moment
-    /// one of those attempts opens the socket, the observer reports `open` and the
-    /// screen comes down.
+    /// one of those attempts opens a socket that STAYS open, the observer reports
+    /// `open` and, once it survives the settle window, the screen comes down. See
+    /// `opened` for why a bare open is not enough.
     @Published private(set) var retryTick: Int = 0
 
     /// How long between reconnect attempts while pairing. A few seconds: long
@@ -272,7 +286,16 @@ final class PairingState: ObservableObject {
     /// nothing but load.
     static let retryInterval: TimeInterval = 3
 
+    /// How long a socket must stay open, with no pairing close, before an open is
+    /// taken as an approval and the screen clears. A pairing close arrives right
+    /// after the open on every retry (the gateway opens the socket, then closes
+    /// it 1008), so this window has only to outlast that gap. Kept well under the
+    /// retry interval so a genuine approval clears the screen promptly, and long
+    /// enough that the refusal that follows an unapproved open always lands first.
+    static let confirmInterval: TimeInterval = 0.6
+
     private var retryTimer: Timer?
+    private var confirmTimer: Timer?
 
     /// Whether the pairing screen should be up.
     var isPairing: Bool { phase == .pairingRequired }
@@ -301,20 +324,50 @@ final class PairingState: ObservableObject {
         // Else: hold the screen. Refusal and the retry timer are left as they are.
     }
 
-    /// The gateway socket opened. The device is approved and connected, so the
-    /// pairing screen comes down whether or not it was up. This is the recovery
-    /// leg: an approval that lands mid-wait ends here, and the retry timer stops.
+    /// The gateway socket opened. Two cases, and the reducer decides which.
+    ///
+    /// A FIRST open (from any phase but pairing-required) is a genuine connect:
+    /// it moves to authenticated at once, the refusal is cleared, and both timers
+    /// stop. There is no pairing screen up to protect.
+    ///
+    /// An open while the pairing screen is up (from pairing-required) is
+    /// UNCONFIRMED, and this is the anti-flicker rule. A 1008 pairing close is
+    /// deliverable only after a WebSocket handshake completes, so on every retry
+    /// the gateway opens the socket and then closes it 1008: this `opened` fires
+    /// before the pairing close lands. Clearing the screen here tore the overlay
+    /// away for that gap, once per retry, exposing the reloading page underneath,
+    /// which was the flicker. So the screen HOLDS, and a settle timer is armed:
+    /// if the socket is still open when it fires (no pairing close cancelled it),
+    /// the open is an approval and `confirm` clears the screen; if a pairing close
+    /// arrives first, `closed` cancels the settle timer and nothing on screen ever
+    /// moved. The retry timer is left running so the next beat still comes if this
+    /// open turns out to be another refusal.
     func opened() {
-        phase = Pairing.nextPhase(phase, .open)
-        refusal = nil
-        stopRetry()
+        let next = Pairing.nextPhase(phase, .open)
+        phase = next
+        if next == .pairingRequired {
+            // Unconfirmed: hold the screen and wait for the settle window. Refusal
+            // and the retry timer are left as they are; the command on screen does
+            // not change while we wait to see if this open survives.
+            startConfirm()
+        } else {
+            refusal = nil
+            stopRetry()
+            stopConfirm()
+        }
     }
 
-    /// The gateway socket closed. A pairing close moves to the pairing screen and
-    /// carries the refusal, and arms the retry timer so a later approval is picked
-    /// up without a relaunch; any other close is an ordinary failure, whose
-    /// sentence is raised by `NoticeBoard` and not here.
+    /// The gateway socket closed. A pairing close holds (or shows) the pairing
+    /// screen and carries the refusal, and arms the retry timer so a later
+    /// approval is picked up without a relaunch; it also cancels any pending
+    /// settle timer, because this close is the proof that the last open was not an
+    /// approval, so the screen must not clear. Any other close is an ordinary
+    /// failure, whose sentence is raised by `NoticeBoard` and not here.
     func closed(_ refusal: Pairing.Refusal?) {
+        // A pairing close means the open that may have preceded it was not an
+        // approval. Cancel the settle timer first, so a confirm cannot race in
+        // after the refusal and clear a screen that should stay up.
+        stopConfirm()
         phase = Pairing.nextPhase(phase, .close(refusal))
         self.refusal = refusal
         if phase == .pairingRequired {
@@ -332,6 +385,7 @@ final class PairingState: ObservableObject {
         phase = Pairing.nextPhase(phase, .fail)
         refusal = nil
         stopRetry()
+        stopConfirm()
     }
 
     // MARK: Auto-recovery timer
@@ -354,6 +408,36 @@ final class PairingState: ObservableObject {
         retryTimer = nil
     }
 
+    // MARK: Settle-confirm timer
+
+    /// Arm the settle timer for an unconfirmed open. Restarted rather than
+    /// stacked, so a fresh open (a later retry that also opened before its close)
+    /// resets the window rather than firing on the previous open's clock.
+    private func startConfirm() {
+        stopConfirm()
+        let timer = Timer(timeInterval: Self.confirmInterval, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.confirmOpen() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        confirmTimer = timer
+    }
+
+    private func stopConfirm() {
+        confirmTimer?.invalidate()
+        confirmTimer = nil
+    }
+
+    /// The settle window elapsed with the socket still open: no pairing close
+    /// cancelled it, so the open was an approval. Clear the screen. Guarded on
+    /// `isPairing` so a late fire after some other transition does nothing.
+    private func confirmOpen() {
+        confirmTimer = nil
+        guard isPairing else { return }
+        phase = Pairing.nextPhase(phase, .confirm)
+        refusal = nil
+        stopRetry()
+    }
+
     /// One reconnect beat: bump the counter the web view watches. Only while the
     /// screen is actually up, so a race where the timer fires once after the phase
     /// moved does not force a needless reload of a page that is already connected.
@@ -362,10 +446,10 @@ final class PairingState: ObservableObject {
         retryTick += 1
     }
 
-    // No `deinit` invalidation: the timer's closure holds `self` weakly, so it
-    // cannot keep this object alive, and every phase that leaves the pairing
-    // screen calls `stopRetry`. A repeating timer with no strong reference back to
-    // its target is not a leak, and reaching a main-actor property from a
+    // No `deinit` invalidation: each timer's closure holds `self` weakly, so
+    // neither can keep this object alive, and every phase that leaves the pairing
+    // screen calls `stopRetry` and `stopConfirm`. A timer with no strong reference
+    // back to its target is not a leak, and reaching a main-actor property from a
     // nonisolated deinit is what Swift 6 refuses here anyway.
 
     /// The command the operator runs on the gateway host for the current refusal.
