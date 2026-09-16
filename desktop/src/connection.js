@@ -3,6 +3,6 @@
 // same source of truth (core/spec/connection.json). This is a thin re-export so
 // nothing in desktop has to know where it moved.
 export {
-  hint, reason, failureNotice, status, isRealFailure, shouldMarkConnected,
-  HINTS, ERR_ABORTED, IDLE, CONNECTING, CONNECTED, FAILED,
+  hint, reason, failureNotice, status, isRealFailure, shouldMarkConnected, nextPhase,
+  HINTS, ERR_ABORTED, IDLE, CONNECTING, CONNECTED, FAILED, PENDING, PENDING_COPY,
 } from '../../core/connection.js';
