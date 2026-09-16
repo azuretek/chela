@@ -57,6 +57,27 @@ targets:
       # desktop reads.
       - path: ../core/spec/prompt-metadata.json
         buildPhase: resources
+      # The shared settings surface, bundled rather than mirrored.
+      #
+      # The same three files the desktop loads out of core/ui, so this client
+      # renders the desktop's settings page instead of a native screen per tab.
+      # They are copied in flat, which is what makes the page's own relative links
+      # (`ui.css`, `settings.js`) resolve in the bundle exactly as they do in the
+      # repository, and `SettingsView` loads the page with read access to that
+      # directory.
+      #
+      # The spec travels with them because the page cannot read it at runtime any
+      # more than it can here: it is a file:// document with `default-src 'none'`,
+      # so the split arrives through the host instead, as it stands. See
+      # mobile/Claw/SettingsSpec.swift.
+      - path: ../core/ui/settings.html
+        buildPhase: resources
+      - path: ../core/ui/settings.js
+        buildPhase: resources
+      - path: ../core/ui/ui.css
+        buildPhase: resources
+      - path: ../core/spec/settings.json
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.azuretek.claw-mobile

@@ -4,9 +4,22 @@ import SwiftUI
 ///
 /// No navigation bar and no tab bar, because the Control UI is the interface
 /// and a second set of controls drawn around it would be a second owner of the
-/// same job. What is native here is only what has to be: the web view's host,
-/// and later the loading and failure surfaces, which are overlays *over* the
-/// page rather than chrome beside it.
+/// same job. What is native here is only what has to be: the web view's host, the
+/// notice banner, the one control that opens the app's own settings, and the
+/// settings page itself when there is no gateway to draw it over.
+///
+/// ## Where settings live
+///
+/// `SettingsSurface` is the same page the desktop loads, out of `core/ui`, so
+/// there is one implementation of the settings UI rather than one per client. It
+/// appears in one of two places, and which one is decided by the same question the
+/// desktop asks: is there a gateway to draw it over?
+///
+/// - **A gateway is configured**, so settings is a sheet over the page, opened by
+///   the button in the corner or by the connection notice's own action.
+/// - **No gateway is configured**, so there is nothing behind it: the surface IS
+///   the app, exactly as the desktop's settings page is the window on a first run.
+///   Dismissing it is refused in that state, because behind it is emptiness.
 ///
 /// ## The safe area, and why the page is laid out inside it
 ///
@@ -56,10 +69,13 @@ import SwiftUI
 /// not change the page's layout, so the Control UI keeps every pixel of the safe
 /// area it lays itself out in.
 struct ContentView: View {
-    /// Where this device's gateway comes from, owned here because this is the
-    /// view that decides what the app shows: the page, or the question of which
-    /// gateway to load.
+    /// The gateway list, owned here because this is the view that decides what the
+    /// app shows: the page, or the settings surface that asks which gateway to
+    /// load.
     @StateObject private var gateways = GatewayStore()
+
+    /// How the one connection is going, for the settings page's gateway rows.
+    @StateObject private var connection = ConnectionState()
 
     /// Starts as the system background, which is what shows for the first frame,
     /// before the page has a document to read a colour out of.
@@ -70,28 +86,81 @@ struct ContentView: View {
     /// nobody can otherwise reach are rendered for a screenshot.
     @StateObject private var notices = NoticeBoard.live()
 
-    /// Whether someone has asked for the gateway setup surface over a gateway
-    /// that is already configured. The connection notice's own action is what
-    /// turns it on, so an address that stopped working is correctable in the app
-    /// rather than by reinstalling it.
-    @State private var editingGateway = false
+    /// Whether the settings sheet is up over a gateway. Ignored while there is no
+    /// gateway, where the surface is shown without a sheet: see the note above.
+    @State private var showingSettings = false
+
+    /// The page's other end. Built once, held, and handed to the settings web
+    /// view: it is the object `core/ui/settings.js` talks to for the whole life of
+    /// the surface, and a fresh one per layout pass would drop replies the page is
+    /// waiting on.
+    @State private var host: SettingsHost?
 
     var body: some View {
         Group {
-            if let gateway = gateways.gateway, !editingGateway {
-                WebView(gateway: gateway, themeColour: $themeColour, notices: notices)
-                    .background(themeColour)
-                    .overlay(alignment: .top) { NoticeStack(board: notices) }
+            if let gateway = gateways.activeGateway {
+                WebView(
+                    gateway: gateway,
+                    themeColour: $themeColour,
+                    notices: notices,
+                    connection: connection
+                )
+                .background(themeColour)
+                .overlay(alignment: .top) { NoticeStack(board: notices) }
+                .overlay(alignment: .topTrailing) { SettingsButton { showingSettings = true } }
+                .sheet(isPresented: $showingSettings) {
+                    if let host {
+                        SettingsSurface(host: host)
+                            // The page is a settings form inside a sheet, so it is
+                            // the surface that carries the safe area rather than the
+                            // sheet's own inset: the card's padding is measured from
+                            // the page edge, and insetting twice would pull it in
+                            // from both.
+                            .ignoresSafeArea()
+                    }
+                }
+            } else if let host {
+                // No gateway yet, so this IS the app: there is nothing behind it to
+                // go back to, and nothing to draw the sheet over.
+                SettingsSurface(host: host)
+                    .ignoresSafeArea()
             } else {
-                GatewaySetupView(store: gateways) { editingGateway = false }
+                // One frame, while the host is built in `onAppear`.
+                Color(uiColor: .systemBackground)
             }
         }
-        .onAppear {
-            // The notice model carries a command NAME rather than a callback, so
-            // this is where the one command this client has is answered.
-            notices.onCommand = { command in
-                if command == NoticeBoard.settingsCommand { editingGateway = true }
-            }
+        .onAppear(perform: prepare)
+        // The page draws a badge per gateway and disables the button under the one
+        // already connecting, so it has to be told when the phase moves. Passive
+        // rather than polled: this is the view that observes it.
+        .onChange(of: connection.phase) { _, _ in host?.emit("state") }
+        // The notice log is the desktop's Problems tab, which this client does not
+        // have. Raised anyway, because a host that never raises an event the spec
+        // declares is a page left showing what it read at load.
+        .onChange(of: notices.unread) { _, _ in host?.emit("notices") }
+    }
+
+    private func prepare() {
+        if host == nil {
+            host = SettingsHost(
+                store: gateways,
+                connection: connection,
+                notices: notices,
+                // Closing is only ever a way back to a gateway, so it is refused
+                // while there is none: with an empty list the surface is the app.
+                onClose: { if gateways.hasGateway { showingSettings = false } },
+                // Connect is the one command that leaves the surface. On a phone
+                // the sheet covers the page it just switched to, so a failure would
+                // be raised behind it, and the point of pressing Connect is to see
+                // the result.
+                onConnect: { if gateways.hasGateway { showingSettings = false } }
+            )
+        }
+        // The notice model carries a command NAME rather than a callback, so this
+        // is where the one command this client has is answered. "Open Settings" on
+        // a failed connection lands on the surface that can fix the address.
+        notices.onCommand = { command in
+            if command == NoticeBoard.settingsCommand { showingSettings = true }
         }
     }
 }

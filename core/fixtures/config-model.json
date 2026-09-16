@@ -1,0 +1,182 @@
+{
+  "description": "The gateway config model's rules, as core owns them. `core/test/fixtures.test.js` asserts the JS reproduces every case, and `mobile/ClawTests/ConfigModelParityTests.swift` asserts the Swift port reproduces the same cases, which is what turns 'the phone and the desktop agree about the gateway list' into something checked rather than hoped for. The persistence is each client's own: the desktop writes config.json under Electron's userData, the phone writes UserDefaults. What is shared is the shape and the CRUD.",
+  "why": [
+    "The rules that matter are the ones a naive port gets subtly wrong, and the first of them is what removing the ACTIVE gateway does. A pointer to a gateway that no longer exists is a state nothing downstream guards against, so the model clears it, and that is asserted here rather than left to each client's good sense.",
+    "An unknown id changes nothing, in both directions. A remove or an update that silently did something else, or that wrote a partial config, is the kind of fault that only shows up as a list that drifted on one device.",
+    "blank() takes the platform's own defaults as arguments (the suggested gateways, the id generator, and on the desktop the window bounds and the global shortcut) so that this file can describe a fresh config without knowing which client is asking. A phone has no window bounds and no global shortcut, and the fixture asserts they are ABSENT from a config that was not given them rather than present and empty.",
+    "The ids are supplied by the caller everywhere, including in the fixture, because a generated id cannot be compared between two ports. That is also why the fixture carries ids on the ops rather than a list of them: the case reads as the sequence it is."
+  ],
+  "blank": [
+    {
+      "name": "a fresh config materialises the suggested gateways with generated ids",
+      "suggested": [
+        { "label": "Home", "url": "https://home.example.ts.net" },
+        { "label": "Loopback", "url": "http://127.0.0.1:18789" }
+      ],
+      "ids": ["id-0", "id-1"],
+      "expect": {
+        "gateways": [
+          { "id": "id-0", "label": "Home", "url": "https://home.example.ts.net" },
+          { "id": "id-1", "label": "Loopback", "url": "http://127.0.0.1:18789" }
+        ],
+        "activeGatewayId": null,
+        "trustedCerts": {}
+      },
+      "flags": { "promptMetadata": false, "autoUpdate": true },
+      "absent": ["window", "globalShortcut"]
+    },
+    {
+      "name": "a fresh config with nothing suggested is empty, not undefined",
+      "suggested": [],
+      "ids": [],
+      "expect": { "gateways": [], "activeGatewayId": null, "trustedCerts": {} },
+      "flags": { "promptMetadata": false, "autoUpdate": true },
+      "absent": ["window", "globalShortcut"]
+    }
+  ],
+  "cases": [
+    {
+      "name": "adding appends the gateway and appends nothing else",
+      "seed": { "gateways": [], "activeGatewayId": null },
+      "ops": [{ "op": "add", "id": "id-0", "label": "Home", "url": "https://home.example.ts.net" }],
+      "expect": {
+        "gateways": [{ "id": "id-0", "label": "Home", "url": "https://home.example.ts.net" }],
+        "activeGatewayId": null,
+        "trustedCerts": {}
+      }
+    },
+    {
+      "name": "adding with no label falls back to the url, which is what names an address somebody pasted",
+      "seed": { "gateways": [], "activeGatewayId": null },
+      "ops": [{ "op": "add", "id": "id-0", "label": "", "url": "https://home.example.ts.net" }],
+      "expect": {
+        "gateways": [{ "id": "id-0", "label": "https://home.example.ts.net", "url": "https://home.example.ts.net" }],
+        "activeGatewayId": null,
+        "trustedCerts": {}
+      }
+    },
+    {
+      "name": "updating one gateway leaves the others and the unpatched field alone",
+      "seed": {
+        "gateways": [
+          { "id": "id-0", "label": "A", "url": "https://a.example" },
+          { "id": "id-1", "label": "B", "url": "https://b.example" }
+        ],
+        "activeGatewayId": "id-0"
+      },
+      "ops": [
+        { "op": "update", "id": "id-0", "patch": { "label": "A2" } },
+        { "op": "update", "id": "id-1", "patch": { "url": "https://b2.example" } }
+      ],
+      "expect": {
+        "gateways": [
+          { "id": "id-0", "label": "A2", "url": "https://a.example" },
+          { "id": "id-1", "label": "B", "url": "https://b2.example" }
+        ],
+        "activeGatewayId": "id-0",
+        "trustedCerts": {}
+      }
+    },
+    {
+      "name": "updating an id that is not there changes nothing at all",
+      "seed": {
+        "gateways": [{ "id": "id-0", "label": "A", "url": "https://a.example" }],
+        "activeGatewayId": "id-0"
+      },
+      "ops": [{ "op": "update", "id": "id-9", "patch": { "label": "ghost", "url": "https://ghost.example" } }],
+      "expect": {
+        "gateways": [{ "id": "id-0", "label": "A", "url": "https://a.example" }],
+        "activeGatewayId": "id-0",
+        "trustedCerts": {}
+      }
+    },
+    {
+      "name": "removing a gateway that is not the active one leaves the pointer where it was",
+      "seed": {
+        "gateways": [
+          { "id": "id-0", "label": "A", "url": "https://a.example" },
+          { "id": "id-1", "label": "B", "url": "https://b.example" }
+        ],
+        "activeGatewayId": "id-0"
+      },
+      "ops": [{ "op": "remove", "id": "id-1" }],
+      "expect": {
+        "gateways": [{ "id": "id-0", "label": "A", "url": "https://a.example" }],
+        "activeGatewayId": "id-0",
+        "trustedCerts": {}
+      }
+    },
+    {
+      "name": "removing the ACTIVE gateway clears the pointer, because a pointer to a gateway that is gone is a state nothing guards against",
+      "seed": {
+        "gateways": [
+          { "id": "id-0", "label": "A", "url": "https://a.example" },
+          { "id": "id-1", "label": "B", "url": "https://b.example" }
+        ],
+        "activeGatewayId": "id-0"
+      },
+      "ops": [{ "op": "remove", "id": "id-0" }],
+      "expect": {
+        "gateways": [{ "id": "id-1", "label": "B", "url": "https://b.example" }],
+        "activeGatewayId": null,
+        "trustedCerts": {}
+      }
+    },
+    {
+      "name": "removing an id that is not there changes nothing at all",
+      "seed": {
+        "gateways": [{ "id": "id-0", "label": "A", "url": "https://a.example" }],
+        "activeGatewayId": "id-0"
+      },
+      "ops": [{ "op": "remove", "id": "id-9" }],
+      "expect": {
+        "gateways": [{ "id": "id-0", "label": "A", "url": "https://a.example" }],
+        "activeGatewayId": "id-0",
+        "trustedCerts": {}
+      }
+    },
+    {
+      "name": "the active gateway is a choice, and choosing a gone one is not offered",
+      "seed": {
+        "gateways": [
+          { "id": "id-0", "label": "A", "url": "https://a.example" },
+          { "id": "id-1", "label": "B", "url": "https://b.example" }
+        ],
+        "activeGatewayId": "id-0"
+      },
+      "ops": [
+        { "op": "active", "id": "id-1" },
+        { "op": "remove", "id": "id-0" }
+      ],
+      "expect": {
+        "gateways": [{ "id": "id-1", "label": "B", "url": "https://b.example" }],
+        "activeGatewayId": "id-1",
+        "trustedCerts": {}
+      }
+    },
+    {
+      "name": "pinning a certificate adds a host without disturbing the ones already pinned",
+      "seed": {
+        "gateways": [{ "id": "id-0", "label": "A", "url": "https://a.example" }],
+        "activeGatewayId": "id-0",
+        "trustedCerts": { "a.example": "sha256/AAAA" }
+      },
+      "ops": [{ "op": "trustCert", "host": "b.example", "fingerprint": "sha256/BBBB" }],
+      "expect": {
+        "gateways": [{ "id": "id-0", "label": "A", "url": "https://a.example" }],
+        "activeGatewayId": "id-0",
+        "trustedCerts": { "a.example": "sha256/AAAA", "b.example": "sha256/BBBB" }
+      }
+    },
+    {
+      "name": "re-pinning a host replaces the fingerprint rather than keeping both",
+      "seed": {
+        "gateways": [],
+        "activeGatewayId": null,
+        "trustedCerts": { "a.example": "sha256/AAAA" }
+      },
+      "ops": [{ "op": "trustCert", "host": "a.example", "fingerprint": "sha256/CCCC" }],
+      "expect": { "gateways": [], "activeGatewayId": null, "trustedCerts": { "a.example": "sha256/CCCC" } }
+    }
+  ]
+}

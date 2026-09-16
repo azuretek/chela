@@ -16,6 +16,10 @@ import { percent } from '../progress.js';
 import { reason, status } from '../connection.js';
 import { create, sentence } from '../notices.js';
 import {
+  blank, activeGateway, addGateway, updateGateway, removeGateway, trustCert,
+} from '../config-model.js';
+import { withTokenHandoff } from '../gateway-url.js';
+import {
   clean, clientIdentity, formatBlock, inject, shouldInject, transformFrame,
 } from '../prompt-metadata.js';
 
@@ -180,5 +184,106 @@ test('the notice store reproduces every fixture', () => {
     const returns = fixture.ops.map((op) => applyOp(store, op));
     assert.deepStrictEqual(returns, fixture.returns, `${fixture.name}: the returns disagree`);
     assert.deepStrictEqual(snapshot(store), fixture.expect, `${fixture.name}: the state disagrees`);
+  }
+});
+
+/*
+ * The gateway config model's half of the same contract.
+ *
+ * The desktop keeps its config in a file and the phone keeps its own in
+ * UserDefaults, and what has to be identical is the model between the two: a
+ * phone that disagreed about what removing the active gateway does, or about
+ * whether an unknown id is an error, would be a drift bug that only shows up as
+ * a list that moved on one device.
+ *
+ * The ids are supplied by the fixture rather than generated, because a generated
+ * id cannot be compared between two ports, and the ops are a sequence rather than
+ * a single call because most of these rules are about what the NEXT call sees.
+ */
+
+/** A config from a fixture's seed, with the platform's defaults left out. */
+function seeded(seed) {
+  return {
+    ...blank({ suggestedGateways: [], uuid: () => 'unused' }),
+    gateways: seed.gateways,
+    activeGatewayId: seed.activeGatewayId ?? null,
+    trustedCerts: seed.trustedCerts ?? {},
+  };
+}
+
+function applyConfigOp(cfg, op) {
+  switch (op.op) {
+    case 'add': return addGateway(cfg, { label: op.label, url: op.url }, () => op.id).config;
+    case 'update': return updateGateway(cfg, op.id, op.patch);
+    case 'remove': return removeGateway(cfg, op.id);
+    // The pointer is set directly: choosing a gateway is the caller's decision,
+    // and the model has no rule about it beyond what removing one does.
+    case 'active': return { ...cfg, activeGatewayId: op.id };
+    case 'trustCert': return trustCert(cfg, op.host, op.fingerprint);
+    default: throw new Error(`unknown op in the config-model fixture: ${op.op}`);
+  }
+}
+
+function configSnapshot(cfg) {
+  return {
+    gateways: cfg.gateways.map((g) => ({ id: g.id, label: g.label, url: g.url })),
+    activeGatewayId: cfg.activeGatewayId ?? null,
+    trustedCerts: cfg.trustedCerts ?? {},
+  };
+}
+
+test('config-model.blank() reproduces every fixture', () => {
+  const { blank: cases } = load('config-model.json');
+  assert.ok(cases.length > 0, 'expected config-model blank fixtures');
+  for (const fixture of cases) {
+    let n = 0;
+    const cfg = blank({ suggestedGateways: fixture.suggested, uuid: () => fixture.ids[n++] });
+    assert.deepStrictEqual(configSnapshot(cfg), fixture.expect, `${fixture.name}: the fresh config disagrees`);
+    for (const key of fixture.absent) {
+      // A config that carried a phone's window bounds would be a value nothing
+      // could use and nothing would notice, which is why the absence is asserted
+      // rather than the emptiness.
+      assert.ok(!(key in cfg), `${fixture.name}: ${key} should not be in a config that was not given one`);
+    }
+    for (const [key, value] of Object.entries(fixture.flags)) {
+      assert.strictEqual(cfg[key], value, `${fixture.name}: ${key} disagrees`);
+    }
+  }
+});
+
+test('the config model reproduces every fixture', () => {
+  const { cases } = load('config-model.json');
+  assert.ok(cases.length > 0, 'expected config-model fixtures');
+  for (const fixture of cases) {
+    let cfg = seeded(fixture.seed);
+    for (const op of fixture.ops) cfg = applyConfigOp(cfg, op);
+    assert.deepStrictEqual(configSnapshot(cfg), fixture.expect, `${fixture.name}: the config disagrees`);
+    // The active pointer and the lookups that read it agree with each other at
+    // the end of every case: a pointer that names nothing is the state these
+    // rules exist to prevent.
+    const active = activeGateway(cfg);
+    if (cfg.activeGatewayId === null) assert.strictEqual(active, null, `${fixture.name}: found an active gateway with no pointer`);
+    else assert.strictEqual(active?.id, cfg.activeGatewayId, `${fixture.name}: the pointer names nothing`);
+  }
+});
+
+/*
+ * The token handoff's half of the same contract.
+ *
+ * Every client builds the same address to hand a stored credential over on, and
+ * the two things a port is most likely to get wrong are pinned here: an existing
+ * fragment survives with the token merged into it, and a token already in the
+ * fragment is REPLACED rather than duplicated, which is what makes a connect
+ * self-heal a stale one.
+ */
+test('gateway-url.withTokenHandoff() reproduces every fixture', () => {
+  const { cases } = load('gateway-url.json');
+  assert.ok(cases.length > 0, 'expected gateway-url fixtures');
+  for (const fixture of cases) {
+    assert.strictEqual(
+      withTokenHandoff(fixture.url, fixture.token ?? undefined),
+      fixture.output,
+      `${fixture.name}: the handoff disagrees`,
+    );
   }
 });
