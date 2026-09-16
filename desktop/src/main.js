@@ -162,6 +162,13 @@ const tokenCssKeys = new Map();
 // UI is in. Seeded from the last run so a cold start opens in the right ones
 // rather than flashing the wrong palette for as long as the gateway takes to
 // answer, which, over Tailscale to a sleeping box, is not a flash.
+//
+// This value is also what the loading cover is painted with before any gateway
+// has answered, and the reason the cover needs no appearance of its own: on a
+// cold start it IS the resolved appearance, and it updates on the same
+// assignment as the rest of our chrome. applyTheme() in startup sets
+// nativeTheme.themeSource from it before the window exists, which is what makes
+// the cover's own `prefers-color-scheme` agree with it on the first frame.
 let currentTheme = chrome.fallbackTheme(config.get().themeMode);
 
 /* ------------------------------------------------------------------ helpers */
@@ -1433,6 +1440,15 @@ let windowRevealed = false;
 
 function revealMainWindow() {
   if (windowRevealed || config.get().startHidden) return;
+  // Never reveal over a cover that has not been given the resolved palette yet.
+  // The first frame that reaches the screen is the one that has to be right: a
+  // cover styled a moment later is a colour flip in the first thing the app
+  // ever shows, which is the one place a mismatch is most visible. The guard is
+  // here rather than at each trigger because there are several (the cover's own
+  // document, the gateway page's, and a clock), and while a cover is up only
+  // the cover's own styling may open the door. `styleLoadingCover` calls back
+  // into this, so the reveal still happens, once, and last.
+  if (loadingView && !coverStyled) return;
   windowRevealed = true;
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
 }
@@ -1449,6 +1465,9 @@ function revealMainWindow() {
 // last time these two shared a WebContents. Here the gateway page loads, or
 // fails, underneath and untouched, and success is this view going away.
 let loadingView = null;
+// Whether the cover has been given the resolved palette yet, which is what
+// revealMainWindow waits for while a cover is up. See styleLoadingCover.
+let coverStyled = false;
 
 /**
  * Re-add the child views in z-order.
@@ -1532,6 +1551,29 @@ function stopProgressTicker() {
   progressLast = null;
 }
 
+/**
+ * Give the loading cover the resolved appearance, then reveal the window.
+ *
+ * Both sheets, in the order the rest of our chrome takes them: the shared token
+ * layer first as the fallback palette, then the live gateway theme over the top,
+ * so the cover matches the Control UI it is standing in for rather than only
+ * ui.css's own literals. Two things about the sequence are deliberate, and the
+ * second is the half only the cover needed: the token sheet goes before the
+ * theme sheet as everywhere else, and BOTH go before the window is revealed.
+ *
+ * Fail OPEN. A cover that could not be styled is a mismatch that resolves
+ * itself; a cover nobody reveals is an app that never appears, which is the
+ * worse failure by a long way.
+ */
+async function styleLoadingCover(wc) {
+  try {
+    await applyTokenCss(wc);
+    await applyThemeCss(wc);
+  } catch { /* the page keeps ui.css's own palette */ }
+  coverStyled = true;
+  revealMainWindow();
+}
+
 function showLoadingCover() {
   if (!mainWindow || mainWindow.isDestroyed() || loadingView) {
     // Already up: a second connect attempt reuses the same cover, so the ticker
@@ -1542,20 +1584,30 @@ function showLoadingCover() {
   loadingView = new WebContentsView({
     webPreferences: { preload: PRELOAD, contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
+  coverStyled = false;
   // Opaque, unlike the overlays: this is a cover, and the whole reason it
-  // exists is that what is behind it should not be seen.
-  loadingView.setBackgroundColor('#00000000');
+  // exists is that what is behind it should not be seen. The colour is the
+  // resolved surface rather than transparency, so even the frame Chromium paints
+  // before the document has one is the appearance we are in, and a cover
+  // mid-repaint cannot show the Control UI through itself.
+  loadingView.setBackgroundColor(currentTheme.surface);
   const wc = loadingView.webContents;
   attachContextMenu(wc);
   mainWindow.contentView.addChildView(loadingView);
   restackViews();
   wc.loadFile(path.join(UI_DIR, 'loading.html'), { search: overlaySearch() });
-  wc.once('did-finish-load', () => applyThemeCss(wc));
+  // Styled FIRST, revealed second, and the order is the fix rather than a
+  // tidy-up. The cover is the first thing this window ever paints, so it is the
+  // one surface where "styled a moment later" reads as the app flipping colour
+  // as it starts. It draws from the shared token layer (core/spec/tokens.json
+  // through core/tokens.js) exactly as the banner does, with the live gateway
+  // theme over the top, and the window is not revealed until both have landed.
+  //
   // The cover is usually the first thing in this window able to paint, and on a
   // slow or unreachable gateway it is the *only* thing for as long as the load
   // takes. Revealing on it turns "the app is invisible for four seconds and
   // then shows an error" into "the app opens, and it is loading".
-  wc.once('dom-ready', revealMainWindow);
+  wc.once('dom-ready', () => { void styleLoadingCover(wc); });
   startProgressTicker();
   layoutViews();
 }
@@ -1566,9 +1618,12 @@ function hideLoadingCover() {
   const view = loadingView;
   // Cleared first: removing the view can throw if the window is already going,
   // and a handle left behind would keep the cover "up" forever from the app's
-  // point of view while nothing is on screen.
+  // point of view while nothing is on screen. `coverStyled` goes with it, so a
+  // cover that was never styled cannot hold the reveal back once it is gone.
   loadingView = null;
+  coverStyled = true;
   themeCssKeys.delete(view.webContents.id);
+  tokenCssKeys.delete(view.webContents.id);
   try { mainWindow?.contentView.removeChildView(view); } catch { /* window already gone */ }
   try { if (!view.webContents.isDestroyed()) view.webContents.close(); } catch { /* already torn down */ }
   // The gateway only takes focus if nothing of ours is in front of it. A
