@@ -65,31 +65,47 @@ team once in Xcode's Signing & Capabilities pane before building for a device.
 
 ## The app icon
 
-The icon is a **placeholder**, and it is generated rather than drawn. A
-committed bitmap with no way to reproduce it is a file nobody can adjust, so
-the mark is a few numbers at the top of `mobile/scripts/make-app-icon.swift`
-and the PNG is its output:
+The icon is **the desktop app's mark**, and there is exactly one of it. The
+artwork is `desktop/src/assets/claw.svg`, the same file the desktop icon is
+rasterised from, and `desktop/scripts/make-icons.mjs` emits every platform's
+icon from it with one command, from the repo root:
 
 ```
-swift mobile/scripts/make-app-icon.swift
+npm --prefix desktop run icons
 ```
 
 That writes `Claw/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png`, which is
-the file the icon set names in its `Contents.json`.
+the file the icon set names in its `Contents.json`, alongside the desktop app's
+own PNGs. A bitmap copied from one platform to another would be a second owner
+of the artwork, and the two copies would disagree the first time only one of
+them was regenerated, so there is no copy: the generator reads the SVG and
+writes both.
 
-Three things about it are deliberate and worth knowing before changing it:
+The PNG is committed rather than built, for the same reason the desktop ones
+are: sharp is a heavy native dependency, and nothing in the mobile workflow runs
+npm, so a generated-only file would mean a build with no icon in it.
 
+Two things about the iOS output are deliberate, and both are Apple's
+requirement rather than a style choice:
+
+- **Square and opaque.** App Store Connect rejects an icon carrying an alpha
+  channel, and iOS applies its own corner mask to whatever it is given, so an
+  icon shipped as the desktop tile would arrive double-rounded with transparent
+  corners. The square treatment crops the tile to its own edges, fills the
+  transparent corners out of the tile's own gradient, drops the hairline the
+  artwork draws along its edge to lift the tile off a dark wallpaper, and
+  removes the alpha channel. iOS rounds the result, which is why the two
+  platforms look the same on screen.
 - **One size, not a pile of them.** The icon set has a single 1024x1024
   `universal` entry and Xcode derives every size the app needs from it, so
   there is no `AppIcon60x60@2x.png` to keep in step with anything.
   Hand-authoring the legacy sizes would be several files that can only disagree
   with each other.
-- **No alpha channel**, because App Store Connect rejects an app icon that
-  carries one. The script draws into a context with no alpha channel and then
-  reads the file back to confirm it, since what Apple refuses is a property of
-  the file on disk rather than of the drawing.
-- **No text in it.** A wordmark is unreadable at 40 points and is the part of
-  an icon that cannot survive the product being renamed.
+
+Styling comes from the same place as the desktop's. `Claw/Assets.xcassets/AccentColor`
+carries the desktop's own accent reds, `#c62828` in the light appearance and
+`#ff4d4d` in the dark one, which is what `desktop/src/ui/ui.css` declares for
+the same two appearances.
 
 An icon set with no image in it is the failure this replaced, and it is worth
 knowing why it is easy to miss: it compiles, signs, exports and uploads without

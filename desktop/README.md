@@ -435,13 +435,16 @@ npm start                # run from source
 npm run pack             # unpacked build into dist/, no installer
 npm run build:mac        # dmg + zip (arm64, x64)
 npm run build:win        # nsis installer (x64, arm64)
-npm run icons            # regenerate PNGs from src/assets/claw*.svg
+npm run icons            # regenerate every platform's icon from src/assets/claw*.svg
 npm run release          # bump, tag, push; CI publishes (see .release-it.cjs)
 ```
 
 Icons are committed so a clean clone builds without `sharp`; re-run `npm run
-icons` only when the artwork changes. The artwork is original: neither file is
-derived from OpenClaw's mascot or any other upstream brand asset.
+icons` only when the artwork changes. That one command emits every platform's
+icon, the iOS app icon included, so the desktop and the phone cannot drift apart;
+see `mobile/README.md` for what iOS needs on top of the artwork. The artwork is
+original: neither file is derived from OpenClaw's mascot or any other upstream
+brand asset.
 
 ## Testing UI changes
 
@@ -591,7 +594,7 @@ scripts/build-info.js    stamps the commit in at pack time (beforePack hook)
 scripts/version.js       CI build versioning + tag/package.json agreement
 scripts/build-version.js decides the version a CI build carries
 scripts/build.js         runs a build under the version the tree deserves
-scripts/make-icons.mjs   regenerates the icon PNGs from the SVG artwork
+scripts/make-icons.mjs   regenerates every platform's icon from the SVG artwork
 scripts/dump-menu.js     dumps the resolved menu bar, to diff across platforms
 scripts/dump-overlays.js opens each of the app's own pages and checks it rendered
 scripts/test-banner.js   raises a real condition and checks the banner's geometry
