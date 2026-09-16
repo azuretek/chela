@@ -42,10 +42,10 @@ test('inside an AppImage the entry points at the AppImage, not execPath', () => 
   // the app exits, so an entry written from it names a path that no longer
   // exists by the time the next login reads it, and fails silently forever.
   const cmd = autostart.launchCommand({
-    env: { APPIMAGE: '/home/example-user/Apps/ClawDesktop-1.0.1-x86_64.AppImage' },
+    env: { APPIMAGE: '/home/example-user/Apps/claw-desktop-1.0.1-x86_64.AppImage' },
     execPath: '/tmp/.mount_ClawDe7fA2x/claw-desktop',
   });
-  assert.equal(cmd, '/home/example-user/Apps/ClawDesktop-1.0.1-x86_64.AppImage');
+  assert.equal(cmd, '/home/example-user/Apps/claw-desktop-1.0.1-x86_64.AppImage');
 });
 
 test('outside an AppImage it falls back to the running executable', () => {
@@ -57,7 +57,7 @@ test('the body is a valid desktop entry that runs the app', () => {
   const body = autostart.entryBody({ exec: '/home/example-user/Claw.AppImage' });
   assert.match(body, /^\[Desktop Entry\]$/m);
   assert.match(body, /^Type=Application$/m);
-  assert.match(body, /^Name=Claw Desktop$/m);
+  assert.match(body, /^Name=Claw Control UI$/m);
   assert.match(body, /^Exec="\/home\/abi\/Claw\.AppImage"$/m);
   assert.match(body, /^Terminal=false$/m);
   // Redundant per the spec, but it is what GNOME Tweaks writes, and some
@@ -72,7 +72,7 @@ test('start-hidden reaches the entry as the flag main.js parses', () => {
 });
 
 test('a path with spaces stays one argument', () => {
-  // "~/My Apps/Claw Desktop.AppImage" unquoted would be read as three.
+  // "~/My Apps/Claw Control UI.AppImage" unquoted would be read as three.
   assert.match(autostart.entryBody({ exec: '/home/example-user/My Apps/Claw.AppImage' }), /^Exec="\/home\/abi\/My Apps\/Claw\.AppImage"$/m);
 });
 

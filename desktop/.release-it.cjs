@@ -21,7 +21,7 @@
 // A CommonJS config rather than .release-it.json so the reasoning above can live
 // with the settings; package.json declares no `type`, so `.cjs` is explicit.
 
-const REPO = 'https://github.com/azuretek/claw-desktop';
+const REPO = 'https://github.com/azuretek/claw-control-ui';
 
 module.exports = {
   git: {
@@ -36,7 +36,7 @@ module.exports = {
     requireUpstream: true,
     commitMessage: 'Release v${version}',
     tagName: 'v${version}',
-    tagAnnotation: 'Claw Desktop v${version}',
+    tagAnnotation: 'Claw Control UI v${version}',
     push: true,
   },
 

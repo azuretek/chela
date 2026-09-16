@@ -60,7 +60,7 @@ function findAsar() {
     if (!fs.statSync(full).isDirectory()) continue;
     // mac: <dist>/mac*/X.app/Contents/Resources/app.asar
     // win/linux: <dist>/<name>-unpacked/resources/app.asar
-    candidates.push(path.join(full, 'Claw Desktop.app', 'Contents', 'Resources', 'app.asar'));
+    candidates.push(path.join(full, 'Claw Control UI.app', 'Contents', 'Resources', 'app.asar'));
     candidates.push(path.join(full, 'resources', 'app.asar'));
   }
   return candidates.find((c) => fs.existsSync(c)) || null;

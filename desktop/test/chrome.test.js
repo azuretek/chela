@@ -125,7 +125,7 @@ test('a session called "Home" is still its own session, not the Home route', () 
 test('a title the Control UI did not write is not trusted', () => {
   // Our own file:// pages set their own titles, and a gateway may set any it
   // likes; neither should end up in the window title.
-  assert.strictEqual(chrome.pageLabel('Claw Desktop Settings', 'file:///x/settings.html'), null);
+  assert.strictEqual(chrome.pageLabel('Claw Control UI Settings', 'file:///x/settings.html'), null);
   assert.strictEqual(chrome.pageLabel('', 'https://gw.example/chat/main'), null);
   assert.strictEqual(chrome.pageLabel(undefined, 'https://gw.example/chat/main'), null);
   // Suffix only, nothing before it.
@@ -135,7 +135,7 @@ test('a title the Control UI did not write is not trusted', () => {
 test('the window title always ends in the app name', () => {
   assert.strictEqual(chrome.windowTitle('Home'), `Home ${DASH} ${chrome.APP_NAME}`);
   assert.strictEqual(chrome.windowTitle(null), chrome.APP_NAME);
-  assert.strictEqual(chrome.APP_NAME, 'Claw Desktop');
+  assert.strictEqual(chrome.APP_NAME, 'Claw Control UI');
 });
 
 /* ------------------------------------------------------------------- theme */

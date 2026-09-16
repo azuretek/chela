@@ -22,7 +22,7 @@
 //
 //   node scripts/smoke.js --instance source
 //   node scripts/smoke.js --instance packed
-//   node scripts/smoke.js --instance packed --app /path/to/"Claw Desktop"
+//   node scripts/smoke.js --instance packed --app /path/to/"Claw Control UI"
 //
 // Exits non-zero on the first instance that fails, so CI can gate on it.
 
@@ -74,8 +74,8 @@ function locate() {
   // The unpacked build electron-builder writes, per platform.
   const candidates = [];
   for (const entry of fs.readdirSync(dist)) {
-    if (/^mac/.test(entry)) candidates.push(path.join(dist, entry, 'Claw Desktop.app', 'Contents', 'MacOS', 'Claw Desktop'));
-    if (entry === 'win-unpacked') candidates.push(path.join(dist, entry, 'Claw Desktop.exe'));
+    if (/^mac/.test(entry)) candidates.push(path.join(dist, entry, 'Claw Control UI.app', 'Contents', 'MacOS', 'Claw Control UI'));
+    if (entry === 'win-unpacked') candidates.push(path.join(dist, entry, 'Claw Control UI.exe'));
     if (entry === 'linux-unpacked') {
       const dir = path.join(dist, entry);
       const files = fs.readdirSync(dir).filter((f) => {

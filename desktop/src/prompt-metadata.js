@@ -18,6 +18,12 @@ export const CONTEXT_MARKER = '\u27E6openclaw:ctx\u27E7';
 export const CONTEXT_HEADER = `Desktop client context: ${CONTEXT_MARKER}`;
 export const MAX_VALUE_LENGTH = 256;
 
+// How this client names itself to the agent in the prompt block: the product a
+// person would recognise, then the shorthand that tells the clients apart in a
+// transcript where one agent may be talking to several. Same split as the
+// naming everywhere else, and the mobile client does the same with claw-mobile.
+const CLIENT = 'Claw Control UI (claw-desktop)';
+
 /** Keep machine-controlled values on one bounded line inside the prompt block. */
 export function clean(value, fallback = 'unknown') {
   const text = String(value ?? '')
@@ -66,7 +72,7 @@ export function collectMetadata({
     home: clean(home),
     locale: clean(locale),
     timezone: clean(timezone),
-    client: clean(appVersion ? `Claw Desktop ${appVersion}` : 'Claw Desktop'),
+    client: clean(appVersion ? `${CLIENT} ${appVersion}` : CLIENT),
   };
 }
 

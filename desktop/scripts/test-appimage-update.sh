@@ -32,7 +32,7 @@ set -euo pipefail
 
 FROM_TAG="${1:?usage: $0 <from-tag> [work-dir]}"
 WORK="${2:-${TMPDIR:-/tmp}/claw-appimage-update-test}"
-REPO="${CLAW_REPO:-azuretek/claw-desktop}"
+REPO="${CLAW_REPO:-azuretek/claw-control-ui}"
 DISPLAY_NUM="${CLAW_TEST_DISPLAY:-:77}"
 # The app's first update check is 60s after launch (UPDATE_FIRST_CHECK_MS), and
 # the download is ~125 MB, so the dialog cannot appear before then.

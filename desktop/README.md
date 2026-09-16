@@ -1,4 +1,4 @@
-# Claw Desktop
+# Claw Control UI
 
 A standalone desktop window for the OpenClaw Control UI: its own icon, its own
 Dock/taskbar entry, a tray icon and a global shortcut. Electron, one codebase,
@@ -27,7 +27,7 @@ away.
 ## 1. Get the app
 
 **From a release.** Take the installer for your platform from
-[Releases](https://github.com/azuretek/claw-desktop/releases):
+[Releases](https://github.com/azuretek/claw-control-ui/releases):
 
 - **Windows.** `ClawDesktop-Setup-<version>-<arch>.exe`. Per-user, no admin.
 - **macOS.** Open the `.dmg` and drag to Applications.
@@ -39,8 +39,8 @@ away.
 kept current on a machine you already develop on:
 
 ```sh
-git clone https://github.com/azuretek/claw-desktop.git
-cd claw-desktop
+git clone https://github.com/azuretek/claw-control-ui.git
+cd claw-control-ui
 npm ci
 npm run build:mac        # or build:win / build:linux
 ```
@@ -61,14 +61,14 @@ reason. Both architectures of a given platform do cross-build fine.
 
 - **Windows.** SmartScreen will warn, because Windows builds are still
   unsigned. *More info, Run anyway.* Installs to
-  `%LOCALAPPDATA%\Programs\Claw Desktop`.
+  `%LOCALAPPDATA%\Programs\Claw Control UI`.
 
 - **Linux.** Nothing to do, and nothing installed. An AppImage is one
   self-contained executable; it appears in the applications menu only if you add
   it there yourself.
 
 - **First launch after moving to a signed build.** macOS asks for your login
-  keychain password once, for *Claw Desktop Safe Storage*. Saved gateway
+  keychain password once, for *Claw Control UI Safe Storage*. Saved gateway
   credentials are encrypted with Electron `safeStorage`, and that keychain item's
   access control is bound to the **code identity that created it**. A locally
   built app is ad-hoc signed (`TeamIdentifier=not set`); a release is signed with
@@ -76,10 +76,24 @@ reason. Both architectures of a given platform do cross-build fine.
   through. Click **Always Allow** once. Later signed releases share the same
   identity and never ask again.
 
+  That item keeps the *Claw Control UI* name, in a build called Claw Control UI and
+  in any later name too. `safeStorage` finds its key by the item's **name**, so
+  renaming the app does not move the item, it looks up a different one, gets a
+  fresh random password and can read none of the credentials already on disk. The
+  app therefore pins the name, deliberately, the same way it keeps its bundle id.
+  See `src/profile.js`.
+
 - **Upgrading from the old *OpenClaw*-named build.** Quit it first, then
   uninstall it: the `appId` changed, so the installer will not replace it. Your
   profile, credentials and paired device identity move across automatically on
   first launch ([src/profile.js](src/profile.js)).
+
+- **Upgrading from a *Claw Desktop* build.** Install over it as usual; the
+  `appId` is unchanged, so the installer replaces it rather than adding a second
+  copy. On first launch the profile directory moves to its new name,
+  `…/Application Support/Claw Control UI`, carrying `config.json`, the notice log
+  and the paired device identity with it, and stored credentials keep working
+  because the Keychain item they were sealed under is pinned (see below).
 
 ## 2. Connect to a gateway
 
@@ -135,7 +149,7 @@ otherwise.
   not install one anyway.
 - **Include this computer's context in prompts** is off by default. When enabled,
   ordinary chat prompts include the hostname, operating system and architecture,
-  user, home folder, locale, time zone, and Claw Desktop version. It never sends
+  user, home folder, locale, time zone, and Claw Control UI version. It never sends
   network addresses, environment variables, credentials, or device identifiers.
 - **Global shortcut.** `CommandOrControl+Shift+O` by default, shows or hides
   the window from anywhere. Clear the field to disable.
@@ -146,9 +160,9 @@ otherwise.
 
 | Platform | Directory |
 |---|---|
-| macOS | `~/Library/Application Support/Claw Desktop/` |
-| Windows | `%APPDATA%\Claw Desktop\` |
-| Linux | `~/.config/Claw Desktop/` |
+| macOS | `~/Library/Application Support/Claw Control UI/` |
+| Windows | `%APPDATA%\Claw Control UI\` |
+| Linux | `~/.config/Claw Control UI/` |
 
 - `config.json`: gateway list, window bounds, preferences, pinned certificate
   fingerprints. Written atomically, and **holds no secrets**, so it is safe to
@@ -303,7 +317,7 @@ The line at the bottom of Settings names the commit the app was packaged from,
 during first-run setup as well as afterwards:
 
 ```
-Claw Desktop 1.0.0 (a1b2c3d4e5, built 2026-09-02 08:41Z) · Electron 44.1.1 · …
+Claw Control UI 1.0.0 (a1b2c3d4e5, built 2026-09-02 08:41Z) · Electron 44.1.1 · …
 ```
 
 | Shown | Means |
@@ -338,7 +352,7 @@ release it follows rather than below it.
 
 The app checks for a new release a minute after launch and every six hours
 after, and on demand from **Check for updates…** in **Help**, on the tray
-menu, and on macOS in the application menu as well. **About Claw Desktop**, in
+menu, and on macOS in the application menu as well. **About Claw Control UI**, in
 those same places, says which channel this build follows, what it does about a
 new version, and when it last looked. Updating is otherwise invisible, which is
 a fair reason to doubt it is happening at all.
@@ -543,7 +557,7 @@ CI builds on three triggers, and they mean different things:
 | Trigger | Produces | Where it goes |
 |---|---|---|
 | **Push to `main`** | Dev build, `1.0.0-dev.<sha>` | Actions artifacts, 7 days |
-| **Tag `v*`** | Release, `1.0.0` | Published to [Releases](https://github.com/azuretek/claw-desktop/releases), permanent |
+| **Tag `v*`** | Release, `1.0.0` | Published to [Releases](https://github.com/azuretek/claw-control-ui/releases), permanent |
 | **Manual dispatch** | Dev build of any ref | Actions artifacts, 7 days |
 
 CI passes its decision down as `CLAW_BUILD_VERSION`, which `scripts/build.js`
@@ -582,7 +596,7 @@ src/config.js        atomic JSON config store (no secrets)
 src/overlay.js       supervises an overlay so a broken one cannot wedge the window
 src/updates.js       per-platform update policy + the automatic-updates preference
 src/build-info.js    reads the packed-in commit; formats the Settings build line
-src/profile.js       one-time profile move for the OpenClaw to Claw Desktop rename
+src/profile.js       one-time profile move per rename, + the pinned keychain identity
 src/defaults.js      suggested gateways and defaults  <- edit for a new machine
 src/preload.js       narrow IPC bridge, exposed to local pages only
 src/connection.js    what each gateway row says: phase, error, certificate

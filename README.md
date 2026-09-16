@@ -1,12 +1,12 @@
-# Claw
+# Claw Control UI
 
 Native clients for the [OpenClaw](https://github.com/openclaw/openclaw) Control
 UI. One product, one shared core, a client per form factor.
 
 | Directory | What it is |
 |---|---|
-| [`desktop/`](desktop/) | Claw Desktop. The Electron app for macOS, Windows and Linux: own icon, tray, global shortcut, multiple gateway profiles. Ships today. |
-| [`mobile/`](mobile/) | Claw Mobile. The native iOS client (SwiftUI + WKWebView), delivered via TestFlight. In development. |
+| [`desktop/`](desktop/) | Claw Control UI, desktop (`claw-desktop`). The Electron app for macOS, Windows and Linux: own icon, tray, global shortcut, multiple gateway profiles. Ships today. |
+| [`mobile/`](mobile/) | Claw Control UI, mobile (`claw-mobile`). The native iOS client (SwiftUI + WKWebView), delivered via TestFlight. In development. |
 | [`core/`](core/) | The platform-agnostic rules both clients share: gateway config model, token handoff, connection state, loading progress, notices. No Electron, no SwiftUI. |
 
 ## Why a shared core
@@ -20,12 +20,12 @@ tests reproduce, which is what turns "should match" into "does match".
 
 ## Clients
 
-**Claw Desktop** is the mature one. Its own README in [`desktop/`](desktop/)
+**`claw-desktop`** is the mature one. Its own README in [`desktop/`](desktop/)
 covers setup, connecting to a gateway, where data lives, and the whole
 build/release pipeline. It is Electron, so it does not and cannot run on a
 phone.
 
-**Claw Mobile** is the native iOS client, because Apple forbids third-party
+**`claw-mobile`** is the native iOS client, because Apple forbids third-party
 browser engines and Electron has no iOS target. It reuses `core/` and the
 Control UI itself; only the shell (web view host, Keychain-backed secrets,
 certificate pinning, native chrome) is reimplemented in Swift.

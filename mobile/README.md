@@ -1,15 +1,15 @@
-# Claw Mobile
+# Claw Control UI (claw-mobile)
 
 The native iOS client for the OpenClaw Control UI. SwiftUI wrapping the Control
 UI in a `WKWebView`, signed with an Apple Developer account and delivered via
-TestFlight. The home-screen label is **Claw**.
+TestFlight. The home-screen label is **Claw Control UI**.
 
 Status: **in development**. The design and phased plan live in the Projects
 database; this directory fills in as the phases land.
 
 ## Why native and not a port
 
-Claw Desktop is Electron. Apple's App Store rules forbid any third-party browser
+The desktop client is Electron. Apple's App Store rules forbid any third-party browser
 engine, so Electron cannot run on iOS, and there is no iOS Electron target. The
 mobile client is therefore a native app that reuses two things from the rest of
 the repo:

@@ -1,8 +1,8 @@
 {
   "name": "claw-desktop",
-  "productName": "Claw Desktop",
+  "productName": "Claw Control UI",
   "version": "1.0.0",
-  "description": "Claw Desktop - a desktop shell for the OpenClaw Control UI",
+  "description": "Claw Control UI - a desktop shell for the OpenClaw Control UI",
   "type": "module",
   "main": "src/main.js",
   "desktopName": "claw-desktop.desktop",
@@ -35,11 +35,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/azuretek/claw-desktop.git"
+    "url": "git+https://github.com/azuretek/claw-control-ui.git"
   },
-  "homepage": "https://github.com/azuretek/claw-desktop",
+  "homepage": "https://github.com/azuretek/claw-control-ui",
   "bugs": {
-    "url": "https://github.com/azuretek/claw-desktop/issues"
+    "url": "https://github.com/azuretek/claw-control-ui/issues"
   },
   "dependencies": {
     "electron-updater": "^6.8.9"
