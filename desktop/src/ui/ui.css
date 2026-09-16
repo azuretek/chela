@@ -1,5 +1,6 @@
-/* Styles for the app's own pages: Settings, About, the message modal, the
- * notice banner and the loading cover.
+/* Styles for the app's own pages: Settings, About, the message modal and the
+ * loading cover. The notice banner has its own stylesheet now, banner.css,
+ * which draws from the shared design tokens instead of from this palette.
  *
  * Every token below is named exactly as the Control UI names it, because the
  * main process injects the UI's *live* values over the top (see themeCss in
@@ -304,116 +305,10 @@ a  { color: var(--accent); }
 
 /* --------------------------------------------------------------- banner */
 
-/* The page inside the banner view. It is sized to exactly the stack's height by
-   main, so the body must add nothing of its own, a stray margin here becomes a
-   transparent strip that eats clicks on the UI underneath. */
-body.banner-body { background: transparent; overflow: hidden; }
-.banner-stack { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
-
-.banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 11px 14px;
-  border: 1px solid var(--border-strong);
-  border-left: 3px solid var(--muted);
-  border-radius: var(--radius);
-  background: var(--panel);
-  box-shadow: var(--shadow-lg);
-}
-
-/* The slide, as a keyframe animation rather than a class toggled on the next
-   frame. `transform` and `opacity` only, so layout height is final on the
-   first frame and the view is never resized mid-animation.
-
-   The reason it is not a transition: a transition needs a start state and a
-   second frame to animate away from, and the frame never arrives if the view
-   has not painted yet -- which is exactly the state a brand new banner view
-   is in. That left the card parked above the viewport, permanently invisible,
-   in a view that was still eating clicks. An animation with `both` fill runs
-   from its own keyframes and, if it never runs at all, leaves the element at
-   its ordinary un-transformed position. Visible is the failure mode.
-
-   It is on this class rather than on `.banner` because a card is rebuilt
-   whenever anything about it changes, and a download's progress changes once a
-   percent: animating every rebuild replayed the slide on each one, which reads
-   as a flicker. Only a card that is new to the stack slides. */
-.banner--enter { animation: banner-in .22s cubic-bezier(.2, .8, .3, 1) both; }
-@keyframes banner-in {
-  from { transform: translateY(-140%); opacity: 0; }
-  to   { transform: none; opacity: 1; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .banner--enter { animation: none; }
-}
-
-/* Info is deliberately not the accent colour. This app's accent is its brand
-   red, so an accent-edged notice is indistinguishable from a failure at the
-   glance the edge exists for, which is the whole job of the stripe. */
-.banner--error { border-left-color: var(--destructive); }
-.banner--warn  { border-left-color: var(--warn); }
-.banner--info  { border-left-color: var(--border-strong); }
-.banner--ok    { border-left-color: var(--ok); }
-
-.banner__message { font-weight: 600; color: var(--text-strong); }
-.banner__detail  { color: var(--muted); font-size: 12px; }
-
-/* The download bar. `appearance: none` and the two pseudo-elements are the
-   Electron-only way to draw it here: this page is Chromium's, so the WebKit and
-   Firefox spellings would be dead weight. The percentage sits beside the bar
-   rather than inside it, because a number over a filled track is unreadable at
-   the midpoint and this banner is 11px of type. */
-.banner__progress { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
-.banner__bar {
-  flex: 1;
-  height: 4px;
-  min-width: 0;
-  appearance: none;
-  border: 0;
-  border-radius: 2px;
-  overflow: hidden;
-  background: var(--border-strong);
-}
-.banner__bar::-webkit-progress-bar { background: var(--border-strong); border-radius: 2px; }
-.banner__bar::-webkit-progress-value { background: var(--muted); border-radius: 2px; transition: width .2s ease; }
-.banner__percent { flex: none; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-
-/* The one offer a notice makes. Styled as a link rather than a button because
-   it navigates rather than acts, pressing it does not resolve the condition,
-   so it must not look like the button that would. `flex: none` and the baseline
-   nudge keep it on the message's line while the detail wraps under both. */
-.banner__action {
-  flex: none;
-  align-self: center;
-  padding: 4px 10px;
-  background: transparent;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  color: var(--text-strong);
-  font-size: 12px;
-  font-weight: 600;
-}
-.banner__action:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--border-hover); }
-
-.banner__close {
-  flex: none;
-  width: 24px; height: 24px; padding: 0;
-  display: grid; place-items: center;
-  font-size: 11px; line-height: 1;
-  background: transparent; border: 1px solid transparent;
-  border-radius: var(--radius-sm); color: var(--muted); cursor: pointer;
-}
-.banner__close:hover { background: var(--bg-hover); color: var(--text-strong); }
-
-/* Closing the whole bar. Right-aligned under the cards and deliberately quiet:
-   it is the way out, not the point, and the notices above it are. */
-.banner-actions { display: flex; justify-content: flex-end; }
-.banner__readall {
-  padding: 3px 9px;
-  background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm);
-  font-size: 11.5px; color: var(--muted); cursor: pointer;
-}
-.banner__readall:hover { background: var(--bg-hover); border-color: var(--border-strong); color: var(--text-strong); }
+/* The banner's own styling moved to banner.css, so the card draws from the
+   shared design tokens (core/spec/tokens.json) in one file rather than from
+   this page's palette in among everything else. Nothing here styles it, and
+   the classes above are not referenced from this file any more. */
 
 /* --------------------------------------------------------------- loading */
 
