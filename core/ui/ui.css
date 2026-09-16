@@ -592,6 +592,52 @@ label.check .stack span:last-child { color: var(--muted); font-size: 12px; }
   padding: 7px 10px;
 }
 
+/* --------------------------------------------------------------- narrow */
+
+/* A narrow viewport, which is every phone and a desktop window dragged below
+   this width. The layouts above are written for the 720px settings modal, where
+   a gateway row's content and its badge and three action buttons all fit on one
+   line. On a phone the same page is ~350px wide, and there the four no-wrap
+   controls to the right of the content leave the `.stack.grow` beside them no
+   room: it collapses toward zero, and `.url`, with `overflow-wrap: anywhere`,
+   then wraps its address one character to a line down the screen. Measured on an
+   iPhone simulator on 2026-09-16, in both the sheet and the first-run
+   presentations.
+
+   So below this width the gateway row stacks: the content takes the full width,
+   and the badge and the buttons wrap onto a line beneath it. It is purely a
+   width query, so the desktop at its normal size is untouched (its modal is
+   720px, well above this floor) and only a genuinely narrow window, where the
+   row does not fit either, gets the same wrapping, which is what it should do.
+   601px rather than 480 so a small phone in landscape is still covered. */
+@media (max-width: 601px) {
+  /* The gateway row wraps: content first at full width, actions beneath it.
+     Scoped to the gateway list (`#gateways`) and the notice history so a
+     `.row` used elsewhere as a deliberate one-line control (the Save/Clear
+     action rows, the tab bar) is left alone. */
+  #gateways > .card > .row,
+  #notice-history > .card > .row {
+    flex-wrap: wrap;
+  }
+  /* The content column takes the whole first line, so the URL has the full card
+     width to sit on and reads as one line rather than a column of characters. */
+  #gateways > .card > .row > .stack.grow,
+  #notice-history > .card > .row > .stack.grow {
+    flex-basis: 100%;
+  }
+  /* The badge and the buttons share the line below, pushed to the trailing edge
+     the way they sat at the end of the row before it wrapped. `margin-left:
+     auto` on the first of them opens the gap the `.grow` used to. */
+  #gateways > .card > .row > .badge {
+    margin-left: auto;
+  }
+  /* The buttons keep their own size and do not stretch to fill the wrapped
+     line, so Connect and Edit stay the width of their labels. */
+  #gateways > .card > .row > button {
+    flex: none;
+  }
+}
+
 .muted-sm { color: var(--muted); font-size: 11.5px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
 .empty { color: var(--muted); font-style: italic; }

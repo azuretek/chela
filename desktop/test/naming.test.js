@@ -152,8 +152,12 @@ const RETIRED_ALLOWED = new Map([
 ]);
 
 // Where a name is generated rather than written: build output, dependencies, and
-// the Xcode project, which xcodegen renders from project.yml.
-const SKIPPED_DIRS = new Set(['node_modules', 'dist', '.git', 'build-device', 'xcuserdata']);
+// the Xcode project, which xcodegen renders from project.yml. `build` is the
+// derivedDataPath a mobile screenshot or verification run points xcodebuild at
+// (gitignored as `mobile/build/`, the same declaration as `build-device`): its
+// generated files carry absolute checkout paths, which are not names anyone
+// wrote and would trip the azuretek-slug sweep below.
+const SKIPPED_DIRS = new Set(['node_modules', 'dist', '.git', 'build', 'build-device', 'xcuserdata']);
 const TEXT = /\.(js|mjs|cjs|json|md|yml|yaml|swift|html|css|sh|plist|svg|ts)$/i;
 
 function trackedFiles(dir, prefix = '') {
