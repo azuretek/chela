@@ -29,9 +29,9 @@ away.
 **From a release.** Take the installer for your platform from
 [Releases](https://github.com/azuretek/claw-control-ui/releases):
 
-- **Windows.** `ClawDesktop-Setup-<version>-<arch>.exe`. Per-user, no admin.
+- **Windows.** `claw-desktop-Setup-<version>-<arch>.exe`. Per-user, no admin.
 - **macOS.** Open the `.dmg` and drag to Applications.
-- **Linux.** `ClawDesktop-<version>-<arch>.AppImage`. `chmod +x` it and run it;
+- **Linux.** `claw-desktop-<version>-<arch>.AppImage`. `chmod +x` it and run it;
   there is nothing to install. Keep it somewhere writable, because that file is
   what an update replaces in place.
 
@@ -68,7 +68,7 @@ reason. Both architectures of a given platform do cross-build fine.
   it there yourself.
 
 - **First launch after moving to a signed build.** macOS asks for your login
-  keychain password once, for *Claw Control UI Safe Storage*. Saved gateway
+  keychain password once, for *Claw Desktop Safe Storage*. Saved gateway
   credentials are encrypted with Electron `safeStorage`, and that keychain item's
   access control is bound to the **code identity that created it**. A locally
   built app is ad-hoc signed (`TeamIdentifier=not set`); a release is signed with
@@ -76,11 +76,11 @@ reason. Both architectures of a given platform do cross-build fine.
   through. Click **Always Allow** once. Later signed releases share the same
   identity and never ask again.
 
-  That item keeps the *Claw Control UI* name, in a build called Claw Control UI and
-  in any later name too. `safeStorage` finds its key by the item's **name**, so
-  renaming the app does not move the item, it looks up a different one, gets a
-  fresh random password and can read none of the credentials already on disk. The
-  app therefore pins the name, deliberately, the same way it keeps its bundle id.
+  That item keeps the *Claw Desktop* name, in a build called Claw Control UI and
+  under any later name too, and that is deliberate. `safeStorage` finds its key
+  by the item's **name**, so renaming the app does not move the item: it looks up
+  a different one, gets a fresh random password, and can read none of the
+  credentials already on disk. The name is pinned, the same way the bundle id is.
   See `src/profile.js`.
 
 - **Upgrading from the old *OpenClaw*-named build.** Quit it first, then
@@ -93,7 +93,8 @@ reason. Both architectures of a given platform do cross-build fine.
   copy. On first launch the profile directory moves to its new name,
   `…/Application Support/Claw Control UI`, carrying `config.json`, the notice log
   and the paired device identity with it, and stored credentials keep working
-  because the Keychain item they were sealed under is pinned (see below).
+  because the Keychain item they were sealed under is pinned, as the note above
+  explains.
 
 ## 2. Connect to a gateway
 
