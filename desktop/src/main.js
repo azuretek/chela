@@ -1694,6 +1694,10 @@ function adoptTheme(theme) {
 
   const modeChanged = theme.mode !== currentTheme.mode;
   console.log(`[claw-desktop] theme: ${theme.mode} ${theme.surface} (${Object.keys(theme.tokens).length} tokens)`);
+  // A resolved palette replaces the stated fallback, so the next time our pages
+  // have nothing to draw from the line is printed again rather than suppressed
+  // for the life of the process.
+  if (Object.keys(theme.tokens).length) statedFallback = false;
   currentTheme = theme;
   chrome.applyTheme(currentTheme, [mainWindow]);
   refreshThemedPages();
@@ -2355,9 +2359,27 @@ function clearNotice(id) {
  * page that loads before any theme has been reported, the first run, is
  * styled, just not matched.
  */
+/**
+ * Say which palette our own pages are wearing, once per state.
+ *
+ * A resolved palette needs no announcement: the app logs it when it adopts one.
+ * The FALLBACK is the state that used to be invisible, and it is a deliberate
+ * one rather than an accident: with nothing resolved, ui.css carries a complete
+ * palette of its own (see its :root block) and every surface is drawn from that.
+ * Saying so is the difference between a stated fallback and "the settings page
+ * lost its theme", which is what the same state was reported as.
+ */
+let statedFallback = false;
+function stateFallbackPalette() {
+  if (statedFallback) return;
+  statedFallback = true;
+  console.log(`[claw-desktop] theme: no resolved palette, so our pages are using their own ${currentTheme.mode} fallback palette from ui.css`);
+}
+
 async function applyThemeCss(wc) {
   if (!wc || wc.isDestroyed()) return;
   const css = chrome.themeCss(currentTheme);
+  if (!css) stateFallbackPalette();
   try {
     const previous = themeCssKeys.get(wc.id);
     if (previous) {
@@ -3714,6 +3736,16 @@ function registerIpc() {
   ipcMain.on('chrome:theme', (event, report) => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (event.sender !== page()) return;
+    // A report we cannot resolve is STATED. Refusing it is right, a
+    // partly-applied theme being worse than none, but the refusal used to be
+    // silent and the app simply carried on with whatever palette it already had,
+    // which is indistinguishable from the report never arriving: reported
+    // 2026-09-17 as the settings surface "using the default dark", from a build
+    // whose report was fine and whose token LIST was short. See themeRefusal().
+    if (chrome.themeRefusal(report)) {
+      console.warn(`[claw-desktop] theme: refusing this report because ${chrome.themeRefusal(report)}; our surfaces keep the ${currentTheme.mode} palette in force`);
+      return;
+    }
     // The app's theme comes from the Control UI, never from one of our own
     // pages. Without this the first run, where the settings page *is* the main
     // window's content, would have the app take its colours from the very
