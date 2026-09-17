@@ -135,11 +135,18 @@
   --warn: #ffb020;
   --scrim: color-mix(in srgb, var(--bg) 70%, transparent);
 }
-
 /* Warm neutrals rather than pure white, to sit beside the Control UI's light
    palettes without looking like a different application bolted on. Reached via
    nativeTheme, which main.js sets from the *page's* theme, so this tracks the
-   Control UI rather than the OS. */
+   Control UI rather than the OS.
+
+   This block is the FALLBACK, and the selector says so: what reaches it is a
+   page nothing has resolved an appearance for, which is a first run with no
+   gateway and no stored theme. A page with a gateway behind it is handed a
+   resolved palette over the top of this block, and the mode rides that same
+   handoff rather than a second channel of its own: `nativeTheme.themeSource` on
+   the desktop and the web view's trait on the phone, which is what this query
+   already answers. */
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
@@ -527,6 +534,13 @@ a  { color: var(--accent); }
    declared once. */
 .settings-group:not(:first-child) { margin-top: var(--space-3); }
 
+/* The foot of a section, which is the one edge the card's own corner rounds
+   against. The row's padding is --space-3 (12px) all round and the group's radius
+   is --radius-lg (14px), so a control sat inside the curve with less room under it
+   than the corner takes away: read as a clipped foot, and reported for the action
+   row at the end of the About page. --space-4 clears it, and it is declared here
+   rather than on the row because only the LAST row in a group is against that
+   corner. */
 .settings-group > .settings-row--actions:last-child {
   padding-bottom: var(--space-4);
 }
@@ -930,7 +944,21 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
   cursor: var(--cursor-action);
 }
 
-/* The reply line, and what it must NOT do while it is empty. */
+/* The reply line, and what it must NOT do while it is empty.
+   It carries a min-height and a top margin so a message that ARRIVES does not
+   shove the row it lands in. What it must not do is hold that space while it has
+   nothing to say, and it did: 17px of min-height plus an 8px margin is 25px of a
+   line nobody asked for, in a row that wraps like any other.
+
+   Reported 2026-09-17 as "padding at the bottom of the Cached Control UI code
+   section is visibly short", and it was the empty line, inconsistently: that
+   section has ONE button beside the reply, so the empty 25px fitted on its line
+   and the foot stayed at the row's own 12px, while the Updates section above it
+   has TWO buttons, which pushed the same empty line onto a second line and left
+   46px below its buttons. Measured on about.html at 402px: one page, two feet,
+   13px against 46px. Hiding it while it is empty makes both feet the row's own
+   padding, and the rule below gives that padding the room the card's corner
+   needs. */
 .result:empty { display: none; }
 .result { font-size: 12px; margin-top: 8px; min-height: 17px; }
 .result.ok   { color: var(--ok); }
