@@ -17,6 +17,7 @@ import {
   capability, policy, checkAnswer, INSTALL, NOTIFY, NONE, MANUAL,
   AVAILABLE, CURRENT, UNAVAILABLE, FAILED,
   STALL_MS, stallRemaining, offeredStanding, offeredCaveat, downloadingMessage, stalledMessage,
+  fetchPlan, OFFER_INSTALL, OFFER_RELEASE,
 } from '../updates.js';
 // The tones the answers are drawn in, imported from the notice model rather than
 // written as literals: what a tone IS belongs to that module, and a test naming
@@ -289,4 +290,58 @@ test('★ a build numbered below the one running is not presented as an upgrade'
   // A version this build cannot parse is a non-answer, not a caveat to invent.
   assert.equal(offeredStanding('not-a-version', '1.0.1'), null);
   assert.equal(offeredCaveat('not-a-version', '1.0.1'), '');
+});
+
+/*
+ * fetchPlan(): what a check may fetch, and what it says while it does.
+ *
+ * The rule these pin is the one the reported bug turned on: a transfer nobody
+ * asked for is silent until it has evidence, so a progress bar can only ever be
+ * drawn over movement that actually happened. The rest is that rule's edges -- a
+ * press is owed the card at once, a version the reader already ended is not
+ * re-raised on the next launch, and a build that cannot fetch at all must still
+ * say where the release is.
+ */
+test('a background fetch is quiet until it has evidence, and a press is not', () => {
+  assert.deepEqual(fetchPlan({ action: INSTALL, version: '1.0.2', trigger: 'scheduled' }),
+    { fetch: true, quiet: true, offer: null });
+  // The launch check is a background check: 60 seconds into a run, with nobody
+  // having asked for anything, which is exactly where the 0% card came from.
+  assert.deepEqual(fetchPlan({ action: INSTALL, version: '1.0.2', trigger: 'startup' }),
+    { fetch: true, quiet: true, offer: null });
+  // Someone pressed Check. Their press is the thing the card answers.
+  assert.deepEqual(fetchPlan({ action: INSTALL, version: '1.0.2', trigger: 'manual' }),
+    { fetch: true, quiet: false, offer: null });
+});
+
+test('a version whose transfer already ended here is not fetched again on our own', () => {
+  // The reader cleared the card, or it produced nothing for the stall window.
+  const suppressed = fetchPlan({ action: INSTALL, version: '1.0.2', suppressedVersion: '1.0.2', trigger: 'startup' });
+  assert.equal(suppressed.fetch, false, 'nothing is started');
+  assert.equal(suppressed.quiet, true, 'and nothing is announced in the background');
+  assert.equal(suppressed.offer, null, 'which is what stops a relaunch undoing a dismissal');
+  // A person who presses Check still gets an answer, with the button: the
+  // suppression is about fetching by ourselves, not about telling them.
+  assert.deepEqual(fetchPlan({ action: INSTALL, version: '1.0.2', suppressedVersion: '1.0.2', trigger: 'manual' }),
+    { fetch: false, quiet: false, offer: OFFER_INSTALL });
+});
+
+test('the suppression names ONE version, so the next release is fetched normally', () => {
+  assert.deepEqual(fetchPlan({ action: INSTALL, version: '1.0.3', suppressedVersion: '1.0.2', trigger: 'startup' }),
+    { fetch: true, quiet: true, offer: null });
+  assert.deepEqual(fetchPlan({ action: INSTALL, version: '1.0.2', suppressedVersion: null, trigger: 'startup' }),
+    { fetch: true, quiet: true, offer: null });
+});
+
+test('the offer follows the policy action, because only one of the two is true', () => {
+  // Automatic updates off: this build CAN install, and is waiting to be told.
+  assert.equal(fetchPlan({ action: MANUAL, version: '1.0.2', trigger: 'startup' }).offer, OFFER_INSTALL);
+  // Cannot install at all: a button here would do nothing, so it points at the
+  // release page instead.
+  assert.deepEqual(fetchPlan({ action: NOTIFY, version: '1.0.2', trigger: 'scheduled' }),
+    { fetch: false, quiet: false, offer: OFFER_RELEASE });
+  // Even for a version the reader cleared: announcing is the whole of what this
+  // build can do, so silence would hide the only way on.
+  assert.equal(fetchPlan({ action: NOTIFY, version: '1.0.2', suppressedVersion: '1.0.2', trigger: 'scheduled' }).offer,
+    OFFER_RELEASE);
 });

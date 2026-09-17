@@ -306,6 +306,14 @@ app.whenReady().then(async () => {
   await delay(66000);
   const startup = await bar();
   console.log('[harness] after the startup check the bar holds ' + JSON.stringify(startup.cards));
+  // ★ The launch check is a background fetch: nobody asked for it, so it draws no
+  // card until it has evidence of movement. Pre-fix it put a bar at 0% on the bar
+  // sixty seconds into EVERY launch, which is the card the reporter could not get
+  // rid of: clearing it did not survive a relaunch because every run made a new
+  // one. This is that card's absence, measured on the app's own startup path.
+  check('the app own startup check draws nothing, so no bar is presented as live progress',
+    startup.cards.length === 0,
+    'the bar holds ' + JSON.stringify(startup.cards));
 
   /* ------------------------------------------- 1. a feed that never answers */
 
