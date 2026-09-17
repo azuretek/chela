@@ -41,6 +41,13 @@ const APPEARANCE = flag('appearance', 'dark');
 if (!['light', 'dark'].includes(APPEARANCE)) throw new Error(`unknown appearance ${APPEARANCE}`);
 const SHOTS = flag('shots');
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
+// `--palette none` is the third case the report asks about, and it is the one a
+// shade mismatch hides in: with nothing resolved the page wears ui.css's own
+// palette whole, and the host has no colour to paint with. Both halves have to be
+// deliberate rather than accidental, so the run measures the page and says what
+// the host is left holding.
+const PALETTE = flag('palette', 'seeded');
+if (!['seeded', 'none'].includes(PALETTE)) throw new Error(`unknown palette ${PALETTE}`);
 
 const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-about-surface-'));
 app.setPath('userData', PROFILE);
@@ -329,7 +336,11 @@ app.whenReady().then(async () => {
     });
     await win.loadFile(path.join(UI, page.file));
     if (appended) { await win.webContents.removeInsertedCSS(appended); appended = null; }
-    appended = await win.webContents.insertCSS(theme);
+    // With no palette there is no live theme to inject: this is the run where the
+    // page is on its own fallbacks, which is exactly what must be checked rather
+    // than assumed (a page that only looked right because a theme was injected is
+    // a page that will be wrong on a first run).
+    if (PALETTE === 'seeded') appended = await win.webContents.insertCSS(theme);
     await new Promise((r) => setTimeout(r, 900));
 
     const measured = await win.webContents.executeJavaScript(PROBE);
@@ -340,7 +351,24 @@ app.whenReady().then(async () => {
       console.log(`SHOT ${file}`);
     }
 
-    if (page.name === 'about') {
+    if (page.name === 'about' && PALETTE === 'none') {
+      // Nothing resolved: the page must still paint a whole palette of its own,
+      // and the geometry must be identical to the seeded run, because the spacing
+      // is the page's rather than the palette's.
+      console.log(`     ${page.name} no-palette: tokens ${JSON.stringify(measured.tokens)} feet ${JSON.stringify((measured.sections || []).map((s) => s.contentBottomGap))}`);
+      check(`${page.name}: with no palette the page still paints its own background`,
+        Boolean(measured.tokens.bg) && Boolean(measured.tokens.card) && measured.tokens.bg !== measured.tokens.card,
+        JSON.stringify(measured.tokens));
+      const feet = (measured.sections || []).map((s) => s.contentBottomGap).filter((v) => typeof v === 'number');
+      check(`${page.name}: and its two feet still agree, on the page's own palette`,
+        feet.length > 1 && feet.every((v) => Math.abs(v - feet[0]) <= 1), JSON.stringify(feet));
+      check(`${page.name}: and that foot still clears the corner radius`,
+        Number.isFinite(measured.section.bottomGap)
+          && parseFloat(measured.section.radius || '0') <= measured.section.bottomGap,
+        JSON.stringify(measured.section));
+    }
+
+    if (page.name === 'about' && PALETTE === 'seeded') {
       // The page takes the seeded palette whole.
       check(`${page.name}: the page takes the published palette`,
         measured.tokens.bg === SEED.tokens['--bg'] && measured.tokens.card === SEED.tokens['--card'],
@@ -391,7 +419,7 @@ app.whenReady().then(async () => {
       }
     }
 
-    if (page.name === 'settings') {
+    if (page.name === 'settings' && PALETTE === 'seeded') {
       const accents = measured.accents;
       check('settings: --accent and --primary are the SAME published pair as About sees',
         accents.accentToken === SEED.tokens['--accent'] && accents.primaryToken === SEED.tokens['--primary'],
