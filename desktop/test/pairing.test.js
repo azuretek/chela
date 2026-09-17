@@ -157,12 +157,22 @@ test('the observer only reports a close for a socket it saw OPEN', () => {
   // reports the close only if it happened.
   const script = observerScript();
   assert.match(script, /var opened = false;/, 'the socket no longer tracks whether it ever opened');
-  assert.match(script, /addEventListener\('open', function \(\) \{ opened = true;/, 'an open no longer records itself');
-  assert.match(script, /if \(opened\) \{ post\(\{ kind: 'disconnected' \}\); \}/,
-    'a close is reported without checking that the socket had opened');
+  assert.match(script, /addEventListener\('open', function \(\) \{\s*opened = true;/, 'an open no longer records itself');
+  // ★ And it must be the page's SESSION socket as well as one that opened. A
+  // close from any other socket is a feature of the page putting its own stream
+  // down (the browser panel's screencast, a terminal), which is not this
+  // connection ending: reporting it put the app's failure surface over a page
+  // whose gateway socket was still open, and a panel refresh then reloaded the
+  // Control UI under the reader. See the spec's `one session socket`.
+  assert.match(script, /if \(!opened \|\| socket !== sessionSocket\) return;/,
+    'a close is reported for a socket that never opened, or for one that is not the page\'s session socket');
   // And a pairing refusal returns rather than falling through to it: one close,
   // one meaning, so a 1008 can never also read as a drop.
   assert.match(script, /requestId: pairing\.requestId \}\); return; \}/, 'a pairing close falls through to the drop report');
+  // The refusal is the one report that is about ANY socket: it carries the
+  // gateway's own policy close and reason, so it cannot be something a panel's
+  // stream produces.
+  assert.match(script, /var sessionSocket = null;/, 'the script no longer names the page\'s session socket');
 });
 
 test('a payload that is not one of the two reports is dropped', () => {

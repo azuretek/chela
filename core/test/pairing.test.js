@@ -243,6 +243,106 @@ test('the observer script is one copy, and reports through the message handler i
   assert.ok(script.includes('window.WebSocket = Wrapped'));
 });
 
+/**
+ * The observer, running against stub sockets.
+ *
+ * The hook is a string that eats \`window.WebSocket\` and reports what happens to
+ * the sockets the page opens, so the only honest way to test WHICH socket it
+ * reports on is to run it: give it a fake constructor, open and close sockets in
+ * the order a page does, and read what it posted. Asserting the script's text
+ * proves nothing here, which is exactly how the fault this covers survived.
+ */
+function observe() {
+  const reports = [];
+  const sockets = [];
+  class FakeSocket {
+    constructor(url) { this.url = url; this.listeners = { open: [], close: [] }; sockets.push(this); }
+    addEventListener(type, fn) { this.listeners[type].push(fn); }
+    emit(type, event) { for (const fn of this.listeners[type]) fn(event); }
+    open() { this.emit('open', {}); }
+    close(code = 1006, reason = '') { this.emit('close', { code, reason }); }
+  }
+  const win = { WebSocket: FakeSocket };
+  // The observer posts through the global the spec names, which the preload turns
+  // into a call into the app; here it collects.
+  Object.defineProperty(win, spec.global, {
+    configurable: true,
+    get() { return undefined; },
+    set(value) { reports.push(typeof value === 'string' ? JSON.parse(value) : value); },
+  });
+  // eslint-disable-next-line no-new-func
+  new Function('window', observerScript())(win);
+  return { win, sockets, reports, connect: (url) => new win.WebSocket(url) };
+}
+
+test('★ a socket that is not the page\'s session socket is never reported', () => {
+  // ★ THE FAULT: the Control UI's Browser panel streams its screencast over its own
+  // WebSocket (assets/browser-panel-*.js builds one from the \`wsPath\` the gateway
+  // hands it), and the observer wrapped EVERY WebSocket, so a panel's stream
+  // closing was posted as this client's session ending. The desktop shell raised
+  // its failure surface ("Not connected", with the gateway address and Try again)
+  // over a page whose gateway socket was still open, and a panel REFRESH was worse:
+  // the false drop was followed by the panel's socket opening, which posted
+  // \`authenticated\` and sent the shell reconnecting, so the Control UI reloaded
+  // under the reader. Both symptoms, one cause, and this is the assertion that
+  // pins it.
+  const o = observe();
+  const session = o.connect('ws://127.0.0.1:1/gateway');
+  session.open();
+  assert.deepStrictEqual(o.reports, [{ kind: 'authenticated' }],
+    'the page\'s first socket opening is the device authenticating');
+
+  const panel = o.connect('ws://127.0.0.1:1/browser/stream');
+  panel.open();
+  assert.deepStrictEqual(o.reports, [{ kind: 'authenticated' }],
+    'a second socket opening is not another authentication');
+
+  panel.close();
+  assert.deepStrictEqual(o.reports, [{ kind: 'authenticated' }],
+    '★ a socket that is not the session closing was reported as the session ending, so closing a panel tells the '
+    + 'reader the gateway is gone');
+
+  // And the session socket itself is still reported, which is what the report is for.
+  session.close();
+  assert.deepStrictEqual(o.reports, [{ kind: 'authenticated' }, { kind: 'disconnected' }],
+    'the session socket closing is no longer reported, so a dropped gateway would go unnoticed');
+});
+
+test('the session name is released when the session socket closes, so a reconnect takes it', () => {
+  // The page reconnects on its own after a drop, and that new socket IS the
+  // session from then on. Without this the app would report the first close and
+  // then never see another one.
+  const o = observe();
+  const first = o.connect('ws://127.0.0.1:1/gateway');
+  first.open();
+  first.close();
+  assert.deepStrictEqual(o.reports, [{ kind: 'authenticated' }, { kind: 'disconnected' }]);
+
+  const second = o.connect('ws://127.0.0.1:1/gateway');
+  second.open();
+  assert.deepStrictEqual(o.reports.slice(2), [{ kind: 'authenticated' }], 'the reconnected socket is not adopted');
+  second.close();
+  assert.strictEqual(o.reports[o.reports.length - 1].kind, 'disconnected',
+    'the socket that took the session over is not reported when it closes');
+});
+
+test('a socket that never opened is not reported, and a refusal still is', () => {
+  // The guard that keeps a refused handshake out of the drop report, and the one
+  // report that IS about any socket: a policy close that names a pairing reason is
+  // the gateway refusing this device, and it is answered whatever else is open.
+  const o = observe();
+  const never = o.connect('ws://127.0.0.1:1/x');
+  never.close();
+  assert.deepStrictEqual(o.reports, [], 'a socket that never opened reported a close');
+
+  const refused = o.connect('ws://127.0.0.1:1/gateway');
+  refused.open();
+  refused.close(1008, 'pairing required: device not approved (requestId: abc123)');
+  assert.deepStrictEqual(o.reports[o.reports.length - 1],
+    { kind: 'pairing-required', reason: 'not-paired', requestId: 'abc123' },
+    'a pairing refusal is no longer reported, so a refused device would sit on a dead page');
+});
+
 test('the observer install-guard makes a second injection a no-op', () => {
   // Re-installed on every connect (the token script is), so the observer must
   // not stack a second wrapper each time. The guard is the same shape as the
