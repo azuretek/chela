@@ -262,7 +262,11 @@ function observe() {
     open() { this.emit('open', {}); }
     close(code = 1006, reason = '') { this.emit('close', { code, reason }); }
   }
-  const win = { WebSocket: FakeSocket };
+  // `location` is here because the observer resolves a relative socket URL against
+  // it before comparing endpoints; a window without one makes every endpoint
+  // uncomparable, which is the branch that falls back to adopting, so the guard
+  // below would pass for the wrong reason.
+  const win = { WebSocket: FakeSocket, location: { href: 'https://gateway.example/chat' } };
   // The observer posts through the global the spec names, which the preload turns
   // into a call into the app; here it collects.
   Object.defineProperty(win, spec.global, {
@@ -306,6 +310,56 @@ test('★ a socket that is not the page\'s session socket is never reported', ()
   session.close();
   assert.deepStrictEqual(o.reports, [{ kind: 'authenticated' }, { kind: 'disconnected' }],
     'the session socket closing is no longer reported, so a dropped gateway would go unnoticed');
+});
+
+test('★ a socket at another endpoint cannot take the session over, even after a drop', () => {
+  // ★ THE SECOND HALF OF THE FAULT, measured 2026-09-17 after the first half was
+  // fixed. Releasing the session name on close re-armed ADOPTION, so the next
+  // socket to open became the session. After a session close the next socket the
+  // page opens is likelier to be a feature than the session, and its `open` is the
+  // report that re-runs the shell's own load path, so opening or refreshing a PANEL
+  // reloaded the main view under the reader, wiping the composer and the scroll
+  // position. The endpoint is what tells the two apart, and this is the assertion
+  // that pins it.
+  const o = observe();
+  const session = o.connect('ws://127.0.0.1:1/gateway');
+  session.open();
+  session.close();
+  assert.deepStrictEqual(o.reports, [{ kind: 'authenticated' }, { kind: 'disconnected' }]);
+
+  const panel = o.connect('ws://127.0.0.1:1/browser/stream');
+  panel.open();
+  assert.deepStrictEqual(o.reports, [{ kind: 'authenticated' }, { kind: 'disconnected' }],
+    '★ a panel socket opening after a drop was reported as the device authenticating, which re-runs the '
+    + 'app load path and reloads the main view off a panel action');
+
+  panel.close();
+  assert.deepStrictEqual(o.reports, [{ kind: 'authenticated' }, { kind: 'disconnected' }],
+    'a panel socket closing after a drop was reported as the session ending');
+
+  // And the page's OWN reconnect, at the same endpoint, is still adopted and still
+  // reported: the guard must not cost the recovery it exists to protect.
+  const again = o.connect('ws://127.0.0.1:1/gateway');
+  again.open();
+  assert.deepStrictEqual(o.reports.slice(2), [{ kind: 'authenticated' }],
+    'the page reconnecting to its own gateway endpoint is no longer adopted, so a dropped gateway could '
+    + 'never be picked up again');
+  again.close();
+  assert.strictEqual(o.reports[o.reports.length - 1].kind, 'disconnected',
+    'the reconnected session socket is not reported when it closes');
+});
+
+test('a reconnect carrying a fresh token is still the same session socket', () => {
+  // The comparison is host and path, never the query, because the page's own
+  // reconnect can carry a new token or a cache-buster and must still be recognised.
+  const o = observe();
+  const first = o.connect('wss://gateway.example/gateway?token=one');
+  first.open();
+  first.close();
+  const back = o.connect('wss://gateway.example/gateway?token=two');
+  back.open();
+  assert.deepStrictEqual(o.reports.slice(2), [{ kind: 'authenticated' }],
+    'a reconnect with a different query is no longer recognised as this client\'s session socket');
 });
 
 test('the session name is released when the session socket closes, so a reconnect takes it', () => {
