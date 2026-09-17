@@ -85,8 +85,20 @@ final class NoticeTokensParityTests: XCTestCase {
     func testEveryToneResolvesToADifferentColourFromTheCardSurface() throws {
         // A tone that resolves to the card's own surface is a stripe nobody can
         // see, which is what an info tone pointed at a neutral grey used to be.
+        //
+        // The surface is read from the spec's own `card.surface` rather than named
+        // here, and that is the fix: this line used to hardcode `--bg-elevated`,
+        // which is the surface of the PANEL variant of the attention card, while
+        // the card the banner copies is the FLOATING one, whose chrome mixes
+        // `--panel`. So the check was comparing the stripes against a colour the
+        // card no longer draws with, in a file whose whole purpose is to hold this
+        // client to the spec. Reading the recorded value makes it catch a spec that
+        // pointed the surface at a tone's own colour, which the old form could not.
         for mode in NoticeTokens.modes {
-            let surface = try XCTUnwrap(NoticeTokens.resolve("--bg-elevated", mode: mode), "\(mode): no card surface")
+            let surface = try XCTUnwrap(
+                NoticeTokens.cardValue("surface", mode: mode),
+                "\(mode): the card's own recorded surface does not resolve"
+            )
             var seen: [String: String] = [:]
             for tone in NoticeTokens.toneNames {
                 let resolved = try XCTUnwrap(NoticeTokens.tone(tone, mode: mode), "\(mode): the \(tone) tone does not resolve")

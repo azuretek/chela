@@ -54,6 +54,49 @@ final class ThemeTokensParityTests: XCTestCase {
         XCTAssertTrue(probe.contains("getComputedStyle"), "the probe does not read computed values")
     }
 
+    func testTheProbeReadsTheResolvedAppearanceThePaletteBelongsTo() {
+        // Not `prefers-color-scheme`, which is the DEVICE's answer: the question is
+        // which appearance the injected palette is in, and the Control UI says so
+        // on its own root before its stylesheets load.
+        let probe = ThemeTokens.probeScript
+        XCTAssertTrue(probe.contains("data-theme-mode"),
+                      "the probe does not read the Control UI's resolved mode")
+        XCTAssertTrue(probe.contains(ThemeTokens.schemeKey),
+                      "the probe does not return the resolved appearance")
+        XCTAssertTrue(probe.contains("'light' && mode === 'dark'") || probe.contains("mode === 'light'"),
+                      "the probe does not refuse an ambiguous answer, so a page with no mode pinned would set one")
+        XCTAssertFalse(probe.contains("matchMedia"),
+                       "the probe is asking the device's appearance rather than the palette's")
+    }
+
+    func testTheSchemeIsWrittenAsColorSchemeAndNothingElse() {
+        // The failure this guards is silent by construction: a colour scheme set as
+        // a CUSTOM PROPERTY sits in the page being read by nobody, so the appearance
+        // looks applied and the platform chrome carries on disagreeing with it.
+        //
+        // These are assertions about the script's TEMPLATE, which is all a Swift
+        // test can see: what the generated code does with a given value is measured
+        // in the page. So the template has to say all three things -- write the real
+        // property, refuse a value that is not an appearance, and do both only for
+        // the one key -- and the ORDER matters, because a scheme branch that came
+        // before the prefix guard would take an unprefixed name from the page.
+        let script = ThemeTokens.applyScript([ThemeTokens.schemeKey: "light", "--bg": "#faf9f7"])
+        XCTAssertTrue(script.contains("root.style.colorScheme = value"),
+                      "the resolved appearance is not written as color-scheme")
+        XCTAssertTrue(script.contains("value !== 'light' && value !== 'dark'"),
+                      "the apply script would pin the page to a value that is not an appearance")
+        XCTAssertTrue(script.contains("style.setProperty"), "the apply script stopped writing custom properties")
+
+        let guardAt = script.range(of: "name.indexOf('--') !== 0")
+        let branchAt = script.range(of: "if (name === schemeKey)")
+        XCTAssertNotNil(guardAt, "the apply script lost its name guard")
+        XCTAssertNotNil(branchAt, "the apply script does not branch on the scheme key")
+        if let guardAt, let branchAt {
+            XCTAssertLessThan(guardAt.lowerBound, branchAt.lowerBound,
+                              "the scheme branch runs before the prefix guard, so an unprefixed name could reach the page")
+        }
+    }
+
     func testTheApplyScriptWritesCustomPropertiesThroughCSSOM() {
         let script = ThemeTokens.applyScript(["--bg": "#0e1015", "--font-body": "Instrument Sans"])
         // CSSOM, not stylesheet text. A custom property set with setProperty cannot
@@ -66,6 +109,15 @@ final class ThemeTokensParityTests: XCTestCase {
         XCTAssertTrue(script.contains("__clawApplyLiveTokens"), "the apply script is not re-runnable")
         XCTAssertTrue(script.contains("#0e1015"), "the values are not in the script")
         XCTAssertTrue(script.contains("Instrument Sans"), "the values are not in the script")
+        // A map arrives from the gateway page's own values, so the map's NAMES are
+        // what has to be refused, and the JSON of a name that is not a custom
+        // property has to be in the script without a write behind it. Checked as
+        // the serialized name, not as an outcome: the outcome is the page's, and a
+        // Swift test asserting the outcome would be asserting its own template.
+        let hostile = ThemeTokens.applyScript(["colorScheme": "dark"])
+        XCTAssertTrue(hostile.contains("\"colorScheme\""), "the hostile map did not reach the script")
+        XCTAssertTrue(hostile.contains("name.indexOf('--') !== 0"),
+                      "the hostile map would be applied with no prefix guard in front of it")
     }
 
     func testAnEmptyMapIsStillAValidApplyScript() {

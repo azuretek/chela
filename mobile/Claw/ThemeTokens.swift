@@ -51,11 +51,51 @@ enum ThemeTokens {
 
     static var names: [String] { live.map(\.name) }
 
+    /// The one thing the token layer carries that is NOT a token: the resolved
+    /// appearance the palette belongs to.
+    ///
+    /// The Control UI resolves its own mode and publishes the answer on its own
+    /// root, in `ui/src/app/bootstrap-theme.ts`:
+    ///
+    ///     root.dataset.themeMode = resolvedTheme.endsWith("light") ? "light" : "dark"
+    ///     root.style.colorScheme = root.dataset.themeMode
+    ///
+    /// It has to, because the palette and the BROWSER's idea of light or dark are
+    /// two different things: `color-scheme` is what the platform draws its own
+    /// chrome from (`<select>` menus, checkboxes, scrollbars, the caret), and a
+    /// page can paint a dark palette while the platform draws light native
+    /// controls over it.
+    ///
+    /// Our own pages resolved it from `prefers-color-scheme`, which follows the
+    /// web view's trait. On the desktop that is deliberate and always correct:
+    /// `nativeTheme.themeSource` is set from the page's theme (`applyTheme` in
+    /// desktop/src/chrome.js), so the trait and the palette cannot disagree. On
+    /// this client nothing makes them agree: the trait is the APP's appearance
+    /// (`AppearanceMode`), while the palette we inject is the CONTROL UI's theme,
+    /// so in one of the two combinations the page painted one mode and the
+    /// platform drew the other. That is the residual half of the report that
+    /// started this: the settings and About surfaces taking the palette but not
+    /// the appearance it belongs to.
+    ///
+    /// Carried under a `--` name so it goes through the same guard as every token
+    /// and needs no second channel, and read back as a real property by
+    /// `applyScript` rather than set as a custom one that nothing would read.
+    static let schemeKey = "--color-scheme"
+
     /// Read the live values out of the Control UI page, as a JSON object.
     ///
     /// Only the names above are read, and a name the page does not publish is
     /// simply absent: the Control UI is free to stop declaring one, and the
     /// honest answer then is our own fallback rather than an empty override.
+    ///
+    /// The resolved appearance rides along under `schemeKey`, and it is read from
+    /// the ATTRIBUTE the Control UI sets for itself before its stylesheets load
+    /// (`data-theme-mode`), falling back to the computed `color-scheme`. Read this
+    /// way round rather than from `prefers-color-scheme`, because the question is
+    /// which appearance the PALETTE is in, not which one this device is in. A
+    /// `color-scheme` that is not a single answer -- a browser with nothing pinned
+    /// answers the two-word `light dark` -- is left out, so an ambiguous page
+    /// leaves the page's own resolution alone rather than pinning it to a guess.
     static var probeScript: String {
         let names = (try? String(data: JSONSerialization.data(withJSONObject: names), encoding: .utf8)) ?? "[]"
         return """
@@ -70,6 +110,9 @@ enum ThemeTokens {
               var value = computed.getPropertyValue(names[i]);
               if (value && value.trim()) { out[names[i]] = value.trim(); }
             }
+            var mode = root.getAttribute('data-theme-mode') || (root.style && root.style.colorScheme) || computed.colorScheme || '';
+            mode = String(mode).trim().toLowerCase();
+            if (mode === 'light' || mode === 'dark') { out['\(schemeKey)'] = mode; }
             return JSON.stringify(out);
           } catch (e) { return '{}'; }
         })()
@@ -82,6 +125,11 @@ enum ThemeTokens {
     /// something else in it cannot reach the page, and the whole thing is wrapped
     /// because this runs in a document we would rather leave unstyled than break.
     ///
+    /// `schemeKey` is the one entry that is not a custom property: it is written
+    /// as `colorScheme`, which is the real property the platform reads. Set as a
+    /// custom property it would sit in the page being read by nobody, which is the
+    /// quiet shape of failure this area keeps producing.
+    ///
     /// Applied at DOMContentLoaded as well as immediately: at document start the
     /// root may not exist yet, and a token layer that silently skipped that case
     /// would leave the page on its fallback palette while looking like it had run.
@@ -90,6 +138,7 @@ enum ThemeTokens {
         return """
         (function () {
           var tokens = \(json);
+          var schemeKey = '\(schemeKey)';
           function apply() {
             try {
               var root = document.documentElement;
@@ -97,7 +146,13 @@ enum ThemeTokens {
               for (var name in tokens) {
                 if (!Object.prototype.hasOwnProperty.call(tokens, name)) { continue; }
                 if (name.indexOf('--') !== 0) { continue; }
-                root.style.setProperty(name, String(tokens[name]));
+                var value = String(tokens[name]);
+                if (name === schemeKey) {
+                  if (value !== 'light' && value !== 'dark') { continue; }
+                  root.style.colorScheme = value;
+                  continue;
+                }
+                root.style.setProperty(name, value);
               }
               return true;
             } catch (e) { return false; }
