@@ -183,33 +183,3 @@ struct SettingsSurface: UIViewRepresentable {
     </body></html>
     """
 }
-
-/// The way into the settings surface.
-///
-/// A native control, and it is here because there has to be one: the desktop
-/// reaches Settings from a tray icon and a menu bar, and a phone has neither, so
-/// without this the page would exist and be unreachable. It is an overlay *over*
-/// the Control UI rather than chrome beside it, so the page keeps every pixel of
-/// the safe area it lays itself out in.
-///
-/// It draws no iconography of its own beyond a system symbol, and it is not a
-/// second consumer of the design tokens: the settings page it opens is where the
-/// shared styling is.
-struct SettingsButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "slider.horizontal.3")
-                .font(.system(size: 16, weight: .semibold))
-                .frame(width: 44, height: 44)
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay(Circle().stroke(.quaternary, lineWidth: 0.5))
-        }
-        .buttonStyle(.plain)
-        .padding(.trailing, 8)
-        .padding(.top, 4)
-        .accessibilityLabel("Settings")
-        .accessibilityHint("Gateway, behaviour and certificate settings")
-    }
-}

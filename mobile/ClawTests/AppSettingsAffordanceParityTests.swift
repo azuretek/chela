@@ -164,6 +164,61 @@ final class AppSettingsAffordanceParityTests: XCTestCase {
         bridge.userContentController(WKUserContentControllerStub(), didReceive: MessageStub(name: "somethingElse"))
         XCTAssertEqual(opened, 1, "only the affordance's own message opens settings")
     }
+
+    // MARK: - The phone's ONE settings entry
+
+    /// The injected affordance is this client's ONLY way into settings.
+    ///
+    /// It used to be one of two. A native `SettingsButton` was drawn as an
+    /// `overlay(alignment: .topTrailing)` over the Control UI, so the phone showed
+    /// a second settings control at the top right beside the shared one in the
+    /// footer, and that duplicate was reported and removed. What this asserts is
+    /// the arrangement that replaced it rather than the deletion by itself: the
+    /// bridge below is the only thing that raises the sheet, and no source in the
+    /// app draws a settings control of its own.
+    ///
+    /// Read from the sources rather than from a view tree, for the reason
+    /// `SettingsSpecTests` reads `SettingsHost.swift`: the claim is about what
+    /// this client CONTAINS, and rendering the tree would need a host app.
+    func testTheInjectedAffordanceIsTheOnlySettingsEntryOnThisClient() throws {
+        let contentView = try readAppSource("ContentView.swift")
+        XCTAssertTrue(
+            contentView.contains("onOpenAppSettings: { showingSettings = true }"),
+            "ContentView does not wire the affordance's bridge to the settings sheet, so nothing would open it"
+        )
+
+        // The removed control, by the two names that would bring it back: the
+        // view type and the symbol it drew. Either one in any app source means the
+        // phone has a second entry point again.
+        for name in try appSourceNames() {
+            let source = try readAppSource(name)
+            XCTAssertFalse(
+                source.contains("SettingsButton"),
+                "\(name) still declares or draws a settings button, so the phone has a second settings entry"
+            )
+            XCTAssertFalse(
+                source.contains("slider.horizontal.3"),
+                "\(name) still draws the settings symbol the corner control used, so a second entry is back"
+            )
+        }
+    }
+
+    // MARK: - Reading this client's own sources
+
+    /// Every Swift source shipped in the app, by file name.
+    private func appSourceNames() throws -> [String] {
+        try FileManager.default
+            .contentsOfDirectory(atPath: try appSourceDirectory().path)
+            .filter { $0.hasSuffix(".swift") }
+    }
+
+    private func readAppSource(_ name: String) throws -> String {
+        try String(contentsOf: try appSourceDirectory().appendingPathComponent(name), encoding: .utf8)
+    }
+
+    private func appSourceDirectory() throws -> URL {
+        try Fixtures.root().appendingPathComponent("mobile").appendingPathComponent("Claw")
+    }
 }
 
 // MARK: - WebKit stubs
