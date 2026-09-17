@@ -2540,7 +2540,27 @@ function initUpdates() {
       error: (err && err.message) || err,
     }));
   });
-  updater.on('update-not-available', () => {
+  // ★ "Nothing available" is not the dependency's answer to trust on its own.
+  // electron-updater decides this itself, with `semver.gt(latest, current)`
+  // inside its isUpdateAvailable, and that ranks the build and commit tail: the
+  // part of our version after the release, whose BASIS has changed, so a newly
+  // published build can carry a LOWER number than the installed one. Ranked,
+  // that inversion reads as "the installed build is ahead" and the update is
+  // reported as not available, which is exactly how builds stopped arriving
+  // while the number on About appeared to go backwards.
+  //
+  // The candidate it hands us here is still the newest published build on our
+  // channel: its GitHubProvider takes the first entry belonging to the channel
+  // in the feed's own order, which cannot invert. So the one owner of the rule
+  // re-decides from that candidate, rather than this file growing a second
+  // comparison of its own.
+  updater.on('update-not-available', (info) => {
+    const offered = info && typeof info.version === 'string' ? info.version : null;
+    if (offered && updates.isNewerBuild(offered, app.getVersion())) {
+      pendingManualCheck = false;
+      offerRefusedByUpdater(offered);
+      return;
+    }
     setLastCheck('up to date');
     if (!pendingManualCheck) return;
     pendingManualCheck = false;
@@ -2676,6 +2696,41 @@ async function checkForUpdates(trigger = 'manual') {
     // is exactly what a first run against a repo with no releases did.
     // This catch exists only to stop the rejection going unhandled.
   }
+}
+
+/**
+ * The newest published build, which electron-updater's own comparison refused.
+ *
+ * It is offered, not downloaded, and the difference is the dependency's rather
+ * than ours: `downloadUpdate()` acts on the update the updater decided was
+ * available, and it decided otherwise, so handing the refused version back to it
+ * is not something this build can do. Telling the person and pointing at the
+ * release is the honest version of the offer, and it is the same shape the
+ * platforms that cannot install for themselves already get.
+ *
+ * The wording comes from the shared composition, so the sentence is the one
+ * every other surface says about an available release, with the client's own
+ * last line appended (see `pointer` in core/updates.js).
+ */
+function offerRefusedByUpdater(version) {
+  const plan = updatePolicy();
+  setLastCheck(`${version} available`);
+  const { message, detail } = updates.checkAnswer({
+    outcome: updates.AVAILABLE,
+    version,
+    current: app.getVersion(),
+    action: plan.action,
+    reason: plan.reason,
+    pointer: 'The automatic updater cannot order the build number after the release, so install this one from the release page.',
+  });
+  // A better answer to the same question supersedes the answer to a manual check.
+  clearNotice(UPDATE_ANSWER);
+  setNotice('update-available', {
+    tone: noticeStore.INFO,
+    message,
+    detail,
+    action: { label: 'Open release page', command: 'update-release-page' },
+  });
 }
 
 /**

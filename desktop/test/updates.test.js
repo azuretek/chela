@@ -396,3 +396,55 @@ test('a build with no updater answers the press rather than swallowing it', () =
   assert.match(guard[0], /outcome: updates\.UNAVAILABLE/, 'and it answers as UNAVAILABLE');
   assert.doesNotMatch(guard[0], /shouldReportNoUpdate/, 'the silence for a background check belongs in the shared answer');
 });
+
+/* ------------------------------------------------------ the release-only rule */
+
+// The reported bug, from this client's side. electron-updater decides "is there
+// a newer build" with `semver.gt(latest, current)` inside its own
+// `isUpdateAvailable`, and that ranks the build and commit tail: the part of our
+// version after the release, whose BASIS changed, so a newly published build can
+// carry a LOWER number than the installed one. Ranked, that inversion reads as
+// "the installed build is ahead", and builds stop arriving.
+
+test('★ the desktop reaches the rule from the one owner, not a second comparison', () => {
+  // The same function the feed path uses on the phone (newerVersion), which is
+  // what makes the two clients agree rather than each holding a comparison.
+  assert.equal(typeof updates.isNewerBuild, 'function', 'the desktop can ask the shared rule');
+  assert.equal(updates.isNewerBuild('1.0.1-dev.12.1758000000', '1.0.1-dev.195.6387043585'), true,
+    'a published build with a LOWER tail number than the installed one is still newer');
+  assert.equal(updates.isNewerBuild('1.0.0-dev.900.1700000000', '1.0.1-dev.195.6387043585'), false,
+    'an older release is not newer');
+  assert.equal(updates.isNewerBuild('1.0.1-dev.12.1758000000', '1.0.1-dev.12.1758000000'), false,
+    'the build we are running is not offered back to us');
+
+  assert.equal(typeof updates.newerVersion, 'function', 'the desktop reaches the feed reader too');
+  const document = { entries: [{ id: '.../releases/v1.0.1-dev.12.1758000000' }] };
+  assert.equal(updates.newerVersion(document, '1.0.1-dev.195.6387043585'), '1.0.1-dev.12.1758000000');
+});
+
+test('★ main.js re-decides the version electron-updater refused, before reporting up to date', () => {
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+  const handler = /updater\.on\('update-not-available',[\s\S]*?\n  \}\);/.exec(main);
+  assert.ok(handler, 'the update-not-available handler was not found');
+
+  assert.match(handler[0], /updates\.isNewerBuild\(/, 'its candidate is re-decided by the shared rule');
+  assert.ok(handler[0].indexOf('updates.isNewerBuild(') < handler[0].indexOf("setLastCheck('up to date')"),
+    'and the decision is made BEFORE anything is reported as up to date');
+
+  assert.match(main, /function offerRefusedByUpdater\(/, 'a refused-but-newer build is offered, not dropped');
+  assert.match(handler[0], /offerRefusedByUpdater\(offered\)/, 'and the handler offers it');
+  // The offer points at the release, because this build cannot hand a version
+  // the updater declined back to its downloader.
+  const offer = /function offerRefusedByUpdater\([\s\S]*?\n\}/.exec(main);
+  assert.ok(offer, 'the offer was not found');
+  assert.match(offer[0], /'update-release-page'/, 'and it opens the release page');
+  assert.match(offer[0], /outcome: updates\.AVAILABLE/, 'its wording comes from the shared answer');
+});
+
+test('the About page still shows the full version, tail and all', () => {
+  // What changed is what is COMPARED, never what is shown: the build and commit
+  // tail is the useful part of the number when reporting a problem.
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+  assert.match(main, /version: app\.getVersion\(\),/, 'About reports the version of the build it is running');
+  assert.doesNotMatch(main, /version: updates\.release\(/, 'the release-only form is never what is displayed');
+});
