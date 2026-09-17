@@ -220,6 +220,70 @@ test('a page the app hosts below the strip carries no band at all', () => {
   }
 });
 
+test('the overlay that is not a control gives the click up', () => {
+  // The other half of the same rule, and the third instance of the same fault in
+  // this one area: the page's grab band over the banner, then the banner itself,
+  // then the banner's OWN transparent furniture.
+  //
+  // A drag region is one way a click is lost. A hit test is the other, and the
+  // shape is inverted: a drag region must NOT be claimed over content, while here
+  // the overlay's containers must GIVE the click up and only its controls may
+  // keep it. Two declarations, one per side, and both are asserted rather than
+  // described, because the stylesheet was correct-looking in each earlier
+  // instance while the click was still swallowed.
+  //
+  // Measured 2026-09-17, on the desktop: with the containers hit-testable, a
+  // click at a transparent pixel inside the banner's own rectangle was delivered
+  // into the banner's document at its root element and reached nothing, and the
+  // page underneath saw nothing either.
+  const rules = pageStylesheets(pages.filter((p) => p.name === 'banner.html'));
+  assert.ok(rules.length, 'banner.html links no stylesheet that exists');
+
+  const off = rules.filter((rule) => rule.decls.get('pointer-events') === 'none');
+  const on = rules.filter((rule) => rule.decls.get('pointer-events') === 'auto');
+
+  // 1. Hit testing is off at the ROOT, which is the one declaration a container
+  //    added tomorrow cannot escape: `pointer-events` is inherited, so a new
+  //    element on this page is out of hit testing unless it asks to be in.
+  const root = off.find((rule) => rule.selector.split(',')
+    .some((part) => /^html\b/.test(part.trim())));
+  assert.ok(root,
+    'banner.css must turn hit testing OFF at the root. This page is drawn over a page it does not own, so a '
+    + 'pixel of it that draws nothing is the page underneath, and one that claims the click anyway is a dead '
+    + 'zone that looks live');
+
+  // 2. The only things put back are CONTROLS. A class or an id here is the fault
+  //    itself: it is a region that is not a control claiming the click.
+  assert.ok(on.length, 'nothing in banner.css puts a control back, so no control on the banner could be pressed');
+  const INTERACTIVE = /^(button|a|input|select|textarea|summary|\[role=)/;
+  for (const rule of on) {
+    for (const part of rule.selector.split(',').map((s) => s.trim()).filter(Boolean)) {
+      // The subject of the selector, meaning its last compound: `... button` is a
+      // control, `.banner__readall` is a region that happens to be pressable.
+      const subject = part.split(/\s+/).pop();
+      assert.match(subject, INTERACTIVE,
+        `banner.css: "${rule.selector}" claims the click for something that is not a control. Only an `
+        + 'interactive element may be hit-testable in a page drawn over another page; everything visible and '
+        + 'not interactive has to let the click through');
+    }
+  }
+
+  // 3. And the controls the page actually builds are among them, or a control is
+  //    drawn and cannot be pressed. Read out of the page's own script rather than
+  //    listed, so a control added tomorrow is covered the day it exists.
+  const script = read(path.join(UI, 'banner.js'));
+  const controls = [...script.matchAll(/el\('(\w+)',\s*\{[^}]*className:\s*'([\w-]+)'[^}]*onclick/g)]
+    .map((m) => ({ tag: m[1], className: m[2] }));
+  assert.ok(controls.length >= 3, `only ${controls.length} controls were read out of banner.js`);
+  for (const control of controls) {
+    const kept = on.some((rule) => rule.selector.split(',').some((part) => part.trim().includes(`.${control.className}`)
+      || new RegExp(`(^|\\s|>)${control.tag}(\\b|\\s|:|,|$)`).test(part.trim())));
+    assert.ok(kept,
+      `banner.js builds a ${control.tag}.${control.className} to press, and banner.css leaves it out of hit `
+      + 'testing: it would draw and could not be pressed');
+  }
+});
+
 test('the pages that cover the strip are the ones that may move the window', () => {
   // The other side of the same rule, so the guard cannot be satisfied by simply
   // deleting every band: while an overlay covers the strip the band is the only

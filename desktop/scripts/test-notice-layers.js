@@ -226,7 +226,14 @@ app.whenReady().then(async () => {
   const aboutItem = menuItem('About Claw Control UI');
   check('the About menu item exists', Boolean(aboutItem), 'no About menu item');
 
-  if (settings && aboutItem && overUi.image) {
+  // The ORDER checks below do not need an image, and they used to sit behind
+  // one. macOS gates `desktopCapturer` behind Screen Recording permission, this
+  // harness is meant to run unattended, and on the machine it was measured on
+  // (2026-09-17) it produced no window at all: every one of those checks was
+  // skipped while the file still printed ALL OK. The image is the
+  // human-readable half, never the claim, so the claim runs either way and the
+  // two shots below are what is skipped when there is no surface to capture.
+  if (settings && aboutItem) {
     settings.click();
     await delay(2500);
     check('Settings opened as an overlay', Boolean(settingsPage()), 'no settings.html view');
@@ -292,8 +299,10 @@ app.whenReady().then(async () => {
       check('while Settings and About are still open', Boolean(settingsPage()) && Boolean(aboutPage()),
         'the sweep closed something it should not have');
     }
-  } else if (!overUi.image) {
-    note('no display surface for the window capture, so the image half of every step is skipped');
+  } else {
+    note('the overlay steps', settings && aboutItem
+      ? 'skipped: the Settings or About menu item is missing'
+      : 'skipped: no menu items to open');
   }
 
   console.log(failed ? 'FAILED' : 'ALL OK');
