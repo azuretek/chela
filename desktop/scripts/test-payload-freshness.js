@@ -461,6 +461,14 @@ app.whenReady().then(async () => {
       await sleep(SETTLE_MS);
       afterReconnect = await look(pageWc());
       surfacesAfterReconnect = await appState();
+      // The human-readable half: the interface still on screen with the failure
+      // reported over it, which is the thing a marker can only assert.
+      if (SHOTS) {
+        try {
+          fs.writeFileSync(path.join(SHOTS, `after-reconnect-${MARK}.png`),
+            (await pageWc().capturePage()).toPNG());
+        } catch { /* a shot is evidence, not the check */ }
+      }
       console.log(`AFTER-RECONNECT ${JSON.stringify(afterReconnect)}`);
       console.log(`APP     ${JSON.stringify(surfacesAfterReconnect)}`);
     }
