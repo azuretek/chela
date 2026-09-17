@@ -70,6 +70,47 @@ test('compare() reproduces every fixture, in both directions', () => {
   }
 });
 
+/*
+ * ★ The comparison an update check IS allowed to make.
+ *
+ * The test above pins `compare`, which ranks the build and commit tail. That is
+ * what a version IS, and it is NOT what decides an update: our dev tails carry
+ * build and commit information whose basis has changed, so ranking them inverted
+ * and the check quietly stopped offering builds. `releaseOf` and `releaseCases`
+ * pin the rule that replaced it, and the same fixture is what makes the iOS
+ * client move with it.
+ */
+
+test('release() reproduces every fixture', () => {
+  const { releaseOf } = JSON.parse(readFileSync(VERSION_FIXTURE, 'utf8'));
+  assert.ok(releaseOf.length > 0, 'expected release fixtures');
+  for (const { name, version: value, release } of releaseOf) {
+    assert.equal(version.release(value), release, name);
+  }
+});
+
+test('compareRelease() ignores the tail and reproduces every fixture, in both directions', () => {
+  const { releaseCases } = JSON.parse(readFileSync(VERSION_FIXTURE, 'utf8'));
+  assert.ok(releaseCases.length > 0, 'expected release-comparison fixtures');
+  for (const { name, a, b, compare } of releaseCases) {
+    assert.equal(Math.sign(version.compareRelease(a, b)), compare, `${name}: compareRelease(${a}, ${b})`);
+    assert.equal(Math.sign(version.compareRelease(b, a)), -compare, `${name}: compareRelease(${b}, ${a}) must be the negation`);
+  }
+  assert.equal(version.isNewerRelease('1.0.2-dev.1.1', '1.0.1-dev.195.6387043585'), true);
+  assert.equal(version.isNewerRelease('1.0.1-dev.12.1758000000', '1.0.1-dev.195.6387043585'), false);
+});
+
+test('★ the tail that must never be ranked: compare() inverts where compareRelease() holds', () => {
+  // The two comparisons, side by side, on the pair from the reported bug. This
+  // is the whole reason an update check may not use `compare`, and it is why
+  // feed.js re-decides through `isNewerBuild` rather than ranking a version.
+  const installed = '1.0.1-dev.195.6387043585';
+  const published = '1.0.1-dev.12.1758000000';
+  assert.equal(version.compare(published, installed) > 0, false, 'the retired comparator puts the published build behind us');
+  assert.equal(version.compareRelease(published, installed), 0, 'by release they are the same version');
+  assert.equal(version.release(installed), '1.0.1');
+});
+
 test('isNewer() is compare() > 0', () => {
   assert.equal(version.isNewer('1.0.1', '1.0.0'), true);
   assert.equal(version.isNewer('1.0.0', '1.0.1'), false);

@@ -13,7 +13,10 @@
 // keep importing one place, and the build-only pieces that ARE this module's
 // (the dev-version scheme, the tag/package.json check) are built on top.
 
-export { parse, format, compare, isNewer } from '../../core/version.js';
+// `release`/`compareRelease`/`isNewerRelease` are re-exported for the same
+// reason as the rest: they are the comparison an UPDATE CHECK is allowed to
+// make, and the one it must never make is `compare`. See core/version.js.
+export { parse, format, compare, isNewer, release, compareRelease, isNewerRelease } from '../../core/version.js';
 import { parse, format } from '../../core/version.js';
 
 /**

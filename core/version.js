@@ -5,10 +5,17 @@
 // now and they cannot import each other otherwise. The desktop's CI build
 // tooling (desktop/scripts/version.js) re-exports these and adds the build-only
 // pieces on top (the dev-version scheme, the tag/package.json check); core/feed.js
-// reads a feed and asks "is this newer" with `isNewer`; and the iOS client ports
-// the same rule (mobile/Claw/Version.swift), proven against the golden fixture in
-// fixtures/version.json that desktop/test/version.test.js asserts. One rule, one
-// comparator, three consumers.
+// reads a feed and asks "is this newer" with `release`/`compareRelease`; and the
+// iOS client ports the same rule (mobile/Claw/Version.swift), proven against the
+// golden fixture in fixtures/version.json that desktop/test/version.test.js
+// asserts. One rule, one comparator, three consumers.
+//
+// ★ Two comparisons live here and they answer different questions. `compare`
+// ranks two versions the way semver does, tail and all, and `compareRelease`
+// ranks only the release, ignoring the build and commit tail. An UPDATE CHECK
+// uses the second one: the tail's basis changes, so ranking it can invert and
+// the check then silently stops offering new builds. The rule is stated in full
+// beside `compareRelease`.
 //
 // No semver dependency: the app has no runtime dependencies, this also runs in CI
 // where installing one is not free, and the subset needed is small and closed.
@@ -35,6 +42,66 @@ export function parse(version) {
 
 export function format({ major, minor, patch, prerelease }) {
   return `${major}.${minor}.${patch}${prerelease ? `-${prerelease}` : ''}`;
+}
+
+/**
+ * The RELEASE half of a version: `MAJOR.MINOR.PATCH`, tail dropped.
+ * `1.0.1` for `1.0.1-dev.195.6387043585`, or null for a string that is not a
+ * version at all.
+ *
+ * This is the one function an update check should read a version through, and
+ * the block below says why in full. Everything after the release is build and
+ * commit information: it is printed on the About page because it is genuinely
+ * useful there, and it is never ranked.
+ */
+export function release(version) {
+  const parsed = parse(version);
+  if (!parsed) return null;
+  return `${parsed.major}.${parsed.minor}.${parsed.patch}`;
+}
+
+/**
+ * Compare two versions by RELEASE only: -1, 0 or 1 for a<b, a==b, a>b.
+ *
+ * ★ WHY THIS EXISTS AND WHY AN UPDATE CHECK MUST USE IT
+ *
+ * A dev version carries a tail after the release:
+ * `1.0.1-dev.195.6387043585`. That tail is build and commit information, and
+ * its BASIS is not fixed. It has changed under us at least once, from
+ * `dev.<commit count>.<sha>` to `dev.<build count>.<timestamp>`, and the two
+ * do not order against each other: a build published this morning can carry a
+ * LOWER number than one published last week.
+ *
+ * Anything that ranks the tail therefore inverts, and it fails quietly. An
+ * update check that ranks it decides the installed build is AHEAD of the feed,
+ * concludes there is nothing newer to offer, and the client stops updating while
+ * the number on its About page appears to go backwards. That is a client that
+ * looks healthy and is frozen, which is worse than one that reports an error.
+ *
+ * So a tail whose basis can change is NEVER ranked. Two builds of the same
+ * release compare EQUAL here whatever their tails say, and which of those two is
+ * the newer BUILD is decided by the feed's own ordering, which GitHub derives
+ * from publish time and which cannot invert (see `isNewerBuild` in feed.js).
+ *
+ * `compare` below still ranks the tail, because that is what semver precedence
+ * IS and what `parse`, `format` and the release tooling are defined by. It is
+ * just not allowed to decide an update.
+ */
+export function compareRelease(a, b) {
+  const left = parse(a);
+  const right = parse(b);
+  if (!left) throw new Error(`not a version: ${a}`);
+  if (!right) throw new Error(`not a version: ${b}`);
+
+  for (const field of ['major', 'minor', 'patch']) {
+    if (left[field] !== right[field]) return left[field] < right[field] ? -1 : 1;
+  }
+  return 0;
+}
+
+/** Whether `candidate` names a strictly newer RELEASE than `current`. */
+export function isNewerRelease(candidate, current) {
+  return compareRelease(candidate, current) > 0;
 }
 
 /**
