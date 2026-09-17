@@ -76,6 +76,17 @@ targets:
       # NativeControlAuthParityTests asserts this port reproduces the fixture.
       - path: ../core/spec/native-control-auth.json
         buildPhase: resources
+      # What identifies an OpenClaw payload, bundled rather than mirrored.
+      #
+      # The same reason the affordance spec above is bundled: this client has no
+      # Swift copy of the SIGNALS, only a port of the rule that reads them, so
+      # "is this an OpenClaw gateway" is one answer rather than one per platform.
+      # GatewayIdentity reads this at runtime for the payload markers, the health
+      # path, the header names and every sentence the reader sees, and
+      # GatewayIdentityParityTests proves this port reaches the same verdict the
+      # JavaScript does on the same inputs.
+      - path: ../core/spec/gateway-identity.json
+        buildPhase: resources
       # The device-pairing contract, bundled rather than mirrored for its ONE
       # injected script: the observer that watches the page's gateway socket and
       # reports a pairing close to the native layer. PairingState reads this at

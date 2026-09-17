@@ -122,6 +122,102 @@ $('check').addEventListener('click', async () => {
 
 $('releases').addEventListener('click', () => api.openReleases());
 
+/* ------------------------------------------------------ clear cache and refresh */
+
+// The manual escape hatch, and it reuses the app's ONE clear-and-reload path
+// (the File menu and the tray call the same one) rather than adding a second
+// that could come to mean something different.
+//
+// It reports the EFFECT rather than the intention, in two parts, because the two
+// are genuinely two events. The invoke returns what was actually cleared, per
+// origin, including any step that refused; the confirmation that the Control UI
+// reloaded arrives afterwards on a separate push, because with a document already
+// on screen the app makes its attempt off to the side and reloading is not the
+// same moment as clearing. So this says "Cleared X" when X was cleared, and then
+// says the reload landed when it landed.
+//
+// A host with no such command does not get a button that appears to work: the
+// section is hidden, the same way the settings page hides a control whose command
+// is missing.
+const clearButton = $('clear-cache');
+const clearOut = $('clear-result');
+const hasClear = typeof api.clearCacheAndReload === 'function';
+if (clearButton && !hasClear) $('clear-cache-group').hidden = true;
+// What the clear did, kept so the confirmation can be ADDED to it rather than
+// replacing it. Both halves are owed to the reader and they arrive at different
+// moments: on the desktop the reload is made off to the side when a document is
+// already on screen, so "cleared" and "reloaded" are not the same event and a
+// line that swapped one for the other would lose the answer to the question the
+// reader actually asked.
+let clearSummary = '';
+if (clearButton && hasClear) {
+  clearButton.addEventListener('click', async () => {
+    clearButton.disabled = true;
+    setResult(clearOut, 'Clearing…');
+    let report;
+    try {
+      report = await api.clearCacheAndReload();
+    } catch (err) {
+      clearButton.disabled = false;
+      setResult(clearOut, `The cache could not be cleared: ${err && err.message ? err.message : err}`, 'err');
+      return;
+    }
+    clearButton.disabled = false;
+    clearSummary = describeClear(report);
+    setResult(clearOut, `${clearSummary}${reloadPending(report)}`, report && report.failed && report.failed.length ? 'err' : 'ok');
+  });
+}
+
+/**
+ * What was cleared, and what was not, as one sentence the reader can check.
+ *
+ * Every branch is reachable: no gateway at all is the state on a first run, and a
+ * partial clear is the state this reports rather than smoothing over, because a
+ * reader who is here because something looks stale is the one reader who needs to
+ * know that a step refused.
+ */
+function describeClear(report) {
+  if (!report) return 'Nothing was cleared.';
+  const parts = [];
+  if (report.cleared && report.cleared.length) {
+    parts.push(`Cleared cached code and service workers for ${report.cleared.join(', ')}`);
+  } else if (!report.origins || report.origins.length === 0) {
+    parts.push('No gateway is configured, so there was no cached code to clear');
+  } else {
+    parts.push(`Nothing could be cleared for ${report.origins.join(', ')}`);
+  }
+  if (report.failed && report.failed.length) {
+    parts.push(report.failed.map((f) => `${f.origin} refused it (${f.error})`).join('; '));
+  }
+  return `${parts.join('. ')}.`;
+}
+
+/** What is happening now, which the confirmation later replaces. */
+function reloadPending(report) {
+  const where = report && report.gateway ? report.gateway.label : 'the gateway';
+  return ` Reloading ${where} from the server…`;
+}
+
+// The confirmation, pushed by the main process from the load that actually
+// landed. Reaching here is the only thing that makes this box able to say the
+// reload happened rather than that it was asked for, and it is ADDED to what was
+// cleared rather than replacing it: a reader who pressed a button about their
+// caches is owed both answers.
+if (hasClear && typeof api.onCacheCleared === 'function') {
+  api.onCacheCleared((report) => {
+    const detail = report && report.detail ? report.detail : '';
+    const confirmation = detail || (report && report.ok ? 'The Control UI reloaded.' : 'The reload did not land.');
+    setResult(clearOut, `${clearSummary ? `${clearSummary} ` : ''}${confirmation}`, report && report.ok ? 'ok' : 'err');
+  });
+}
+
+/** One result line, with the class the shared stylesheet colours it by. */
+function setResult(node, text, tone = '') {
+  if (!node) return;
+  node.textContent = text;
+  node.className = `result${tone ? ` ${tone}` : ''}`;
+}
+
 const dismiss = () => api.closeOverlay('about');
 $('close').addEventListener('click', dismiss);
 // Only a click that both starts and ends on the scrim counts, so releasing the

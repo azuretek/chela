@@ -1,15 +1,17 @@
 import CryptoKit
 import Foundation
 
-/// Whether a gateway answers, which is what the Gateways tab's Test connection
-/// button asks and nothing more.
+/// Whether a gateway answers AND whether it is one. The Gateways tab's Test
+/// connection button asks both, and the two are different questions: answering is
+/// not identifying, and a 200 from a captive portal used to pass both.
 ///
 /// A port of `testGateway()` in `desktop/src/main.js`, reduced to what this client
 /// can answer and kept to the same two-attempt shape, because the two attempts are
 /// the point rather than a retry:
 ///
 /// 1. Ask for the URL the way the app would load it, with a trusted chain
-///    required. If that works, the answer is a status code and nothing else.
+///    required. If that works, the answer is a status code and whatever the body
+///    identifies.
 /// 2. If it failed because the certificate could not be verified, ask again while
 ///    reading the certificate, and report the fingerprint alongside the fact that
 ///    it is not trusted.
@@ -26,6 +28,10 @@ import Foundation
 /// offer does not exist), so the message says so rather than promising a prompt
 /// that would never appear: see the `queued` list in `core/spec/settings.json`.
 ///
+/// The identity rule itself is `GatewayIdentity`, which reads the same spec the
+/// desktop reads: this file only makes the requests and hands over what came back,
+/// so the verdict a person sees at a press is the same verdict on both clients.
+///
 /// No credential is sent, and nothing is cached. The request is a fact-finding
 /// GET of the address as typed, which is what makes it work before a token has
 /// been stored.
@@ -34,7 +40,8 @@ enum GatewayProbe {
     private static let timeout: TimeInterval = 8
 
     /// The test, in the shape the page reads: `ok`, `status`, `message` and
-    /// `fingerprint` (null unless a certificate was read).
+    /// `fingerprint` (null unless a certificate was read), plus the identity
+    /// verdict so the weaker acceptance can be told apart from the required one.
     static func run(_ raw: String) async -> [String: Any] {
         guard let gateway = Gateway.parse(raw) else {
             return ["ok": false, "status": NSNull(), "message": "That is not an address this app can load.", "fingerprint": NSNull()]
@@ -43,42 +50,52 @@ enum GatewayProbe {
             return ["ok": false, "status": NSNull(), "message": "Use an http:// or https:// address.", "fingerprint": NSNull()]
         }
 
-        let strict = await attempt(gateway.url, trustingCertificate: true)
-        if let status = strict.status {
-            return [
-                "ok": status > 0 && status < 500,
-                "status": status,
-                "message": "Reachable. HTTP \(status).",
-                "fingerprint": NSNull(),
-            ]
+        let targets = GatewayIdentity.probeTargets(raw)
+        guard let documentURL = targets.document else {
+            return ["ok": false, "status": NSNull(), "message": "That is not an address this app can load.", "fingerprint": NSNull()]
         }
 
-        // A refused chain is the one failure worth a second look, because it is
-        // the expected state of a gateway's own listener rather than a fault.
-        guard scheme == "https", strict.untrustedCertificate else {
-            return [
-                "ok": false,
-                "status": NSNull(),
-                "message": strict.reason ?? "That address did not answer.",
-                "fingerprint": NSNull(),
-            ]
+        var strict = await attempt(documentURL, trustingCertificate: true)
+        var fingerprint: String?
+        if strict.untrustedCertificate {
+            let lenient = await attempt(documentURL, trustingCertificate: false)
+            fingerprint = lenient.fingerprint
+            strict = lenient
         }
 
-        let lenient = await attempt(gateway.url, trustingCertificate: false)
-        guard let status = lenient.status else {
-            return [
-                "ok": false,
-                "status": NSNull(),
-                "message": lenient.reason ?? "That address did not answer.",
-                "fingerprint": NSNull(),
-            ]
+        // The health marker is corroboration and is allowed to fail: it can raise
+        // confidence and it must never be the reason an address is accepted.
+        var health: GatewayIdentity.Observed.Response?
+        for candidate in targets.health {
+            // eslint-disable-next-line no-await-in-loop
+            let answer = await attempt(candidate, trustingCertificate: true)
+            if answer.status != nil { health = answer.observed; break }
         }
+
+        let observed = GatewayIdentity.Observed(
+            document: strict.status == nil ? nil : strict.observed,
+            health: health,
+            error: strict.status == nil ? strict.reason : nil
+        )
+        let verdict = GatewayIdentity.identify(observed)
+
+        // The certificate note survives the identity check rather than being
+        // replaced by it: a self-signed listener is still the routine state of a
+        // gateway on its own port, and the reader still has to be told.
+        var message = verdict.message
+        if fingerprint != nil, verdict.ok {
+            message += " The certificate is not one this app can verify, so this gateway cannot be loaded until it serves one the system already trusts."
+        }
+
         return [
-            "ok": true,
-            "status": status,
-            "message": "Reachable. HTTP \(status), but the certificate is not one this app can verify. "
-                + "Trusting a fingerprint is not built on this client yet, so this gateway cannot be loaded until it serves a certificate the system already trusts.",
-            "fingerprint": lenient.fingerprint ?? NSNull(),
+            "ok": verdict.ok,
+            "status": verdict.status ?? (strict.status as Any? ?? NSNull()),
+            "message": message,
+            "fingerprint": fingerprint ?? NSNull(),
+            "identity": [
+                "accepted": verdict.ok,
+                "strength": verdict.strength?.rawValue ?? NSNull(),
+            ],
         ]
     }
 
@@ -90,6 +107,8 @@ enum GatewayProbe {
         /// The chain was refused, which is a different thing from the host not
         /// answering and is the only case worth asking again.
         var untrustedCertificate: Bool
+        /// The response as the identity rule wants it, headers lowercased.
+        var observed = GatewayIdentity.Observed.Response()
     }
 
     private static func attempt(_ url: URL, trustingCertificate: Bool) async -> Attempt {
@@ -106,13 +125,27 @@ enum GatewayProbe {
         request.cachePolicy = .reloadIgnoringLocalCacheData
 
         do {
-            let (_, response) = try await session.data(for: request)
-            let status = (response as? HTTPURLResponse)?.statusCode
+            let (data, response) = try await session.data(for: request)
+            let http = response as? HTTPURLResponse
+            var headers: [String: String] = [:]
+            for (name, value) in http?.allHeaderFields ?? [:] {
+                headers[String(describing: name).lowercased()] = String(describing: value)
+            }
+            // The marker lives on the opening tag and is inside the first
+            // kilobyte of every build measured, so the read is bounded rather
+            // than reading whatever the address streams at us.
+            let body = String(data: data.prefix(GatewayIdentity.maxBytes), encoding: .utf8)
             return Attempt(
-                status: status,
+                status: http?.statusCode,
                 reason: nil,
                 fingerprint: delegate.fingerprint,
-                untrustedCertificate: false
+                untrustedCertificate: false,
+                observed: GatewayIdentity.Observed.Response(
+                    status: http?.statusCode,
+                    contentType: headers["content-type"],
+                    body: body,
+                    headers: headers
+                )
             )
         } catch {
             let urlError = error as? URLError

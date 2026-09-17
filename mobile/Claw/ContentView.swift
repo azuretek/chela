@@ -369,7 +369,13 @@ struct ContentView: View {
                 onClose: { showingAbout = false },
                 // The same seeded-or-real check the launch uses, so a screenshot
                 // run's press answers about the same feed its banner is under.
-                makeCheck: { Self.updateCheck(board: notices) }
+                makeCheck: { Self.updateCheck(board: notices) },
+                // Clear this app's cached Control UI code and reload the session.
+                // Wired here rather than inside the About host because the thing
+                // that reloads is the GATEWAY page, which lives in the session
+                // and not in the sheet: the host owns a page, not a web view, and
+                // a host that reached across would be a second owner of it.
+                clearCacheAndReload: { await gatewayPage.clearCacheAndReload() }
             )
         }
         // The notice model carries a command NAME rather than a callback, so this
