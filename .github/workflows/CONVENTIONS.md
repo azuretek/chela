@@ -83,9 +83,9 @@ Three other things can block a publish, and none of them is this gate:
 
 - Electron's distribution and electron-builder's tool bundles are cached per OS and lockfile (and the artifact upload stores rather than recompresses installers that are already compressed).
 - Each Xcode bundle's version is read from `Contents/version.plist` instead of spawning `xcodebuild -version` once per bundle, which cost 28 s of an iOS 26 leg and 18 s of the phone publish job. The chosen bundle is still asked for its version, so the toolchain is proved to work, and the Xcode 16 floor is unchanged.
-- The simulator is resolved and starts booting BEFORE the compile, and the test step waits for it with `simctl bootstatus -b`, so the boot overlaps the build instead of following it.
+**Tried and rejected the same day**, so it is not attempted again: starting the simulator's first boot underneath the compile so it is not paid afterwards. The boot is CPU-bound rather than idle, so the compile absorbs all of it and more. On run `35275131733` the `Build for the simulator` step went from 31 s to 3 m 55 s on the iOS 27 leg and from 58 s to over 4 m 41 s on the iOS 26 leg, against a boot worth about two to three minutes inside the test step, so the leg ends up no shorter. Overlapping it needs a runner with cores to spare, which is a cost decision rather than a workflow one.
 
-**Deliberately left slow**, so nobody removes one of these for a number: the two iOS legs, the whole matrix on a publishing run (the artifact gate refuses a release that is missing a platform), and the draft → attach → verify → publish sequence, whose completeness check is the only thing standing between a flaky upload and a release whose downloads never finish.
+**Deliberately left slow**, so nobody removes one of these for a number: the simulator's first boot, which is paid serially because hiding it behind the compile costs more than it saves; the two iOS legs; the whole matrix on a publishing run (the artifact gate refuses a release that is missing a platform); and the draft → attach → verify → publish sequence, whose completeness check is the only thing standing between a flaky upload and a release whose downloads never finish.
 
 ## What this rule does not cover
 
