@@ -22,8 +22,14 @@ name: every platform
 #
 # BOTH DIRECTIONS, deliberately. A red mobile leg must stop the desktop release
 # and a red desktop leg must stop the TestFlight upload. There is no asymmetry to
-# justify: each client ships from its own pipeline, and a commit that broke one
-# of them is not a commit to hand anyone either client from.
+# justify, and the reason is the shared code rather than tidiness: `core/` is
+# compiled into both clients, so a leg that goes red is evidence about code BOTH
+# of them run, and the platform that passed is no evidence that the commit is
+# safe to ship either client from. Abi, extending the rule on 2026-09-16:
+# "phone side should not progress either if builds fail we do not want any
+# releases making it out, it could mean an integration issue we need to
+# resolve." `CONVENTIONS.md` in this directory owns the rule and the rationale;
+# the check is symmetric because neither direction is optional.
 #
 # WHAT IS WAITED ON, and what is deliberately not:
 #
