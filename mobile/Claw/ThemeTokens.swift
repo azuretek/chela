@@ -25,10 +25,15 @@ enum ThemeTokens {
     /// carries it and the parity test asserts it; nothing here branches on it,
     /// as CSSOM needs no grammar to apply a custom property.
     static let live: [(name: String, kind: String)] = [
-        // Surfaces
+        // Surfaces. --bg-elevated and --card are the two the borrowed settings
+        // components draw on (their group surface IS --card, where ours used to be
+        // --panel, which the live theme could reach and this one could not), so a
+        // palette that publishes them -- every shipped one does -- must be able to
+        // hand them over rather than leaving the surface on the default palette.
         ("--bg", "color"), ("--bg-accent", "color"), ("--bg-hover", "color"),
-        ("--bg-muted", "color"), ("--bg-content", "color"),
+        ("--bg-muted", "color"), ("--bg-content", "color"), ("--bg-elevated", "color"),
         ("--panel", "color"), ("--panel-hover", "color"), ("--panel-strong", "color"),
+        ("--card", "color"),
         ("--input", "color"), ("--chrome", "color"),
         // Text
         ("--text", "color"), ("--text-strong", "color"),

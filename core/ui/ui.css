@@ -72,8 +72,17 @@
      Two kinds, and the difference matters. `--card`, `--bg-elevated` and
      `--muted-strong` are a PALETTE, so a running Control UI overrides them the
      way it overrides the block above, and what is written here is the fallback
-     for a page with no gateway. The spacing scale, the text scale, the mono
-     stack and the focus ring are not mode-dependent in upstream either: they are
+     for a page with no gateway. That override is not automatic and it is not by
+     name: it happens because each of them is listed in
+     core/spec/tokens.json's `live` array, which is the allowlist
+     desktop/src/chrome.js sanitizes the page's report through (sanitizeTokens),
+     and a palette token left out of that list gets no live value however the UI
+     defines it. Measured 2026-09-16: `--card` and `--bg-elevated` were missing,
+     so on a purple palette the settings groups kept these defaults (rgb(22, 25,
+     32)) inside a window wearing the reader's own (rgb(31, 29, 46)). It is not
+     the declaring that themes a page, it is the listing.
+
+     The spacing scale, the text scale, the mono stack and the focus ring are not mode-dependent in upstream either: they are
      what they are, and a component that copied upstream's declaration needs them
      to resolve or it silently loses the declaration that used them. */
   --card: #161920;
