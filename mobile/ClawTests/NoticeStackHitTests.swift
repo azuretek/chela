@@ -64,20 +64,68 @@ final class NoticeStackHitTests: XCTestCase {
         return String(rest[..<end])
     }
 
+    /// The code, with its line comments taken out.
+    ///
+    /// These assertions are about what the view DOES, and the stack's own comment
+    /// says "a surface, a contentShape or a gesture on the frame would claim every
+    /// touch on the page underneath" to explain why it has none of them. A scan
+    /// that reads prose reports the explanation as the fault. Deliberately crude,
+    /// and the same reasoning as the colour scan in desktop/test/tokens.test.js: a
+    /// comment draws nothing and claims nothing.
+    private func code(_ text: String) -> String {
+        text.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> String in
+                guard let at = line.range(of: "//") else { return String(line) }
+                return String(line[..<at.lowerBound])
+            }
+            .joined(separator: "\n")
+    }
+
     func testTheStackClaimsNothingOfItsOwn() throws {
         let text = try source("NoticeBanner.swift")
-        let stack = try body(of: "NoticeStack", in: text)
-        // A drawn surface, a hit shape or a gesture: any one of these on the
-        // stack claims the touch at every pixel of the screen, because the
-        // stack's frame IS the screen so the banner can sit at its top.
-        for claim in ["contentShape", ".background", "onTapGesture", ".gesture(", ".overlay("] {
+        let stack = code(try body(of: "NoticeStack", in: text))
+        // A hit shape or a gesture anywhere in the stack claims the touch at
+        // every pixel of the screen, because the stack's frame IS the screen so
+        // the banner can sit at its top.
+        for claim in ["contentShape", "onTapGesture", ".gesture(", ".overlay("] {
             XCTAssertFalse(
                 stack.contains(claim),
-                "NoticeStack uses \(claim) on its own area. The stack fills the screen, so this claims every "
-                + "touch on the page underneath it, including everywhere it draws nothing: the banner may claim "
-                + "only what a card or a control draws."
+                "NoticeStack uses " + claim + " on its own area. The stack fills the screen, so this claims "
+                + "every touch on the page underneath it, including everywhere it draws nothing: the banner may "
+                + "claim only what a card or a control draws."
             )
         }
+    }
+
+    func testTheBarPaintsItselfAndNotTheScreen() throws {
+        // The one paint this view has, and where it may land. The desktop's bar
+        // paints its whole rectangle because its view is sized to it and a view
+        // claims every mouse event inside that rectangle whatever the page draws
+        // there (see core/ui/banner.css), and this client now draws the same bar:
+        // one surface behind the cards and the sweep row, which is what makes the
+        // two clients one design.
+        //
+        // It may NOT be on the full-screen frame. The frame is the screen so the
+        // bar can sit at its top, so a surface there would claim every touch on
+        // the page underneath and the empty half of the screen would stop being
+        // the page. Asserted by ORDER, because that is the difference and it is
+        // not visible in a screenshot of a banner that happens to look right.
+        let text = try source("NoticeBanner.swift")
+        let stack = code(try body(of: "NoticeStack", in: text))
+        XCTAssertTrue(stack.contains(".background("),
+            "the bar paints nothing, so it no longer matches the desktop bar it is a copy of")
+        let surface = try XCTUnwrap(stack.range(of: ".background(")?.lowerBound,
+            "the bar's surface is gone")
+        let filler = try XCTUnwrap(stack.range(of: "Spacer(minLength: 0)")?.lowerBound,
+            "the trailing filler is gone, so this test can no longer tell where the surface is applied")
+        XCTAssertLessThan(surface, filler, "the bar's surface is applied after the trailing filler")
+        // No closing bracket in the search: the real line continues with the
+        // alignment, and a search string that includes it matches nothing.
+        let screen = try XCTUnwrap(stack.range(of: ".frame(maxWidth: .infinity, maxHeight: .infinity")?.lowerBound,
+            "the full-screen frame is gone")
+        XCTAssertLessThan(filler, screen,
+            "the full-screen frame is applied before the trailing filler, so the surface may be on the screen "
+            + "rather than on the bar it belongs to")
     }
 
     func testTheStackKeepsItsCardsAtTheTopAndItselfOutOfTheWay() throws {
