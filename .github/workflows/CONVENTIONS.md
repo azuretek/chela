@@ -54,9 +54,10 @@ A release that silently does not happen is its own bug, so a refusal is written 
 
 **Read the refusal for what it is pointing at, which is often shared code rather than the pipeline that refused.** The platform named in the gate job is the one that failed, not the one being blamed: when a leg goes red on a commit that did not touch that client's own tree, `core/` is where the shared half lives and where the integration fault usually is. A blocked release on either platform is the first evidence of that fault, not a formality to clear.
 
-Two other things can block a publish, and neither is this gate:
+Three other things can block a publish, and none of them is this gate:
 
 - The **artifact gate** (`desktop/scripts/check-release-artifacts.js`) refuses a release whose platform is present but incomplete, meaning a missing installer or missing update metadata, when every build leg succeeded.
+- The **asset completeness check** in `release.yml`'s release job refuses to PUBLISH a release whose payload is incomplete. The release is created as a draft, every file the build produced is attached and then compared against what the release actually carries, and the draft is published only once the two agree. A run that cannot complete the set fails and withdraws the draft, so a release that is live is always one whose payload is whole. This is the half the artifact gate cannot see, because that gate reads the directory the build runners produced rather than the release itself: a flaky upload passes it, publishes, and leaves a release whose downloads can never finish. The payload is covered by the same rule as a red platform, in the same words: nothing ships while any part of it is missing.
 - The **version job** stands a build down for a commit covered by its own tag build, so no publish is expected at all.
 
 ## What this rule does not cover
@@ -72,6 +73,6 @@ Named so it is not mistaken for coverage.
 | File | Owns |
 |---|---|
 | `platforms-gate.yml` | What "the other platform is green" means, and the refusal messages. Called by both pipelines. |
-| `release.yml` | The desktop build matrix, the artifact gate, and the desktop release. |
+| `release.yml` | The desktop build matrix, the artifact gate, the asset completeness check, and the desktop release. |
 | `mobile-pipeline.yml` | The iOS test matrix, the archive, and the TestFlight upload. |
 | this file | The rule, the rationale for its two directions, and where to look. |
