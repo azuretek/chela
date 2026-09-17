@@ -12,7 +12,7 @@
 // The honest instrument is a real click at real screen coordinates, which is
 // what this does, through System Events.
 //
-//   npx electron scripts/test-banner-clicks.js [--target close|action]
+//   npx electron scripts/test-banner-clicks.js [--target close|action|readall]
 //                                              [--expect dead|alive]
 //                                              [--shots DIR]
 //
@@ -169,6 +169,11 @@ app.whenReady().then(async () => {
     return {
       close: rect('.banner__close'),
       action: rect('.banner__action'),
+      // The sweep, which is the other control in the strip and the one the
+      // strip's own surface sits under: it is at the TRAILING edge with nothing
+      // drawn around it, so a band of the page's own background there is a
+      // control sitting on an opaque block rather than over the content.
+      readall: rect('.banner__readall'),
       stack: rect('.banner-stack'),
       // How many cards are up, so a click that dismissed one can be told apart
       // from a click that did nothing while a second card kept the view alive.
@@ -246,7 +251,7 @@ app.whenReady().then(async () => {
   }
   if (!regionsSeen) note('drag regions', 'none on any page, so nothing can swallow a click above the page');
 
-  const target = TARGET === 'action' ? targets.action : targets.close;
+  const target = { close: targets.close, action: targets.action, readall: targets.readall }[TARGET];
   check(`the banner has the ${TARGET} control to aim at`, Boolean(target), `the ${TARGET} control is not in the banner`);
   if (!target) { app.exit(1); return; }
 
@@ -333,6 +338,12 @@ app.whenReady().then(async () => {
     check('the click reached the X and dismissed its card', dismissed,
       `nothing was dismissed and the banner page saw ${bannerSaw} mouse-down(s): ` +
       (bannerSaw >= 1 ? 'the click ARRIVED, so the dismiss path is what failed' : 'the click never reached the banner, so something in front of it is eating it'));
+  } else if (TARGET === 'readall') {
+    // The sweep's outcome is the bar coming down: it marks every notice read
+    // without clearing a condition, so the view it lived in goes away and the
+    // Conditions it recorded are still in the app's own log.
+    check('the click reached Mark all read and swept the bar away', gone,
+      `the banner is still up with ${cardsAfter} card(s) and the banner page saw ${bannerSaw} mouse-down(s)`);
   } else {
     check('the click reached the action button and something followed from it', changed,
       'nothing changed, so the click was swallowed');

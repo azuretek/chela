@@ -33,6 +33,103 @@ import { app, BrowserWindow, nativeTheme } from 'electron';
 // names resolves to nothing -- which is how the first run of this harness looked
 // like a broken layout rather than a harness that had skipped a step.
 import { stylesheet as tokenStylesheet } from '../src/tokens.js';
+// And the live theme, injected exactly as the app injects it (applyThemeCss in
+// src/main.js): the Control UI's own tokens, read off a running page.
+//
+// `themeFromReport` is not decoration in this import. It is the app's own path
+// from a page's report to a sheet (see the `chrome:theme` handler in main.js),
+// and it is where the allowlist lives: `sanitizeTokens` keeps only the names in
+// the shared live-token list (core/spec/tokens.json), so a token missing from
+// that list cannot reach a page however the Control UI defines it. Handing
+// `themeCss` a theme object directly skips that filter and makes this harness
+// report a palette the app would never hand out, which is how a two-palette page
+// passed here on the day it was reported.
+import { themeCss, themeFromReport } from '../src/chrome.js';
+
+/**
+ * A running Control UI's palette, as the app receives it from the page probe.
+ *
+ * NOT the default palette, and that is the whole point of seeding it here. Every
+ * fault this harness is asked about is a surface drawn from a token the live
+ * theme cannot reach, and against the default palette such a surface is the
+ * RIGHT colour: the fault is invisible in exactly the runs that look green. The
+ * values below are the `rose` palette (ui/public/themes/rose.css in the checkout),
+ * which is both a palette a reader really can pick and the purple-with-pink one
+ * in the report that produced this: a deep plum surface with a dusty pink accent.
+ *
+ * Written as computed `rgb()` strings because that is what the preload's probe
+ * reports after the engine resolves each token through a real property.
+ */
+const LIVE_THEME = {
+  dark: {
+    mode: 'dark',
+    surface: 'rgb(25, 23, 36)',
+    symbol: 'rgb(213, 210, 235)',
+    tokens: {
+      '--bg': 'rgb(25, 23, 36)',
+      '--bg-hover': 'rgb(38, 35, 58)',
+      '--bg-muted': 'rgb(38, 35, 58)',
+      '--panel': 'rgb(25, 23, 36)',
+      '--panel-hover': 'rgb(38, 35, 58)',
+      '--panel-strong': 'rgb(31, 29, 46)',
+      '--input': 'rgb(41, 38, 60)',
+      '--text': 'rgb(213, 210, 235)',
+      '--text-strong': 'rgb(239, 237, 250)',
+      '--muted': 'rgb(151, 147, 176)',
+      '--muted-strong': 'rgb(172, 168, 196)',
+      '--border': 'rgb(41, 38, 60)',
+      '--border-strong': 'rgb(61, 57, 88)',
+      '--border-hover': 'rgb(84, 80, 120)',
+      '--accent': 'rgb(235, 188, 186)',
+      '--accent-hover': 'rgb(242, 208, 206)',
+      '--accent-subtle': 'rgba(235, 188, 186, 0.12)',
+      '--primary': 'rgb(235, 188, 186)',
+      '--primary-hover': 'rgb(242, 208, 206)',
+      '--primary-foreground': 'rgb(63, 34, 36)',
+      '--destructive': 'rgb(235, 111, 146)',
+      '--ring': 'rgb(235, 188, 186)',
+      '--card': 'rgb(31, 29, 46)',
+      '--bg-elevated': 'rgb(31, 29, 46)',
+    },
+  },
+  light: {
+    mode: 'light',
+    surface: 'rgb(250, 244, 237)',
+    symbol: 'rgb(87, 82, 121)',
+    tokens: {
+      '--bg': 'rgb(250, 244, 237)',
+      '--bg-hover': 'rgb(240, 231, 222)',
+      '--bg-muted': 'rgb(240, 231, 222)',
+      '--panel': 'rgb(250, 244, 237)',
+      '--panel-hover': 'rgb(240, 231, 222)',
+      '--panel-strong': 'rgb(255, 250, 243)',
+      '--input': 'rgb(242, 233, 225)',
+      '--text': 'rgb(87, 82, 121)',
+      '--text-strong': 'rgb(38, 35, 58)',
+      '--muted': 'rgb(121, 116, 154)',
+      '--muted-strong': 'rgb(102, 97, 138)',
+      '--border': 'rgb(224, 217, 208)',
+      '--border-strong': 'rgb(203, 194, 186)',
+      '--border-hover': 'rgb(172, 164, 156)',
+      '--accent': 'rgb(156, 79, 102)',
+      '--accent-hover': 'rgb(140, 68, 90)',
+      '--accent-subtle': 'rgba(156, 79, 102, 0.1)',
+      '--primary': 'rgb(156, 79, 102)',
+      '--primary-hover': 'rgb(140, 68, 90)',
+      '--primary-foreground': 'rgb(255, 250, 243)',
+      '--destructive': 'rgb(180, 60, 90)',
+      '--ring': 'rgb(156, 79, 102)',
+      '--card': 'rgb(255, 252, 250)',
+      '--bg-elevated': 'rgb(255, 252, 250)',
+    },
+  },
+};
+
+/** The colour one custom property resolves to on the page, lowercased. */
+function cssColour(rgb) {
+  const m = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(rgb || '');
+  return m ? `rgb(${m[1]}, ${m[2]}, ${m[3]})` : String(rgb || '').trim();
+}
 
 // A throwaway profile, pinned BOTH ways: main.js is not loaded here, but
 // Chromium still writes a profile, and a harness must never write into the real
@@ -181,10 +278,18 @@ contextBridge.exposeInMainWorld('clawDesktop', {
 `);
 
 let failed = false;
-// The token layer currently inserted into the window, so the next capture can
-// take it back out before it puts its own in. One window serves every capture,
-// and two layers at once would leave the earlier one's values on top.
+// The sheets currently inserted into the window, so the next capture can take
+// them back out before it puts its own in. One window serves every capture, and
+// two layers at once would leave the earlier one's values on top.
 let applied = null;
+let appliedToken = null;
+
+/** Give one pass back to a bare document, whatever it had put on it. */
+async function clearInjected(win) {
+  if (applied) { await win.webContents.removeInsertedCSS(applied); applied = null; }
+  if (appliedToken) { await win.webContents.removeInsertedCSS(appliedToken); appliedToken = null; }
+}
+
 function check(name, ok, detail = '') {
   if (ok) console.log(`OK   ${name}`);
   else { console.error(`FAIL ${name}: ${detail}`); failed = true; }
@@ -236,6 +341,69 @@ const PROBE = `(() => {
     cardGap: cardStyle ? cardStyle.getPropertyValue('--notice-gap').trim() : null,
     panel: computed.getPropertyValue('--panel').trim(),
     bgElevated: computed.getPropertyValue('--bg-elevated').trim(),
+
+    // ---- the card the theme is actually wearing -------------------------
+    // The card token as the LIVE theme resolved it, against the surface the
+    // page's groups actually painted (no backtick anywhere below: this probe is
+    // one template literal, so a backtick in a comment ends the string early).
+    themeCard: (() => {
+      const probe = document.createElement('span');
+      probe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;height:0';
+      probe.style.backgroundColor = 'var(--card, rgb(1, 2, 3))';
+      document.documentElement.appendChild(probe);
+      const value = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return value;
+    })(),
+    groups: [...document.querySelectorAll('.settings-group')].map(function (group) {
+      return getComputedStyle(group).backgroundColor;
+    }),
+    escSurface: (function () {
+      const esc = document.querySelector('.settings-sidebar__esc');
+      return esc ? getComputedStyle(esc).backgroundColor : null;
+    })(),
+
+    // ---- what the banner covers, and whether it is ours to cover -------
+    // The banner lives in a view sized to exactly its own height, so every pixel
+    // it paints is a pixel it covers. The root element and the body are read by
+    // name because
+    // the canvas the root element paints is the whole of that rectangle, whatever
+    // the card on top of it does.
+    htmlBackground: getComputedStyle(document.documentElement).backgroundColor,
+    stackBackground: (function () {
+      const node = document.getElementById('stack');
+      return node ? getComputedStyle(node).backgroundColor : null;
+    })(),
+    actions: (function () {
+      const row = document.querySelector('.banner-actions');
+      if (row) {
+        const box = row.getBoundingClientRect();
+        return {
+          background: getComputedStyle(row).backgroundColor,
+          top: box.top, bottom: box.bottom, left: box.left, right: box.right,
+        };
+      }
+      const readall = document.querySelector('.banner__readall');
+      if (!readall) return null;
+      const box = readall.getBoundingClientRect();
+      return { background: null, top: box.top, bottom: box.bottom, left: box.left, right: box.right };
+    })(),
+    // The sweep control, and whether a press at its own centre would reach it.
+    // The banner is a view over the page, so a control inside it is clickable
+    // unless something in the SAME document is drawn over it: this is the
+    // hit test, which is the only way to tell an opaque sibling from a control.
+    readall: (function () {
+      const node = document.querySelector('.banner__readall');
+      if (!node) return null;
+      const box = node.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return {
+        label: node.textContent.trim(),
+        centre: { x: box.left + box.width / 2, y: box.top + box.height / 2 },
+        hit: hit ? String(hit.className || hit.tagName) : null,
+        reached: Boolean(hit) && (hit === node || node.contains(hit)),
+      };
+    })(),
   };
 })()`;
 
@@ -272,12 +440,25 @@ async function capture(page, mode, win) {
     }
   }
 
-  // The pages render after their host answers the first state call, and this is
-  // also the sheet that gives the banner its colours, so it goes in before the
-  // probe reads them. Same order the app uses: the token layer, then the live
-  // theme on top of it (there is no live theme here, so the layer is the answer).
-  if (applied) await win.webContents.removeInsertedCSS(applied);
-  applied = await win.webContents.insertCSS(tokenStylesheet());
+  // The pages render after their host answers the first state call, and the CSS
+  // goes in before the probe reads anything, because what the probe reads is what
+  // this put there.
+  //
+  // WHICH sheets depends on the page, and it is the fidelity half of this
+  // harness. It used to hand the notice token layer to every page, which is not
+  // what any of them is given at runtime: `applyTokenCss` runs for the banner and
+  // the loading cover only (see src/main.js), and Settings and About get the LIVE
+  // theme alone. A harness that paints a page with a palette the app never gives
+  // it cannot see a page wearing the wrong one, which is exactly the fault it is
+  // being asked about here.
+  await clearInjected(win);
+  const theme = themeCss(themeFromReport(LIVE_THEME[mode]));
+  if (page.cards) {
+    appliedToken = await win.webContents.insertCSS(tokenStylesheet());
+    applied = await win.webContents.insertCSS(theme);
+  } else {
+    applied = await win.webContents.insertCSS(theme);
+  }
   await new Promise((r) => setTimeout(r, 1200));
 
   const probe = await win.webContents.executeJavaScript(PROBE);
@@ -285,9 +466,54 @@ async function capture(page, mode, win) {
   const image = await win.capturePage();
   fs.writeFileSync(shot, image.toPNG());
 
+  // What the page actually COVERED, read off the composited pixels rather than
+  // off a stylesheet: the banner is a strip over someone else's page, so a pixel
+  // it paints there is a pixel of that page nobody can see. Read through the
+  // window's own alpha because the view is transparent-backed (see
+  // `bannerView.setBackgroundColor('#00000000')` in src/main.js) and fully
+  // transparent is the state this should be in everywhere the card is not.
+  //
+  // Two readings per band: the full-width row the sweep control sits in, and the
+  // stack's own padding at the leading edge, which is the part of the strip a
+  // person reads as "this block covers what is under it".
+  probe.pixels = page.cards ? readPixels(image, probe) : null;
+
   console.log(`SHOT ${shot}`);
   console.log(`     ${page.name} ${mode}: color-scheme=${probe.colorScheme} --bg=${probe.tokenBackground} body=${probe.body}`);
+  if (probe.pixels) {
+    console.log(`     banner ${mode}: html=${probe.htmlBackground} stack=${probe.stackBackground} actions=${probe.actions ? probe.actions.background : 'none'}`);
+    console.log(`     banner ${mode} pixels: ${JSON.stringify(probe.pixels)}`);
+  }
   return probe;
+}
+
+/**
+ * The colour and alpha at a few points of a captured frame, as `r,g,b,a` strings.
+ *
+ * `toBitmap()` is BGRA in premultiplied form, so the last byte is the one that
+ * answers "is anything painted here at all" and the colour is the reading next
+ * to it. Downsampled by nothing: a single pixel is the point of it.
+ */
+function readPixels(image, probe) {
+  const bitmap = image.toBitmap();
+  const { width, height } = image.getSize();
+  const at = (x, y) => {
+    const px = Math.max(0, Math.min(width - 1, Math.round(x)));
+    const py = Math.max(0, Math.min(height - 1, Math.round(y)));
+    const i = (py * width + px) * 4;
+    return `rgb(${bitmap[i + 2]}, ${bitmap[i + 1]}, ${bitmap[i]}) a${bitmap[i + 3]}`;
+  };
+  const out = {};
+  if (probe.actions) {
+    // The row the sweep control lives in, read at its own leading edge, which is
+    // the part of it nothing is drawn on.
+    const y = (probe.actions.top + probe.actions.bottom) / 2;
+    out.actionsLeadingEdge = at(probe.actions.left + 2, y);
+    out.actionsTrailingEdge = at(probe.actions.right - 2, y);
+  }
+  // The stack's own padding, above the first card: the strip's own surface.
+  out.aboveTheCard = at(4, 4);
+  return out;
 }
 
 // NOT `await app.whenReady()` at module scope, and that is not a style choice:
@@ -301,6 +527,13 @@ app.whenReady().then(async () => {
     show: false,
     width: WIDTH,
     height: 720,
+    // Transparent, because one of the questions here is what a page COVERS. The
+    // banner is a strip over someone else's page and its view is transparent-backed
+    // (bannerView.setBackgroundColor('#00000000') in src/main.js), so a capture
+    // taken off an opaque window would report every pixel as painted and the
+    // check beside it would pass on nothing.
+    transparent: true,
+    backgroundColor: '#00000000',
     webPreferences: {
       preload: PRELOAD,
       contextIsolation: true,
@@ -370,6 +603,64 @@ app.whenReady().then(async () => {
           JSON.stringify({ cardSurface: probe.cardSurface, bgElevated: probe.bgElevated }));
         check(`${page.name}.html uses the row gap the spec records`,
           probe.cardGap === '8px', `the gap resolved to "${probe.cardGap}"`);
+
+        // ---- the strip covers the page, and only with its own card --------
+        // A banner is a view laid over someone else's page, sized to exactly the
+        // height it reports, so every pixel it paints is a pixel of that page
+        // nobody can see. Blanket that with the canvas and the strip is an opaque
+        // band across the app, which reads as "the block covers everything under
+        // it" everywhere the card is not.
+        //
+        // Asserted on the ROOT's background by name, because that is the one that
+        // paints the canvas: with a transparent body the root's background is
+        // still propagated to the whole viewport, so a transparent body alone
+        // leaves the strip opaque.
+        const clear = (value) => /rgba?\([^)]*,\s*0\)$|^transparent$/.test(String(value || '').trim());
+        check(`${page.name}.html paints no canvas behind its cards`,
+          clear(probe.htmlBackground) && clear(probe.body) && clear(probe.stackBackground),
+          JSON.stringify({ html: probe.htmlBackground, body: probe.body, stack: probe.stackBackground }));
+        check(`${page.name}.html leaves the sweep row unpainted`,
+          Boolean(probe.actions) && clear(probe.actions.background),
+          JSON.stringify(probe.actions));
+        // And the same claim off the composited pixels, which is the half a person
+        // sees: a point in the sweep row, and one in the strip's own padding, both
+        // fully transparent. The colour is reported beside it so a strip painted
+        // in a colour with an alpha of its own cannot pass this by looking clear.
+        if (probe.pixels) {
+          const alpha = (value) => Number(String(value).split(' a').pop());
+          check(`${page.name}.html's strip is transparent where it draws no card`,
+            [probe.pixels.actionsLeadingEdge, probe.pixels.actionsTrailingEdge, probe.pixels.aboveTheCard]
+              .every((pixel) => alpha(pixel) === 0),
+            JSON.stringify(probe.pixels));
+        }
+
+        // ---- the sweep control is still a control -------------------------
+        // The click-swallowing bug was in this exact area, so the control is
+        // hit-tested at its own centre rather than merely checked for presence: a
+        // control covered by an opaque sibling, or by a drag region, is present,
+        // styled and dead. This is the in-document half; the real click through
+        // the window server is scripts/test-banner-clicks.js.
+        check(`${page.name}.html leaves the sweep control reachable at its own centre`,
+          Boolean(probe.readall) && probe.readall.reached && probe.readall.label === 'Mark all read',
+          JSON.stringify(probe.readall));
+      }
+
+      if (page.back) {
+        // ---- the surfaces follow the palette the reader chose ----------------
+        // The settings groups are the biggest surfaces on the page and the ones
+        // this batch moved onto upstream's classes, and upstream's class names a
+        // token rather than a colour. That token has to be one the LIVE theme can
+        // reach, or the group keeps ui.css's copy of the Control UI's DEFAULT
+        // palette while the window around it wears the reader's: a page wearing
+        // two palettes at once, which is invisible against the default one and
+        // obvious against any other.
+        const expected = cssColour(LIVE_THEME[mode].tokens['--card']);
+        check(`${page.name}.html draws its groups from the palette in force (${mode})`,
+          probe.groups.length > 0 && probe.groups.every((colour) => cssColour(colour) === expected),
+          JSON.stringify({ expected, themeCard: cssColour(probe.themeCard), groups: probe.groups }));
+        check(`${page.name}.html's surface token is the one the theme publishes`,
+          cssColour(probe.themeCard) === expected,
+          JSON.stringify({ themeCard: probe.themeCard, expected }));
       }
     }
     check(`${page.name}.html paints a different background in each appearance`,
