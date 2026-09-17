@@ -415,6 +415,16 @@ struct ContentView: View {
         // posts, through the real check and the real notice, so what is drawn is
         // the answer rather than a seeded banner. Debug only, inert without the
         // argument. See `SettingsSpec`.
+        // Wrapped, because the method it drives is DEBUG-only: `pressCheckForUpdates`
+        // exists under `#if DEBUG` in AboutHost, where `SettingsSpec` compiles the
+        // flag itself out to `false` in a release build rather than out of the
+        // file. Unwrapped, the flag still resolves and the call does not, so this
+        // line compiled in Debug and failed only in the Release archive with
+        // "value of type 'AboutHost' has no member 'pressCheckForUpdates'", which
+        // is a red iOS release that no simulator test can see. The other
+        // screenshot blocks in this file that reach DEBUG-only API carry the same
+        // guard.
+        #if DEBUG
         if SettingsSpec.screenshotChecksUpdates {
             showingSettings = true
             DispatchQueue.main.async {
@@ -427,6 +437,7 @@ struct ContentView: View {
                 }
             }
         }
+        #endif
         // A screenshot run that presses the update notice's own action. The card's
         // button reaches the command through `notices.run`, which is the call this
         // makes, so what the run exercises is the real route minus the tap: the
