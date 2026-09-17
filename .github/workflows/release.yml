@@ -52,6 +52,16 @@ on:
       - '.github/workflows/mobile-pipeline.yml'
   workflow_dispatch:
 
+# ★ This workflow does not publish on its own any more. Publication waits on the
+# mobile pipeline too, because a release needs the whole matrix green rather than
+# each platform's own jobs: on 2026-09-16 this workflow published a release for a
+# commit whose mobile pipeline was red, and no job in either file could see the
+# other. The `platforms` job below reads the mobile pipeline's verdict for this
+# commit and is part of the release job's `needs`, so a red mobile leg skips
+# publishing here exactly as a red leg of our own does. `platforms-gate.yml` owns
+# what is waited on; `CONVENTIONS.md` in this directory owns the rule and where to
+# look when a release did not happen.
+
 # Pushing three commits in a minute should build the last one, not all three.
 # Tag builds are exempt: a release run must never be cancelled by anything.
 concurrency:
@@ -86,6 +96,31 @@ jobs:
           fetch-depth: 0
       - id: decide
         run: node scripts/build-version.js
+
+  # ★ The whole matrix, not just this platform, before anything is published.
+  #
+  # This job is what makes a desktop release wait on the MOBILE pipeline. It runs
+  # beside `build` rather than after it, so the wait for the other platform
+  # overlaps the three installers being built instead of following them, and it is
+  # named after what it waits for so a blocked release says which platform it is
+  # blocked on without anyone reading a log.
+  #
+  # It stands down when this workflow is not building at all, which is the same
+  # condition `build` uses: there is nothing to gate when nothing publishes.
+  platforms:
+    name: every platform must be green
+    needs: version
+    if: needs.version.outputs.build == 'true'
+    permissions:
+      actions: read
+    uses: ./.github/workflows/platforms-gate.yml
+    with:
+      # The other pipeline, by the name GitHub's run list reports it under, and
+      # the jobs that are its builds and tests: the mobile test matrix, one leg
+      # per iOS version. Its release job is deliberately not named here, because
+      # it waits on this workflow in turn.
+      platform: claw-mobile pipeline
+      verdict: '^iOS '
 
   build:
     needs: version
@@ -325,19 +360,24 @@ jobs:
             desktop/dist/*.blockmap
 
   release:
-    needs: [version, build]
+    needs: [version, build, platforms]
     # Everything that built gets published; `prerelease` is what separates a dev
     # build from a release, not whether it is published at all.
     #
-    # `needs: [version, build]` is also the first half of the gate Abi asked for on
-    # 2026-09-16: a build leg that FAILS skips this job rather than publishing a
-    # release without its platform, which is what kept dev builds off the feed while
-    # the Windows leg was red. That holds only while this `if` takes no status
-    # function (always(), !cancelled(), failure()), because one of those overrides
-    # the success requirement on the jobs above it and would publish a partial
-    # release. The second half is the artifact gate below, for a leg that succeeds
-    # without producing the files it exists for.
-    if: needs.version.outputs.build == 'true'
+    # This `needs` and `if` are the gate Abi asked for on 2026-09-16: nothing is
+    # published unless every build leg passes (`build`), every platform's installers
+    # are in the release (the artifact gate below), and the OTHER pipeline's whole
+    # matrix is green on this commit (`platforms`, `platforms-gate.yml`). The last
+    # one is the half that was missing: this workflow used to publish while the
+    # mobile pipeline was red, because each file gated only itself.
+    #
+    # Both results are asserted in the condition rather than left to the implicit
+    # success requirement on `needs`, because the two are not the same thing: a
+    # job-level `if` is not ANDed with it, which is why `mobile-pipeline.yml`
+    # asserts its test matrix the same way. This `if` still takes no status
+    # function (always(), !cancelled(), failure()); one of those would override the
+    # success requirement outright and publish a partial release.
+    if: needs.version.outputs.build == 'true' && needs.build.result == 'success' && needs.platforms.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write

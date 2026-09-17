@@ -20,6 +20,14 @@ name: claw-mobile pipeline
 # longer produce a TestFlight build. The legs still run on a pull request, where
 # nothing is signed and nothing is uploaded.
 #
+# ★ That gate covers this pipeline's own matrix. The whole matrix is the other
+# half, and it is the `platforms` job below: the desktop release is built and
+# tested by a different workflow, and on 2026-09-16 the desktop release published
+# for a commit whose mobile pipeline was red because neither file could see the
+# other. Publication now waits on both, in both directions. `platforms-gate.yml`
+# owns what is waited on; `CONVENTIONS.md` in this directory owns the rule and
+# where to look when a release did not happen.
+#
 # Three ways in, and they mean the same thing here:
 #
 #   push to main       whatever just landed in mobile/ or core/ is tested, then
@@ -151,6 +159,31 @@ jobs:
           echo "marketing=$marketing" >> "$GITHUB_OUTPUT"
           echo "count=$count" >> "$GITHUB_OUTPUT"
           echo "bundle version will be $marketing ($count)"
+
+  # ★ The whole matrix, not just this platform, before anything is uploaded.
+  #
+  # This job is what makes a TestFlight upload wait on the DESKTOP pipeline, the
+  # same way `release.yml`'s copy makes a desktop release wait on this one. It
+  # runs beside `test` rather than after it, so the wait overlaps the iOS matrix
+  # instead of following it.
+  #
+  # A pull request ships nothing, so there is nothing to gate; and a tag stands
+  # the build down through the version job, the same condition `release` uses.
+  platforms:
+    name: every platform must be green
+    needs: version
+    if: github.event_name != 'pull_request' && needs.version.outputs.build == 'true'
+    permissions:
+      actions: read
+    uses: ./.github/workflows/platforms-gate.yml
+    with:
+      # The other pipeline, by the name GitHub's run list reports it under, and
+      # the jobs that are its builds and tests: one `build` leg per platform,
+      # each of which runs the desktop suite before it packages. Its release job
+      # is deliberately not named here, because it waits on this workflow in
+      # turn.
+      platform: claw-desktop release
+      verdict: '^build'
 
   # The compile-and-test half, one leg per iOS version. Credential-free by
   # design: nothing here needs the Apple account and nothing here signs
@@ -407,14 +440,20 @@ jobs:
   # The publish half: the iOS client, built for a real device, signed with the
   # account's distribution certificate, and uploaded to TestFlight.
   #
-  # ★ The gate. `needs: [version, test]` is what makes a red test leg unable to
-  # produce a TestFlight build, and it is stated twice on purpose: the dependency
-  # orders this job behind the matrix, and the condition asserts the matrix's
-  # result itself. A job-level `if` is not ANDed with the implicit success()
-  # check, so a job that carries one can run after the jobs it needs have failed
-  # unless it says otherwise (that is the documented use of a status function
-  # there). This condition is here regardless, to stand a tag build down, so the
-  # test result is asserted in it explicitly rather than inherited by accident.
+  # ★ The gate. `needs: [version, test, platforms]` is what makes a red test leg
+  # unable to produce a TestFlight build, and it is stated twice on purpose: the
+  # dependency orders this job behind the matrix, and the condition asserts the
+  # matrix's result itself. A job-level `if` is not ANDed with the implicit
+  # success() check, so a job that carries one can run after the jobs it needs
+  # have failed unless it says otherwise (that is the documented use of a status
+  # function there). This condition is here regardless, to stand a tag build
+  # down, so the test result is asserted in it explicitly rather than inherited
+  # by accident.
+  #
+  # `platforms` is the other half of the same claim, and the half that was
+  # missing until 2026-09-16: this pipeline's matrix says the phone is tested,
+  # and that job says the DESKTOP is, for this commit, before an upload leaves
+  # here. Asserted the same way, for the same reason.
   #
   # `github.event_name != 'pull_request'` is the other half of the same idea: a
   # pull request tests the merge commit and ships nothing, on any ref, however
@@ -428,8 +467,8 @@ jobs:
   # upload-artifact; the sharing that is real is inside the job, where the one
   # archive is verified, exported and uploaded without being rebuilt.
   release:
-    needs: [version, test]
-    if: github.event_name != 'pull_request' && needs.version.outputs.build == 'true' && needs.test.result == 'success'
+    needs: [version, test, platforms]
+    if: github.event_name != 'pull_request' && needs.version.outputs.build == 'true' && needs.test.result == 'success' && needs.platforms.result == 'success'
     # Named rather than `macos-latest`, the same discipline the test matrix uses,
     # so the toolchain is a property of this file. macos-26 carries Xcode 26,
     # which is the oldest toolchain that can build the iOS 26 deployment target

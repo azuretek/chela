@@ -1,0 +1,224 @@
+name: every platform
+
+# ★ The release gate: publication waits on the WHOLE matrix, not on one
+# platform's own jobs.
+#
+# Abi's rule, 2026-09-16: "never release unless all builds complete and are
+# tested, that is the gate for a release." The counterexample that made it a
+# rule: on one commit the desktop release concluded SUCCESS and published while
+# the mobile pipeline was FAILED on a parity test. Each workflow gated only
+# itself, so neither could see the other. `release.yml`'s release job needs its
+# own build matrix and `mobile-pipeline.yml`'s needs its own test matrix, and
+# both were true on that commit while a platform was red.
+#
+# This is a reusable workflow rather than the same step written into both
+# pipelines, so the answer to "what is the gate waiting for" has one owner. Each
+# pipeline calls it with the OTHER pipeline's name and the pattern that matches
+# that pipeline's build-and-test jobs, and adds the job to the `needs` of its own
+# publish job:
+#
+#   release.yml          platform: claw-mobile pipeline   verdict: ^iOS
+#   mobile-pipeline.yml  platform: claw-desktop release   verdict: ^build
+#
+# BOTH DIRECTIONS, deliberately. A red mobile leg must stop the desktop release
+# and a red desktop leg must stop the TestFlight upload. There is no asymmetry to
+# justify: each client ships from its own pipeline, and a commit that broke one
+# of them is not a commit to hand anyone either client from.
+#
+# WHAT IS WAITED ON, and what is deliberately not:
+#
+#   the verdict jobs    the other pipeline's build and test jobs. Every one must
+#                       conclude success, and a cancelled or timed-out leg is
+#                       not a passing one.
+#   NOT its publish     the other pipeline's release job needs ITS gate, and that
+#                       gate waits on THIS pipeline's verdict. Waiting on its
+#                       publish as well would be a deadlock: neither run could
+#                       ever finish. The upload is not a build or a test either,
+#                       so it is not part of the verdict.
+#
+# A platform this commit cannot affect has no run at all, and that is a real
+# answer rather than a fault: the two pipelines cover different paths (desktop/
+# and core/ build the desktop; mobile/ and core/ build the phone), so a commit
+# confined to one client's own tree only builds that client.
+#
+# ★ On a TAG push that answer must not be read this way. GitHub does not evaluate
+# path filters for tags, so a tag release runs both pipelines whatever changed,
+# and a missing run there is a fault rather than an absent platform. A tag
+# release therefore refuses to publish when the other pipeline has no run, which
+# is the case that actually ships to everyone.
+#
+# ★ A refusal names the platform, the failing job and the run. A release that
+# silently does not happen is its own bug, so the platform is in this job's own
+# name in the run list, the annotation carries the legs that were not green, and
+# the step summary says where to look. `CONVENTIONS.md` in this directory owns
+# the rule.
+on:
+  workflow_call:
+    inputs:
+      platform:
+        description: The other pipeline's name, exactly as the run list reports it.
+        required: true
+        type: string
+      verdict:
+        description: Pattern matching that pipeline's build-and-test jobs, as the job list reports them.
+        required: true
+        type: string
+      window:
+        description: Minutes to wait for that verdict before refusing to publish.
+        required: false
+        type: number
+        default: 45
+
+jobs:
+  gate:
+    # Named after the platform it waits for, so a blocked release says what it is
+    # blocked on in the run list, without anyone opening a log.
+    name: ${{ inputs.platform }} must be green
+    runs-on: ubuntu-latest
+    # Reading another workflow's runs and jobs is the whole job. `actions: read`
+    # has to be asked for: a job that sets `permissions:` at all, as both release
+    # jobs do, gets none of the scopes it does not name.
+    permissions:
+      actions: read
+    steps:
+      - name: Every build and test in the whole matrix must pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          OTHER: ${{ inputs.platform }}
+          VERDICT: ${{ inputs.verdict }}
+          WINDOW_MINUTES: ${{ inputs.window }}
+        run: |
+          # The gate's own failures are refusals: an API that cannot be read, a
+          # window that runs out, a job list with nothing matching the pattern.
+          # Every path out of here either publishes nothing or says why it
+          # passes, so `set -e` failing the step is a refusal rather than a
+          # release that slipped out.
+          set -eo pipefail
+
+          window=$(( ${WINDOW_MINUTES%%.*} * 60 ))
+          overall=$((SECONDS + window))
+
+          echo "the gate: nothing is published from $SHA until $OTHER is green on it"
+          echo "waiting on $OTHER's jobs matching /$VERDICT/, and on no others"
+
+          # The other pipeline's run for this commit. Same pipeline, same commit,
+          # and the same ref preferred: one commit can be built twice by one
+          # pipeline, once as its push and once as its tag, and reading a tag
+          # release's verdict from a superseded dev run is how a cancelled run
+          # gets mistaken for a passing one.
+          #
+          # A run object appears within seconds of the push it came from, so this
+          # settles quickly; the wait exists for a dispatch, where the two runs
+          # are started by hand and need not be simultaneous. A platform with no
+          # run here is not part of this commit, below.
+          run=''
+          grace=$((SECONDS + 180))
+          while [ -z "$run" ]; do
+            runs="$(gh api "repos/$REPO/actions/runs?head_sha=$SHA&per_page=100" \
+              --jq "[.workflow_runs[] | select(.name == \"$OTHER\")]
+                    | sort_by(.created_at) | reverse
+                    | map(\"\(.id)|\(.head_branch)|\(.html_url)\") | .[]")"
+            # `|| true` on the match: with pipefail set, a grep that finds
+            # nothing is a failed pipeline, and a failed pipeline inside an
+            # assignment ends the step with no explanation. Not matching is a
+            # normal answer here, not an error.
+            run="$(printf '%s\n' "$runs" | grep -F "|$REF_NAME|" | head -1 || true)"
+            [ -n "$run" ] || run="$(printf '%s\n' "$runs" | head -1)"
+            [ -n "$run" ] && break
+            [ $SECONDS -ge $grace ] && break
+            sleep 10
+          done
+
+          if [ -z "$run" ]; then
+            if [ "$REF_TYPE" = 'tag' ]; then
+              echo "::error::refusing to publish: this is a tag release, so $OTHER runs for it whatever paths changed, and there is no run of it for $SHA. Look in the Actions tab, filtered by this commit."
+              exit 1
+            fi
+            echo "::notice::$OTHER has no run for $SHA, so this commit does not build it: none of the paths it watches changed. Publishing is unaffected."
+            exit 0
+          fi
+
+          run_id="${run%%|*}"
+          run_url="${run##*|}"
+          echo "$OTHER's run for this commit: $run_url"
+
+          # Wait for that run's build and test jobs, and only those. A job list
+          # past 100 entries would need paginating; both pipelines are a handful
+          # of jobs, and a rename that took them past this would still be caught
+          # by the empty-match refusal below rather than passing.
+          while :; do
+            jobs="$(gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100" \
+              --jq ".jobs[] | select(.name | test(\"$VERDICT\"))
+                    | \"\(.name)|\(.status)|\(.conclusion)\"")"
+
+            if [ -z "$jobs" ]; then
+              echo "::error::refusing to publish: $OTHER's run has no job matching /$VERDICT/, so this gate cannot see whether it built and tested. A gate that cannot see the other platform must not pass it."
+              echo "Look at $run_url, and at the verdict argument this pipeline passes."
+              exit 1
+            fi
+
+            if [ -z "$(printf '%s\n' "$jobs" | grep -v '|completed|' || true)" ]; then
+              break
+            fi
+
+            if [ $SECONDS -ge $overall ]; then
+              {
+                echo "::error::refusing to publish: $OTHER is still running after ${WINDOW_MINUTES%%.*} minutes, so its builds and tests are not complete."
+                echo "Look at $run_url"
+              }
+              exit 1
+            fi
+            sleep 15
+          done
+
+          red="$(printf '%s\n' "$jobs" | grep -Ev '\|(success|skipped)$' || true)"
+          if [ -n "$red" ]; then
+            {
+              echo "::error::refusing to publish: $OTHER did not pass on $SHA, and a release waits on the whole matrix."
+              printf '%s\n' "$red" | awk -F'|' '{print "  " $1 ": " $3}'
+              echo "Look at $run_url"
+            }
+            {
+              echo "### No release from this commit"
+              echo
+              echo "\`$OTHER\` is not green for \`$SHA\`, so nothing is published from it."
+              echo
+              printf '%s\n' "$red" | awk -F'|' '{print "- \`" $1 "\`: " $3}'
+              echo
+              echo "Where to look: $run_url"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          # Every verdict job skipped is not the same as every verdict job
+          # passing. It means the other platform is building nothing for this
+          # commit, which is what a path filter does. A version job that failed
+          # also skips its matrix, and that must refuse: the run's own conclusion
+          # is what tells the two apart, and it is read here rather than assumed.
+          if [ -z "$(printf '%s\n' "$jobs" | grep -v '|skipped$' || true)" ]; then
+            while :; do
+              state="$(gh api "repos/$REPO/actions/runs/$run_id" \
+                --jq '.status + " " + (.conclusion // "pending")')"
+              case "$state" in
+                completed\ success) break ;;
+                completed\ *)
+                  echo "::error::refusing to publish: $OTHER built nothing for $SHA and its run concluded ${state#completed }, which is not that platform working. Look at $run_url"
+                  exit 1
+                  ;;
+              esac
+              if [ $SECONDS -ge $overall ]; then
+                echo "::error::refusing to publish: $OTHER's run has not concluded after ${WINDOW_MINUTES%%.*} minutes, so it is not known to be working. Look at $run_url"
+                exit 1
+              fi
+              sleep 15
+            done
+            echo "::notice::$OTHER builds nothing for this commit, and its run says so: every job of its that builds or tests was skipped. Only this platform's matrix applies."
+            exit 0
+          fi
+
+          echo "$OTHER's whole matrix is green on $SHA:"
+          printf '%s\n' "$jobs" | awk -F'|' '{print "  " $1 ": " $3}'
