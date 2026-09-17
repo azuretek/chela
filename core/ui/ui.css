@@ -527,6 +527,10 @@ a  { color: var(--accent); }
    declared once. */
 .settings-group:not(:first-child) { margin-top: var(--space-3); }
 
+.settings-group > .settings-row--actions:last-child {
+  padding-bottom: var(--space-4);
+}
+
 /* One settings row: a leading text column against a trailing control column. */
 .settings-row {
   display: flex;
@@ -926,6 +930,8 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
   cursor: var(--cursor-action);
 }
 
+/* The reply line, and what it must NOT do while it is empty. */
+.result:empty { display: none; }
 .result { font-size: 12px; margin-top: 8px; min-height: 17px; }
 .result.ok   { color: var(--ok); }
 .result.warn { color: var(--warn); }

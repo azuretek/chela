@@ -50,9 +50,30 @@ struct AboutSurface: UIViewRepresentable {
         configuration.userContentController = scripts
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        // Painted with the PAGE's own resolved background rather than the system's,
+        // and that is what the two shades at the top of the screen were.
+        //
+        // This page draws its card on a wash: `.scrim` is `--scrim`, which ui.css
+        // resolves to `--bg` at 70%, so whatever sits behind the page shows
+        // through it. The web view is not opaque and it was painted with
+        // `.systemBackground`, which follows the DEVICE's appearance rather than
+        // the Control UI's palette, so on a page whose palette is not the system's
+        // default the strip above the card composited to a second colour and met
+        // the card's own opaque surface at an edge. Reported 2026-09-17: "the top
+        // of the screen looks a little strange, should it be dark with different
+        // shades like that?"
+        //
+        // So the host paints what the page will show through, from the same map it
+        // hands the page. Not by tinting the card into the strip: that hides the
+        // fault in one appearance by making the card wrong in the other, which is
+        // exactly how the earlier black-bar version of this fault was written.
+        //
+        // A page with no resolved palette keeps the system colour, which is what
+        // the first frame of a page that has not loaded yet is painted on.
+        let pageBackground = PaletteColour.uiColor(from: tokens["--bg"]) ?? .systemBackground
         webView.isOpaque = false
-        webView.backgroundColor = .systemBackground
-        webView.scrollView.backgroundColor = .systemBackground
+        webView.backgroundColor = pageBackground
+        webView.scrollView.backgroundColor = pageBackground
         webView.overrideUserInterfaceStyle = appearance.userInterfaceStyle
         // The page paints its own strips, the same reasoning as the settings
         // surface: with the automatic inset off it fills its frame and insets its
