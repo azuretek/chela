@@ -1,7 +1,19 @@
 import Foundation
 
-/// Comparing two version strings by semver precedence, ported from
-/// `compare()`/`isNewer()` in `core/version.js`.
+/// Comparing two version strings, ported from `core/version.js`.
+///
+/// TWO comparisons, answering different questions, exactly as the JS holds both
+/// (see `compare()`, `release()` and `compareRelease()` there):
+///
+///   `compare`        semver precedence, tail and all. What a version IS, and
+///                     NOT what decides an update.
+///   `compareRelease` the release only, tail ignored. THE ONE AN UPDATE CHECK
+///                     USES, because the tail's basis changes and ranking it
+///                     inverted, freezing the check.
+///
+/// `isNewer()` is `compare() > 0` and `isNewerRelease()` is
+/// `compareRelease() > 0`, kept for the same reason the JS keeps them: a call
+/// site reads better than a comparison against zero.
 ///
 /// This exists because the phone's update check has to ask the one question the
 /// desktop's updater already answers: is the feed's newest build newer than the
@@ -78,6 +90,49 @@ enum Version {
 
         let prerelease = group(4)
         return Parsed(major: major, minor: minor, patch: patch, prerelease: prerelease?.isEmpty == false ? prerelease : nil)
+    }
+
+    /// The RELEASE half of a version: `MAJOR.MINOR.PATCH`, tail dropped.
+    /// `1.0.1` for `1.0.1-dev.195.6387043585`, or nil for a string that is not a
+    /// version at all. Mirrors `release()` in `core/version.js`.
+    static func release(_ version: String) -> String? {
+        guard let parsed = parse(version) else { return nil }
+        return "\(parsed.major).\(parsed.minor).\(parsed.patch)"
+    }
+
+    /// Compare two versions by RELEASE only: -1, 0 or 1 for a<b, a==b, a>b.
+    ///
+    /// ★ WHY THIS EXISTS AND WHY AN UPDATE CHECK MUST USE IT
+    ///
+    /// A dev version carries a tail after the release
+    /// (`1.0.1-dev.195.6387043585`) that is build and commit information, and
+    /// its BASIS is not fixed: it has changed under us, from
+    /// `dev.<commit count>.<sha>` to `dev.<build count>.<timestamp>`, and the two
+    /// do not order against each other. A build published this morning can carry
+    /// a LOWER number than one published last week.
+    ///
+    /// Anything that ranks the tail therefore inverts, and it fails quietly: the
+    /// check decides the installed build is AHEAD of the feed, offers nothing,
+    /// and the client stops updating while its number appears to go backwards.
+    ///
+    /// So the tail is NEVER ranked. Two builds of the same release compare EQUAL
+    /// here whatever their tails say, and which of those two is the newer BUILD
+    /// is the feed's own ordering, which cannot invert (see `isNewerBuild` in
+    /// `UpdateFeed.swift`). `compare` below still ranks the tail, because that
+    /// is what semver precedence is; it is just not allowed to decide an update.
+    static func compareRelease(_ a: String, _ b: String) throws -> Int {
+        guard let left = parse(a) else { throw Failure.notAVersion(a) }
+        guard let right = parse(b) else { throw Failure.notAVersion(b) }
+
+        for pair in [(left.major, right.major), (left.minor, right.minor), (left.patch, right.patch)] {
+            if pair.0 != pair.1 { return pair.0 < pair.1 ? -1 : 1 }
+        }
+        return 0
+    }
+
+    /// Whether `candidate` names a strictly newer RELEASE than `current`.
+    static func isNewerRelease(_ candidate: String, than current: String) throws -> Bool {
+        try compareRelease(candidate, current) > 0
     }
 
     /// Compare two versions by semver precedence: -1, 0 or 1 for a<b, a==b, a>b.

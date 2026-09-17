@@ -1,5 +1,5 @@
 {
-  "description": "Golden version-comparison pairs, generated from and asserted by desktop/test/version.test.js, and reproduced by the iOS client's Version.swift (mobile/ClawTests/VersionParityTests.swift). Each case is two versions and the sign of compare(a, b): -1 when a is older, 0 when equal, 1 when a is newer. isNewer(a, b) is compare(a, b) === 1. This is the comparison electron-updater delegates to semver on the desktop, pinned here so the phone's update check reaches the same answer without a second comparator.",
+  "description": "Golden version-comparison pairs, generated from and asserted by desktop/test/version.test.js, and reproduced by the iOS client's Version.swift (mobile/ClawTests/VersionParityTests.swift). Each case is two versions and the sign of compare(a, b): -1 when a is older, 0 when equal, 1 when a is newer. isNewer(a, b) is compare(a, b) === 1. This is the comparison electron-updater delegates to semver on the desktop, pinned here so the phone's update check reaches the same answer without a second comparator. It is NOT the comparison an update check is allowed to make: it ranks the build and commit tail, whose basis changed, so ranking it inverted and the check stopped offering builds. \"releaseOf\" and \"releaseCases\" below pin the comparison that IS allowed, the release only, and they are the ones the feed decision is built on (see compareRelease in core/version.js and isNewerBuild in core/feed.js).",
   "cases": [
     { "name": "equal releases", "a": "1.0.0", "b": "1.0.0", "compare": 0 },
     { "name": "a higher patch", "a": "1.0.1", "b": "1.0.0", "compare": 1 },
@@ -18,5 +18,21 @@
     { "name": "a dirty build outranks the clean build of the same commit", "a": "1.0.1-dev.5.abc1234567.dirty", "b": "1.0.1-dev.5.abc1234567", "compare": 1 },
     { "name": "the next patch dev build outranks the release it follows", "a": "1.0.1-dev.148.abc1234567", "b": "1.0.0", "compare": 1 },
     { "name": "a dev build is below the patch it is heading towards", "a": "1.0.1-dev.148.abc1234567", "b": "1.0.1", "compare": -1 }
+  ],
+  "releaseOf": [
+    { "name": "the build and commit tail is dropped", "version": "1.0.1-dev.195.6387043585", "release": "1.0.1" },
+    { "name": "a stable version is already a release", "version": "1.0.1", "release": "1.0.1" },
+    { "name": "a dirty build's tail is dropped too", "version": "1.0.1-dev.12.1758000000.dirty", "release": "1.0.1" },
+    { "name": "a string that is not a version has no release", "version": "latest", "release": null }
+  ],
+  "releaseCases": [
+    { "name": "two builds of one release are equal by release, whatever their tails say", "a": "1.0.1-dev.12.1758000000", "b": "1.0.1-dev.195.6387043585", "compare": 0 },
+    { "name": "an old-scheme tail does not make the installed build ahead", "a": "1.0.1-dev.195.6387043585", "b": "1.0.1-dev.12.1758000000", "compare": 0 },
+    { "name": "the release outranks its own prerelease, which compare() gets the other way", "a": "1.0.1", "b": "1.0.1-dev.5", "compare": 0 },
+    { "name": "a lower release is older whatever its tail says", "a": "1.0.0-dev.900.1700000000", "b": "1.0.1-dev.195.6387043585", "compare": -1 },
+    { "name": "a higher release is newer whatever its tail says", "a": "1.0.2-dev.1.1", "b": "1.0.1-dev.195.6387043585", "compare": 1 },
+    { "name": "a higher major is newer", "a": "2.0.0-dev.1.1", "b": "1.99.99-dev.9.9", "compare": 1 },
+    { "name": "a higher minor is newer", "a": "1.1.0-dev.1.1", "b": "1.0.99-dev.9.9", "compare": 1 },
+    { "name": "the release compares numerically, not as a string", "a": "1.0.10", "b": "1.0.9", "compare": 1 }
   ]
 }
