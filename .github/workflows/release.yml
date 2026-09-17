@@ -631,9 +631,14 @@ jobs:
           # A release that publishes with no installers attached looks finished
           # and is useless; fail loudly instead.
           fail_on_unmatched_files: true
-          # Replaced rather than skipped, so a rerun repairs an asset instead of
-          # keeping a first attempt that may be incomplete.
-          overwrite_files: true
+          # Never replaced, and that is a safety property rather than a
+          # preference: this uploader DELETES an existing asset before uploading
+          # its replacement, so on a rerun against a release that is already
+          # published, a failed re-upload would take the published asset away and
+          # leave the release hollow. Skipping means a rerun only ever adds what
+          # is missing, and the completeness check below still fails the run if
+          # the set cannot be completed.
+          overwrite_files: false
         # ★ Bounded, because this uploader has no timeout anywhere and a stalled
         # large asset holds the step, and the verification behind it, open
         # indefinitely: measured 2026-09-17, a release job sat here for over 20
