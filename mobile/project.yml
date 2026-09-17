@@ -47,14 +47,19 @@ targets:
       - path: Claw
       # The client-context spec, bundled rather than mirrored.
       #
-      # Everything else this app shares with the desktop is mirrored as Swift
+      # Nine of the specs this app shares with the desktop are mirrored as Swift
       # constants and proven against the spec by a parity test, which works for a
-      # name or a number: two copies of a value can be compared. The spec holds
-      # the injected script, and a mirror of a script is a second copy of it in
-      # another language, which is the fork the shared file exists to prevent. So
-      # the app carries the one owner and reads it, and
-      # `PromptMetadataParityTests` asserts that what it reads is what the
-      # desktop reads.
+      # name or a number: two copies of a value can be compared. The EIGHT below
+      # are bundled instead, because each holds something a mirror cannot serve: a
+      # program, or the values a client reads for a shape it cannot restate.
+      # `core/test/specs.test.js` asserts this list, so a spec cannot arrive
+      # unclassified, and it is the inventory to read rather than this comment.
+      #
+      # For this one the mirror is impossible because the file holds the injected
+      # script, and a mirror of a script would be a second copy of it in another
+      # language, which is the fork the shared file exists to prevent. So the app
+      # carries the one owner and reads it, and `PromptMetadataParityTests`
+      # asserts that what it reads is what the desktop reads.
       - path: ../core/spec/prompt-metadata.json
         buildPhase: resources
       # The App-settings affordance, bundled rather than mirrored, for the same
