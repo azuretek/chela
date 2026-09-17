@@ -482,7 +482,64 @@ jobs:
       - name: Every platform must be in the release
         run: node desktop/scripts/check-release-artifacts.js artifacts
 
-      - uses: softprops/action-gh-release@v2
+      # ★ A release is created as a DRAFT and published by the last step of this
+      # job, once its whole asset set is attached and verified. That ordering is
+      # the fix rather than a detail: what made a hollow release possible was
+      # that creating, publishing and uploading were ONE step, so a release could
+      # be live for everyone while its payload was still arriving, and a flake
+      # left it that way forever.
+      #
+      # Measured on 2026-09-17, release v1.0.1-dev.205.810cdf80d4: it went out
+      # carrying 10 of its 16 assets. The upload ran all 16 concurrently, the
+      # first rejection failed the step with `##[error]Error saving asset` nine
+      # seconds in, and the five that rejected after it were never reported at
+      # all, because the concurrent batch (a `Promise.all` inside the action)
+      # surfaces only the first rejection. What landed was the four update feeds
+      # and four blockmaps; `Setup-x64.exe`, both `.zip` payloads, both `.dmg`s
+      # and `arm64.AppImage` never arrived. Every client's updater resolved a
+      # version whose downloads could never finish, which is a download card
+      # that hangs at 0% and survives a restart, with nothing local to blame.
+      #
+      # desktop/test/release-artifacts.test.js asserts that the artifact gate runs
+      # before anything is uploaded, and anchors its second half on
+      # `action-gh-release`. Publication is now the last step of this job rather
+      # than the upload step, so the ordering that test protects holds by
+      # construction; strengthening its anchor is app-code work and was left for
+      # whoever next touches that test.
+      #
+      # A draft is invisible to a client: measured 2026-09-17, a draft tag is
+      # absent from the unauthenticated releases feed (0 matches) and from a
+      # `getReleaseByTag` lookup (404), and no tag ref exists for it until it is
+      # published. So a client cannot resolve this version while its payload is
+      # still arriving.
+      #
+      # `getReleaseByTag` not seeing drafts is also why a leftover draft has to
+      # be cleared first: after a hard kill (runner death, or a cancellation
+      # that lands between these steps) the draft survives, and the action would
+      # look the tag up, miss it, and fail creating a second release for a tag
+      # that already has one. Only OUR draft for THIS tag is cleared, and a
+      # published release is left alone, which is what makes a rerun repair an
+      # existing release in place instead of starting over.
+      - name: Clear an abandoned draft for this tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.version.outputs.version }}
+        run: |
+          set -uo pipefail
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "$TAG has no release yet"
+            exit 0
+          fi
+          draft="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')"
+          if [ "$draft" = 'true' ]; then
+            echo "clearing the abandoned draft for $TAG"
+            gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes
+          else
+            echo "$TAG already has a published release, and this run attaches to it"
+          fi
+
+      - name: Create the release as a draft
+        uses: softprops/action-gh-release@v2
         with:
           # electron-updater resolves a release through its TAG, not through the
           # release title: GitHubProvider walks the releases feed, skips any tag
@@ -490,11 +547,13 @@ jobs:
           # `semver.prerelease(tag)[0]`. So the tag has to be `v<version>`, a
           # `dev-<version>` tag would be skipped by every updater, silently.
           #
-          # For a dev build no such tag exists yet; the API creates it at
-          # target_commitish. That cannot start a second run: GitHub raises no
-          # workflow event for anything pushed with GITHUB_TOKEN. It does leave a
-          # tag on the commit, which build-version.js is careful not to mistake
-          # for a release tag.
+          # For a dev build no such tag exists yet. The draft records
+          # target_commitish, and publishing (last step of this job) creates the
+          # tag from it: measured 2026-09-17, a tag created that way landed on
+          # the recorded commit. That cannot start a second run either, because
+          # GitHub raises no workflow event for anything pushed with
+          # GITHUB_TOKEN. It does leave a tag on the commit, which
+          # build-version.js is careful not to mistake for a release tag.
           tag_name: v${{ needs.version.outputs.version }}
           target_commitish: ${{ github.sha }}
           # GitHub never marks a prerelease as "Latest", so the front page keeps
@@ -506,10 +565,160 @@ jobs:
           # to main, and so every release body was the compare link and nothing
           # else. The setting worked; it had no pull requests to work on.
           body_path: ${{ steps.notes.outputs.changelog }}
-          files: artifacts/**/*
-          # A release that publishes with no installers attached looks finished
-          # and is useless; fail loudly instead.
-          fail_on_unmatched_files: true
+          # Draft, and deliberately no `files:` here. The action's own uploader
+          # is the thing that lost five of these files without reporting them,
+          # so every file is attached by the step below instead: one at a time,
+          # retried, and verified against the release before anything publishes.
+          # A rerun against an already-published release keeps it published
+          # (the action preserves an existing release's draft state) and the
+          # attach step refills whatever that release is missing.
+          draft: true
+
+      # ★ Attach every asset, then verify the RELEASE carries them. This is a
+      # different claim from the artifact gate above, which reads the directory
+      # the build runners produced: that step says the files EXIST and are
+      # complete for every platform, this one says they ARRIVED. Every release
+      # that shipped hollow passed the first and failed the second.
+      #
+      # Uploaded one file at a time rather than as one concurrent batch, because
+      # the batch is what hid the loss: a single rejection ends the step and the
+      # remaining failures are never reported. A per-file retry also means a
+      # transient flake costs seconds instead of a release.
+      #
+      # The expected set is read from the downloaded artifacts rather than
+      # restated here, so a target added to electron-builder.yml is carried by
+      # this check the day it is added, exactly as the artifact gate above does.
+      - name: Attach and verify every asset
+        id: attach
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACTS: artifacts
+          TAG: v${{ needs.version.outputs.version }}
+        run: |
+          set -uo pipefail
+
+          work="$(mktemp -d)"
+          expected="$work/expected.txt"
+          actual="$work/actual.txt"
+          todo="$work/todo.txt"
+
+          # Basenames only: the download flattens each platform's artifact into
+          # its own directory, and a release asset is addressed by its file name.
+          find "$ARTIFACTS" -type f -exec basename {} \; | LC_ALL=C sort > "$expected"
+          total="$(wc -l < "$expected" | tr -d ' ')"
+          if [ "$total" -eq 0 ]; then
+            echo "::error::no files under $ARTIFACTS, so this release cannot be complete"
+            exit 1
+          fi
+          echo "this release must carry $total asset(s)"
+
+          # Only an asset GitHub has finished storing counts. A name present in
+          # any other state is not a download anyone can complete.
+          uploaded_names() {
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --json assets --jq '.assets[] | select(.state == "uploaded") | .name' \
+              | LC_ALL=C sort
+          }
+
+          # Three passes, each attaching whatever is still missing. A pass with
+          # nothing to do ends the loop, so a release that uploaded cleanly pays
+          # one API call and no wait.
+          for pass in 1 2 3; do
+            uploaded_names > "$actual"
+            comm -23 "$expected" "$actual" > "$todo"
+            if [ ! -s "$todo" ]; then
+              echo "pass $pass: every asset is attached"
+              break
+            fi
+            echo "pass $pass: $(wc -l < "$todo" | tr -d ' ') asset(s) to attach"
+            while IFS= read -r name; do
+              matches="$(find "$ARTIFACTS" -type f -name "$name")"
+              file="${matches%%$'\n'*}"
+              if [ -z "$file" ]; then
+                echo "::error::$name is expected but is not in $ARTIFACTS"
+                continue
+              fi
+              # --clobber because a pass may be replacing an attempt GitHub
+              # registered but never finished, which is not downloadable either.
+              if gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber; then
+                echo "attached $name"
+              else
+                echo "::warning::pass $pass could not attach $name, so it is retried"
+              fi
+            done < "$todo"
+            if [ "$pass" -lt 3 ]; then sleep $((pass * 10)); fi
+          done
+
+          # ★ The claim this step exists for: nothing is published unless the
+          # release is whole. An incomplete set fails the run here, and the step
+          # below withdraws the draft, so no half-release survives to be
+          # resolved by anyone's updater.
+          uploaded_names > "$actual"
+          comm -23 "$expected" "$actual" > "$todo"
+          if [ -s "$todo" ]; then
+            echo "::error::INCOMPLETE: $TAG is missing $(wc -l < "$todo" | tr -d ' ') of $total asset(s)"
+            while IFS= read -r name; do echo "  missing: $name"; done < "$todo"
+            echo "  attached: $(wc -l < "$actual" | tr -d ' ') of $total"
+            exit 1
+          fi
+          echo "COMPLETE: $TAG carries all $total asset(s)"
+          while IFS= read -r name; do echo "  $name"; done < "$actual"
+
+      # ★ Reachable only when something above failed or the run was cancelled,
+      # and at that moment the release is still a draft, because publishing is
+      # the step below. Withdrawing a draft is invisible to every client: no
+      # half-release is left in the feed for an updater to resolve, and no
+      # download is left hanging at 0%.
+      #
+      # A PUBLISHED release is deliberately left alone, with the run still
+      # failing loudly: it is already resolvable by clients, so withdrawing it
+      # would be the more harmful act, and leaving it is the least harmful
+      # option when a rerun can still refill it.
+      #
+      # A step-level status function, not a job-level one. The job's own `if`
+      # above still takes none, so a red build leg or a refused platform gate
+      # still skips this job entirely rather than reaching any of these steps.
+      - name: Withdraw a release that is not complete
+        if: failure() || cancelled()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.version.outputs.version }}
+        run: |
+          set -uo pipefail
+          echo "::error::$TAG is not going out: this run did not attach and verify its whole asset set"
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "there is no release for $TAG to withdraw"
+            exit 0
+          fi
+          draft="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')"
+          if [ "$draft" != 'true' ]; then
+            echo "::warning::$TAG is already published, so it is left in place for a rerun to refill rather than withdrawn"
+            exit 0
+          fi
+          # No --cleanup-tag: a draft has no tag ref, and this workflow creates
+          # the tag when it publishes, not before.
+          if gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes; then
+            echo "withdrew the draft for $TAG, so no partial release is left behind"
+          else
+            echo "::error::could not withdraw the draft for $TAG; nothing was published, but a draft may remain for a rerun to reuse"
+          fi
+
+      # ★ Publication, last, and the only step that creates the tag. Every claim
+      # about the asset set has already been made by the step above, and a run
+      # that could not make them failed instead of reaching this line.
+      - name: Publish the complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.version.outputs.version }}
+          PRERELEASE: ${{ needs.version.outputs.tagged != 'true' }}
+        run: |
+          set -eo pipefail
+          args=(--draft=false)
+          if [ "$PRERELEASE" = 'true' ]; then args+=(--prerelease); fi
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" "${args[@]}"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --json tagName,isDraft,isPrerelease,url,assets \
+            --jq '"published \(.tagName) draft=\(.isDraft) prerelease=\(.isPrerelease) assets=\(.assets|length)"'
 
       # A prerelease per merge accumulates fast, and each carries four installers,
       # so this keeps the newest 10 and deletes the rest along with their tags.
