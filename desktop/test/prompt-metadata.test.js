@@ -171,16 +171,28 @@ test('the pure frame transformer follows the same enabled and disabled contract'
   );
 });
 
-/* ------------------------------------------- outbound only, by design */
+/* ------------------------------------------- both directions, one script */
 
-test('the hook rewrites outbound frames only, because the gateway does the hiding', () => {
+test('the hook rewrites frames in both directions, and only the methods it owns', () => {
   const script = metadata.clientScript({ enabled: true, block: sampleBlock() });
-  // A second owner for display suppression would hide the block for this
-  // app's users alone and drift from the gateway's own stripper.
-  assert.doesNotMatch(script, /addEventListener/);
-  assert.doesNotMatch(script, /onmessage/);
-  assert.doesNotMatch(script, /claw_desktop_context/);
+  // Outbound: the block goes on the frame. Inbound: the editor text a rewind or
+  // a fork hands back arrives without it, because the gateway's display stripper
+  // never sees that field (see core/spec/prompt-metadata.json's `why`).
   assert.match(script, /WebSocket\.prototype\.send/);
+  assert.match(script, /WebSocket\.prototype\.addEventListener/);
+  assert.match(script, /sessions\.rewind/);
+  assert.match(script, /sessions\.fork/);
+  // And it is still only a wire transformer: nothing is fetched, and no display
+  // text is suppressed for this app's users alone.
+  assert.doesNotMatch(script, /\bfetch\b/);
+  assert.doesNotMatch(script, /XMLHttpRequest/);
+});
+
+test('the configuration carries the marker the inbound half matches on', () => {
+  const script = metadata.clientScript({ enabled: true, block: sampleBlock() });
+  const config = JSON.parse(/window\.__clawPromptMetadata = (\{[^\n]*\});/.exec(script)[1]);
+  assert.strictEqual(config.marker, MARKER, 'the marker is data, not string surgery on the header');
+  assert.ok(config.header.endsWith(config.marker), 'the header still ends with it, which is what strips');
 });
 
 /* ------------------------------------- one implementation, two clients */

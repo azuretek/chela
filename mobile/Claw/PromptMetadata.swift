@@ -218,6 +218,11 @@ enum PromptMetadata {
         let config: [String: Any] = [
             "enabled": enabled,
             "header": header(client: client),
+            // The marker itself, not only the header that ends with it: the hook's
+            // inbound half has to recognize a block, and deriving the marker back
+            // out of the header would be a second definition of it. The desktop's
+            // `clientScript()` writes this same key.
+            "marker": marker,
             "block": block,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: config, options: [.sortedKeys]),

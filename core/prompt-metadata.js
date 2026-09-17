@@ -179,6 +179,10 @@ export function clientScript({ enabled = false, block = '', client = DEFAULT_CLI
   const config = {
     enabled: enabled === true,
     header: contextHeader(client),
+    // The marker itself, not only the header that ends with it: the hook's
+    // inbound half has to recognize a block, and deriving the marker back out of
+    // the header would be a second definition of it. Both clients write this key.
+    marker: CONTEXT_MARKER,
     block: typeof block === 'string' ? block : '',
   };
   return `window.${spec.global} = ${JSON.stringify(config)};\n${hookSource()}`;
