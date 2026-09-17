@@ -1,4 +1,7 @@
 import Foundation
+// UIKit for the one thing here that is not a token's VALUE: the trait a page is
+// given, which is what its own `prefers-color-scheme` resolves against.
+import UIKit
 
 /// The tokens this client takes from a RUNNING Control UI, so the settings and
 /// About surfaces wear the interface's own type and palette rather than the
@@ -122,6 +125,33 @@ enum ThemeTokens {
           } catch (e) { return '{}'; }
         })()
         """
+    }
+
+    /// The appearance our own pages are given, as a trait.
+    ///
+    /// The pages have to be TOLD which appearance they are in, because `ui.css`
+    /// selects its palette blocks on `prefers-color-scheme`, and that follows the
+    /// web view's trait, which follows the DEVICE unless something says otherwise.
+    ///
+    /// Measured in Chromium, 2026-09-17: `root.style.colorScheme = 'light'` reads
+    /// back as `light` from `getComputedStyle` while the media query still matches
+    /// dark. So the palette's mode reaching the page under `schemeKey` alone is not
+    /// enough, and a page handed a light palette kept every mode-keyed declaration
+    /// it owns in the dark block: the colours arrived by name and the appearance
+    /// did not.
+    ///
+    /// So the trait comes from the PALETTE the probe just read, and this client's
+    /// own appearance setting is only the fallback for a page that resolved
+    /// nothing, where ui.css's own palette is what is on screen and the device is
+    /// the only answer available. It never decides over a resolved one, which is
+    /// what keeps a page's colours and its appearance from being read off two
+    /// different chains.
+    static func pageTrait(tokens: [String: String], own: UIUserInterfaceStyle) -> UIUserInterfaceStyle {
+        switch tokens[schemeKey] {
+        case "light": return .light
+        case "dark": return .dark
+        default: return own
+        }
     }
 
     /// Apply a token map to one of our pages.
