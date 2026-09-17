@@ -620,6 +620,8 @@ scripts/dump-overlays.js opens each of the app's own pages and checks it rendere
 scripts/test-banner.js   raises a real condition and checks the banner's geometry
 scripts/test-cert-trust.js runs the refuse, Settings, trust, connected loop for real
 scripts/test-connection-failure.js walks connecting, failed, recovered against real sockets
+scripts/test-settings-layout.js  measures the settings surface's block spacing and its
+                     header column, wide and narrow, in both appearances
 ```
 
 ## Status and licence
