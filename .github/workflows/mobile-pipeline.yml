@@ -236,6 +236,15 @@ jobs:
     # job at its much longer ceiling.
     timeout-minutes: 40
     steps:
+      # TEMPORARY, on the throwaway `gate-demo-block` branch only: this leg fails
+      # on purpose so the desktop workflow has a red mobile verdict for this
+      # commit to refuse on. It exists to prove the release gate blocks, and it
+      # is removed with the branch.
+      - name: TEMPORARY deliberate failure, to prove the gate blocks
+        run: |
+          echo "::error::deliberate failure: proving the desktop release gate refuses a red mobile leg"
+          exit 1
+
       # Left to resolve its own ref. Each leg has its own checkout, and for a
       # pull_request the default is already the merge commit this gate is
       # supposed to judge.
