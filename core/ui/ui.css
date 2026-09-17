@@ -1182,7 +1182,10 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
 .fact__value { color: var(--text); font-size: var(--control-ui-text-xs); font-family: var(--mono); }
 hr { border: 0; border-top: 1px solid var(--border); margin: 22px 0 0; }
 
-/* Per-gateway credential editor, revealed by the card's Edit button. */
+/* Per-gateway credential editor, revealed by the card's Edit button. The
+   reveal itself is not here: it is the `editor-disclosure` block in the motion
+   section above, because it is a transition rather than a look, and the rule it
+   follows is ui/CONVENTIONS.md. */
 .editor { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
 .editor hr { margin: 14px 0; }
 .editor .row > input { flex: 1; min-width: 0; }
@@ -1359,6 +1362,69 @@ body.surface--leaving .modal { animation: surface-card-out var(--duration-fast) 
 .panel--in-from-left { animation: panel-in-from-left var(--duration-fast) var(--ease-out) both; }
 .panel--in-from-right { animation: panel-in-from-right var(--duration-fast) var(--ease-out) both; }
 
+/* The gateway editor's own disclosure: the reader pressed Edit and the panel's
+   fields take the space they need.
+
+   This is a change WITHIN one surface rather than a surface arriving, so it takes
+   --duration-fast and not --duration-normal: nothing new has come into the window
+   and the reader is already looking at where it lands. It is the in-place case
+   ui/CONVENTIONS.md names, and it moves in BOTH directions for the reason recorded
+   there.
+
+   The wrapper's track is the one animation in this block that is not a compositor
+   property, and it is the disclosure's whole point: the space the panel takes IS
+   the change, and there is no frame at which its height could already be final.
+   It is bounded to this one wrapper, and the panel's own content still arrives on
+   opacity and transform underneath it. The rule and its one exception are
+   ui/CONVENTIONS.md; this is the implementation of them.
+
+   `overflow: clip` is here because the panel is taller than its track for the
+   whole of the transition, so without it the fields would paint over what follows
+   rather than being revealed. It is declared on the ANIMATING classes only, so an
+   element at rest is never a clip container and no focus ring is cut: the arriving
+   class comes off when the arrival is over, and the leaving element is taken away
+   when its own animation is. (The group already clips at this same edge, which is
+   what the panel was relying on before this existed, but a disclosure that only
+   clips because of its parent breaks the day the parent stops.) */
+@keyframes editor-open {
+  from { grid-template-rows: 0fr; }
+  to   { grid-template-rows: 1fr; }
+}
+@keyframes editor-close {
+  from { grid-template-rows: 1fr; }
+  to   { grid-template-rows: 0fr; }
+}
+/* The content underneath the track, arriving the way every other entering thing on
+   this page does, and leaving by fading in place: the arrival's rise has a
+   direction the collapse does not, so only the opacity is mirrored. */
+@keyframes editor-content-in {
+  from { opacity: 0; transform: translateY(var(--motion-rise)); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes editor-content-out { from { opacity: 1; } to { opacity: 0; } }
+
+/* The wrapper is a grid AT REST as well as while it moves, and that is not an
+   implementation preference: as a block, the panel's own top margin collapses
+   through the wrapper, so the wrapper's box is 14px shorter than the one the
+   animation is measuring and the layout would shift on the frame the animating
+   class comes off. One box, before, during and after. */
+.editor-disclosure { display: grid; grid-template-rows: 1fr; }
+/* The item the track is measured against is the bare panel, never the visible
+   editor: a track will not shrink below the item's own margin, border and padding,
+   and the editor has all three, so with the editor as the item the track floored at
+   29px and the closing press ended in a jump of that height. `min-height: 0` is
+   what lets the item be smaller than its content at all, and `flow-root` is what
+   keeps the editor's own top margin from collapsing out through the panel and back
+   into the item's minimum. */
+.editor-disclosure > * { min-height: 0; display: flow-root; }
+/* Clipping, on the moving classes only. */
+.editor-disclosure--arriving,
+.editor-disclosure--leaving { overflow: clip; }
+.editor-disclosure--arriving { animation: editor-open var(--duration-fast) var(--ease-out) both; }
+.editor-disclosure--arriving > * { animation: editor-content-in var(--duration-fast) var(--ease-out) both; }
+.editor-disclosure--leaving { animation: editor-close var(--duration-fast) var(--ease-out) both; }
+.editor-disclosure--leaving > * { animation: editor-content-out var(--duration-fast) var(--ease-out) both; }
+
 /* Reduced motion, and it is part of the rules rather than an exception to them.
    Every animation above is off, which leaves each element at its ordinary resting
    state, and ui/surface.js resolves leave() at once so a host removes the view
@@ -1375,5 +1441,9 @@ body.surface--leaving .modal { animation: surface-card-out var(--duration-fast) 
   body.surface--leaving .scrim,
   body.surface--leaving .modal,
   .panel--in-from-left,
-  .panel--in-from-right { animation: none; }
+  .panel--in-from-right,
+  .editor-disclosure--arriving,
+  .editor-disclosure--arriving > *,
+  .editor-disclosure--leaving,
+  .editor-disclosure--leaving > * { animation: none; }
 }

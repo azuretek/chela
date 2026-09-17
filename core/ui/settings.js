@@ -74,6 +74,35 @@ let state = null;
 // Which gateway's credential editor is open. Kept across re-renders so saving a
 // field does not collapse the panel you are working in.
 let editing = null;
+// The panel's own element, so the control that closes it has something to act on.
+// Set by the render that mounts it, because the press happens long after.
+let editorElement = null;
+// The gateway whose editor the reader has just opened, consumed by the render that
+// builds it, and the panel that is ARRIVING. Both exist because this list is
+// rebuilt whole on every render, which is what makes an in-place animation easy to
+// get wrong in two directions at once:
+//
+//   - Without `opening`, the arrival would replay on EVERY render during the visit,
+//     so a save (which redraws the row) would look like the panel had been reopened
+//     under the reader's hands.
+//   - Without `arriving`, a state push landing inside the hundred milliseconds of
+//     the arrival would replace the element mid-move and the animation would never
+//     be seen at all. It is dropped once it has arrived, so the ordinary re-render
+//     after a save still rebuilds the panel rather than keeping a stale one.
+let opening = null;
+let arriving = null;
+// The panel that is LEAVING: the reader pressed Done and the editor is folding shut
+// before it is taken away. A view removed on the same tick as the press never paints
+// a frame of its own departure, which is the whole reason ui/surface.js exists for a
+// whole surface; this is the same arrangement for a panel inside one.
+let leaving = null;
+// A frame of slack past the token, and the fallback for a page whose shared script
+// did not load. Both are ui/surface.js's own numbers, and they are here rather than
+// imported because this page only ever CONSUMES that script's answer: it reads the
+// preference and the token through it, and these are what it falls back to when
+// there is nothing to ask.
+const MOTION_SLACK_MS = 32;
+const MOTION_FALLBACK_MS = 100;
 // The last answer each gateway's editor gave, kept across the re-render that
 // follows every press in it. The editor is rebuilt from state on each save (a
 // credential's placeholder and the presence of its removal control both change),
@@ -544,9 +573,116 @@ function deviceApproval(gw) {
   return null;
 }
 
+/* ------------------------------------------------------- the editor's motion */
+
+/**
+ * Whether the reader has asked for no motion, and how long a duration token is.
+ *
+ * Both are read from `window.clawSurface` (ui/surface.js) rather than from the
+ * media query and the stylesheet here. The page already owns both answers, and a
+ * second copy would be a second opinion on "does this reader want motion" and on
+ * "how long is --duration-fast". The fallbacks are the same ones that script uses
+ * for a page that cannot ask at all: an unreadable preference animates.
+ */
+function reducedMotion() {
+  return Boolean(window.clawSurface && window.clawSurface.reducedMotion && window.clawSurface.reducedMotion());
+}
+
+function motionMs(name) {
+  return window.clawSurface && window.clawSurface.durationMs
+    ? window.clawSurface.durationMs(name)
+    : MOTION_FALLBACK_MS;
+}
+
+/**
+ * The editor's wrapper: the element that actually moves.
+ *
+ * The panel is built inside a wrapper rather than animated itself, because what
+ * animates is the TRACK the panel sits in and the panel has several children of its
+ * own, which would each land in a track of their own. See the `editor-disclosure`
+ * rules in ui.css for what moves and ui/CONVENTIONS.md for the rule they implement.
+ *
+ * Reduced motion is not asked to play it. The panel's resting state IS the open
+ * editor, so there is nothing to animate and nothing to take back off afterwards,
+ * which is also what makes "nothing may depend on an animation having run" true
+ * here by construction.
+ */
+function editorDisclosure(gw) {
+  // TWO levels, and the inner one is not decoration. A grid track will not shrink
+  // below the item's own margin, border and padding, and the panel has all three (a
+  // 14px gap above it, a hairline and 14px of padding under it): measured, the
+  // track floored at 29px, so the closing press collapsed to a 29px strip and then
+  // took THAT away in one frame, which is the jump this whole change exists to
+  // remove. The bare panel is the item instead, so the track reaches zero, and
+  // `flow-root` stops the panel's margin collapsing through it and putting the 14px
+  // back into the item's own minimum.
+  const panel = el('div', { className: 'editor-disclosure__panel' }, gatewayEditor(gw));
+  const node = el('div', { className: 'editor-disclosure' }, panel);
+  if (opening !== gw.id) return node;
+  opening = null;
+  if (reducedMotion()) return node;
+  node.classList.add('editor-disclosure--arriving');
+  arriving = { id: gw.id, node };
+  setTimeout(() => {
+    node.classList.remove('editor-disclosure--arriving');
+    if (arriving && arriving.node === node) arriving = null;
+  }, motionMs('--duration-fast') + MOTION_SLACK_MS);
+  return node;
+}
+
+/** Open a gateway's editor, and let it arrive. */
+function openEditor(gw) {
+  // A clean visit: the previous visit's answer belongs to the previous visit, and
+  // one left on screen would describe a press nobody has made yet.
+  editorAnswers.delete(gw.id);
+  editing = gw.id;
+  opening = gw.id;
+  render();
+}
+
+/**
+ * Close a gateway's editor: play its departure, and only then take it away.
+ *
+ * The order is the whole of it, and it is the same order the host uses for a whole
+ * surface: the panel is asked to leave, and removed when it has. A panel removed on
+ * the same tick as the press never paints a frame of its own departure, so the
+ * animation would exist in the stylesheet and nowhere a reader could see it.
+ *
+ * Reduced motion takes the panel away on the press instead. The preference removes
+ * MOTION, not the correct end state, and waiting a duration that is not going to
+ * animate reads as the app hanging; so the panel goes in the same frame, with no
+ * half-folded state ever shown.
+ */
+function collapseEditor(gw) {
+  if (leaving && leaving.id === gw.id) return;
+  const node = editorElement;
+  // The visit is over the moment the press lands, so nothing that arrives during
+  // the departure can act on a panel that is already going.
+  editing = null;
+  if (!node) { render(); return; }
+  // A press arriving mid-arrival, which the reader can only make by pressing twice
+  // inside a tenth of a second: the departure replaces the arrival rather than
+  // being layered on top of it, so the two animations can never both apply.
+  node.classList.remove('editor-disclosure--arriving');
+  if (arriving && arriving.node === node) arriving = null;
+  if (reducedMotion()) { render(); return; }
+  leaving = { id: gw.id, node };
+  node.classList.add('editor-disclosure--leaving');
+  setTimeout(() => {
+    if (leaving && leaving.node === node) { leaving = null; render(); }
+  }, motionMs('--duration-fast') + MOTION_SLACK_MS);
+}
+
+/** Whatever motion this gateway's panel was in the middle of, forgotten. */
+function forgetEditorMotion(gw) {
+  if (arriving && arriving.id === gw.id) arriving = null;
+  if (leaving && leaving.id === gw.id) leaving = null;
+}
+
 function renderGateways() {
   const host = $('gateways');
   host.replaceChildren();
+  editorElement = null;
   const phase = (state.connection && state.connection.phase) || 'idle';
 
   if (state.secretsError) {
@@ -584,6 +720,12 @@ function renderGateways() {
   for (const gw of shown) {
     const active = gw.id === state.activeGatewayId;
     const open = editing === gw.id;
+    // The panel is still on screen while it folds shut, so the row's own control
+    // stays in the state the reader pressed it into for the whole of the departure.
+    // A label that flipped back to "Edit" while the editor was visibly still open
+    // would be describing a state that had not happened yet.
+    const leavingHere = leaving && leaving.id === gw.id ? leaving.node : null;
+    const engaged = open || Boolean(leavingHere);
     const creds = gw.credentials || { hasToken: false, hasPassword: false, headers: [] };
 
     // A one-line summary of what this app holds for this gateway and whether the
@@ -651,14 +793,15 @@ function renderGateways() {
           }),
           el('button', {
             className: 'ghost',
-            textContent: open ? 'Done' : 'Edit',
-            // Opening starts a clean visit: the previous visit's answer belongs to
-            // the previous visit, and one left on screen would describe a press
-            // nobody has made yet.
+            textContent: engaged ? 'Done' : 'Edit',
+            // The panel moves rather than appearing: the opening press is the
+            // arrival, the closing one plays the departure and the removal follows
+            // it. Reducing that to a redraw either way is what made this pop. See
+            // openEditor/collapseEditor and the `editor-disclosure` rules in
+            // ui.css.
             onclick: () => {
-              editing = open ? null : gw.id;
-              if (!open) editorAnswers.delete(gw.id);
-              render();
+              if (engaged) collapseEditor(gw);
+              else openEditor(gw);
             },
           }),
           el('button', {
@@ -666,6 +809,10 @@ function renderGateways() {
             textContent: 'Remove',
             onclick: async () => {
               if (editing === gw.id) editing = null;
+              // The row is about to go, so nothing may wait on a panel inside it:
+              // a departure still in flight would re-render a gateway that is no
+              // longer there.
+              forgetEditorMotion(gw);
               state = await call('removeGateway', gw.id);
               render();
             },
@@ -674,7 +821,19 @@ function renderGateways() {
       ]),
     ]);
 
-    host.append(el('div', { className: 'settings-group' }, [row, open ? gatewayEditor(gw) : null]));
+    // The panel is the mounted element for the whole of its life, and a rendered
+    // one otherwise: REUSED while it is arriving (a render landing inside those
+    // hundred milliseconds must not replace the element that is moving), reused
+    // while it is leaving (the same reason, and it still has to be on screen for
+    // its departure to be seen at all), and rebuilt from state at rest.
+    const editor = open
+      ? (arriving && arriving.id === gw.id ? arriving.node : editorDisclosure(gw))
+      : leavingHere;
+    // Only set when there IS one: this loop runs for every gateway, and assigning
+    // unconditionally left the handle nulled by the last row that had no panel,
+    // which sent the closing press down the no-element path and made it pop.
+    if (editor) editorElement = editor;
+    host.append(el('div', { className: 'settings-group' }, [row, editor]));
   }
 }
 

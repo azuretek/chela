@@ -95,6 +95,45 @@ and the observer's `socketClosed` report in `core/spec/pairing.json`. Guarded by
 `desktop/test/payload-freshness.test.js` (the host's half) and
 `desktop/scripts/test-held-gateway-view.js` (the frames).
 
+## ★ What counts as a transition
+
+**A transition is any change the reader can SEE, and it does not have to change the
+view to be one.** The two rules above say what may be on screen while something
+changes, and the motion below is how the change is made; both apply to a change
+INSIDE a view exactly as they do to one BETWEEN views. That includes, and this list
+is the point of the section rather than an example of it:
+
+- **A surface arriving or leaving the window**, and a panel replacing another inside
+  one.
+- **A form, a panel or a row expanding or collapsing in place**, which is the
+  gateway editor's own disclosure: the reader presses Edit and the fields take the
+  space they need, and presses Done and gives it back.
+- **A section appearing or disappearing** without anything having navigated.
+- **A list reordering**, or an entry joining or leaving it.
+- **One value replaced by another in place**, such as a status line or a count.
+
+**An in-place change is NOT exempt merely because no view changed.** This is the
+case that gets left as a pop, and the reason is exactly that nothing navigated: a
+rule about view changes never fires, so the fields are simply there on the next
+frame and nobody notices that a transition happened at all. Naming it here is what
+stops the next one being left that way, since a rule whose scope is "view changes"
+reads as satisfied by every screen that never changes view.
+
+**Every transition runs in BOTH directions.** A change is not over when the thing
+appears: it has to go away as well, and the reader is watching for that. So a
+disclosure that opens smoothly and shuts in a single frame is half a transition, and
+half is not a smaller version of the rule; it is a pop with a nicer entrance. The
+departure is the arrival played backwards when it is the same path, and a movement of
+its own when it is not.
+
+**They are not all moved by the same thing.** This section says what COUNTS as a
+transition; which of them moves, and how, is the tables below, and two kinds
+deliberately snap there and say why: anything the reader triggers repeatedly or at
+speed, where any movement lags the hand, and a value changing in place, which is one
+number moving rather than a view arriving. Every one of them is nonetheless subject
+to the sequencing rule above, to the reduced-motion form, and to the verification at
+the end of this file.
+
 ## Durations and easing
 
 Two durations, from the shared token layer, and nothing animates for longer:
@@ -153,12 +192,32 @@ window or shift the reader's content under them.
 | A panel replacing another in the same surface (settings tabs) | The incoming panel fades in and enters from the side the reader moved TOWARD, 12px (`--motion-slide`). |
 | A notice card appearing | Slides DOWN from above the viewport (already so, and it keeps that direction: it arrives from the edge it occupies). |
 | A notice card being dismissed | Slides back UP by the same path, over `--duration-fast`. |
+| **A disclosure opening or closing in place** (the gateway editor's Edit) | The panel's wrapper opens its track from `0fr` to `1fr`, and the panel underneath fades in and RISES 8px into place (`--motion-rise`), over `--duration-fast`. Closing shuts the same track by the same path, with the panel fading out in place: the arrival's rise has a direction the collapse does not, so only the opacity is mirrored. |
 
 **Snaps, always, and an animation here is a fault:**
 
 - **Layout.** Height, width and reflow. A view's height must be final on its first
   frame, or everything under it moves while it animates. The banner's own comment
   records this being learned the hard way.
+  - **The one exception is a DISCLOSURE, and it is named rather than allowed in
+    general: the gateway editor's opening and closing, and nothing else.** The space
+    a disclosure takes IS the change, so there is no frame at which its height could
+    already be final, and there is no compositor-only way to make room for it:
+    opacity and transform cannot open a gap.
+  - What animates is therefore **`grid-template-rows` on one wrapper**, `0fr` to
+    `1fr` and back, with the wrapper a grid at rest as well as while it moves so the
+    box it measures is the same before, during and after. The item that track is
+    measured against is a **bare panel**, never the visible editor: a track will not
+    shrink below the item's own margin, border and padding, and the editor has all
+    three, so with the editor as the item the track floored at 29px and the closing
+    press ended in a jump of exactly that height.
+  - **Its content still arrives on opacity and transform** underneath the track, and
+    it still takes `--duration-fast` in both directions. Clipping is part of the
+    moving classes only, never of the resting rule, so an element at rest is not a
+    clip container and no focus ring is cut.
+  - **A VIEW's height is still final on its first frame.** This does not license
+    animating the window, a surface, a panel, a list reorder, or a reflow of the page
+    around anything else.
 - **Anything the reader triggers repeatedly or at speed**: hover, focus,
   selection, disabled, checkbox flips, the tab bar's own underline, text and
   numbers changing in place.
@@ -169,6 +228,31 @@ window or shift the reader's content under them.
 - **The Control UI.** Its content, its scroll position, its theme.
 - **Values that are not view changes.** A progress bar's width is one value
   moving, not a view arriving, and it keeps its existing linear transition.
+
+**In-place changes that deliberately snap, and each one by name.** Because the rule
+above covers a change INSIDE a view, these are answers rather than omissions: every
+one was found by walking our own surfaces, and every one is a case where motion
+would cost the reader something.
+
+- **A count or a status line changing where it sits.** The Problems tab's count, the
+  About page's update hint, the answer line under a gateway form. These are the
+  "values, not view changes" case above, and they change while the reader is looking
+  at them.
+- **A CONTROL appearing as the surface's own state changes.** The loading cover's
+  Retry button is the clearest: it appears at the moment the attempt fails, and that
+  failure is the answer the reader has been waiting on, so a hundred milliseconds of
+  it fading in is a hundred milliseconds of the one control they now need. The
+  pairing page's docs link is the same shape.
+- **A list the reader is filtering.** The gateway search rebuilds its list on every
+  keystroke. This is the "at speed" case, and an entry animating under a typing hand
+  is a list that lags the keyboard.
+- **An entry arriving in, or leaving, a list the page draws from state.** The notice
+  history, and the certificates waiting review. These ARE transitions the rule
+  covers, and the reason they are left alone is not the one above: the space an entry
+  takes comes from the state rather than from a press, so it is one of many rows a
+  reader may be scanning, and animating each of them makes a list of two hundred
+  entries the animation. Where such a change is the reader's own doing, it is the
+  at-speed case instead.
 
 **Direction follows the change.** Motion points the way the reader moved, or the
 way the thing is going:
@@ -220,6 +304,12 @@ says nothing about a view that appeared for four frames.
   animation that takes longer than `--duration-normal` is a delay.
 - State the reduced-motion behaviour for the transition, and that it is the same
   sequence without movement.
+- **An in-place transition is checked the same way, and in both directions.** A
+  disclosure has an opening AND a closing to capture, and the closing is the half
+  that gets skipped: it is the same claim about what was on screen, and a reader
+  who watches a panel fold away deserves the same answer as one who watched it
+  arrive. The duration is measured across the whole of each direction, from the
+  press to the element being gone.
 - `desktop/scripts/test-affordance-placement.js` is the worked example: it drives
   the real control, captures the composited window through the change with several
   concurrent capturers, samples the layers and the route alongside, and compares
