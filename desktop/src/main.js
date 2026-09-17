@@ -159,17 +159,27 @@ const themeCssKeys = new Map();
 const tokenCssKeys = new Map();
 
 // The colours the app paints for itself, tracking whichever theme the Control
-// UI is in. Seeded from the last run so a cold start opens in the right ones
-// rather than flashing the wrong palette for as long as the gateway takes to
-// answer, which, over Tailscale to a sleeping box, is not a flash.
+// UI is in. Seeded from the STORED appearance for the active gateway, so a cold
+// start opens in the one that gateway was last seen in rather than flashing the
+// wrong palette for as long as the gateway takes to answer, which, over
+// Tailscale to a sleeping box, is not a flash.
+//
+// Seeded rather than decided, and the distinction is the whole of the theme
+// rule: `config.themeFor` reads a stored value and never computes one, so
+// nothing here can replace a theme the reader chose. A gateway with no stored
+// entry falls back to the last known mode, which is what keeps the app in the
+// appearance it was already in while a switch is in flight, and the page's own
+// report corrects it if that gateway differs. A first run, where nothing is
+// known at all, is the dark fallback, which is also the window's own background
+// and the title strip's colour, so the first frame is internally consistent;
+// that fallback is never written back over a stored value.
 //
 // This value is also what the loading cover is painted with before any gateway
-// has answered, and the reason the cover needs no appearance of its own: on a
-// cold start it IS the resolved appearance, and it updates on the same
-// assignment as the rest of our chrome. applyTheme() in startup sets
+// has answered: on a cold start it IS the resolved appearance, and it updates on
+// the same assignment as the rest of our chrome. applyTheme() in startup sets
 // nativeTheme.themeSource from it before the window exists, which is what makes
 // the cover's own `prefers-color-scheme` agree with it on the first frame.
-let currentTheme = chrome.fallbackTheme(config.get().themeMode);
+let currentTheme = chrome.fallbackTheme(config.themeFor(config.get().activeGatewayId));
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -492,8 +502,7 @@ function showConnectionFailure(detail) {
 // imported as withTokenHandoff at the top of this file.
 
 function loadActiveGateway() {
-  const gw = config.activeGateway();
-  if (!gw) {
+  const gw = config.activeGateway();  if (!gw) {
     // Nothing to lay a modal over, so settings *is* the window's content. Also
     // the only thing that makes the window paintable at all on a first run:
     // `ready-to-show` never fires for a window that was never asked to load
@@ -504,6 +513,13 @@ function loadActiveGateway() {
   }
   settingsIsPage = false;
   autofilled = false;
+  // Re-seed the appearance from the gateway being switched TO, before anything
+  // of ours is painted: the cover is created a few lines down, and a window
+  // painted in the previous gateway's colours and corrected a moment later is
+  // the flip this whole arrangement exists to avoid. A gateway with nothing
+  // stored keeps the appearance we are already in rather than resetting to a
+  // default, and the page's own report moves it if that gateway differs.
+  applyStoredTheme(gw.id);
   // The previous failure is over the moment a new attempt starts. Leaving it up
   // would have the banner reporting a dead error against a live connect.
   clearNotice('connection');
@@ -1241,6 +1257,27 @@ function toggleMainWindow() {
 
 /* --------------------------------------------------------------------- theme */
 
+/**
+ * The appearance the app should be in for a gateway, applied to our chrome.
+ *
+ * A READ of the stored value and nothing more, which is the property to keep:
+ * every surface of ours asks what the appearance is, and none of them decides
+ * one. It only ever moves the app when the stored value differs from what is
+ * already in force, so a switch to a gateway with nothing stored leaves the
+ * current appearance alone rather than dropping to a default.
+ *
+ * Called on a gateway switch, and deliberately not called on a launch, where
+ * the seed below the constant already did it.
+ */
+function applyStoredTheme(gatewayId) {
+  const mode = config.themeFor(gatewayId);
+  if (!mode || mode === currentTheme.mode) return;
+  currentTheme = chrome.fallbackTheme(mode);
+  console.log(`[claw-desktop] theme: ${currentTheme.mode} (stored for this gateway)`);
+  chrome.applyTheme(currentTheme, mainWindow && !mainWindow.isDestroyed() ? [mainWindow] : []);
+  refreshThemedPages();
+}
+
 // Adopt a theme reported by the page and repaint everything the page's own
 // stylesheet cannot reach. Persisting the mode is what makes the *next* cold
 // start open in the right colours; only the mode is kept, because the exact
@@ -1263,7 +1300,20 @@ function adoptTheme(theme) {
   currentTheme = theme;
   chrome.applyTheme(currentTheme, [mainWindow]);
   refreshThemedPages();
-  if (modeChanged) config.update({ themeMode: theme.mode });
+  // Remembered against the gateway that reported it, because the Control UI's
+  // theme belongs to that gateway and is chosen in that gateway's own UI. This
+  // is one of the only two writes to the appearance store.
+  //
+  // The comparison is against what is STORED for this gateway, never against
+  // what we happen to be painting with, and that distinction is load-bearing.
+  // The painted value on a cold start is a SEED: on a first run it is the dark
+  // fallback, so comparing against it would make a gateway's first observed
+  // theme look like "no change" and leave the store empty for ever, which is a
+  // cold start that can never learn. Against the stored value the write happens
+  // exactly once per gateway in this direction, and a launch that agrees with
+  // what is already there still writes nothing.
+  const active = config.get().activeGatewayId;
+  if (config.themeFor(active) !== theme.mode) config.rememberTheme(active, theme.mode);
 }
 
 /* ----------------------------------------------------------------- overlays */

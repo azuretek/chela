@@ -77,6 +77,10 @@ function read() {
       window: { ...base.window, ...(raw.window || {}) },
       trustedCerts: { ...(raw.trustedCerts || {}) },
       swVersions: { ...(raw.swVersions || {}) },
+      // Per gateway, like the other maps: a config written before this key
+      // existed boots with an empty one and falls back to `themeMode`, rather
+      // than losing the appearance it had.
+      themeByGateway: { ...(raw.themeByGateway || {}) },
     };
     if (!Array.isArray(cache.gateways) || cache.gateways.length === 0) cache.gateways = base.gateways;
   } catch {
@@ -124,6 +128,34 @@ function trustCert(host, fingerprint) {
   return write(model.trustCert(read(), host, fingerprint));
 }
 
+/**
+ * The appearance a gateway was last seen in. A read, and only a read.
+ *
+ * Every surface of ours asks for its colours through this: the loading cover,
+ * the window background and the title strip. Nothing here writes, which is the
+ * property being preserved as much as the value is: a theme that gets
+ * re-derived at launch is a theme the reader chose and the app replaced.
+ */
+function themeFor(gatewayId) {
+  return model.themeFor(read(), gatewayId);
+}
+
+/**
+ * Remember that a gateway is in `mode`.
+ *
+ * Written only where a theme genuinely CHANGED, which is the two events that may
+ * move an appearance and no others: the reader chose one in the Control UI, or
+ * the app moved to a gateway whose theme differs. `model.rememberTheme` returns
+ * the same config when there is nothing new to record, and that identity is what
+ * skips the write, so a launch that changes nothing touches no file.
+ */
+function rememberTheme(gatewayId, mode) {
+  const next = model.rememberTheme(read(), gatewayId, mode);
+  if (next === cache) return false;
+  write(next);
+  return true;
+}
+
 export default {
   path: file,
   get: read,
@@ -133,4 +165,6 @@ export default {
   updateGateway,
   removeGateway,
   trustCert,
+  themeFor,
+  rememberTheme,
 };
