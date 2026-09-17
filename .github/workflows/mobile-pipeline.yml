@@ -340,6 +340,47 @@ jobs:
       - name: Generate the Xcode project
         run: xcodegen generate
 
+      # Gate 1, compile. Building for the simulator rather than for a device is
+      # what keeps this free of Apple credentials, and the generic destination
+      # compiles every target in the scheme without picking a simulator yet.
+      #
+      # `build-for-testing` rather than `build`, so the test bundle is compiled
+      # by this step too. That is what lets the whole leg compile ONCE: this
+      # produces the app and the test bundle together, and the test step below
+      # runs exactly these products with `test-without-building`. Previously
+      # this gate ran `build` and the test step ran `test`, which compiled the
+      # app twice in the same leg for no extra coverage, and a fault in the test
+      # bundle was only ever found by the second of the two compiles.
+      #
+      # The derived data path is pinned so the two steps share one product tree
+      # instead of each getting a private one, which is what makes the second
+      # step a reuse rather than a rebuild.
+      - name: Build for the simulator
+        run: |
+          set -eo pipefail
+          derived="$RUNNER_TEMP/DerivedData"
+          echo "DERIVED_DATA=$derived" >> "$GITHUB_ENV"
+
+          xcodebuild \
+            -project Claw.xcodeproj \
+            -scheme Claw \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$derived" \
+            build-for-testing
+
+      # ★ The boot is deliberately NOT started before the compile, and that is a
+      # measurement rather than a preference. Tried on 2026-09-17 and reverted
+      # the same day: `simctl boot` was kicked off underneath the build so the
+      # first boot would not be paid after it, and the boot turned out to be
+      # CPU-bound rather than idle, so the compile absorbed all of it and more.
+      # On run 35275131733 "Build for the simulator" went from 31 s to 3 m 55 s
+      # on the iOS 27 leg and from 58 s to over 4 m 41 s on the iOS 26 leg,
+      # where the boot itself is worth about two to three minutes inside the
+      # test step, so the leg ends up no shorter. Two jobs on one small runner
+      # contend for the same cores. Paying the boot serially is what these
+      # numbers support; overlapping it would need a runner with cores to spare,
+      # which is a cost decision rather than a workflow one.
       # The simulator is resolved from the runner's own list rather than named.
       # The image's simulator set differs from any given development machine's,
       # so a hardcoded name is the classic way this job fails: it is present
@@ -401,58 +442,6 @@ jobs:
           echo "resolved simulator for iOS $IOS_MAJOR:"
           xcrun simctl list devices available | grep -F "$sim" || true
 
-      # ★ The boot is STARTED here and waited on by the test step, because it is
-      # the largest cost in this leg and none of it needs the app to be built:
-      # measured 2026-09-17, `test-without-building` spent 3 m 15 s of its
-      # 3 m 57 s booting the simulator and installing the bundles, against about
-      # 30 s actually running the suite, and every second of that boot ran AFTER
-      # the compile had already finished. `simctl boot` asks the simulator
-      # service to start the device and returns, so the boot runs underneath the
-      # compile below instead of after it.
-      #
-      # Nothing is verified here, and nothing is weakened by it: the test step
-      # waits for the boot it needs with `simctl bootstatus -b`, which boots the
-      # device if this kick did not, so a boot that genuinely fails still fails
-      # there, in the step whose result depends on it. A device that is already
-      # booted is not an error, which is why this does not test the exit code.
-      - name: Start the simulator booting
-        run: |
-          set -eo pipefail
-          if xcrun simctl boot "$SIMULATOR_UDID" 2>/dev/null; then
-            echo "booting $SIMULATOR_UDID while the app compiles"
-          else
-            echo "$SIMULATOR_UDID is already booted or already booting"
-          fi
-
-      # Gate 1, compile. Building for the simulator rather than for a device is
-      # what keeps this free of Apple credentials, and the generic destination
-      # compiles every target in the scheme without picking a simulator yet.
-      #
-      # `build-for-testing` rather than `build`, so the test bundle is compiled
-      # by this step too. That is what lets the whole leg compile ONCE: this
-      # produces the app and the test bundle together, and the test step below
-      # runs exactly these products with `test-without-building`. Previously
-      # this gate ran `build` and the test step ran `test`, which compiled the
-      # app twice in the same leg for no extra coverage, and a fault in the test
-      # bundle was only ever found by the second of the two compiles.
-      #
-      # The derived data path is pinned so the two steps share one product tree
-      # instead of each getting a private one, which is what makes the second
-      # step a reuse rather than a rebuild.
-      - name: Build for the simulator
-        run: |
-          set -eo pipefail
-          derived="$RUNNER_TEMP/DerivedData"
-          echo "DERIVED_DATA=$derived" >> "$GITHUB_ENV"
-
-          xcodebuild \
-            -project Claw.xcodeproj \
-            -scheme Claw \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath "$derived" \
-            build-for-testing
-
       # Gate 2, the real verification: unit tests plus the parity suites, which
       # are the ones that compare the client's behaviour against core rather
       # than against itself.
@@ -470,13 +459,6 @@ jobs:
       - name: Test on the resolved simulator
         run: |
           set -eo pipefail
-
-          # The boot was started before the compile, so this waits for it rather
-          # than paying for it. `-b` boots the device if it is not already
-          # running, so this is also the fallback for a kick that did not take,
-          # and a boot that genuinely fails is caught here, in the step whose
-          # result depends on it, rather than being left to xcodebuild.
-          xcrun simctl bootstatus "$SIMULATOR_UDID" -b
 
           xcodebuild \
             -project Claw.xcodeproj \
