@@ -209,6 +209,36 @@ app.whenReady().then(async () => {
     settled.includes(new URL(GATEWAY).host), settled);
   check('and confirms the reload landed, from the load rather than from the press',
     /reloaded from/i.test(settled), settled);
+
+  // Present is not the same as READABLE, and a report nobody can see is the same
+  // fault as no report at all. Measured on 2026-09-16: the line read back
+  // correctly from textContent and was INVISIBLE, because it sat after a
+  // width:100% control in a non-wrapping actions row and was clipped by the
+  // group's overflow:hidden. So this asserts the line has a box, AND that the box
+  // is inside the card the reader is looking at rather than past its edge.
+  const shown = await aboutView.executeJavaScript(`(() => {
+    const node = document.getElementById('clear-result');
+    const box = node.getBoundingClientRect();
+    const group = node.closest('.settings-group').getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return {
+      text: node.textContent,
+      onScreen: node.offsetParent !== null && box.width > 0 && box.height > 0,
+      insideCard: box.left >= group.left - 1 && box.right <= group.right + 1,
+      box: [Math.round(box.left), Math.round(box.top), Math.round(box.width), Math.round(box.height)],
+      card: [Math.round(group.left), Math.round(group.right)],
+      colour: style.color,
+      visibility: style.visibility,
+      textLength: (node.textContent || '').length,
+    };
+  })()`);
+  console.log(`note the result line on screen: ${JSON.stringify(shown)}`);
+  check('and the line is actually ON SCREEN, not merely in the DOM',
+    shown.onScreen === true && shown.box[3] > 8 && shown.textLength > 40,
+    JSON.stringify(shown));
+  check('and it is inside the card the reader is looking at, not clipped past its edge',
+    shown.insideCard === true,
+    `the line spans x ${shown.box[0]}..${shown.box[0] + shown.box[2]} and the card ${shown.card[0]}..${shown.card[1]}`);
   await grab('about-clear-cache-done');
 
   /* ------------------------------------------------- what it actually did */

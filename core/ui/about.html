@@ -89,8 +89,16 @@
             <div class="settings-row__control">
               <button id="check" class="primary">Check for updates</button>
               <button id="releases" class="ghost">Release notes</button>
+              <!-- INSIDE the control, not beside it. The control is width:100%
+                   in an actions row, so a sibling after it is laid out past the
+                   full-width column and clipped by the group's overflow:hidden:
+                   present in the DOM, invisible to the reader. Measured on
+                   2026-09-16, when the clear-cache result read back correctly
+                   from textContent and could not be seen on screen. Inside a
+                   wrapping flex control, the line takes its own row under the
+                   buttons, which is where a reply to a press belongs. -->
+              <div class="result" id="check-result"></div>
             </div>
-            <div class="result" id="check-result"></div>
           </div>
         </div>
 
@@ -120,8 +128,9 @@
           <div class="settings-row settings-row--actions">
             <div class="settings-row__control">
               <button id="clear-cache">Clear cache and refresh</button>
+              <!-- Inside the control, for the reason the Updates row above says. -->
+              <div class="result" id="clear-result"></div>
             </div>
-            <div class="result" id="clear-result"></div>
           </div>
         </div>
 
