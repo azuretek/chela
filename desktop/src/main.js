@@ -559,8 +559,36 @@ function loadActiveGateway() {
   const supplied = [creds.token && 'token', creds.password && 'password', creds.headers.length && `${creds.headers.length} header(s)`]
     .filter(Boolean).join(', ');
   console.log(`[claw-desktop] connecting to ${gw.label || gw.url} <${gw.url}>${supplied ? ` (supplying ${supplied})` : ''}`);
-  page()?.loadURL(withTokenHandoff(gw.url, creds.token));
+  page()?.loadURL(withTokenHandoff(gw.url, creds.token), FRESH_DOCUMENT);
 }
+
+// The server's payload rather than a cached copy of it, on the one load the app
+// cannot know the answer to.
+//
+// A launch is when the profile may hold a service worker and an HTTP cache from
+// a build the gateway has since replaced, and the Control UI's own worker is
+// cache-first under `/assets/` by design. What must not happen is this app
+// PAINTING an old Control UI on the way in, and a cached DOCUMENT is exactly
+// that: it renders the previous payload, references the previous asset URLs, and
+// looks perfectly correct while being yesterday's product.
+//
+// Measured 2026-09-16, against a marker gateway serving two distinguishable
+// payloads and read off the DOM (see scripts/test-payload-freshness.js). With the
+// document served `Cache-Control: no-cache`, which is what OpenClaw's gateway
+// sends (src/gateway/control-ui.ts), a launch after an upgrade painted the NEW
+// payload and never the old one. With the document cacheable, the SAME launch
+// painted the old payload first and the new one 76ms later, once the build-id
+// refresh below had dropped the worker's caches and reloaded. That first paint is
+// the defect: it is the pre-loaded Control UI Abi ruled out, and how long it lasts
+// is the gateway's caching policy rather than ours.
+//
+// So the document request revalidates. That is the whole fix: the document decides
+// which asset URLs the page wants, and upstream's asset names are content-hashed,
+// so a fresh document cannot pull a stale bundle with it. The worker's caches are
+// still dropped by maybeRefreshForNewBuild when the gateway's build id moved,
+// which a document request cannot see, and an asset served from a FIXED url is
+// still the worker's to hold until that clear, which upstream does not do.
+const FRESH_DOCUMENT = { extraHeaders: 'Cache-Control: no-cache\nPragma: no-cache' };
 
 /* --------------------------------------------------------------- stale cache */
 
@@ -2411,6 +2439,11 @@ function menuCommands() {
     releaseNotes: { label: 'Release notes', click: () => { void shell.openExternal(RELEASES_URL); } },
     settings: { label: 'Settings…', click: () => openSettings() },
     reload: { label: 'Reload', click: () => (settingsIsPage ? loadActiveGateway() : page()?.reload()) },
+    // Browsers pass `ignoreCache` here and this deliberately does not, because the
+    // payload is not what Reload is for. Reload is the browser's own command and
+    // keeps its meaning; the two ways the Control UI is brought current are the
+    // freshness the load above forces and the clear below, which is the one the
+    // menu documents as the escape hatch when the interface looks wrong anyway.
     reconnect: { label: 'Reconnect to gateway', click: () => loadActiveGateway() },
     clearCache: { label: 'Clear cache and reload', click: () => { void clearCacheAndReload(); } },
     quit: { label: `Quit ${chrome.APP_NAME}`, click: () => { quitting = true; app.quit(); } },
