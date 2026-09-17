@@ -39,6 +39,13 @@ enum Pairing {
         /// core/spec/pairing.json, read here exactly as the parser rules are, so
         /// the two clients route one event the same way.
         let routing: Routing
+        /// The cadence both clients keep. One owner: `timing` in
+        /// core/spec/pairing.json, which `core/pairing.js` exports as
+        /// `RETRY_SECONDS`/`CONFIRM_SECONDS` for the JS half. Read here rather
+        /// than kept as two numbers, because two copies of a cadence drift the
+        /// first time one is tuned and the symptom is one client flickering
+        /// where the other holds still.
+        let timing: Timing
         let reasonSubstrings: [String: String]
         let requestIdPattern: String
         let requestIdInReason: String
@@ -59,6 +66,12 @@ enum Pairing {
             let pairingScreen: String
             let settingsGateways: String
             let settingsTab: String
+        }
+
+        /// Seconds, both of them, exactly as the spec writes them.
+        struct Timing: Decodable {
+            let retrySeconds: Double
+            let confirmSeconds: Double
         }
     }
 
@@ -85,6 +98,12 @@ enum Pairing {
             phases: .init(connecting: "connecting", pairingRequired: "pairing-required", authenticated: "authenticated", failed: "failed"),
             policyCloseCode: 0,
             routing: .init(pairingScreen: "", settingsGateways: "", settingsTab: ""),
+            // Zero, because nothing was read. A spec that cannot be decoded
+            // cannot describe a cadence either, and `loadSpec` already refuses
+            // one, so this is the broken-build case rather than a default: see
+            // `startRetry` and `startConfirm`, which refuse to arm on a
+            // non-positive interval rather than spinning.
+            timing: .init(retrySeconds: 0, confirmSeconds: 0),
             reasonSubstrings: [:],
             requestIdPattern: "",
             requestIdInReason: "",
@@ -122,6 +141,15 @@ enum Pairing {
 
     /// The WebSocket close code the gateway uses for a policy refusal.
     static var policyCloseCode: Int { spec.policyCloseCode }
+
+    /// How long between reconnect attempts while pairing. The spec's, not a
+    /// number kept here: `timing.retrySeconds` is the one owner, and
+    /// `PairingParityTests` asserts this equals it.
+    static var retrySeconds: TimeInterval { spec.timing.retrySeconds }
+
+    /// How long an open must survive, with no pairing close, before it counts as
+    /// the approval and the screen comes down. The spec's, for the same reason.
+    static var confirmSeconds: TimeInterval { spec.timing.confirmSeconds }
 
     /// The message-handler name the observer posts to, which the web view registers.
     static var messageName: String { spec.messageName }
@@ -284,6 +312,69 @@ enum Pairing {
     static var observerScript: String { spec.hook.joined(separator: "\n") }
 }
 
+/// The timers a `PairingState` runs on, injected.
+///
+/// The same seam `createState` in `desktop/src/pairing.js` has: its `schedule`
+/// and `cancel` default to `setTimeout`/`clearTimeout`, and its tests hand in a
+/// clock with no time in it (`fakeClock()` in `desktop/test/pairing.test.js`).
+/// This port did not have one, and that is what made its two settle-window
+/// tests wrong rather than merely slow.
+///
+/// The rule those tests pin is about a DURATION, so a test that proves it through
+/// the real clock is not proving the rule, it is racing everything else the main
+/// run loop is doing. Measured on 2026-09-17, all three failures on the iOS 27
+/// leg: the runner starved the main thread past both deadlines, the assertion was
+/// evaluated before the settle timer's work had been delivered, and a settle
+/// window that clears the screen correctly was reported as keeping it up. The
+/// sibling test lost the same race the other way, its expectation never
+/// fulfilled inside its own timeout.
+///
+/// A `Timer` and a main-queue deadline are two unsynchronised deliveries to the
+/// same thread: with the thread starved, a 0.9s block can run before a 0.6s timer
+/// has been serviced, and the timer's own hop adds one more turn of the queue on
+/// top of that. Injection removes the race by removing the clock, which is what
+/// the desktop has always done.
+struct PairingClock: Sendable {
+    /// A pending callback, so it can be taken away again.
+    final class Handle {
+        private let onCancel: @MainActor () -> Void
+
+        init(onCancel: @escaping @MainActor () -> Void) {
+            self.onCancel = onCancel
+        }
+
+        @MainActor func cancel() { onCancel() }
+    }
+
+    /// Run `body` once, `seconds` from now.
+    let schedule: @MainActor (TimeInterval, @escaping @MainActor () -> Void) -> Handle
+
+    /// Take a pending callback away. Idempotent, like `clearTimeout`.
+    let cancel: @MainActor (Handle) -> Void
+}
+
+extension PairingClock {
+    /// The real clock: a one-shot `Timer` on the main run loop, in common mode so
+    /// a scroll or a gesture cannot pause a cadence the gateway is waiting on.
+    ///
+    /// The callback lands on the main actor directly rather than through another
+    /// `Task` hop, which is both closer to the desktop's `setTimeout` and the
+    /// right thing for a window that is measuring elapsed time: a hop is one more
+    /// turn of the main queue between the deadline and the work it was for. A
+    /// timer added to `RunLoop.main` fires on the main thread, so re-entering the
+    /// main actor from it is not a guess.
+    static let live = PairingClock(
+        schedule: { seconds, body in
+            let timer = Timer(timeInterval: seconds, repeats: false) { _ in
+                MainActor.assumeIsolated { body() }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            return Handle { timer.invalidate() }
+        },
+        cancel: { $0.cancel() }
+    )
+}
+
 /// The live pairing state a SwiftUI screen observes.
 ///
 /// One per web view, held by `ContentView` and fed by the observer's message
@@ -328,7 +419,13 @@ final class PairingState: ObservableObject {
     /// short enough that an approval reaches the user quickly. An operator
     /// approving a device is a human action, so a sub-second cadence would buy
     /// nothing but load.
-    static let retryInterval: TimeInterval = 3
+    ///
+    /// The SPEC's value, not a number kept here. Two clients with two copies of a
+    /// cadence drift the first time one is tuned, and the visible symptom is one
+    /// client flickering where the other holds still, so this reads the same
+    /// `timing` block `core/pairing.js` exports for the desktop and
+    /// `PairingParityTests` asserts it still matches.
+    static var retryInterval: TimeInterval { Pairing.retrySeconds }
 
     /// How long a socket must stay open, with no pairing close, before an open is
     /// taken as an approval and the screen clears. A pairing close arrives right
@@ -336,10 +433,21 @@ final class PairingState: ObservableObject {
     /// it 1008), so this window has only to outlast that gap. Kept well under the
     /// retry interval so a genuine approval clears the screen promptly, and long
     /// enough that the refusal that follows an unapproved open always lands first.
-    static let confirmInterval: TimeInterval = 0.6
+    ///
+    /// The spec's, for the same one-owner reason as `retryInterval`.
+    static var confirmInterval: TimeInterval { Pairing.confirmSeconds }
 
-    private var retryTimer: Timer?
-    private var confirmTimer: Timer?
+    /// Where this state's two timers go. Injected so a test can prove the settle
+    /// window with no clock in the room, which is the arrangement the desktop has
+    /// had since `createState` was written. See `PairingClock`.
+    private let clock: PairingClock
+    private var retryHandle: PairingClock.Handle?
+    private var confirmHandle: PairingClock.Handle?
+
+    /// A state driven by the real main run loop unless a caller says otherwise.
+    init(clock: PairingClock = .live) {
+        self.clock = clock
+    }
 
     /// Apply a move, recording the entry and the route it produces.
     ///
@@ -445,66 +553,68 @@ final class PairingState: ObservableObject {
 
     // MARK: Auto-recovery timer
 
-    /// Arm the reconnect timer if it is not already running. Idempotent, so a
-    /// second pairing close does not stack a second timer.
+    /// Arm the reconnect cadence if it is not already running. Idempotent, so a
+    /// second pairing close does not stack a second beat.
+    ///
+    /// A recursive one-shot rather than a repeating timer, which is what
+    /// `createState` does and what makes the cadence drivable with no clock: each
+    /// beat re-arms the next only if it is still the pairing state's to run. The
+    /// non-positive guard is the broken-build case (a spec that would not decode,
+    /// see `loadSpec`), where arming would spin; refusing to arm is the safe
+    /// direction, and `PairingParityTests` is what turns that build red.
     private func startRetry() {
-        guard retryTimer == nil else { return }
-        let timer = Timer(timeInterval: Self.retryInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
+        guard retryHandle == nil, Self.retryInterval > 0 else { return }
+        retryHandle = clock.schedule(Self.retryInterval) { [weak self] in
+            guard let self else { return }
+            self.retryHandle = nil
+            guard self.isPairing else { return }
+            self.retryTick += 1
+            self.startRetry()
         }
-        // Common mode so the timer still fires while a scroll or a gesture is
-        // tracking, which a default-mode timer would pause.
-        RunLoop.main.add(timer, forMode: .common)
-        retryTimer = timer
     }
 
     private func stopRetry() {
-        retryTimer?.invalidate()
-        retryTimer = nil
+        guard let handle = retryHandle else { return }
+        clock.cancel(handle)
+        retryHandle = nil
     }
 
     // MARK: Settle-confirm timer
 
-    /// Arm the settle timer for an unconfirmed open. Restarted rather than
+    /// Arm the settle window for an unconfirmed open. Restarted rather than
     /// stacked, so a fresh open (a later retry that also opened before its close)
     /// resets the window rather than firing on the previous open's clock.
     private func startConfirm() {
         stopConfirm()
-        let timer = Timer(timeInterval: Self.confirmInterval, repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.confirmOpen() }
+        guard Self.confirmInterval > 0 else { return }
+        confirmHandle = clock.schedule(Self.confirmInterval) { [weak self] in
+            guard let self else { return }
+            self.confirmHandle = nil
+            self.confirmOpen()
         }
-        RunLoop.main.add(timer, forMode: .common)
-        confirmTimer = timer
     }
 
     private func stopConfirm() {
-        confirmTimer?.invalidate()
-        confirmTimer = nil
+        guard let handle = confirmHandle else { return }
+        clock.cancel(handle)
+        confirmHandle = nil
     }
 
     /// The settle window elapsed with the socket still open: no pairing close
     /// cancelled it, so the open was an approval. Clear the screen. Guarded on
     /// `isPairing` so a late fire after some other transition does nothing.
     private func confirmOpen() {
-        confirmTimer = nil
+        confirmHandle = nil
         guard isPairing else { return }
         move(to: Pairing.nextPhase(phase, .confirm))
         refusal = nil
         stopRetry()
     }
 
-    /// One reconnect beat: bump the counter the web view watches. Only while the
-    /// screen is actually up, so a race where the timer fires once after the phase
-    /// moved does not force a needless reload of a page that is already connected.
-    private func tick() {
-        guard isPairing else { stopRetry(); return }
-        retryTick += 1
-    }
-
-    // No `deinit` invalidation: each timer's closure holds `self` weakly, so
-    // neither can keep this object alive, and every phase that leaves the pairing
-    // screen calls `stopRetry` and `stopConfirm`. A timer with no strong reference
-    // back to its target is not a leak, and reaching a main-actor property from a
+    // No `deinit` invalidation: the clock owns its pending callbacks, each beat
+    // and each settle holds this object weakly, and every phase that leaves the
+    // pairing screen calls `stopRetry` and `stopConfirm`, so nothing is left
+    // armed on a state nobody holds. Reaching a main-actor property from a
     // nonisolated deinit is what Swift 6 refuses here anyway.
 
     /// The command the operator runs on the gateway host for the current refusal.
