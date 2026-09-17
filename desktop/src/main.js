@@ -3516,7 +3516,16 @@ function registerIpc() {
   // reader pressed a button about their caches and is owed the effect rather than
   // a spinner.
   ipcMain.handle('app:clear-cache-and-reload', () => clearCacheAndReload());
-  ipcMain.handle('app:add-gateway', (_e, entry) => { config.addGateway(entry); buildTray(); return currentState(); });
+  // The entry that was created, handed back so the page can store the credential
+  // typed into the SAME form against the id this app just assigned. Without it
+  // there is nothing to write a token to until the gateway has been reloaded
+  // through Edit, which is exactly the second trip this replaces: one press
+  // creates the gateway and keeps everything the form was given.
+  ipcMain.handle('app:add-gateway', (_e, entry) => {
+    const created = config.addGateway(entry);
+    buildTray();
+    return { ...currentState(), added: created };
+  });
   ipcMain.handle('app:update-gateway', (_e, id, patch) => {
     config.updateGateway(id, patch || {});
     buildTray();

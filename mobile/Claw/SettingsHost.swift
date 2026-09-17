@@ -195,7 +195,22 @@ final class SettingsHost: NSObject, ObservableObject, WKScriptMessageHandler {
             // A refusal leaves the list alone, and the page reports it, so the
             // answer carries whether anything was added rather than an error the
             // page would have to guess the meaning of.
-            reply(id, value: added == nil ? refusedState() : state)
+            guard let added else {
+                reply(id, value: refusedState())
+                return
+            }
+            // The entry that was created, so the page can store the credential
+            // typed into the SAME form against the id this client just assigned.
+            // The credential is kept against a gateway's id, so without this the
+            // token would have to wait for a second visit through Edit, which is
+            // the trip the one-pass add form exists to remove.
+            var answer = state
+            answer["added"] = [
+                "id": added.id,
+                "label": added.label,
+                "url": added.url.absoluteString,
+            ] as [String: Any]
+            reply(id, value: answer)
 
         case "updateGateway":
             let gatewayId = string(args, 0)

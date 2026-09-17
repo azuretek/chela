@@ -317,6 +317,60 @@ test('a gateway row is content, state and actions, as three groups', () => {
   assert.equal([...body.matchAll(/el\('button'/g)].length, 3, 'the row is not three buttons any more');
 });
 
+test('a gateway is created with the fields it is edited with, from ONE field set', () => {
+  // The reported fault, and this is its shape: the add form took a name and an
+  // address and the editor took a name, an address, a token, a password and
+  // headers, so a gateway created on the form was half-configured from the moment
+  // it existed, and finishing it meant finding its row again and pressing Edit.
+  // Two shapes for one object is how that happened, so the fix is one builder
+  // that both flows render, and that is what this holds.
+  const code = codeOnly(page);
+  assert.strictEqual((code.match(/function gatewayFields\(/g) || []).length, 1,
+    'there is not exactly one gateway field set in the shared page');
+
+  const editor = /function gatewayEditor\(gw\) \{[\s\S]*?\n\}/.exec(code);
+  assert.ok(editor, 'the editor is no longer built by a function this test can read');
+  assert.match(editor[0], /gatewayFields\(gw, \{ mode: 'stored'/,
+    'the editor builds its own fields, so the two flows can come to offer different things');
+
+  const addForm = /function renderAddForm\(\) \{[\s\S]*?\n\}/.exec(code);
+  assert.ok(addForm, 'the add form is no longer built by a function this test can read');
+  assert.match(addForm[0], /gatewayFields\(\{\}, \{\s*mode: 'new'/,
+    'the add form builds its own fields rather than rendering the shared set');
+
+  // The fields the editor has, present on the form that creates a gateway. Named
+  // one at a time because the equality this is really about cannot be read off
+  // the source: the harness that measures the rendered page is
+  // scripts/capture-gateway-form.js, and this is the half a diff can hold.
+  for (const id of ['new-url', 'new-token', 'new-password', 'new-header-name', 'new-header-value']) {
+    assert.ok(addForm[0].includes(id), `the add form no longer carries ${id}`);
+  }
+
+  // And it SAVES them, in the same pass, through the command the editor uses.
+  // A form that offers a token and drops it on the way to the store is the same
+  // fault with an extra step.
+  const save = /async function saveNewGateway\(fields, out\) \{[\s\S]*?\n\}/.exec(code);
+  assert.ok(save, 'the one-pass save is gone');
+  assert.match(save[0], /call\('setCredentials', id, creds\)/,
+    'the add form does not store the credentials typed into it');
+  assert.match(save[0], /res\.added\.id/,
+    'the credential is not stored against the gateway that was just created');
+  assert.match(save[0], /call\('addHeader', id,/,
+    'the add form does not store the extra header typed into it');
+
+  // The sentence that sent the reader away to finish the job, which is the
+  // behaviour this replaced.
+  assert.doesNotMatch(code, /Use Edit to save its token/,
+    'the form still tells the reader to press Edit to finish a new gateway');
+
+  // And the wording the reader has to act on. "Add" named neither what was added
+  // nor where the values went, and the label "Add a gateway" sat on the name
+  // INPUT, so the section had no name and that field had two.
+  assert.match(addForm[0], /textContent: 'Add gateway'/, 'the primary button does not name what it adds');
+  assert.match(addForm[0], /textContent: 'Add a gateway'/,
+    'the form has no heading of its own, so its first field is carrying the section title');
+});
+
 test('the narrow-width rule stacks the row inside the width query only', () => {
   const css = read(REPO, 'core', 'ui', 'ui.css');
   const query = '@media (max-width: 601px)';
