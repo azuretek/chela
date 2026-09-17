@@ -53,6 +53,32 @@ final class UpdatePolicyParityTests: XCTestCase {
         XCTAssertNotEqual(plan.reason, UpdatePolicy.capability(platform: "android", packaged: true).reason)
     }
 
+    /// The cadence is a mirror too, and this is what holds it to its owner.
+    ///
+    /// `UpdatePolicy.stableIntervalMs` and `prereleaseIntervalMs` were mirrored
+    /// from `core/spec/updates.json` with nothing reading them, which is how a
+    /// mirror stops being one: a constant kept in step for a future that had not
+    /// arrived. `UpdateSchedule` reads them now, so this asserts both halves -- the
+    /// numbers are the spec's, and the reader the phone uses answers with them.
+    func testTheCadenceMirrorsTheSharedSpec() throws {
+        struct Spec: Decodable {
+            struct Intervals: Decodable {
+                let stableMs: Int
+                let prereleaseMs: Int
+            }
+            let intervals: Intervals
+        }
+
+        let spec: Spec = try Fixtures.loadSpec("updates")
+        XCTAssertEqual(UpdatePolicy.stableIntervalMs, spec.intervals.stableMs)
+        XCTAssertEqual(UpdatePolicy.prereleaseIntervalMs, spec.intervals.prereleaseMs)
+
+        // And the rule the desktop's `checkIntervalMs` follows, from the same two
+        // numbers: a dev build on the fast interval, a stable build on the slow one.
+        XCTAssertEqual(UpdateCadence.intervalMs(for: "1.0.1-dev.51.e8de8f92c2"), spec.intervals.prereleaseMs)
+        XCTAssertEqual(UpdateCadence.intervalMs(for: "1.0.1"), spec.intervals.stableMs)
+    }
+
     /// What a check answers, reproduced from the same golden pairs the JS asserts.
     ///
     /// This is the contract for the bug the answer exists for: a control that
