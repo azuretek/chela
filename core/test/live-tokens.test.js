@@ -87,11 +87,28 @@ function isColour(value) {
 /** The first `:root` block, which is the dark palette. */
 const DARK = declaredIn(UI_CSS, ':root {', 'dark-palette');
 
-/** The light palette, read out of the media query that holds it. */
+/**
+ * The light palette, read out of the media query that holds it.
+ *
+ * The rule's selector is READ out of the media query rather than required to be
+ * `:root {`. It used to be that literal, and the lookup failed the whole guard
+ * the first time the selector was refined to `:root:not([data-appearance])` (a
+ * page that was HANDED an appearance must not have it overruled by the
+ * platform's, which is what that block's own comment says): the guard reported
+ * that ui.css had no light palette at all while the palette sat there, and a
+ * guard that fails on a correct stylesheet is worse than no guard, because the
+ * next reader edits the test until it passes. What this file is for is the
+ * VALUES, so which selector carries them is not its business.
+ */
 const LIGHT = (() => {
   const media = UI_CSS.indexOf('@media (prefers-color-scheme: light)');
   assert.notStrictEqual(media, -1, 'ui.css has no light-mode media query');
-  return declaredIn(UI_CSS.slice(media), ':root {', 'light-palette');
+  const body = UI_CSS.slice(UI_CSS.indexOf('{', media) + 1);
+  const brace = body.indexOf('{');
+  assert.notStrictEqual(brace, -1, 'the light-mode media query holds no rule');
+  const selector = body.slice(0, brace).replace(/\/\*[\s\S]*?\*\//g, '').trim();
+  assert.ok(selector.length, 'the light-mode media query holds a rule with no selector');
+  return declaredIn(body, selector, 'light-palette');
 })();
 
 /** The names the light palette declares, for the "is it declared there too" cases. */
