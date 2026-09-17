@@ -171,21 +171,41 @@ jobs:
 
       - run: npm ci
 
-      # Electron's Windows postinstall has intermittently left its dist/ incomplete
-      # ("failed to create directory ...\dist\locales: ... os error 183"), after
-      # which every test that imports electron throws "Electron failed to install
-      # correctly". That failed a release run once and passed on a plain re-run.
-      # Repair it here rather than fail a release on an install flake, and keep a
-      # hard check after the repair so a genuinely broken install still fails.
+      # Electron's postinstall has intermittently left its dist/ incomplete: on
+      # Windows ("failed to create directory ...\dist\locales: ... os error 183")
+      # and on Linux ("failed to create .../dist/electron: File exists (os error
+      # 17)"). Every test that imports electron then throws "Electron failed to
+      # install correctly". Each has failed a release run and passed on a plain
+      # re-run. Repair it here rather than fail a release on an install flake, and
+      # keep a hard check after the repair so a genuinely broken install still
+      # fails.
+      #
+      # Deliberately NOT gated on a runner OS. It used to read runner.os ==
+      # 'Windows', and that gate is why run 35264344454's Linux leg skipped this
+      # step and died in Test with 445 pass and that one install failure. The
+      # release job is gated on every build leg, so that flake skipped publication
+      # outright and the fix the push was carrying shipped nowhere.
+      #
+      # The leftover dist/ is deleted before the rebuild because the failure is an
+      # extractor refusing to overwrite what it half-wrote: re-running the install
+      # script over the same partial tree repeats the same os error. Electron
+      # caches the download, so this costs an extraction rather than a fetch.
+      #
+      # The check resolves the binary's path instead of only importing the module,
+      # because require('electron') throws only when path.txt is missing. A dist/
+      # whose binary was never extracted imports cleanly and then fails every test.
       - name: Ensure Electron is usable
-        if: runner.os == 'Windows'
         shell: bash
         run: |
-          if ! node -e "require('electron')" 2>/dev/null; then
+          electron_usable() {
+            node -e "const fs=require('fs'),p=require('electron');if(!fs.existsSync(p))throw new Error('electron binary missing at '+p)"
+          }
+          if ! electron_usable 2>/dev/null; then
             echo "electron install incomplete; rebuilding"
+            rm -rf node_modules/electron/dist
             npm rebuild electron
           fi
-          node -e "require('electron')" >/dev/null && echo "electron loads"
+          electron_usable >/dev/null && echo "electron loads"
 
       - name: Test
         run: npm test
