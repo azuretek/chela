@@ -31,6 +31,31 @@
    as the window's only drag surface. This stays because the banner's own pixels
    are not a drag area by intent, and because a control added inside the banner
    should not be the one that turns out to be unclickable. */
+
+/* The page paints NOTHING of its own outside the cards, and this rule is the one
+   that makes that true rather than nearly true.
+
+   It is the ROOT and not the body, which is the whole subtlety: ui.css sets
+   `html, body { background: var(--bg) }`, and a background on the root element
+   is propagated to the CANVAS and painted over the whole viewport whatever the
+   body says. So `body.banner-body { background: transparent }` below was already
+   correct and changed nothing visible: the strip stayed an opaque band of --bg,
+   because the root was still painting it.
+
+   Measured 2026-09-16, in both appearances, off the composited pixels: every one
+   of the banner view's pixels outside a card read `rgb(25, 23, 36) a255` in the
+   dark appearance and `rgb(250, 244, 237) a255` in the light, where alpha 0 is
+   the only correct answer for a strip laid over someone else's page. That is
+   Abi's report exactly: the row the sweep control sits in is over the content
+   under it rather than masking it. It also defeated the card's own glass, since
+   a `color-mix()` surface at 92% over an opaque slab has nothing to show through.
+
+   Nothing here may paint a surface: every pixel this page draws is a pixel of
+   the Control UI that nobody can see. */
+html {
+  background: transparent;
+}
+
 body.banner-body {
   background: transparent;
   overflow: hidden;
