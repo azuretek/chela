@@ -621,3 +621,103 @@ test('the measured half of the handoff is still a proof of the transition', () =
   assert.match(harness, /frameDiff\(/, 'the harness no longer compares frames');
   assert.match(harness, /transition-before|transition-revealed/, 'the harness no longer captures the transition');
 });
+
+test('the gateway section is ONE section with ONE Save, and says what an empty field means', () => {
+  // Reported, and this is the shape it was reported against: "Right now it's very
+  // segmented and there are multiple save buttons." Measured off the rendered page
+  // before this change, the editor offered
+  // ["Save","Clear","Save","Clear","Add header","Save name and address"]: four
+  // places to press for one job.
+  //
+  // That shape was a DELIBERATE choice, and this test exists because it is being
+  // REVERSED rather than repaired. Each credential had its own Save and Clear, and
+  // the name and address had a third Save under them, on the reasoning that a
+  // control next to the thing it writes is clearer than one at the end. The
+  // reasoning is what was wrong: a person configuring one gateway is doing one
+  // thing, and several identically-shaped buttons make that one task read as
+  // several, with the press having to be guessed at from whichever button is
+  // nearest. So the per-field pair is gone and there is ONE Save.
+  //
+  // Two things came with the single Save, and both are asserted here rather than
+  // left to the screenshots, because neither is a property of the layout:
+  //
+  //   - an EMPTY field means "leave it alone", which has to be SAID, since a single
+  //     Save over several fields is what makes a partial save the ordinary case;
+  //   - a stored credential still has to be removable, and the control that does it
+  //     is now a button of its own (see the test below).
+  //
+  // What this file can hold is the shape of the code. The button COUNT on a real
+  // rendered page, in both appearances, is measured by scripts/capture-gateway-form.js.
+  const code = codeOnly(page);
+
+  const editor = /function gatewayEditor\(gw\) \{[\s\S]*?\n\}/.exec(code);
+  assert.ok(editor, 'the editor is no longer built by a function this test can read');
+  assert.strictEqual([...editor[0].matchAll(/textContent: 'Save'/g)].length, 1,
+    'the editor does not offer exactly one Save');
+
+  // Gone, and named one at a time so a diff shows which one came back. The filter
+  // field above the list still has a Clear of its own; that one is markup in
+  // settings.html and belongs to the search box rather than to a gateway's fields.
+  assert.doesNotMatch(code, /function credentialButtons\(/,
+    'the per-field Save and Clear are back');
+  assert.doesNotMatch(code, /textContent: 'Clear'/, 'a Clear button is back on this page');
+  assert.doesNotMatch(code, /textContent: 'Add header'/,
+    'adding a header is a second, differently-shaped save again');
+
+  // What a partly filled form does, on both forms. A sentence in the interface is
+  // the interface for this: the alternative is a reader finding out by watching a
+  // stored value disappear.
+  assert.match(code, /A field left empty is kept as it is/,
+    'the editor does not say what an empty field is taken to mean');
+  assert.match(code, /a field left blank is simply not set/,
+    'the create form does not say what a blank field is taken to mean');
+
+  // And the save writes only what was filled, which is what makes that sentence
+  // true rather than decorative: setCredentials CLEARS a credential when it is
+  // handed a blank string, so a save that wrote every field would delete a stored
+  // token on any save where the reader had not retyped it.
+  const save = /async function saveEditedGateway\(gw, fields, out\) \{[\s\S]*?\n\}/.exec(code);
+  assert.ok(save, 'the editor no longer saves through a function this test can read');
+  assert.match(save[0], /if \(fields\.token\.value\) creds\.token = fields\.token\.value/,
+    'the editor writes the token field whether or not it was filled');
+  assert.match(save[0], /call\('updateGateway', gw\.id, \{ label, url \}\)/,
+    'the one press no longer writes the name and address');
+  assert.match(save[0], /call\('addHeader', gw\.id, fields\.headerName\.value/,
+    'the one press no longer stores a typed header');
+  // And it reports what it kept, because a save that quietly dropped a credential
+  // reads exactly like one that stored it.
+  assert.match(save[0], /Stored its new/, 'the one press reports nothing about what it stored');
+});
+
+test('a stored credential is still removable, by a control that names it', () => {
+  // The per-field Clear went with the per-field Save, so this is the half of the
+  // reversal that had to be answered rather than inherited: what takes a stored
+  // credential back out now?
+  //
+  // The choice is a control of its own beside the field it empties, acting on its
+  // own press, and the alternative was rejected deliberately. "Empty the field and
+  // save" was the other option, and under ONE Save it is unsafe: an empty field
+  // means "leave this alone" everywhere else in the section, so reading an empty
+  // one as an instruction to DELETE makes typing nothing the destructive action,
+  // and a reader who edits only the name would take the token with it. It is
+  // reasoned in full on \`credential\` in core/ui/settings.js; this holds the
+  // behaviour it produces.
+  //
+  // Demonstrated rather than asserted, by scripts/test-edit-and-remove-credential.js:
+  // it creates a gateway with a token, watches the app hand that token to a stub
+  // gateway, presses this control, and watches the next connection carry no token
+  // at all.
+  const code = codeOnly(page);
+  assert.match(code, /textContent: `Remove saved \$\{word\}`/,
+    'nothing on the page offers to remove a stored credential');
+  assert.match(code, /const remove = mode === 'stored' && has/,
+    'the removal control is not tied to a credential actually being stored');
+  assert.match(code, /call\('setCredentials', gw\.id, \{ \[key\]: '' \}\)/,
+    'the removal does not clear the credential through the store that keeps it');
+  assert.match(code, /setEditorAnswer\(gw, out, res\.saved\.ok/,
+    'the removal reports nothing, so a press that worked would read as one that did nothing');
+  // And a stored credential says so beside its field, which is the state the
+  // control appears in: the placeholder carries it inside the field, and the hint
+  // carries it in words.
+  assert.match(code, /A token is saved for this gateway\./, 'the token field does not report a stored value');
+});
