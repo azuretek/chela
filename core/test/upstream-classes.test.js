@@ -44,6 +44,44 @@ const tokensSpec = JSON.parse(fs.readFileSync(path.join(REPO, 'core', 'spec', 't
 const sources = uiSources();
 const uiText = sources.map((s) => s.text).join('\n');
 
+/**
+ * A script's source with its comments removed.
+ *
+ * The rule above is about what the page DOES, and the file quotes what it
+ * replaced: a version in a comment explaining why the pin owns the identity would
+ * be read as the page still carrying one. Strings are kept, because a line the
+ * page composes into an element is a string. Plain containment would be wrong
+ * here in a way that matters, so this walks the source rather than pattern
+ * matching it: `//` inside a URL string is not a comment, and dropping the rest
+ * of that line would silently remove code from the search.
+ */
+function codeOnly(src) {
+  let out = '';
+  let quote = null;
+  for (let i = 0; i < src.length;) {
+    const c = src[i];
+    const next = src[i + 1];
+    if (quote) {
+      out += c;
+      if (c === '\\') { out += next ?? ''; i += 2; continue; }
+      if (c === quote) quote = null;
+      i += 1;
+      continue;
+    }
+    if (c === '/' && next === '/') { while (i < src.length && src[i] !== '\n') i += 1; continue; }
+    if (c === '/' && next === '*') {
+      i += 2;
+      while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) i += 1;
+      i += 2;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') quote = c;
+    out += c;
+    i += 1;
+  }
+  return out;
+}
+
 /** Where a class name is used by our own pages, as file names. */
 function usedIn(name) {
   return sources.filter((s) => s.text.includes(name)).map((s) => s.file);
@@ -85,6 +123,17 @@ test('the pin describes a reference at all', () => {
   assert.ok(pin.upstream.checkout.includes('CLAW_OPENCLAW_UI'),
     'the pin does not say how the checkout is located, so the guard below cannot be reproduced');
   assert.equal(pin.upstream.readOnly, true, 'the pin does not say the checkout is read-only');
+});
+
+test('the pin records which revision of that version it was read from', () => {
+  // The version alone names a release, and a release is a range of trees: the
+  // borrowed classes came out of ONE of them, and a build of the app has to be
+  // able to say which. So the commit is part of the identity rather than a
+  // detail of how the file was produced, and a version with no commit beside it
+  // is the drift this file exists to catch, arriving through the front door.
+  assert.match(pin.upstream.commit, /^[0-9a-f]{40}$/, `no upstream commit: ${pin.upstream.commit}`);
+  assert.ok(String(pin.upstream.identifiedBy || '').length > 80,
+    'the pin does not say how the version was identified, so the next person re-reads it by guessing');
 });
 
 test('every pinned class is complete, and named once per selector', () => {
@@ -185,6 +234,35 @@ test('the checkout is the version the pin names', () => {
   assert.equal(version, pin.upstream.version,
     `the checkout is OpenClaw ${version} and the pin says ${pin.upstream.version}: `
     + 're-run the pin and reconcile any class upstream moved');
+});
+
+/* ------------------------------------------------ the reference, in About */
+
+// The other consumer of the identity above, and the one a PERSON reads. About is
+// the shared page (core/ui/about.html and about.js), rendered by the desktop and
+// by the iOS app alike, so the sentence about which Control UI this build targets
+// has to be composed once, in the page, from the pin's own fields: two hosts
+// writing that sentence would be two sentences about one revision, and the one
+// nobody looked at would be the one that went stale.
+//
+// What this asserts is the page's half of that arrangement, and the failure it
+// catches is the one that survives every other check here: a version written into
+// the page would agree with the pin on the day it was typed and keep agreeing
+// after the pin moved, because nothing re-reads a sentence. The RENDERED text is
+// checked against the pin in desktop/scripts/capture-pages.js, which loads the
+// real page and reads the row off the screen; this is the source half, and it runs
+// on a machine with no browser on it.
+
+test('the About page names the Control UI the pin records', () => {
+  const page = codeOnly(fs.readFileSync(path.join(REPO, 'core', 'ui', 'about.js'), 'utf8'));
+  assert.match(page, /state\.controlUI/,
+    'about.js draws no Control UI row from its host, so About names no upstream revision at all');
+  assert.match(page, /'Control UI'|\"Control UI\"/,
+    'the reference row carries no label, so which build a reader is looking at is unrecorded');
+  assert.match(page, /version/,
+    'the reference row does not carry the version the host hands it');
+  assert.doesNotMatch(page, /\b20\d\d\.\d+\.\d+\b/,
+    'about.js holds a version of its own, which is the copy that goes stale the next time the pin moves');
 });
 
 /* ------------------------------------------------------ the banner's half */

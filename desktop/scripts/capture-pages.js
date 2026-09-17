@@ -51,6 +51,17 @@ const REPO = path.join(import.meta.dirname, '..', '..');
 const UI = path.join(REPO, 'core', 'ui');
 
 /**
+ * The pin that records which Control UI this build targets.
+ *
+ * Read rather than written out here, because About names it and this harness is
+ * what checks that the page shows the pin's own version: a version typed into
+ * this file would be a third copy of it, and it would agree with whatever the
+ * page happened to print on the day it was typed. The pin is also what proves
+ * the check can fail, since its version is the expected value.
+ */
+const PIN = JSON.parse(fs.readFileSync(path.join(REPO, 'core', 'spec', 'upstream-reference.json'), 'utf8'));
+
+/**
  * What settings.html renders from, when no client is behind it.
  *
  * The spec is read rather than written out here, because the page filters its
@@ -106,6 +117,9 @@ const ABOUT_STATE = {
     { label: 'Chromium', value: '140.0.0.0' },
     { label: 'Config', value: '~/config.json' },
   ],
+  // The pin's own two fields, straight out of the file, which is what both
+  // clients hand the page. The page composes the line from them.
+  controlUI: { version: PIN.upstream.version, commit: PIN.upstream.commit },
 };
 
 /**
@@ -185,6 +199,7 @@ const PROBE = `(() => {
   const box = back ? back.getBoundingClientRect() : null;
   const cards = [...document.querySelectorAll('.banner')];
   const cardStyle = cards.length ? getComputedStyle(cards[0]) : null;
+  const rows = [...document.querySelectorAll('.fact')];
   return {
     colorScheme: computed.colorScheme.trim(),
     tokenBackground: computed.getPropertyValue('--bg').trim(),
@@ -198,6 +213,18 @@ const PROBE = `(() => {
     esc: Boolean(document.querySelector('.settings-sidebar__esc')),
     backIcon: Boolean(document.querySelector('.settings-sidebar__back-icon svg')),
     title: document.querySelector('.settings-sidebar__title') ? document.querySelector('.settings-sidebar__title').textContent.trim() : null,
+    // The facts list, as the page DREW it. Read off the rendered elements rather
+    // than from the state the stub was handed, because the question this answers
+    // is what a person sees: a row the page builds into an element is shown, and a
+    // value it never renders is not.
+    facts: rows.map(function (row) {
+      var label = row.querySelector('.fact__label');
+      var value = row.querySelector('.fact__value');
+      return {
+        label: label ? label.textContent.trim() : null,
+        value: value ? value.textContent.trim() : null,
+      };
+    }),
     // The banner's half. The notice surface token is emitted as a reference to a
     // palette token, and a custom property computes to the value it refers to, so
     // these three read as concrete colours and can be compared with each other.
@@ -212,11 +239,12 @@ const PROBE = `(() => {
   };
 })()`;
 
-// `back` is which pages carry the way back, `title` is their heading, and
-// `cards` is the notice banner's half: one page, no back control, notices instead.
+// `back` is which pages carry the way back, `title` is their heading, `reference`
+// is the pin's own line about which Control UI the page targets, and `cards` is
+// the notice banner's half: one page, no back control, notices instead.
 const PAGES = [
   { name: 'settings', file: 'settings.html', state: SMALL_STATE, title: 'Settings', back: true },
-  { name: 'about', file: 'about.html', state: ABOUT_STATE, title: 'Claw Control UI', back: true },
+  { name: 'about', file: 'about.html', state: ABOUT_STATE, title: 'Claw Control UI', back: true, reference: true },
   { name: 'banner', file: 'banner.html', state: BANNER_STATE, title: null, back: false, cards: true },
 ];
 
@@ -300,6 +328,28 @@ app.whenReady().then(async () => {
           JSON.stringify({ back: probe.back, visible: probe.backVisible, esc: probe.esc, icon: probe.backIcon }));
         check(`${page.name}.html names its surface`,
           probe.title === page.title, `the heading reads "${probe.title}"`);
+      }
+
+      if (page.reference) {
+        // Which Control UI this build targets, asserted against the pin and not
+        // against the stub: the stub was handed the pin's fields, so a check that
+        // only compared those would pass with the page drawing nothing at all.
+        //
+        // The expected line is composed here, independently of the page, on
+        // purpose: this is the one place that says what the line IS, so a change
+        // to the wording has to be a decision rather than a diff nobody read. The
+        // version and the sha come from the pin, which is what makes bumping the
+        // pin without the page following a failure instead of stale text.
+        const expected = `${PIN.upstream.version} (${PIN.upstream.commit.slice(0, 10)})`;
+        const row = probe.facts.find((f) => f.label === 'Control UI');
+        check(`${page.name}.html names the Control UI the pin records`,
+          Boolean(row) && row.value === expected,
+          JSON.stringify({ row: row || null, expected, pin: PIN.upstream.version }));
+        // And the other end of the same arrangement: the pin is the only place a
+        // version is written down, so the page must not be showing one of its own.
+        check(`${page.name}.html shows no version the pin did not give it`,
+          probe.facts.every((f) => !/\b20\d\d\.\d+\.\d+\b/.test(f.value) || f.value === expected),
+          JSON.stringify(probe.facts));
       }
 
       if (page.cards) {

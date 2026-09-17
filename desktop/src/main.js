@@ -64,6 +64,14 @@ import { releaseNotesUrl } from '../../core/feed.js';
 // client bundles the same file and hands it over the same way, so the two clients
 // render from one copy of the split. See core/spec/settings.json.
 import settingsSpec from '../../core/spec/settings.json' with { type: 'json' };
+// The Control UI this app wraps, and the revision of it our borrowed components
+// came out of. Read from the pin rather than written down here, because the pin is
+// the one owner of that identity and the class guard is what keeps it true
+// (core/test/upstream-classes.test.js): a version beside these classes would agree
+// with them on the day it was typed and keep agreeing after they moved. About
+// shows it, so that a rendering problem is reported against a revision rather than
+// against "the Control UI".
+import upstreamReference from '../../core/spec/upstream-reference.json' with { type: 'json' };
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Our own pages, which live in the repo's core/ui rather than here, and which the
@@ -2278,7 +2286,10 @@ function restartForUpdate() {
  * Every line is something someone gets asked for when reporting a problem and
  * cannot look up for themselves: which build this is, what it does about new
  * versions and when it last looked, and the runtime a rendering bug would be
- * blamed on.
+ * blamed on. The Control UI this build targets is on that list for the same
+ * reason, and it is the one line here that is not about this app: we wrap
+ * someone else's product, so "which version of it" is the first thing a
+ * rendering bug report has to answer.
  */
 // The names people read for a platform, in the one place About formats its own
 // facts. `process.platform` is a machine token; About is where a human reads it.
@@ -2324,6 +2335,16 @@ function aboutState() {
       { label: 'Platform', value: `${PLATFORM_NAMES[process.platform] || process.platform} ${process.arch}` },
       { label: 'Config', value: config.path() },
     ],
+    // The Control UI this build targets, and the two fields the shared page
+    // composes its line from. Passed as the pin's own fields rather than as a
+    // finished string, because the page draws this row for both clients and one
+    // sentence in one place is what keeps the desktop's About and the phone's
+    // About from describing the same revision two ways. See controlUILine in
+    // core/ui/about.js.
+    controlUI: {
+      version: upstreamReference.upstream.version,
+      commit: upstreamReference.upstream.commit,
+    },
     releasesUrl: RELEASES_URL,
   };
 }
