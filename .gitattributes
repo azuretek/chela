@@ -1,0 +1,20 @@
+# Line endings, pinned, because the working tree is what several checks read.
+#
+# GitHub's Windows runner checks out with core.autocrlf=true, so without this the
+# same commit lands there as CRLF and here as LF. Almost nothing cares, but the
+# suite has tests that assert on the exact text of a source file, and their
+# patterns anchor on \n. Measured 2026-09-16: with desktop/src/main.js and
+# core/ui/ui.css converted to CRLF on this machine, tokens.test.js and
+# updates.test.js go red with the same two messages the Windows leg of the release
+# workflow reports, which is what that leg has been failing on (386 tests, 384
+# pass, 2 fail, exit 1) while macOS and Linux pass. A red leg blocks the whole
+# release, so it blocks every fix behind it, which is how a line ending came to
+# decide whether a click fix reaches anyone.
+#
+# LF everywhere is also the answer for the packaged app: the text files in the
+# Windows build are then identical to the ones in the other two.
+#
+# text=auto leaves binary files alone, and nothing here wants CRLF back: the two
+# shell scripts are Unix files, and the repository carries no .bat, .cmd, .ps1,
+# .sln or project file.
+* text=auto eol=lf

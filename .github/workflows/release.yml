@@ -328,6 +328,15 @@ jobs:
     needs: [version, build]
     # Everything that built gets published; `prerelease` is what separates a dev
     # build from a release, not whether it is published at all.
+    #
+    # `needs: [version, build]` is also the first half of the gate Abi asked for on
+    # 2026-09-16: a build leg that FAILS skips this job rather than publishing a
+    # release without its platform, which is what kept dev builds off the feed while
+    # the Windows leg was red. That holds only while this `if` takes no status
+    # function (always(), !cancelled(), failure()), because one of those overrides
+    # the success requirement on the jobs above it and would publish a partial
+    # release. The second half is the artifact gate below, for a leg that succeeds
+    # without producing the files it exists for.
     if: needs.version.outputs.build == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -398,6 +407,20 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      # Nothing is published until every platform is in the release, with each
+      # installer electron-builder declares for it and the update metadata an
+      # updater reads. This runs before the release step rather than after it, for
+      # the reason the whole job exists: a release that goes out missing a platform
+      # cannot be recalled, and one published without its `dev-<platform>.yml` is a
+      # release every client's updater walks past in silence.
+      #
+      # The check reads its platform list from the build matrix above and its
+      # installer types from electron-builder.yml, so a platform or a target added
+      # to either is gated the day it is added; desktop/test/release-artifacts.test.js
+      # holds both readings to their sources.
+      - name: Every platform must be in the release
+        run: node desktop/scripts/check-release-artifacts.js artifacts
 
       - uses: softprops/action-gh-release@v2
         with:
