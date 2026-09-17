@@ -17,6 +17,16 @@ import WebKit
 struct SettingsSurface: UIViewRepresentable {
     let host: SettingsHost
 
+    /// The Control UI's live design tokens, read out of the gateway page when this
+    /// surface is presented (see `ThemeTokens`, `GatewayPage.liveTokens`).
+    ///
+    /// This is the leg that was missing on iOS, and the whole reason Abi's report
+    /// exists: the desktop hands these same values to this same page, so its
+    /// settings surface wears the interface's Instrument Sans and its `#0e1015`
+    /// slate, while the phone's wore ui.css's fallback palette and the system
+    /// font. Empty means no gateway page has answered, and the fallback stands.
+    let tokens: [String: String]
+
     /// Which appearance the app is in. The page's own palette resolves from
     /// `prefers-color-scheme`, which a web view answers from its own traits, so
     /// this is what makes the surface the same colour as the rest of the app the
@@ -36,6 +46,17 @@ struct SettingsSurface: UIViewRepresentable {
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         ))
+        // The interface's own palette and type, before the page paints. Injected
+        // rather than built into ui.css because these values are the RUNNING
+        // Control UI's, and a copy of them in our stylesheet would be a copy that
+        // goes stale the day upstream re-themes. See `ThemeTokens`.
+        scripts.addUserScript(WKUserScript(
+            source: ThemeTokens.applyScript(tokens),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
+        context.coordinator.appliedTokens = tokens
+        context.coordinator.appliedAppearance = appearance
         configuration.userContentController = scripts
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
@@ -93,15 +114,18 @@ struct SettingsSurface: UIViewRepresentable {
         return webView
     }
 
-    #if DEBUG
-    func makeCoordinator() -> ScreenshotScroller { ScreenshotScroller() }
+    /// What this surface has already pushed into the page.
+    ///
+    /// Held here rather than recomputed, because `updateUIView` runs on every
+    /// layout pass: without it the token layer would be re-applied several times a
+    /// second, and a page cannot tell a re-application from a theme change.
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        var appliedTokens: [String: String] = [:]
+        var appliedAppearance: AppearanceMode?
 
-    /// Scrolls the settings page to its foot after it loads, for a screenshot run.
-    /// The only reason `SettingsSurface` has a navigation delegate at all, and it
-    /// is attached only under the launch argument, so it changes nothing about the
-    /// page in ordinary use.
-    final class ScreenshotScroller: NSObject, WKNavigationDelegate {
+        #if DEBUG
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard SettingsSpec.screenshotScrollsToBottom else { return }
             // After a beat: the file page loads, then its own script renders the
             // gateway list into the DOM, so the content is not its full height
             // until a frame or two later. The scroll region is the page's own
@@ -115,10 +139,28 @@ struct SettingsSurface: UIViewRepresentable {
                 )
             }
         }
+        #endif
     }
-    #endif
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
+        // The token layer first: it is the interface's palette, and it is what
+        // makes this page look like part of the Control UI rather than beside it.
+        // Re-applied when it changes, which is on open and whenever the appearance
+        // moved, because a palette read in one mode is the wrong palette in the
+        // other.
+        if context.coordinator.appliedTokens != tokens {
+            context.coordinator.appliedTokens = tokens
+            webView.evaluateJavaScript(ThemeTokens.applyScript(tokens))
+        }
+        // Then the trait the page's own fallback palette resolves against, so a
+        // change made in this surface repaints it rather than waiting for the next
+        // navigation.
+        if context.coordinator.appliedAppearance != appearance {
+            context.coordinator.appliedAppearance = appearance
+            webView.overrideUserInterfaceStyle = appearance.userInterfaceStyle
+        }
         // Nothing to push: the page re-reads its own state when the host raises an
         // event, and every command answers with the state it produced.
         //

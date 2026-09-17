@@ -21,6 +21,12 @@ struct AboutSurface: UIViewRepresentable {
     /// device, so a live change still reaches the page.
     let appearance: AppearanceMode
 
+    /// The Control UI's live design tokens, read from the gateway page when this
+    /// surface is presented. The same map the settings surface gets, applied the
+    /// same way: about.html and settings.html draw from one stylesheet, so a token
+    /// layer that reached only one of them would make the two disagree.
+    let tokens: [String: String]
+
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         let scripts = WKUserContentController()
@@ -32,6 +38,15 @@ struct AboutSurface: UIViewRepresentable {
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         ))
+        // The interface's own palette and type, before the page paints. See
+        // `ThemeTokens`.
+        scripts.addUserScript(WKUserScript(
+            source: ThemeTokens.applyScript(tokens),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
+        context.coordinator.appliedTokens = tokens
+        context.coordinator.appliedAppearance = appearance
         configuration.userContentController = scripts
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
@@ -54,8 +69,23 @@ struct AboutSurface: UIViewRepresentable {
         return webView
     }
 
+    /// What this surface has already pushed into the page, for the same reason
+    /// `SettingsSurface.Coordinator` holds it: `updateUIView` runs on every layout
+    /// pass, and a layer re-applied per pass is a layer the page cannot settle on.
+    final class Coordinator {
+        var appliedTokens: [String: String] = [:]
+        var appliedAppearance: AppearanceMode?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func updateUIView(_ webView: WKWebView, context: Context) {
-        if webView.overrideUserInterfaceStyle != appearance.userInterfaceStyle {
+        if context.coordinator.appliedTokens != tokens {
+            context.coordinator.appliedTokens = tokens
+            webView.evaluateJavaScript(ThemeTokens.applyScript(tokens))
+        }
+        if context.coordinator.appliedAppearance != appearance {
+            context.coordinator.appliedAppearance = appearance
             webView.overrideUserInterfaceStyle = appearance.userInterfaceStyle
         }
     }

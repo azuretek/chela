@@ -1,5 +1,12 @@
 import electron from 'electron';
 import { product } from '../../core/naming.js';
+// The list of tokens we take from a running Control UI. It lives in the shared
+// token spec (core/spec/tokens.json, read by core/tokens.js) rather than here,
+// because the phone needs the same names: before it moved, the desktop could
+// follow the interface's live palette and the phone could not, which is exactly
+// how the iOS settings and About surfaces ended up wearing ui.css's fallback
+// type and colours instead of the interface's.
+import { LIVE_TOKENS } from '../../core/tokens.js';
 
 // `nativeTheme` is the only Electron surface this module touches, and only
 // applyTheme() uses it. Imported as the default so this module loads under
@@ -252,30 +259,7 @@ export function windowTitle(label) {
  * bundle. Tokens the UI does not define simply resolve to nothing and are
  * dropped, so this list may safely name more than any one theme provides.
  */
-export const THEME_TOKENS = [
-  // Surfaces
-  ['--bg', 'color'], ['--bg-accent', 'color'], ['--bg-hover', 'color'],
-  ['--bg-muted', 'color'], ['--bg-content', 'color'],
-  ['--panel', 'color'], ['--panel-hover', 'color'], ['--panel-strong', 'color'],
-  ['--input', 'color'], ['--chrome', 'color'],
-  // Text
-  ['--text', 'color'], ['--text-strong', 'color'],
-  ['--muted', 'color'], ['--muted-strong', 'color'],
-  // Lines
-  ['--border', 'color'], ['--border-strong', 'color'], ['--border-hover', 'color'],
-  // Accent
-  ['--accent', 'color'], ['--accent-hover', 'color'], ['--accent-subtle', 'color'],
-  ['--primary', 'color'], ['--primary-hover', 'color'], ['--primary-foreground', 'color'],
-  ['--destructive', 'color'], ['--ring', 'color'],
-  // Shape
-  ['--radius', 'length'], ['--radius-sm', 'length'], ['--radius-md', 'length'],
-  ['--radius-lg', 'length'], ['--radius-full', 'length'],
-  // Scrollbars, the reason our scrollbars can match rather than resemble.
-  ['--scrollbar-size', 'length'], ['--scrollbar-thumb-inset', 'length'],
-  ['--scrollbar-thumb', 'color'], ['--scrollbar-thumb-hover', 'color'],
-  // Type and depth
-  ['--font-body', 'font'], ['--shadow-lg', 'shadow'],
-];
+export const THEME_TOKENS = LIVE_TOKENS;
 
 // Grammars for a *computed* value. Deliberately narrow: no braces, no
 // semicolons, no `url()`, no nested parentheses, nothing that can close a rule

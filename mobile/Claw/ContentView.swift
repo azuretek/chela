@@ -128,6 +128,68 @@ struct ContentView: View {
     /// the object `core/ui/about.js` talks to for the life of the About sheet.
     @State private var aboutHost: AboutHost?
 
+    /// The Control UI's live design tokens, read from the gateway page and handed
+    /// to the settings and About surfaces so they wear the interface's own type
+    /// and palette rather than the fallback ui.css carries for the case where no
+    /// gateway has answered.
+    ///
+    /// Read rather than relayed. The read is a few milliseconds against a page
+    /// that is already loaded, and it is always current, where a relay would carry
+    /// a second copy of the palette's state through every launch and have to be
+    /// invalidated on the same events anyway.
+    @State private var liveTokens: [String: String] = [:]
+
+    private func refreshLiveTokens() {
+        gatewayPage.liveTokens { tokens in
+            if tokens != liveTokens { liveTokens = tokens }
+        }
+    }
+
+    /// The sheet-opening half of the refresh, as a method rather than a closure:
+    /// see the note where it is attached.
+    private func refreshLiveTokensWhenOpening(_ isOpen: Bool) {
+        guard isOpen else { return }
+        refreshLiveTokens()
+    }
+
+    /// The settings sheet's content, and About stacked over it.
+    ///
+    /// A named builder rather than inline in the modifier chain, because the
+    /// type checker refused the whole expression once the token layer added its
+    /// arguments: "unable to type-check this expression in reasonable time",
+    /// measured on 2026-09-16. The chain is not wrong, it is simply more than the
+    /// solver will take in one piece.
+    @ViewBuilder
+    private func settingsSheetContent(_ host: SettingsHost) -> some View {
+        SettingsSurface(host: host, tokens: liveTokens, appearance: appearance.mode)
+            // About is presented from the settings surface, so the second sheet
+            // stacks over the first the way the desktop's About-over-Settings
+            // overlay does, and lands back on settings when dismissed.
+            .aboutSheet(
+                isPresented: $showingAbout,
+                host: aboutHost,
+                appearance: appearance.mode,
+                tokens: liveTokens,
+                notices: notices
+            )
+    }
+
+    /// The app itself when no gateway is configured: the settings page IS the
+    /// surface, with About riding it and the notice stack over both.
+    @ViewBuilder
+    private func SettingsAsApp(host: SettingsHost) -> some View {
+        SettingsSurface(host: host, tokens: liveTokens, appearance: appearance.mode)
+            .ignoresSafeArea()
+            .aboutSheet(
+                isPresented: $showingAbout,
+                host: aboutHost,
+                appearance: appearance.mode,
+                tokens: liveTokens,
+                notices: notices
+            )
+            .noticeBanner(notices)
+    }
+
     var body: some View {
         Group {
             if let gateway = gateways.activeGateway {
@@ -181,19 +243,7 @@ struct ContentView: View {
                 // screen so a page's own height never sizes it. See
                 // `fullScreenSurfaceSheet`.
                 .fullScreenSurfaceSheet(isPresented: $showingSettings, notices: notices) {
-                    if let host {
-                        SettingsSurface(host: host, appearance: appearance.mode)
-                            // About is presented from the settings surface, so the
-                            // second sheet stacks over the first the way the
-                            // desktop's About-over-Settings overlay does, and lands
-                            // back on settings when dismissed.
-                            .aboutSheet(
-                                isPresented: $showingAbout,
-                                host: aboutHost,
-                                appearance: appearance.mode,
-                                notices: notices
-                            )
-                    }
+                    if let host { settingsSheetContent(host) }
                 }
             } else if let host {
                 // No gateway yet, so this IS the app: there is nothing behind it to
@@ -204,15 +254,7 @@ struct ContentView: View {
                 // its own sake: the launch update check runs whether or not a
                 // gateway is configured, so a build that finds a release with no
                 // gateway set would raise a notice into a board nothing draws.
-                SettingsSurface(host: host, appearance: appearance.mode)
-                    .ignoresSafeArea()
-                    .aboutSheet(
-                        isPresented: $showingAbout,
-                        host: aboutHost,
-                        appearance: appearance.mode,
-                        notices: notices
-                    )
-                    .noticeBanner(notices)
+                SettingsAsApp(host: host)
             } else {
                 // One frame, while the host is built in `onAppear`.
                 Color(uiColor: .systemBackground)
@@ -233,6 +275,18 @@ struct ContentView: View {
         // which leaves every one of them following the device live.
         .preferredColorScheme(appearance.mode.colorScheme)
         .onAppear(perform: prepare)
+        // The interface's live palette, read when the app appears and re-read
+        // whenever the answer can have changed. One concrete modifier rather than
+        // four more links on this chain: the chain is already the largest
+        // expression in the file, and the type checker refused it once the token
+        // layer arrived ("unable to type-check this expression in reasonable
+        // time", measured 2026-09-16).
+        .modifier(LiveTokenRefresh(
+            appearance: appearance.mode,
+            showingSettings: $showingSettings,
+            showingAbout: $showingAbout,
+            refresh: refreshLiveTokens
+        ))
         // The page draws a badge per gateway and disables the button under the one
         // already connecting, so it has to be told when the phase moves. Passive
         // rather than polled: this is the view that observes it.
@@ -500,6 +554,28 @@ struct ContentView: View {
 /// surface, and `aboutSheet` routes through this same modifier, so About over
 /// Settings is covered without a third copy. One modifier, applied at each layer
 /// boundary, rather than a height or a z-index nudged on the card.
+/// Read the interface's live palette at the moments it can have changed.
+///
+/// A modifier rather than links on `ContentView`'s chain, for the reason the chain
+/// notes: the appearance moves the Control UI's own palette, so a map read in one
+/// mode is the wrong map in the other, and either surface opening is the moment it
+/// is about to be used, but four more `onChange` links on that expression is more
+/// than the solver will take.
+private struct LiveTokenRefresh: ViewModifier {
+    let appearance: AppearanceMode
+    @Binding var showingSettings: Bool
+    @Binding var showingAbout: Bool
+    let refresh: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear(perform: refresh)
+            .onChange(of: appearance) { _, _ in refresh() }
+            .onChange(of: showingSettings) { _, isOpen in if isOpen { refresh() } }
+            .onChange(of: showingAbout) { _, isOpen in if isOpen { refresh() } }
+    }
+}
+
 private struct FullScreenSurfaceSheet<Surface: View>: ViewModifier {
     @Binding var isPresented: Bool
     let notices: NoticeBoard
@@ -530,17 +606,46 @@ extension View {
     ///
     /// Attached to the settings surface rather than to an ancestor, so About is the
     /// second sheet over the first the way the desktop stacks About over Settings,
-    /// and fills the screen the same way through `fullScreenSurfaceSheet`. A nil
-    /// host draws nothing, which is the one frame before `onAppear` builds it.
+    /// and fills the screen the same way. A nil host draws nothing, which is the one
+    /// frame before `onAppear` builds it.
+    ///
+    /// A concrete modifier rather than the generic `fullScreenSurfaceSheet` it is
+    /// modelled on, because this one carries five things into the sheet and the
+    /// type checker gave up on the generic form once the token layer arrived:
+    /// "unable to type-check this expression in reasonable time", measured on
+    /// 2026-09-16. One owner for the stacking, and a shape the solver accepts.
     func aboutSheet(
         isPresented: Binding<Bool>,
         host: AboutHost?,
         appearance: AppearanceMode,
+        tokens: [String: String],
         notices: NoticeBoard
     ) -> some View {
-        fullScreenSurfaceSheet(isPresented: isPresented, notices: notices) {
+        modifier(AboutSheetModifier(
+            isPresented: isPresented,
+            host: host,
+            appearance: appearance,
+            tokens: tokens,
+            notices: notices
+        ))
+    }
+}
+
+/// About over Settings, as one modifier: see `aboutSheet`.
+private struct AboutSheetModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    let host: AboutHost?
+    let appearance: AppearanceMode
+    let tokens: [String: String]
+    let notices: NoticeBoard
+
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: $isPresented) {
             if let host {
-                AboutSurface(host: host, appearance: appearance)
+                AboutSurface(host: host, appearance: appearance, tokens: tokens)
+                    .ignoresSafeArea()
+                    .presentationDetents([.large])
+                    .noticeBanner(notices)
             }
         }
     }
