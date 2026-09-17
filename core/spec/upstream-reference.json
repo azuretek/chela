@@ -1,0 +1,358 @@
+{
+  "description": "The Control UI surface our own chrome borrows, pinned by name and by declaration: the CLASSES our settings and About pages use, and the CARD VALUES the notice banner draws with. Our pages render inside the interface, so matching it means using ITS classes and its declarations rather than our own names styled from its token layer, and the banner sits over it, so its card is upstream's floating attention card rather than a lookalike. That is the difference between the surfaces looking the same by construction and looking approximately the same: before this file, our pages shared upstream's palette and spacing SCALE but none of its components, and the banner shared its GEOMETRY but through a spec whose two recorded values (the card surface and the row gap) had drifted from the rules they cite.",
+  "why": [
+    "A class name is a contract that nothing checks, and a recorded measurement is a contract nothing checks either. Upstream's stylesheet is served as a content-hashed asset (see core/spec/tokens.json), so it cannot be imported by our pages and must not be hardcoded; and a RENAME upstream leaves our markup pointing at a rule that no longer exists, which renders as an unstyled element rather than as an error. So the names, the declarations they resolve to and the card values the banner draws with are written down here, and core/test/upstream-classes.test.js holds both ends of it: our stylesheet and our token spec must still say what is recorded, and, when the checkout is readable, upstream must still declare it too.",
+    "The `rule` on a class entry, and the `expect` on a value entry, are upstream's own declaration reduced to one canonical form (comments gone, whitespace collapsed, declarations in order), which is what makes a reformat upstream not a change and a changed declaration one. Both were produced from the checkout rather than typed, by the same reader the guard uses, so the recorded text and the checked text cannot be two readings of the file.",
+    "`replaces` names what a class took over from in our own markup, and it is why several entries name the same upstream class: the back control is one control with a base rule, a hover rule, a focus ring, an icon box, an icon and an esc chip, and our old markup had one button carrying all of it.",
+    "`values` is the banner's half, and the reason it is not a second file: the banner is a strip over someone else's page rather than a panel in a sidebar, so it borrows the card's MEASUREMENTS and not its markup, and that borrowing belongs under the same guard as the classes. `path` is the key in core/spec/tokens.json that holds the value, so a drift is findable from either end.",
+    "`ours` lists the parts of that card that are deliberately NOT upstream's, with the reason, so that a value nobody could verify is a stated decision rather than an omission. Two of them are corrections: `.sidebar-issues-panel__dismiss:hover` does not exist upstream at all, and the card's padding is widened on purpose.",
+    "This file records CLASSES, VALUES and not a stylesheet. Copying upstream's sheets in here would be a second owner of them, and the copy would be the one that goes stale: the point of the pin is to compare against the original, not to keep a snapshot of it."
+  ],
+  "upstream": {
+    "repo": "openclaw",
+    "package": "ui",
+    "version": "2026.9.4",
+    "checkout": "the OpenClaw checkout, not this repo: $CLAW_OPENCLAW_UI, defaulting to ~/src/openclaw/ui, which is the fleet convention for ~/src/<repo>. Read-only, and never vendored here.",
+    "readOnly": true
+  },
+  "classes": [
+    {
+      "name": "settings-sidebar__header",
+      "selector": ".settings-sidebar__header",
+      "file": "src/styles/layout.css",
+      "component": "src/components/settings-sidebar.ts",
+      "rule": "flex-shrink: 0; padding: 8px 12px 6px;",
+      "replaces": "modal__header",
+      "why": "The header block, which holds the back control and the surface title. Same padding, so the back control lands on the same centreline."
+    },
+    {
+      "name": "settings-sidebar__back",
+      "selector": ".settings-sidebar__back",
+      "file": "src/styles/layout.css",
+      "component": "src/components/settings-sidebar.ts",
+      "rule": "display: flex; align-items: center; gap: 7px; width: 100%; min-height: 32px; padding: 0 9px; border: none; border-radius: var(--radius-md); background: transparent; color: var(--muted); font: inherit; font-size: calc(12.5px * var(--control-ui-text-scale)); font-weight: 550; transition: background var(--duration-fast) ease, color var(--duration-fast) ease;",
+      "replaces": "modal__close modal__back",
+      "why": "The back control: a label and an arrow at the leading edge, never an icon-only cross. This is the control the About page was missing."
+    },
+    {
+      "name": "settings-sidebar__back",
+      "selector": ".settings-sidebar__back:hover",
+      "file": "src/styles/layout.css",
+      "component": "src/components/settings-sidebar.ts",
+      "rule": "background: color-mix(in srgb, var(--bg-hover) 84%, transparent); color: var(--text);",
+      "replaces": "modal__close:hover",
+      "why": "Its hover fill, which is a translucent wash rather than our opaque --bg-hover."
+    },
+    {
+      "name": "settings-sidebar__back",
+      "selector": ".settings-sidebar__back:focus-visible",
+      "file": "src/styles/layout.css",
+      "component": "src/components/settings-sidebar.ts",
+      "rule": "outline: none; box-shadow: var(--focus-ring);",
+      "replaces": "none",
+      "why": "Its focus ring. Ours relied on the browser's default outline; upstream's ring is drawn from --bg and --ring so it is visible on the surface it sits on. This is the control's half of the keyboard affordance."
+    },
+    {
+      "name": "settings-sidebar__back-icon",
+      "selector": ".settings-sidebar__back-icon",
+      "file": "src/styles/layout.css",
+      "component": "src/components/settings-sidebar.ts",
+      "rule": "display: inline-flex; width: 15px; height: 15px;",
+      "replaces": "none (a bare arrow character, &#8592;)",
+      "why": "The glyph box, which is what makes the arrow a 15px stroke icon at the optical weight upstream draws it rather than a text character at the font size."
+    },
+    {
+      "name": "settings-sidebar__back-icon",
+      "selector": ".settings-sidebar__back-icon svg",
+      "file": "src/styles/layout.css",
+      "component": "src/components/settings-sidebar.ts",
+      "rule": "width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.7px; stroke-linecap: round; stroke-linejoin: round;",
+      "replaces": "none (a bare arrow character, &#8592;)",
+      "why": "The glyph itself: stroked, not filled, at 1.7px, so the arrow is the same weight as every other icon in the interface."
+    },
+    {
+      "name": "settings-sidebar__esc",
+      "selector": ".settings-sidebar__esc",
+      "file": "src/styles/layout.css",
+      "component": "src/components/settings-sidebar.ts",
+      "rule": "margin-left: auto; padding: 2px 6px; border: 1px solid color-mix(in srgb, var(--border) 80%, transparent); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--card) 70%, transparent); color: var(--muted); font-family: var(--mono); font-size: calc(10px * var(--control-ui-text-scale)); font-weight: 550; letter-spacing: 0.04em; text-transform: uppercase;",
+      "replaces": "none",
+      "why": "The esc chip beside the label. This is the keyboard affordance that NAMES the key, and it is the half of the control we had no equivalent of at all: our page answered Escape but said so nowhere."
+    },
+    {
+      "name": "settings-sidebar__title",
+      "selector": ".settings-sidebar__title",
+      "file": "src/styles/layout.css",
+      "component": "src/components/settings-sidebar.ts",
+      "rule": "margin: 14px 0 0; padding: 0 9px; font-size: calc(21px * var(--control-ui-text-scale)); font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; color: var(--text-strong);",
+      "replaces": "our own h1 rule",
+      "why": "The surface's own heading: 21px at weight 700 with -0.02em tracking, against our 17px at 650. The type scale is the most visible half of 'close but not the same'."
+    },
+    {
+      "name": "settings-group",
+      "selector": ".settings-group",
+      "file": "src/styles/settings.css",
+      "component": "src/components/settings-ui.ts",
+      "rule": "background: var(--card); border: 1px solid color-mix(in srgb, var(--border) 85%, transparent); border-radius: var(--radius-lg); overflow: hidden; min-width: 0;",
+      "replaces": "card",
+      "why": "The one surface a settings section is drawn on. --card with an 85% border and --radius-lg, rather than our --panel with a full border and --radius."
+    },
+    {
+      "name": "settings-row",
+      "selector": ".settings-row",
+      "file": "src/styles/settings.css",
+      "component": "src/components/settings-ui.ts",
+      "rule": "display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) var(--space-4); min-height: 48px;",
+      "replaces": "row inside a card, and label.check for a toggle",
+      "why": "One settings row: a 48px minimum, --space-3/--space-4 padding and a leading text column against a trailing control column."
+    },
+    {
+      "name": "settings-row__text",
+      "selector": ".settings-row__text",
+      "file": "src/styles/settings.css",
+      "component": "src/components/settings-ui.ts",
+      "rule": "display: flex; flex-direction: column; gap: 0; min-width: 0; flex: 1 1 0;",
+      "replaces": "stack",
+      "why": "The title-and-description column."
+    },
+    {
+      "name": "settings-row__title",
+      "selector": ".settings-row__title",
+      "file": "src/styles/settings.css",
+      "component": "src/components/settings-ui.ts",
+      "rule": "font-size: var(--control-ui-text-md); font-weight: 500; color: var(--text-strong); line-height: 1.35; overflow-wrap: anywhere;",
+      "replaces": "name",
+      "why": "The row title, at the interface's --control-ui-text-md rather than our 13px body size."
+    },
+    {
+      "name": "settings-row__desc",
+      "selector": ".settings-row__desc",
+      "file": "src/styles/settings.css",
+      "component": "src/components/settings-ui.ts",
+      "rule": "font-size: var(--control-ui-text-sm); color: var(--muted); line-height: 1.45; overflow-wrap: anywhere;",
+      "replaces": "muted-sm",
+      "why": "The row description, at --control-ui-text-sm."
+    },
+    {
+      "name": "settings-row__control",
+      "selector": ".settings-row__control",
+      "file": "src/styles/settings.css",
+      "component": "src/components/settings-ui.ts",
+      "rule": "display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); flex: 0 0 auto; min-width: 0; max-width: 60%;",
+      "replaces": "row__actions, loosely",
+      "why": "The trailing control column: a no-wrap cluster capped at 60% of the row."
+    },
+    {
+      "name": "settings-row--toggle",
+      "selector": ".settings-row--toggle",
+      "file": "src/styles/settings.css",
+      "component": "src/components/settings-ui.ts",
+      "rule": "cursor: var(--cursor-action);",
+      "replaces": "label.check",
+      "why": "A row that is a click target, so a switch or checkbox row toggles from anywhere on it, which is what our <label> wrapper was doing by accident of element choice."
+    },
+    {
+      "name": "settings-row--stacked",
+      "selector": ".settings-row--stacked",
+      "file": "src/styles/settings.css",
+      "component": "src/components/settings-ui.ts",
+      "rule": "flex-direction: column; align-items: stretch; gap: var(--space-2);",
+      "replaces": "field",
+      "why": "Title and description above a full-width control, which is how upstream draws a select or a text field rather than putting it beside the label."
+    },
+    {
+      "name": "settings-row--actions",
+      "selector": ".settings-row--actions .settings-row__control",
+      "file": "src/styles/settings.css",
+      "component": "src/components/settings-ui.ts",
+      "rule": "width: 100%; max-width: none; flex-wrap: wrap;",
+      "replaces": "actions",
+      "why": "A trailing cluster of buttons, given the whole row so the buttons wrap as buttons instead of squeezing into the 60% cap."
+    },
+    {
+      "name": "settings-row",
+      "selector": ".settings-row + .settings-row",
+      "file": "src/styles/settings.css",
+      "component": "src/components/settings-ui.ts",
+      "rule": "border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);",
+      "replaces": "our own hairline between list rows",
+      "why": "The hairline between two rows in one group: a 60% border, not a full one, which is what keeps a group reading as one surface with rows on it rather than as a stack of boxes."
+    },
+    {
+      "name": "settings-row--stacked",
+      "selector": ".settings-row--stacked .settings-row__control",
+      "file": "src/styles/settings.css",
+      "component": "src/components/settings-ui.ts",
+      "rule": "max-width: none; justify-content: flex-start;",
+      "replaces": "field",
+      "why": "The control column of a stacked row, and it is not decoration: without it the control keeps the 60% cap and the right alignment of a side-by-side row, so a select or a text field sits at the end of a stretched row instead of under its label."
+    }
+  ],
+  "values": [
+    {
+      "path": "card.border",
+      "file": "src/styles/sidebar-issues.css",
+      "selector": ".sidebar-issues-panel",
+      "property": "border",
+      "expect": "1px solid var(--border)",
+      "why": "The card's hairline, which is --border at full strength on the panel and at 88% on the floating chrome it was taken from."
+    },
+    {
+      "path": "card.borderAlpha",
+      "file": "src/styles/sidebar-attention-floating.css",
+      "selector": "openclaw-sidebar-attention.sidebar-attention--floating",
+      "property": "--sidebar-issues-border",
+      "expect": "1px solid color-mix(in srgb, var(--border) 88%, transparent)",
+      "why": "The floating chrome mixes --border at 88%; the panel above it uses the border whole. Which of the two the banner takes is recorded here so the fraction cannot drift on its own."
+    },
+    {
+      "path": "card.surface",
+      "file": "src/styles/sidebar-attention-floating.css",
+      "selector": "openclaw-sidebar-attention.sidebar-attention--floating",
+      "property": "--sidebar-issues-background",
+      "expect": "color-mix(in srgb, var(--panel) 92%, transparent)",
+      "why": "THE card surface, and the one that was wrong: the floating chrome mixes --panel at 92%, not --bg-elevated, so the banner's glass was a different tint from the card it is a copy of in light mode, where --panel and --bg-elevated are different colours."
+    },
+    {
+      "path": "card.surfaceAlpha",
+      "file": "src/styles/sidebar-attention-floating.css",
+      "selector": "openclaw-sidebar-attention.sidebar-attention--floating",
+      "property": "--sidebar-issues-background",
+      "expect": "color-mix(in srgb, var(--panel) 92%, transparent)",
+      "why": "The other half of that mix."
+    },
+    {
+      "path": "card.radius",
+      "file": "src/styles/sidebar-issues.css",
+      "selector": ".sidebar-issues-panel",
+      "property": "border-radius",
+      "expect": "var(--radius-lg)",
+      "why": "The card's own radius."
+    },
+    {
+      "path": "card.shadow",
+      "file": "src/styles/sidebar-issues.css",
+      "selector": ".sidebar-issues-panel",
+      "property": "box-shadow",
+      "expect": "var(--shadow-sm)",
+      "why": "The card's resting shadow."
+    },
+    {
+      "path": "card.blur",
+      "file": "src/styles/sidebar-attention-floating.css",
+      "selector": ":where(openclaw-sidebar-attention.sidebar-attention--floating) .sidebar-issues-button",
+      "property": "backdrop-filter",
+      "expect": "blur(10px)",
+      "why": "The blur that makes the translucent surface above read as glass rather than as a washed-out fill."
+    },
+    {
+      "path": "card.gap",
+      "file": "src/styles/sidebar-issues.css",
+      "selector": ".sidebar-issues-panel__summary",
+      "property": "gap",
+      "expect": "8px",
+      "why": "The summary row's gap, which is what the banner's own gap between its parts is modelled on."
+    },
+    {
+      "path": "card.iconSize",
+      "file": "src/styles/sidebar-issues.css",
+      "selector": ".sidebar-issues-panel__icon",
+      "property": "width",
+      "expect": "28px",
+      "why": "The tone icon's box. The banner draws no icon and carries the tone on its leading edge, but the box is what the edge width was derived from."
+    },
+    {
+      "path": "card.iconRadius",
+      "file": "src/styles/sidebar-issues.css",
+      "selector": ".sidebar-issues-panel__icon",
+      "property": "border-radius",
+      "expect": "var(--radius-sm)",
+      "why": "Its radius, recorded for the same reason."
+    },
+    {
+      "path": "card.dismiss.size",
+      "file": "src/styles/sidebar-issues.css",
+      "selector": ".sidebar-issues-panel__dismiss",
+      "property": "width",
+      "expect": "24px",
+      "why": "The dismiss control's box, so the banner's X is the same target as the card's."
+    },
+    {
+      "path": "card.dismiss.radius",
+      "file": "src/styles/sidebar-issues.css",
+      "selector": ".sidebar-issues-panel__dismiss",
+      "property": "border-radius",
+      "expect": "var(--radius-sm)",
+      "why": "Its radius."
+    },
+    {
+      "path": "card.dismiss.colour",
+      "file": "src/styles/sidebar-issues.css",
+      "selector": ".sidebar-issues-panel__dismiss",
+      "property": "color",
+      "expect": "var(--muted)",
+      "why": "The glyph colour at rest, which is what makes the X read as the quiet end of the card."
+    },
+    {
+      "path": "card.action.minHeight",
+      "file": "src/styles/sidebar-issues.css",
+      "selector": ".sidebar-issues-panel__action",
+      "property": "min-height",
+      "expect": "28px",
+      "why": "The card action's height, so the banner's one offer is the same control."
+    },
+    {
+      "path": "card.action.padding",
+      "file": "src/styles/sidebar-issues.css",
+      "selector": ".sidebar-issues-panel__action",
+      "property": "padding",
+      "expect": "4px 8px",
+      "why": "Its padding."
+    },
+    {
+      "path": "card.action.radius",
+      "file": "src/styles/sidebar-issues.css",
+      "selector": ".sidebar-issues-panel__action",
+      "property": "border-radius",
+      "expect": "var(--radius-md)",
+      "why": "Its radius."
+    },
+    {
+      "path": "card.action.border",
+      "file": "src/styles/sidebar-issues.css",
+      "selector": ".sidebar-issues-panel__action",
+      "property": "border",
+      "expect": "1px solid var(--border)",
+      "why": "Its hairline."
+    },
+    {
+      "path": "card.action.colour",
+      "file": "src/styles/sidebar-issues.css",
+      "selector": ".sidebar-issues-panel__action",
+      "property": "color",
+      "expect": "var(--muted)",
+      "why": "Its label colour at rest."
+    },
+    {
+      "path": "card.action.hoverSurface",
+      "file": "src/styles/sidebar-issues.css",
+      "selector": ".sidebar-issues-panel__action:hover",
+      "property": "background",
+      "expect": "var(--bg-hover)",
+      "why": "And the hover fill, which is the one place the card raises its voice."
+    },
+    {
+      "path": "card.action.hoverColour",
+      "file": "src/styles/sidebar-issues.css",
+      "selector": ".sidebar-issues-panel__action:hover",
+      "property": "color",
+      "expect": "var(--text)",
+      "why": "And the label colour it raises to."
+    }
+  ],
+  "ours": [
+    "card.edgeWidth is OURS rather than pinned, and it was recorded as a pinned value first and then removed: the tone stripe on the leading edge has no upstream equivalent at all, because the card shows its tone in an icon COLUMN (card.iconSize, card.iconRadius) and a bar over someone else's page has no column to show it in. Recorded here so that 'ours' is a stated decision rather than a value nobody checked.",
+    "card.padding is deliberately NOT pinned. Upstream's summary row pads 8px 12px and the banner pads 11px 14px, and the spec says so in as many words: widened for a bar. A bar is a strip rather than a list row, so it needs more air, and pinning it would pin it to a value that is wrong for the shape.",
+    "card.dismiss.hoverSurface and card.dismiss.hoverColour are NOT pinned either, and this one is a correction rather than a widening: the spec attributes them to `.sidebar-issues-panel__dismiss:hover`, which upstream does not declare at all (measured against the checkout, 2026-09-16). The floating control's hover lives on `.sidebar-issues-button:hover` and fills with color-mix(--bg-hover 84%) to --text, which is a different colour from the --text-strong the spec records. So the pair is OURS, taken from the interface's ordinary hover rather than from a rule that does not exist, and it is named here so that a reader stops looking for the missing rule."
+  ]
+}

@@ -88,13 +88,21 @@ function el(tag, props = {}, children = []) {
   return node;
 }
 
+/* A labelled field, in upstream's stacked-row shape: the title and its
+   description in one column, the control under them at full width. It was a
+   label above a control with a hint line under both, which is a different
+   rhythm from every row around it and is why an input never lined up with the
+   settings above it.
+
+   No inline style attributes anywhere on this page: settings.html sets
+   `style-src 'self'`, which CSP applies to style attributes too. */
 function field(labelText, control, hint) {
-  return el('div', { className: 'field' }, [
-    el('span', { textContent: labelText }),
-    control,
-    // No inline style attributes anywhere on this page: settings.html sets
-    // `style-src 'self'`, which CSP applies to style attributes too.
-    hint ? el('div', { className: 'muted-sm hint', textContent: hint }) : null,
+  return el('div', { className: 'settings-row settings-row--stacked' }, [
+    el('div', { className: 'settings-row__text' }, [
+      el('span', { className: 'settings-row__title', textContent: labelText }),
+      hint ? el('span', { className: 'settings-row__desc', textContent: hint }) : null,
+    ]),
+    el('div', { className: 'settings-row__control' }, [control]),
   ]);
 }
 
@@ -197,9 +205,10 @@ function secretRow(gw, { key, title, has, hint }, out) {
 
   return el('div', {}, [
     field(`${title}${has ? ' · stored' : ''}`, input, hint),
-    el('div', { className: 'row' }, [el('span', { className: 'grow' }), save, clear]),
-  ]);
-}
+    el('div', { className: 'settings-row settings-row--actions' }, [
+      el('div', { className: 'settings-row__control' }, [save, clear]),
+    ]),
+  ]);}
 
 /**
  * The extra request headers, which only a client that can set them shows.
@@ -212,18 +221,20 @@ function secretRow(gw, { key, title, has, hint }, out) {
 function headerSection(gw, out) {
   const names = (gw.credentials && gw.credentials.headers) || [];
   const list = el('div', {}, names.length
-    ? names.map((name) => el('div', { className: 'row' }, [
-      el('span', { className: 'url grow', textContent: `${name}: ••••••••` }),
-      el('button', {
-        className: 'ghost danger',
-        textContent: 'Remove',
-        onclick: async () => {
-          const res = await call('removeHeader', gw.id, name);
-          state = res;
-          setResult(out, res.saved.ok ? `Removed ${name}.` : res.saved.error, res.saved.ok ? 'ok' : 'err');
-          render();
-        },
-      }),
+    ? names.map((name) => el('div', { className: 'settings-row' }, [
+      el('span', { className: 'url settings-row__text', textContent: `${name}: ••••••••` }),
+      el('div', { className: 'settings-row__control' }, [
+        el('button', {
+          className: 'ghost danger',
+          textContent: 'Remove',
+          onclick: async () => {
+            const res = await call('removeHeader', gw.id, name);
+            state = res;
+            setResult(out, res.saved.ok ? `Removed ${name}.` : res.saved.error, res.saved.ok ? 'ok' : 'err');
+            render();
+          },
+        }),
+      ]),
     ]))
     : el('div', { className: 'muted-sm', textContent: 'No extra headers.' }));
 
@@ -243,15 +254,21 @@ function headerSection(gw, out) {
   });
 
   const box = el('div', {}, [
-    el('div', { className: 'field' }, [
-      el('span', { textContent: 'Extra request headers' }),
-      list,
-      el('div', {
-        className: 'muted-sm hint',
-        textContent: 'Sent only to this gateway’s own origin. Use for Cloudflare Access or an authenticating reverse proxy.',
-      }),
+    el('div', { className: 'settings-row settings-row--stacked' }, [
+      el('div', { className: 'settings-row__text' }, [
+        el('span', { className: 'settings-row__title', textContent: 'Extra request headers' }),
+        el('span', {
+          className: 'settings-row__desc',
+          textContent: 'Sent only to this gateway’s own origin. Use for Cloudflare Access or an authenticating reverse proxy.',
+        }),
+      ]),
+      el('div', { className: 'settings-row__control' }, [list]),
     ]),
-    el('div', { className: 'row' }, [name, value, add]),
+    // Our own inline cluster, kept as one: three controls that belong on one
+    // line, where upstream's actions row would wrap them onto three.
+    el('div', { className: 'settings-row settings-row--actions' }, [
+      el('div', { className: 'settings-row__control' }, [el('div', { className: 'row' }, [name, value, add])]),
+    ]),
   ]);
   box.setAttribute('data-setting', 'gatewayHeaders');
   return box;
@@ -278,7 +295,9 @@ function gatewayEditor(gw) {
   return el('div', { className: 'editor' }, [
     field('Name', label),
     field('URL', url),
-    el('div', { className: 'row' }, [el('span', { className: 'grow' }), saveAddress]),
+    el('div', { className: 'settings-row settings-row--actions' }, [
+      el('div', { className: 'settings-row__control' }, [saveAddress]),
+    ]),
     el('hr'),
     secretRow(gw, {
       key: 'token',
@@ -330,7 +349,7 @@ function renderGateways() {
   const phase = (state.connection && state.connection.phase) || 'idle';
 
   if (state.secretsError) {
-    host.append(el('div', { className: 'card' }, el('div', { className: 'result err', textContent: state.secretsError })));
+    host.append(el('div', { className: 'settings-group' }, el('div', { className: 'result err', textContent: state.secretsError })));
   }
 
   const all = state.gateways || [];
@@ -352,12 +371,12 @@ function renderGateways() {
     : filtered;
 
   if (!all.length) {
-    host.append(el('div', { className: 'card empty', textContent: 'No gateways yet. Add one below.' }));
+    host.append(el('div', { className: 'settings-group empty', textContent: 'No gateways yet. Add one below.' }));
     return;
   }
 
   if (!shown.length) {
-    host.append(el('div', { className: 'card empty', textContent: 'No gateways match your filter.' }));
+    host.append(el('div', { className: 'settings-group empty', textContent: 'No gateways match your filter.' }));
     return;
   }
 
@@ -399,52 +418,55 @@ function renderGateways() {
     // most likely to be reading it.
     const status = gw.status || { tone: 'muted', label: 'Not connected', detail: null };
 
-    // Three groups rather than five loose children: the content, the connection
-    // state, and the actions. At full width the three lay out exactly as the
-    // five items did, one row with the same gaps. The grouping is what lets a
-    // narrow window give the state a line of its own, centred, with the buttons
-    // on the line below it (the narrow-width rule in ui.css) without stretching
-    // the state's pill across the card, which a full-width badge would do.
-    const row = el('div', { className: 'row' }, [
-      el('div', { className: 'stack grow' }, [
-        el('span', { className: 'name', textContent: gw.label || gw.url }),
+    // Upstream's row shape: a text column against a trailing control column, on
+    // a group surface. The three groups are ours and they stay three: the text,
+    // the connection state and the actions. What moved is WHERE the last two
+    // live, into the control column that upstream gives every row, which is what
+    // lets a narrow window put the state on a line of its own, centred, with the
+    // buttons below it (the narrow-width rule in ui.css) without stretching the
+    // state's pill across the card, which a full-width badge would do.
+    const row = el('div', { className: 'settings-row' }, [
+      el('div', { className: 'settings-row__text' }, [
+        el('span', { className: 'settings-row__title', textContent: gw.label || gw.url }),
         el('span', { className: 'url', textContent: gw.url }),
-        el('span', { className: 'muted-sm', textContent: facts.join(' · ') }),
+        el('span', { className: 'settings-row__desc', textContent: facts.join(' · ') }),
         status.detail ? el('span', { className: `result ${status.tone}`, textContent: status.detail }) : null,
       ]),
-      el('div', { className: 'row__status' }, [
-        el('span', { className: `badge badge--${status.tone}`, textContent: status.label }),
-      ]),
-      el('div', { className: 'row__actions' }, [
-        el('button', {
-          className: active ? 'ghost' : 'primary',
-          // Pressing it again while it is already trying would tear down the
-          // attempt in flight and start an identical one, which reads as the
-          // button doing nothing.
-          disabled: active && phase === 'connecting',
-          textContent: (active && phase === 'connecting') ? 'Connecting…' : (active ? 'Reconnect' : 'Connect'),
-          // The result arrives as a notice over the top of this page, rather than
-          // by this page closing itself. See announceConnected() in src/main.js.
-          onclick: () => { void call('connect', gw.id); },
-        }),
-        el('button', {
-          className: 'ghost',
-          textContent: open ? 'Done' : 'Edit',
-          onclick: () => { editing = open ? null : gw.id; render(); },
-        }),
-        el('button', {
-          className: 'ghost danger',
-          textContent: 'Remove',
-          onclick: async () => {
-            if (editing === gw.id) editing = null;
-            state = await call('removeGateway', gw.id);
-            render();
-          },
-        }),
+      el('div', { className: 'settings-row__control' }, [
+        el('div', { className: 'row__status' }, [
+          el('span', { className: `badge badge--${status.tone}`, textContent: status.label }),
+        ]),
+        el('div', { className: 'row__actions' }, [
+          el('button', {
+            className: active ? 'ghost' : 'primary',
+            // Pressing it again while it is already trying would tear down the
+            // attempt in flight and start an identical one, which reads as the
+            // button doing nothing.
+            disabled: active && phase === 'connecting',
+            textContent: (active && phase === 'connecting') ? 'Connecting…' : (active ? 'Reconnect' : 'Connect'),
+            // The result arrives as a notice over the top of this page, rather than
+            // by this page closing itself. See announceConnected() in src/main.js.
+            onclick: () => { void call('connect', gw.id); },
+          }),
+          el('button', {
+            className: 'ghost',
+            textContent: open ? 'Done' : 'Edit',
+            onclick: () => { editing = open ? null : gw.id; render(); },
+          }),
+          el('button', {
+            className: 'ghost danger',
+            textContent: 'Remove',
+            onclick: async () => {
+              if (editing === gw.id) editing = null;
+              state = await call('removeGateway', gw.id);
+              render();
+            },
+          }),
+        ]),
       ]),
     ]);
 
-    host.append(el('div', { className: 'card' }, [row, open ? gatewayEditor(gw) : null]));
+    host.append(el('div', { className: 'settings-group' }, [row, open ? gatewayEditor(gw) : null]));
   }
 }
 
@@ -481,8 +503,8 @@ function renderCertOffers() {
       ? el('div', { className: 'result err', textContent: `The certificate for ${offer.host} has CHANGED since it was trusted.` })
       : el('div', { className: 'result warn', textContent: `${offer.host} is using a certificate this app cannot verify.` });
 
-    const explain = el('div', {
-      className: 'muted-sm hint',
+    const explain = el('span', {
+      className: 'settings-row__desc',
       textContent: offer.changed
         ? 'Expected if the gateway was reinstalled or regenerated its certificate. If nothing like that happened, '
           + 'something is intercepting the connection, leave it refused.'
@@ -490,7 +512,7 @@ function renderCertOffers() {
           + 'listener (an address ending in :18789) instead of going through the Tailscale Serve address.',
     });
 
-    const fingerprints = el('div', { className: 'stack' }, [
+    const fingerprints = el('div', { className: 'settings-row__text' }, [
       offer.previous ? el('span', { className: 'url', textContent: `previously trusted  ${offer.previous}` }) : null,
       el('span', { className: 'url', textContent: `${offer.previous ? 'now presenting     ' : 'fingerprint  '}${offer.fingerprint}` }),
       offer.error ? el('span', { className: 'muted-sm', textContent: `Reason: ${offer.error}` }) : null,
@@ -513,11 +535,17 @@ function renderCertOffers() {
       onclick: async () => { state = await call('dismissCertOffer', offer.host); render(); },
     });
 
-    host.append(el('div', { className: 'card' }, [
+    host.append(el('div', { className: 'settings-group' }, [
       heading,
+      // One stacked row for the two halves of the explanation: the control that
+      // decides this is the pair of buttons, so the reading matter belongs in the
+      // row that carries it rather than loose in the group.
+      el('div', { className: 'settings-row settings-row--stacked' }, [explain, fingerprints]),
       explain,
       fingerprints,
-      el('div', { className: 'row' }, [el('span', { className: 'grow' }), dismiss, trust]),
+      el('div', { className: 'settings-row settings-row--actions' }, [
+        el('div', { className: 'settings-row__control' }, [dismiss, trust]),
+      ]),
       out,
     ]));
   }
@@ -567,32 +595,36 @@ function renderNoticeHistory() {
 
   if (history === null) return; // not read yet; an empty card would be a lie
   if (!history.length) {
-    host.append(el('div', { className: 'card empty', textContent: 'Nothing has gone wrong that the app noticed.' }));
+    host.append(el('div', { className: 'settings-group empty', textContent: 'Nothing has gone wrong that the app noticed.' }));
     return;
   }
 
   for (const row of history.slice(0, HISTORY_SHOWN)) {
-    host.append(el('div', { className: 'card' }, el('div', { className: 'row' }, [
-      el('div', { className: 'stack grow' }, [
-        el('span', { className: 'name', textContent: row.message }),
+    host.append(el('div', { className: 'settings-group' }, el('div', { className: 'settings-row' }, [
+      el('div', { className: 'settings-row__text' }, [
+        el('span', { className: 'settings-row__title', textContent: row.message }),
         row.detail ? el('span', { className: 'url', textContent: row.detail }) : null,
-        el('span', { className: 'muted-sm', textContent: [when(row.from), lasted(row.from, row.to)].filter(Boolean).join(' · ') }),
+        el('span', { className: 'settings-row__desc', textContent: [when(row.from), lasted(row.from, row.to)].filter(Boolean).join(' · ') }),
       ]),
-      el('span', {
-        className: `badge badge--${row.tone === 'error' ? 'err' : 'warn'}`,
-        textContent: row.tone === 'error' ? 'Error' : 'Warning',
-      }),
+      el('div', { className: 'settings-row__control' }, [
+        el('span', {
+          className: `badge badge--${row.tone === 'error' ? 'err' : 'warn'}`,
+          textContent: row.tone === 'error' ? 'Error' : 'Warning',
+        }),
+      ]),
     ])));
   }
 
-  host.append(el('div', { className: 'row' }, [
-    el('span', {
-      className: 'muted-sm grow',
-      textContent: history.length > HISTORY_SHOWN
-        ? `Showing the ${HISTORY_SHOWN} most recent of ${history.length} kept.`
-        : 'Kept for three months, a file per month.',
-    }),
-    el('button', { className: 'ghost', textContent: 'Open log folder', onclick: () => call('openNoticeLog') }),
+  host.append(el('div', { className: 'settings-row settings-row--actions' }, [
+    el('div', { className: 'settings-row__control' }, [
+      el('span', {
+        className: 'muted-sm',
+        textContent: history.length > HISTORY_SHOWN
+          ? `Showing the ${HISTORY_SHOWN} most recent of ${history.length} kept.`
+          : 'Kept for three months, a file per month.',
+      }),
+      el('button', { className: 'ghost', textContent: 'Open log folder', onclick: () => call('openNoticeLog') }),
+    ]),
   ]));
 }
 
@@ -609,21 +641,23 @@ function renderCerts() {
   const hosts = Object.keys(state.trustedCerts || {});
 
   if (!hosts.length) {
-    host.append(el('div', { className: 'card empty', textContent: 'No certificates have been pinned.' }));
+    host.append(el('div', { className: 'settings-group empty', textContent: 'No certificates have been pinned.' }));
     return;
   }
 
   for (const name of hosts) {
-    host.append(el('div', { className: 'card' }, el('div', { className: 'row' }, [
-      el('div', { className: 'stack grow' }, [
-        el('span', { className: 'name', textContent: name }),
+    host.append(el('div', { className: 'settings-group' }, el('div', { className: 'settings-row' }, [
+      el('div', { className: 'settings-row__text' }, [
+        el('span', { className: 'settings-row__title', textContent: name }),
         el('span', { className: 'url', textContent: state.trustedCerts[name] }),
       ]),
-      el('button', {
-        className: 'ghost danger',
-        textContent: 'Forget',
-        onclick: async () => { state = await call('forgetCert', name); render(); },
-      }),
+      el('div', { className: 'settings-row__control' }, [
+        el('button', {
+          className: 'ghost danger',
+          textContent: 'Forget',
+          onclick: async () => { state = await call('forgetCert', name); render(); },
+        }),
+      ]),
     ])));
   }
 }

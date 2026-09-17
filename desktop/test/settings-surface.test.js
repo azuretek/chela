@@ -281,16 +281,27 @@ test('a gateway row is content, state and actions, as three groups', () => {
   // pill can be centred without being stretched only if the centred thing is the
   // group around it. Both are invisible at full width, which is exactly why this
   // is asserted here rather than left to the screenshots.
-  const row = /const row = el\('div', \{ className: 'row' \}, \[([\s\S]*?)\n    \]\);/.exec(page);
+  //
+  // The row is upstream's `settings-row` now, and that is a structural change
+  // rather than a rename: the state and the actions moved INTO the row's control
+  // column, which is the slot upstream gives a row for whatever trails its text.
+  // So the assertion below checks that third level too, because a row whose two
+  // groups are still direct children would stack by wrapping rather than by
+  // stacking its control, and the narrow rule depends on the difference.
+  const row = /const row = el\('div', \{ className: 'settings-row' \}, \[([\s\S]*?)\n    \]\);/.exec(page);
   assert.ok(row, 'the gateway row is no longer built as one literal, so this test cannot see it');
   const body = row[1];
 
+  const textAt = body.indexOf('settings-row__text');
+  const controlAt = body.indexOf('settings-row__control');
   const statusAt = body.indexOf('row__status');
   const actionsAt = body.indexOf('row__actions');
   const badgeAt = body.indexOf('badge badge--');
   const firstButtonAt = body.indexOf("el('button'");
 
-  assert.ok(statusAt >= 0, 'the row no longer groups its connection state');
+  assert.ok(textAt >= 0, 'the row no longer opens with the upstream text column');
+  assert.ok(controlAt > textAt, 'the row no longer has a control column after its text');
+  assert.ok(statusAt > controlAt, 'the connection state is no longer inside the control column');
   assert.ok(actionsAt > statusAt, 'the row no longer groups its buttons after the state');
   assert.ok(badgeAt > statusAt && badgeAt < actionsAt, 'the badge is no longer inside the state group');
   assert.ok(firstButtonAt > actionsAt, 'a button is still a loose child of the row');
@@ -306,22 +317,28 @@ test('the narrow-width rule stacks the row inside the width query only', () => {
   assert.ok(narrow, 'the narrow-width media query has no readable block');
   const block = narrow[1];
 
-  // The state gets a line, centred, and the buttons get the line below it: a
-  // full-width badge would have centred its TEXT and stretched the pill with it.
+  // The control column is what stacks, and that is the mechanism the row shape
+  // moved to: the state and the buttons are two groups inside one column, so
+  // making that column vertical is what puts them on lines of their own. A rule
+  // that gave each group `flex-basis: 100%` inside a ROW would look like it did
+  // the same thing and would leave the two sharing a line at the widths this is
+  // for.
+  assert.match(block, /\.settings-row__control[^{]*\{[^}]*flex-direction: column/,
+    'the control column no longer stacks, so the state and the buttons share a line');
+  assert.match(block, /\.settings-row__text[^{]*\{[^}]*flex-basis: 100%/,
+    'the text column no longer takes a line of its own in the narrow layout');
   assert.match(block, /\.row__status[^{]*\{[^}]*justify-content: center/,
     'the state is no longer centred in the narrow layout');
-  assert.match(block, /\.row__actions[^{]*\{[^}]*flex-basis: 100%/,
-    'the buttons no longer take a line of their own in the narrow layout');
   assert.match(block, /\.row__actions > button[^{]*\{[^}]*flex: none/,
     'the buttons now stretch to fill the wrapped line');
 
-  // And the wide row is untouched by any of it: the groups' own rule sits outside
-  // the query, so a wide window draws the same row it drew before.
+  // And the wide row is untouched by any of it: every one of those rules is
+  // inside the query, and the row's own base declaration is outside it.
   const base = css.indexOf('.row__status,');
   assert.ok(base >= 0 && base < at, 'the groups\' base rule moved inside the width query');
-  const baseRow = /\.row \{([^}]*)\}/.exec(css.slice(css.indexOf('.row {') , at));
-  assert.match(baseRow ? baseRow[1] : '', /^[\s\S]*display: flex; align-items: center; gap: 12px;/,
-    'the wide row rule is not the one-line flex row it was');
+  const baseRow = /\.settings-row \{([^}]*)\}/.exec(css.slice(css.indexOf('.settings-row {'), at));
+  assert.match(baseRow ? baseRow[1] : '', /justify-content: space-between/,
+    'the wide row rule is not upstream\'s own one-line row any more');
   assert.ok(!/flex-wrap/.test(baseRow ? baseRow[1] : ''), 'the row wraps at full width now');
 });
 
