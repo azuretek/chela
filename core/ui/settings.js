@@ -74,6 +74,13 @@ let state = null;
 // Which gateway's credential editor is open. Kept across re-renders so saving a
 // field does not collapse the panel you are working in.
 let editing = null;
+// The last answer each gateway's editor gave, kept across the re-render that
+// follows every press in it. The editor is rebuilt from state on each save (a
+// credential's placeholder and the presence of its removal control both change),
+// so an answer written into the old element would be thrown away with it and the
+// press would look like it did nothing at all. Cleared when the editor is opened,
+// so a message never outlives the visit that produced it.
+const editorAnswers = new Map();
 // The failure log, once read. Null is not the same as empty: an empty section
 // drawn before the answer arrives says nothing has ever gone wrong, and that is
 // a claim this page has no business making until it has looked.
@@ -180,11 +187,28 @@ function applySurface() {
  * shapes for one object is how a page comes to disagree with itself, so there is
  * one now, and both flows fill in the same fields.
  *
- * Nothing here writes anything. It hands back the rows and the controls and the
- * caller decides what to save, because the two flows save at genuinely different
- * moments: the editor writes each credential when its own Save is pressed, and
- * the add form writes everything in one pass, once there is a gateway to attach
- * it to.
+ * ONE section, and ONE Save at the end of it. Every field is labelled and every
+ * credential says its own state in words beside it. The section was the opposite
+ * until now: editing put a Save and a Clear under each credential and a further
+ * Save under the name and address, so one job, configuring one gateway, arrived as
+ * four identically-shaped buttons and a press had to be guessed at from whichever
+ * one was nearest. That shape was a deliberate choice and it is being reversed:
+ * the segmentation read as several tasks where the reader has one.
+ *
+ * Nothing here writes anything. It hands back the rows and the controls, and the
+ * caller decides what its own Save does, because the two flows reach different
+ * commands: creating has no gateway to write a credential against until one
+ * exists, so its press creates the gateway and keeps everything typed beside it,
+ * where editing presses one Save that writes the address and every credential
+ * typed into the section, in one pass.
+ *
+ * What an EMPTY field means is therefore the same in both flows, and it is said on
+ * the section rather than left to be found out: empty means unchanged while
+ * editing and unset while creating, and it never deletes. It cannot mean "remove"
+ * under a single Save, because emptying one field of an unrelated change would
+ * then take a stored credential with it. The one thing that removes a stored
+ * credential is a control of its own, beside the field it empties; the reasoning
+ * is on `credential` below.
  *
  * The credentials are write-only on both paths, so no value is ever read back:
  * every credential input starts empty and its placeholder carries the state
@@ -208,6 +232,12 @@ function gatewayFields(gw, { mode, ids = {}, out = null }) {
   const token = named(ids.token, { type: 'password', autocomplete: 'off', spellcheck: false, placeholder: stored(creds.hasToken) });
   const password = named(ids.password, { type: 'password', autocomplete: 'off', spellcheck: false, placeholder: stored(creds.hasPassword) });
 
+  // A stored credential said in the hint as well as in the placeholder, because
+  // the placeholder is inside the field and a reader scanning the section reads
+  // the words beside it. It says what is stored; the removal control below says
+  // what takes it out.
+  const savedState = (has, sentence) => (mode === 'stored' && has ? ` ${sentence}` : '');
+
   // The one thing a reader cannot find out by looking: a credential is only ever
   // proven by a connection. Editing an existing gateway, that answer already
   // arrived, because this gateway is on screen having been connected to. Creating
@@ -217,17 +247,45 @@ function gatewayFields(gw, { mode, ids = {}, out = null }) {
     ? ' It cannot be checked here, only on the first connection, so a wrong one is reported then rather than now.'
     : '';
 
-  // One row per credential, with its own Save and Clear directly under it when
-  // there is a gateway to write to. The buttons belong to the field rather than
-  // to the panel, which is what stops a row of three unexplained Save buttons.
-  const credential = ({ key, title, has, control, hint }) => el('div', {}, [
-    field(`${title}${mode === 'stored' && has ? ' · stored' : ''}`, control, hint),
-    mode === 'stored'
-      ? el('div', { className: 'settings-row settings-row--actions' }, [
-        el('div', { className: 'settings-row__control' }, credentialButtons(gw, control, { key, title, has }, out)),
-      ])
-      : null,
-  ]);
+  /**
+   * One credential: its label, its hint, its control, and, when one is stored,
+   * the ONE control that takes it back out.
+   *
+   * The removal is a control of its own rather than "empty the field and save",
+   * and that is the deliberate half of a single Save. An empty field means "leave
+   * this alone" everywhere else in this section, so it cannot also mean "delete":
+   * with one Save across several fields, clearing a credential by emptying its
+   * field would delete a stored token on any save where the reader simply did not
+   * retype it, and a form that destroys a credential by being left alone is worse
+   * than one with an extra button on it.
+   *
+   * So a stored value is removed by a button that names what it removes, sitting
+   * beside the field it empties, and it acts at once rather than on the next Save:
+   * pressing it IS the request, so nothing else has to be pressed for it to be
+   * true. It is absent when nothing is stored, because there is then nothing to
+   * take back out. The alternative that was rejected, and why it failed: a field
+   * is where a value goes IN, so reading an empty one as an instruction to delete
+   * makes the safe action, typing nothing, the destructive one.
+   */
+  const credential = ({ key, title, word, has, control, hint }) => {
+    const remove = mode === 'stored' && has
+      ? el('button', {
+        className: 'ghost danger',
+        textContent: `Remove saved ${word}`,
+        onclick: async () => {
+          const res = await call('setCredentials', gw.id, { [key]: '' });
+          state = res;
+          setEditorAnswer(gw, out, res.saved.ok ? `${title} removed.` : res.saved.error, res.saved.ok ? 'ok' : 'err');
+          render();
+        },
+      })
+      : null;
+    // The cluster is built only when there is a button to cluster with, so a
+    // credential with nothing stored keeps the plain full-width control the
+    // create form draws: the two flows differ in the ACTION a stored value makes
+    // possible and never in the fields themselves.
+    return field(title, remove ? el('div', { className: 'row' }, [control, remove]) : control, hint);
+  };
 
   const headers = hasSetting('gatewayHeaders') ? headerRows(gw, { mode, ids, out }) : null;
 
@@ -238,16 +296,18 @@ function gatewayFields(gw, { mode, ids = {}, out = null }) {
       credential({
         key: 'token',
         title: 'Gateway token',
+        word: 'token',
         has: creds.hasToken,
         control: token,
-        hint: `Handed to the Control UI when you connect, so a gateway with a token never shows you a sign-in form. From \`openclaw gateway auth-token --show\` on that gateway.${unprovable}`,
+        hint: `Handed to the Control UI when you connect, so a gateway with a token never shows you a sign-in form. From \`openclaw gateway auth-token --show\` on that gateway.${unprovable}${savedState(creds.hasToken, 'A token is saved for this gateway.')}`,
       }),
       credential({
         key: 'password',
         title: 'Gateway password',
+        word: 'password',
         has: creds.hasPassword,
         control: password,
-        hint: 'Only for gateways in password mode. There is no URL handoff for passwords, so the app fills the sign-in form instead, best effort.',
+        hint: `Only for gateways in password mode. There is no URL handoff for passwords, so the app fills the sign-in form instead, best effort.${savedState(creds.hasPassword, 'A password is saved for this gateway.')}`,
       }),
       headers ? el('div', {}, [el('hr'), headers.node]) : null,
     ]),
@@ -261,43 +321,6 @@ function gatewayFields(gw, { mode, ids = {}, out = null }) {
 }
 
 /**
- * One credential's own Save and Clear, which belong to the field above them.
- *
- * Only the editor has these, and the reason is the store rather than the
- * surface: a credential is kept against a gateway's id, so there is nothing to
- * write one to until the gateway exists. The add form's one button saves its
- * credentials with everything else, in the same pass that creates it.
- */
-function credentialButtons(gw, input, { key, title, has }, out) {
-  const save = el('button', {
-    className: 'primary',
-    textContent: 'Save',
-    onclick: async () => {
-      if (!input.value) return setResult(out, 'Enter a value first.', 'err');
-      const res = await call('setCredentials', gw.id, { [key]: input.value });
-      state = res;
-      input.value = '';
-      setResult(out, res.saved.ok ? `${title} saved.` : res.saved.error, res.saved.ok ? 'ok' : 'err');
-      render();
-    },
-  });
-
-  const clear = el('button', {
-    className: 'ghost danger',
-    textContent: 'Clear',
-    disabled: !has,
-    onclick: async () => {
-      const res = await call('setCredentials', gw.id, { [key]: '' });
-      state = res;
-      setResult(out, res.saved.ok ? `${title} cleared.` : res.saved.error, res.saved.ok ? 'ok' : 'err');
-      render();
-    },
-  });
-
-  return [save, clear];
-}
-
-/**
  * The extra request headers, which only a client that can set them shows.
  *
  * Marked with the spec's id like every other setting, and asked for by name
@@ -305,11 +328,14 @@ function credentialButtons(gw, input, { key, title, has }, out) {
  * listed this gateway's stored header names on the phone, names the phone cannot
  * use and has no business displaying.
  *
- * The two flows differ in their ACTIONS here and never in their fields, which is
- * the same split the credentials keep: the editor has a gateway to write to, so
- * it lists what is stored and adds a header when asked. The add form has nothing
- * stored and no id to write against yet, so its one pair of inputs is saved by
- * the same press that creates the gateway.
+ * The pair of inputs is the same pair in both flows, and in both of them it is
+ * stored by the section's own press: adding a header used to be a third,
+ * differently-shaped action sitting among the fields, which is the shape this
+ * section is being simplified out of. What still differs is the listing, and only
+ * the editor has one, because only the editor has a gateway whose stored headers
+ * exist to be listed. Removing one of those stays a control of its own, for the
+ * same reason a credential's removal does: it is the thing that takes a stored
+ * value back out, so it says which one and acts on that press alone.
  */
 function headerRows(gw, { mode, ids = {}, out = null }) {
   const names = (gw.credentials && gw.credentials.headers) || [];
@@ -318,20 +344,10 @@ function headerRows(gw, { mode, ids = {}, out = null }) {
   const value = el('input', { ...(ids.headerValue ? { id: ids.headerValue } : {}), type: 'password', placeholder: 'value', autocomplete: 'off', spellcheck: false });
 
   // Our own inline cluster, kept as one: the controls that belong on one line,
-  // where upstream's actions row would wrap them onto three.
-  const controls = mode === 'stored'
-    ? [name, value, el('button', {
-      textContent: 'Add header',
-      onclick: async () => {
-        if (!name.value.trim()) return setResult(out, 'Enter a header name.', 'err');
-        const res = await call('addHeader', gw.id, name.value, value.value);
-        state = res;
-        if (res.saved.ok) { name.value = ''; value.value = ''; }
-        setResult(out, res.saved.ok ? 'Header saved.' : res.saved.error, res.saved.ok ? 'ok' : 'err');
-        render();
-      },
-    })]
-    : [name, value];
+  // where upstream's actions row would wrap them onto three. No button of their
+  // own: a name and a value entered here are stored by the section's Save, beside
+  // everything else the reader typed.
+  const controls = [name, value];
 
   // Only in the editor: the add form has no gateway yet, so there is nothing
   // stored to list and listing "none" would be a second empty state to read past.
@@ -361,7 +377,8 @@ function headerRows(gw, { mode, ids = {}, out = null }) {
         el('span', { className: 'settings-row__title', textContent: 'Extra request headers' }),
         el('span', {
           className: 'settings-row__desc',
-          textContent: 'Sent only to this gateway’s own origin. Use for Cloudflare Access or an authenticating reverse proxy.',
+          textContent: 'Sent only to this gateway’s own origin. Use for Cloudflare Access or an authenticating reverse proxy.'
+            + (mode === 'stored' ? ' A name and value entered here are stored by Save.' : ''),
         }),
       ]),
       el('div', { className: 'settings-row__control' }, [stored]),
@@ -379,36 +396,125 @@ function headerRows(gw, { mode, ids = {}, out = null }) {
  *
  * The fields are not built here: they are `gatewayFields` in its stored state,
  * the same builder the add form uses, so the two cannot come to offer different
- * things. What this adds is what only an existing gateway can have, meaning the
- * credentials' own Save and Clear (a credential is kept against a gateway's id,
- * which does not exist until the gateway does) and the note that a new address
- * takes effect on the next connect rather than now.
+ * things. What this adds is what only an existing gateway can have: the section's
+ * own name, its single Save, and, beside each stored credential, the control that
+ * removes it.
+ *
+ * ONE Save, writing every field above it in one pass: the name and address through
+ * `updateGateway`, a typed credential through `setCredentials` and a typed header
+ * through `addHeader`, all against this gateway's id and through the commands the
+ * rest of this page already uses. What it does not write is a field the reader left
+ * empty, which is the half that makes a stored credential survive a save that never
+ * mentioned it; see `credential` in `gatewayFields` for why the removal is then a
+ * separate control rather than an empty field.
  */
 function gatewayEditor(gw) {
   const out = el('div', { className: 'result' });
+  // The answer to the last press in here, if there was one. It is re-painted
+  // rather than lost with the element that carried it.
+  const answered = editorAnswers.get(gw.id);
+  if (answered) setResult(out, answered.text, answered.kind);
   const fields = gatewayFields(gw, { mode: 'stored', out });
 
-  const saveAddress = el('button', {
+  const save = el('button', {
     className: 'primary',
-    // Named for the two fields it writes. It was "Save address" while it saved
-    // the name as well, beside two other Save buttons that saved a credential
-    // each, so a press had to be guessed at from the button nearest it.
-    textContent: 'Save name and address',
-    onclick: async () => {
-      if (!fields.url.value.trim()) return setResult(out, 'Enter an address first.', 'err');
-      state = await call('updateGateway', gw.id, { label: fields.name.value.trim(), url: fields.url.value.trim() });
-      setResult(out, 'Saved. Reconnect to use the new address.', 'ok');
-      render();
-    },
+    // One word, because there is one action. It was "Save name and address", set
+    // beside a Save and a Clear for each credential, and a reader had to work out
+    // from the nearest button which fields a press would write.
+    textContent: 'Save',
+    onclick: () => saveEditedGateway(gw, fields, out),
   });
 
   return el('div', { className: 'editor' }, [
+    // The section is NAMED, and the rule deciding what the press does to a field
+    // nobody touched is stated here rather than left to be discovered. A save with
+    // something left empty is the ordinary case, and a field that silently deleted
+    // a stored value would be the surprise this is written to prevent.
+    el('div', { className: 'settings-row settings-row--stacked' }, el('div', { className: 'settings-row__text' }, [
+      el('span', { className: 'settings-row__title', textContent: 'Edit this gateway' }),
+      el('span', {
+        className: 'settings-row__desc',
+        textContent: 'One Save writes every field below at once. A field left empty is kept as it is, so saving without a stored credential never clears it; the button beside it removes it.',
+      }),
+    ])),
     fields.node,
     el('div', { className: 'settings-row settings-row--actions' }, [
-      el('div', { className: 'settings-row__control' }, [saveAddress]),
+      el('div', { className: 'settings-row__control' }, [save]),
     ]),
     out,
   ]);
+}
+
+/**
+ * Save an existing gateway's whole section, in ONE press.
+ *
+ * The order is the store's: the address and name first, so the row the credentials
+ * belong to is the one that was just written, and then the credentials, which are
+ * kept against this gateway's id rather than anywhere else.
+ *
+ * Only the fields that were FILLED are written. An empty credential field means
+ * "leave it alone" rather than "clear it", and that is not a detail of the
+ * implementation: `setCredentials` clears a credential when it is handed a blank
+ * string, so a save that wrote every field would delete a stored token on any save
+ * where the reader had simply not retyped it. Removing one is the control beside
+ * the field, and it acts on its own press.
+ *
+ * The answer names what was stored rather than saying "Saved", because a save that
+ * quietly dropped a credential reads exactly like one that kept it, and a refusal
+ * from the credential store is the one outcome that has to be visible.
+ */
+async function saveEditedGateway(gw, fields, out) {
+  const url = fields.url.value.trim();
+  const label = fields.name.value.trim();
+  if (!url) return setResult(out, 'Enter an address first.', 'err');
+
+  const addressChanged = url !== (gw.url || '');
+  const problems = [];
+
+  state = await call('updateGateway', gw.id, { label, url });
+
+  const creds = {};
+  if (fields.token.value) creds.token = fields.token.value;
+  if (fields.password.value) creds.password = fields.password.value;
+  if (Object.keys(creds).length) {
+    const saved = await call('setCredentials', gw.id, creds);
+    state = saved;
+    if (!saved.saved.ok) problems.push(saved.saved.error);
+  }
+
+  const headerNamed = Boolean(fields.headerName && fields.headerName.value.trim());
+  if (headerNamed) {
+    const saved = await call('addHeader', gw.id, fields.headerName.value, fields.headerValue.value);
+    state = saved;
+    if (!saved.saved.ok) problems.push(saved.saved.error);
+  }
+
+  const kept = [];
+  if (creds.token) kept.push('token');
+  if (creds.password) kept.push('password');
+  if (headerNamed) kept.push('header');
+
+  // Emptied once they are stored, because these fields are write-only: a value
+  // left sitting in one is on screen after it has been kept, and the row above
+  // then reports a saved token while a field shows what looks like a new one
+  // waiting to be saved again.
+  for (const control of [fields.token, fields.password, fields.headerName, fields.headerValue]) {
+    if (control) control.value = '';
+  }
+
+  const notes = [];
+  if (kept.length) notes.push(`Stored its new ${listWords(kept)}`);
+  if (addressChanged) notes.push('the new address applies on the next connect');
+
+  setEditorAnswer(
+    gw,
+    out,
+    problems.length
+      ? `Saved, but ${problems.join(', and ')}.`
+      : (notes.length ? `Saved. ${notes.join('; ')}.` : 'Saved.'),
+    problems.length ? 'warn' : 'ok',
+  );
+  render();
 }
 
 /**
@@ -546,7 +652,14 @@ function renderGateways() {
           el('button', {
             className: 'ghost',
             textContent: open ? 'Done' : 'Edit',
-            onclick: () => { editing = open ? null : gw.id; render(); },
+            // Opening starts a clean visit: the previous visit's answer belongs to
+            // the previous visit, and one left on screen would describe a press
+            // nobody has made yet.
+            onclick: () => {
+              editing = open ? null : gw.id;
+              if (!open) editorAnswers.delete(gw.id);
+              render();
+            },
           }),
           el('button', {
             className: 'ghost danger',
@@ -980,6 +1093,20 @@ function setResult(node, text, kind) {
   node.className = `result${kind ? ` ${kind}` : ''}`;
 }
 
+/**
+ * An answer inside a gateway's editor, which the re-render after a press must not
+ * throw away.
+ *
+ * A save or a removal changes what the editor draws (a placeholder, and whether a
+ * removal control exists at all), so it ends in a redraw, and that redraw replaces
+ * the element the answer was written into. So the answer is remembered against the
+ * gateway as well, and painted again by whichever editor is built next.
+ */
+function setEditorAnswer(gw, out, text, kind) {
+  editorAnswers.set(gw.id, { text, kind });
+  setResult(out, text, kind);
+}
+
 /* --------------------------------------------------------------- listeners */
 
 // Takes the reader to the Control UI's own settings, which is where the
@@ -1024,9 +1151,11 @@ if (openAbout) {
  * keyboard mid-typing throws away whatever was typed into it, which is the same
  * fault as a field that never saves.
  *
- * The actions say what they do. It is "Add gateway" rather than "Add", and the
- * row above the fields says when the values are kept and that nothing is
- * contacted until Connect, which is the half of this form a reader had to guess.
+ * The actions say what they do, and there is one of them that saves: it is "Add
+ * gateway" rather than "Add", and the row above the fields says what one press
+ * keeps, what a blank field means, and that nothing is contacted until Connect,
+ * which is the half of this form a reader had to guess. The other control is
+ * "Test connection", which stores nothing at all.
  */
 function renderAddForm() {
   const host = $('add-gateway');
@@ -1077,7 +1206,10 @@ function renderAddForm() {
       el('span', { className: 'settings-row__title', textContent: 'Add a gateway' }),
       el('span', {
         className: 'settings-row__desc',
-        textContent: 'Everything here is kept together, the token included. Nothing is contacted until you press Connect on the row it adds.',
+        // The rule for a partly filled form is stated here rather than left to
+        // be discovered: this is the form a reader meets first, and "what happens
+        // to the fields I left alone" is the first thing a single Save raises.
+        textContent: 'One press keeps everything filled in here, the token included; a field left blank is simply not set. Nothing is contacted until you press Connect on the row it adds.',
       }),
     ])),
     fields.node,
