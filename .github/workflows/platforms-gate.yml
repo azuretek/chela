@@ -30,6 +30,13 @@ name: every platform
 #   the verdict jobs    the other pipeline's build and test jobs. Every one must
 #                       conclude success, and a cancelled or timed-out leg is
 #                       not a passing one.
+#   the job list itself a run object appears within seconds of its push, but its
+#                       JOBS register later, and the gap is seconds to tens of
+#                       seconds. So a job list matching nothing is waited on
+#                       while the other run is still going, and refuses only
+#                       once that run has concluded without ever listing one,
+#                       which is a rename or a workflow change rather than a
+#                       slow runner.
 #   NOT its publish     the other pipeline's release job needs ITS gate, and that
 #                       gate waits on THIS pipeline's verdict. Waiting on its
 #                       publish as well would be a deadlock: neither run could
@@ -150,22 +157,44 @@ jobs:
           # past 100 entries would need paginating; both pipelines are a handful
           # of jobs, and a rename that took them past this would still be caught
           # by the empty-match refusal below rather than passing.
+          #
+          # ★ An empty match is not a rename until the run it came from is over.
+          # A run object appears within seconds of its push, but its JOBS are
+          # registered later, and the gap is real: on 2026-09-17 the mobile run
+          # for a commit existed at 05:45:41 and its first job did not register
+          # until 05:46:04, while this gate queried at 05:45:51, read the empty
+          # list as "nothing matches the pattern" and refused a release whose
+          # counterpart was green. Waiting is the correct answer while the other
+          # run is still going; the window bounds it. Only a run that has
+          # CONCLUDED with no matching job is unreadable, and that must refuse.
           while :; do
             jobs="$(gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100" \
               --jq ".jobs[] | select(.name | test(\"$VERDICT\"))
                     | \"\(.name)|\(.status)|\(.conclusion)\"")"
 
             if [ -z "$jobs" ]; then
-              echo "::error::refusing to publish: $OTHER's run has no job matching /$VERDICT/, so this gate cannot see whether it built and tested. A gate that cannot see the other platform must not pass it."
-              echo "Look at $run_url, and at the verdict argument this pipeline passes."
-              exit 1
-            fi
-
-            if [ -z "$(printf '%s\n' "$jobs" | grep -v '|completed|' || true)" ]; then
+              # The run's own state, read rather than assumed: it is what tells
+              # "its jobs are not listed yet" apart from "nothing will match".
+              state="$(gh api "repos/$REPO/actions/runs/$run_id" \
+                --jq '.status + " " + (.conclusion // "pending")')"
+              case "$state" in
+                completed\ *)
+                  echo "::error::refusing to publish: $OTHER's run has no job matching /$VERDICT/, and it has concluded ${state#completed }, so this gate cannot see whether it built and tested. A gate that cannot see the other platform must not pass it."
+                  echo "Look at $run_url, and at the verdict argument this pipeline passes."
+                  exit 1
+                  ;;
+              esac
+              echo "$OTHER's run is up and has no job satisfying /$VERDICT/ listed yet; waiting for one to register."
+            elif [ -z "$(printf '%s\n' "$jobs" | grep -v '|completed|' || true)" ]; then
               break
             fi
 
             if [ $SECONDS -ge $overall ]; then
+              if [ -z "$jobs" ]; then
+                echo "::error::refusing to publish: $OTHER's run has no job matching /$VERDICT/ after ${WINDOW_MINUTES%%.*} minutes, so this gate cannot see whether it built and tested. A gate that cannot see the other platform must not pass it."
+                echo "Look at $run_url, and at the verdict argument this pipeline passes."
+                exit 1
+              fi
               {
                 echo "::error::refusing to publish: $OTHER is still running after ${WINDOW_MINUTES%%.*} minutes, so its builds and tests are not complete."
                 echo "Look at $run_url"
