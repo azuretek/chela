@@ -126,6 +126,19 @@ function mount() {
     set(next) { unread = next; },
     rows: () => stack.kids.map((n) => n.id || n.className),
     node: (id) => find(stack, id),
+    // The stack itself, and a count over the WHOLE tree by id. The sweep row now
+    // hangs inside a card, so "how many rows are there" and "is the row still in
+    // the stack" became questions about the tree rather than about one level.
+    root: () => stack,
+    count: (id) => {
+      let n = 0;
+      const walk = (node) => {
+        if (node.id === id) n += 1;
+        for (const kid of node.kids) walk(kid);
+      };
+      walk(stack);
+      return n;
+    },
   };
 }
 
@@ -139,7 +152,13 @@ test('a dismissible notice gets a way to close the whole bar', () => {
   const b = mount();
   b.set([failure]);
   return b.render().then(() => {
-    assert.deepEqual(b.rows(), ['n-connection', 'banner-actions']);
+    // The row hangs inside the card rather than beside it, so the stack holds
+    // cards and nothing else: see the strip guard at the end of this file for
+    // why that is a hit-testing rule and not a layout preference.
+    assert.deepEqual(b.rows(), ['n-connection']);
+    const row = b.node('banner-actions');
+    assert.ok(row, 'no way to close the whole bar was drawn');
+    assert.equal(row.parent, b.node('n-connection'), 'the sweep must hang inside the last card');
   });
 });
 
@@ -151,13 +170,16 @@ test('nothing offers to mark all read when nothing can be', async () => {
   assert.deepEqual(b.rows(), ['n-update-available']);
 });
 
-test('the close-the-bar row stays at the bottom as cards come and go', async () => {
+test('the close-the-bar row lands on whichever card is last, as cards come and go', async () => {
   const b = mount();
   b.set([pinned]);
   await b.render();
   b.set([pinned, failure]);
   await b.render();
-  assert.equal(b.rows()[b.rows().length - 1], 'banner-actions');
+  assert.deepEqual(b.rows(), ['n-update-available', 'n-connection']);
+  const row = b.node('banner-actions');
+  assert.ok(row, 'the sweep row is gone');
+  assert.equal(row.parent, b.node('n-connection'), 'the sweep must hang inside the LAST card');
 });
 
 test('a re-render leaves exactly one close-the-bar row', async () => {
@@ -169,7 +191,7 @@ test('a re-render leaves exactly one close-the-bar row', async () => {
   await b.render();
   await b.render();
   await b.render();
-  assert.equal(b.rows().filter((r) => r === 'banner-actions').length, 1);
+  assert.equal(b.count('banner-actions'), 1, 'a re-render left more than one sweep row');
   assert.ok(b.node('n-connection'), 'and the card it sits under survives too');
 });
 
@@ -234,6 +256,43 @@ test('the slide is for a card arriving, not for one changing', async () => {
   await b.render();
   assert.ok(!b.node('n-update-available').classList.contains('banner--enter'), 'an updated card slid again');
 });
+
+test('the stack holds cards and nothing else, so the bar has no dead strip of its own', async () => {
+  // ★ The third instance of one fault in this area, and the reason it is a guard
+  // rather than a comment: the bar is drawn in a view sized to the stack, and a
+  // view claims every mouse event inside its own rectangle whatever the page
+  // draws there. So every child of the stack has to DRAW something. A child that
+  // draws nothing is a full-width strip of the overlay's rectangle that the
+  // reader sees the page through and cannot click, and that is exactly what the
+  // sweep's own row was.
+  //
+  // Measured 2026-09-17 on the desktop: the row was correct in every other way.
+  // It held the right control, it was rebuilt exactly once, it sat in the right
+  // place, and a click on its empty leading half was delivered into the banner's
+  // document at the root element and reached neither the control nor the page.
+  // Moving the control inside the last card, which is drawn there anyway, is what
+  // made that strip the page again.
+  const b = mount();
+  b.set([failure, pinned]);
+  await b.render();
+  const children = b.root().kids;
+  assert.ok(children.length, 'the stack was empty, so this guard proves nothing');
+  for (const child of children) {
+    assert.match(String(child.className), /(^|\s)banner(\s|$)/,
+      `the stack holds a ${child.tag}.${child.className}, which is not a card. Only a card draws a surface, `
+      + 'so anything else is a transparent strip inside the overlay\'s own rectangle eating clicks on the page '
+      + 'the reader can see through it');
+  }
+  const row = b.node('banner-actions');
+  assert.ok(row, 'the sweep row is gone');
+  assert.equal(parentClass(row), 'banner',
+    'the sweep row must hang inside a card, where it costs no pixel of its own');
+});
+
+/** The first class token of a node's parent, or null when it has no parent. */
+function parentClass(node) {
+  return node.parent ? String(node.parent.className).split(/\s+/)[0] : null;
+}
 
 test('an empty bar reports zero height, so the view stops eating clicks', async () => {
   // A view swallows every mouse event inside its bounds whatever is drawn there,

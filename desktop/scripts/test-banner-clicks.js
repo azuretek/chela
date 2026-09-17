@@ -12,7 +12,7 @@
 // The honest instrument is a real click at real screen coordinates, which is
 // what this does, through System Events.
 //
-//   npx electron scripts/test-banner-clicks.js [--target close|action|readall]
+//   npx electron scripts/test-banner-clicks.js [--target close|action|readall|dead]
 //                                              [--expect dead|alive]
 //                                              [--shots DIR]
 //
@@ -20,6 +20,18 @@
 // click lands in the drag band and nothing happens. `--expect alive` is the claim
 // the fix makes. Both are asserted, so this file records the fault rather than
 // quietly passing once it is gone.
+//
+// `--target dead` is the OTHER half of "the click reaches what a person aimed
+// at", and it is the direction that was reported three times in this area: a
+// point inside the banner's own rectangle that is NOT one of its controls, aimed
+// at the transparent strip below the cards in the sweep control's row. A click
+// there belongs to the page underneath, because that is what the reader can see
+// through it. Three readings are printed for it, and they name different faults:
+// the banner page saw the click and the page beneath did not (an element of the
+// banner is hit-testable where the pixel is transparent, which is a declaration
+// in banner.css); neither saw it (the click never left the banner's view, which
+// is the view bounds in main.js and no stylesheet can fix); or the page beneath
+// saw it, which is live.
 //
 // Isolation is pinned BOTH ways, because main.js decides whether a run is
 // isolated from the '--user-data-dir' SWITCH rather than from the path: a harness
@@ -45,12 +57,41 @@ const SHOTS = arg('--shots', null);
 const TARGET = arg('--target', 'close');
 const EXPECT = arg('--expect', 'alive');
 
-// The gateway this run points at. Unreachable by default, which is one of the
-// conditions that raises a notice, but a reachable one matters for the decisive
-// test: the connection notice is raised again on every reconnect attempt, so
-// against a dead gateway the banner can go from two cards to one and back to two
-// and a dismissed card looks like one that never went.
-const GATEWAY = arg('--gateway', 'http://127.0.0.1:18791/');
+// The gateway this run points at, SERVED FROM HERE unless one is given.
+//
+// The page underneath the banner has to be a real page, or the through-click
+// target measures nothing: it asserts that a click on a transparent pixel reaches
+// what the reader can see there, and with a refused gateway the view below the
+// banner is blank, so that view's silence reads as "the click was eaten" whatever
+// the stylesheet says. Measured 2026-09-17, on the first runs of that target: the
+// window stacked titlebar | blank | banner, and the blank view would not take a
+// listener at all.
+//
+// The served document carries OpenClaw's own payload marker because that is what
+// makes main.js accept an address as a gateway and load it rather than refuse it
+// (core/gateway-identity.js reads the marker names from
+// core/spec/gateway-identity.json). The banner still comes up in every run: the
+// profile below sets a global shortcut the OS cannot register, which is a real
+// condition whose notice never stops being true.
+//
+// `--gateway` still overrides, which is how the unreachable case is reproduced.
+const GIVEN_GATEWAY = arg('--gateway', null);
+let gatewayServer = null;
+let GATEWAY = GIVEN_GATEWAY;
+if (!GIVEN_GATEWAY) {
+  const { createServer } = await import('node:http');
+  gatewayServer = createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end('<!doctype html><html data-openclaw-control-ui-build-id="harness">'
+      + '<head><meta charset="utf-8"><title>Harness gateway</title></head>'
+      + '<body><h1 id="served">served</h1><p id="under">the page under the banner</p></body></html>');
+  });
+  const port = await new Promise((resolve, reject) => {
+    gatewayServer.once('error', reject);
+    gatewayServer.listen(0, '127.0.0.1', () => resolve(gatewayServer.address().port));
+  });
+  GATEWAY = `http://127.0.0.1:${port}/`;
+}
 
 fs.writeFileSync(path.join(TMP, 'config.json'), `${JSON.stringify({
   gateways: [{ id: 'harness', label: 'Harness', url: GATEWAY }],
@@ -175,6 +216,36 @@ app.whenReady().then(async () => {
       // control sitting on an opaque block rather than over the content.
       readall: rect('.banner__readall'),
       stack: rect('.banner-stack'),
+      // The point Abi reported: inside the banner's own rectangle, below the
+      // cards, in the row the sweep control sits in and to the LEFT of it. It
+      // is a pixel the page beneath is showing through, so it is exactly where
+      // a click must belong to that page rather than to the banner.
+      dead: (() => {
+        const box = (sel) => {
+          const node = document.querySelector(sel);
+          if (!node) return null;
+          const r = node.getBoundingClientRect();
+          return { x: r.x, y: r.y, w: r.width, h: r.height };
+        };
+        const stack = box('.banner-stack');
+        if (!stack) return null;
+        const cards = [...document.querySelectorAll('.banner')].map((n) => n.getBoundingClientRect());
+        if (!cards.length) return null;
+        // THE STRIP UNDER THE CARDS: 24px below the lowest card they draw, in the
+        // leading part of the width where nothing is drawn. Defined against the
+        // CARDS rather than against the sweep's own row, because the row is what
+        // the fix removes and a point that follows it would move with it: this is
+        // the same pixel of the window before and after, which is what makes the
+        // two readings a comparison.
+        const lowest = Math.max(...cards.map((c) => c.y + c.height));
+        const x = stack.x + 200;
+        const y = lowest + 24;
+        const overACard = cards.some((c) => x >= c.x && x <= c.x + c.width && y >= c.y && y <= c.y + c.height);
+        return {
+          x: Math.round(x), y: Math.round(y), w: 0, h: 0, cx: x, cy: y, overACard,
+          label: 'the transparent area under the cards',
+        };
+      })(),
       // How many cards are up, so a click that dismissed one can be told apart
       // from a click that did nothing while a second card kept the view alive.
       cards: document.querySelectorAll('.banner__close').length,
@@ -202,11 +273,36 @@ app.whenReady().then(async () => {
   // page names: a region is registered against the WINDOW, so its page-space
   // geometry means nothing until the view it belongs to is placed.
   const origins = new Map();
+  const viewStack = [];
   for (const view of window.contentView.children || []) {
     try {
-      if (view.webContents && !view.webContents.isDestroyed()) origins.set(view.webContents.id, view.getBounds().y);
+      if (view.webContents && !view.webContents.isDestroyed()) {
+        const bounds = view.getBounds();
+        origins.set(view.webContents.id, bounds.y);
+        viewStack.push(`${(view.webContents.getURL().split('/').pop() || view.webContents.getURL() || 'blank')}`
+          + ` y ${bounds.y}+${bounds.height}`);
+      }
     } catch { /* not a web contents view */ }
   }
+  // What the window actually stacks, in order, with each view's own rectangle.
+  // Recorded because "the page beneath" is only a page if something is there to
+  // receive a click, and a stack read off the source is exactly the kind of
+  // assumption this harness exists to replace.
+  note('the window stacks, back to front', viewStack.join(' | ') || 'no views');
+
+  // One view's CURRENT rectangle, asked for at the moment it matters. The stack
+  // note above is a snapshot at the top of the run, and the banner is resized
+  // whenever the page reports a new height, which is exactly around the moment a
+  // click is measured: reading the rectangle from the note instead of from the
+  // app has already put a click point below the banner's own view in one run.
+  const viewBoundsFor = (id) => {
+    for (const view of window.contentView.children || []) {
+      try {
+        if (view.webContents && view.webContents.id === id) return view.getBounds();
+      } catch { /* not a web contents view */ }
+    }
+    return null;
+  };
 
   // The band the banner's own controls occupy, in window coordinates:
   // the strip's height down to the banner view, then the controls inside it.
@@ -251,9 +347,13 @@ app.whenReady().then(async () => {
   }
   if (!regionsSeen) note('drag regions', 'none on any page, so nothing can swallow a click above the page');
 
+  // `dead` aims at a PIXEL rather than at a control, so it has no entry here:
+  // its own block below makes the verdict and ends the run.
   const target = { close: targets.close, action: targets.action, readall: targets.readall }[TARGET];
-  check(`the banner has the ${TARGET} control to aim at`, Boolean(target), `the ${TARGET} control is not in the banner`);
-  if (!target) { app.exit(1); return; }
+  if (TARGET !== 'dead') {
+    check(`the banner has the ${TARGET} control to aim at`, Boolean(target), `the ${TARGET} control is not in the banner`);
+    if (!target) { app.exit(1); return; }
+  }
 
   // Arm the banner itself, so "the banner did not react" can be told apart from
   // "the click never reached the banner". Those two have different causes and
@@ -277,26 +377,154 @@ app.whenReady().then(async () => {
   // banner, which no drag band covers, reported back by the page's own listener.
   // Without this, "the banner did not react" is equally consistent with a clicker
   // that cannot click, which is exactly how a dead button passes a test.
-  let controlPage = null;
+  // EVERY page underneath is armed rather than the first one that answers, which
+  // is what this used to do, and it is not a detail: the loading cover sits over
+  // the gateway page at this point, so a run that armed the page BEHIND the cover
+  // counted nothing and failed a clicker that was working. Measured 2026-09-17,
+  // on the first run of the through-click target: the control reported "the page
+  // beneath the banner saw 0 mouse-down(s)" while the banner's own listener was
+  // counting the same clicks. The union is the honest reading, and the count from
+  // each page says which one is on top.
+  const beneathPages = [];
+  const census = [];
   for (const wc of webContents.getAllWebContents()) {
     if (wc.isDestroyed() || wc.id === bc.id) continue;
     const armed = await ask(wc, `(() => {
         if (!document.body) return false;
         window.__clawClickProbe = 0;
+        window.__clawBeneathProbe = 0;
         document.addEventListener('mousedown', () => { window.__clawClickProbe += 1; }, true);
+        document.addEventListener('mousedown', () => { window.__clawBeneathProbe += 1; }, true);
         return true;
       })()`);
-    if (armed) { controlPage = wc; break; }
+    // The reason a page did not answer, recorded rather than swallowed: an
+    // unarmed page is a page whose silence will read as "the click was eaten",
+    // which is the one conclusion this harness must never reach by accident.
+    // Measured 2026-09-17: on a refused gateway the only page that took a
+    // listener was the title strip, so every page a click could actually land on
+    // was missing from the count and the verdict was resting on nothing.
+    const diagnostics = armed === true ? null : await ask(wc, `(() => JSON.stringify({
+        ready: document.readyState,
+        body: Boolean(document.body),
+        url: location.href,
+      }))()`, 1500);
+    census.push(`${(wc.getURL().split('/').pop() || wc.getURL()).split('?')[0] || 'unknown'}`
+      + `${armed === true ? ' [armed]' : ` [no listener: ${diagnostics || 'did not answer'}]`}`);
+    if (armed === true) {
+      beneathPages.push({ wc, name: (wc.getURL().split('/').pop() || wc.getURL()).split('?')[0] || 'unknown' });
+    }
   }
-  if (controlPage) {
+  note('every page open', census.join(' | ') || 'none');
+  note('pages armed under the banner', beneathPages.map((p) => p.name).join(', ') || 'none answered');
+
+  if (beneathPages.length) {
     const probePoint = { x: contentBounds.x + 700, y: contentBounds.y + inset + 400 };
     const control = await clickAt(probePoint.x, probePoint.y);
     await delay(700);
-    const seen = await ask(controlPage, 'window.__clawClickProbe', 2000);
-    check('the clicker reaches the app at all (control click over the page)', seen >= 1,
-      `the page beneath the banner saw ${seen} mouse-down(s); clicker said ${control.error || control.out}`);
+    const seenBy = [];
+    for (const page of beneathPages) {
+      const count = await ask(page.wc, 'window.__clawClickProbe', 2000);
+      if (typeof count === 'number' && count > 0) seenBy.push(`${page.name}: ${count}`);
+    }
+    check('the clicker reaches the app at all (control click over the page)', seenBy.length > 0,
+      `no page under the banner saw the click at ${Math.round(probePoint.x)},${Math.round(probePoint.y)}; `
+      + `clicker said ${control.error || control.out}`);
+    note('the control click was seen by', seenBy.join(', ') || 'nothing');
   } else {
     note('control click', 'skipped: no page underneath answered');
+  }
+
+  // ★ The other direction of the same claim, and the one that was reported three
+  // times in this area: a click on a pixel the reader can see THROUGH must belong
+  // to the page they can see, not to the overlay's transparent furniture.
+  //
+  // The readings are deliberately kept apart, because they have different causes
+  // and only one of them is a stylesheet's:
+  //
+  //   the banner page saw it, the page beneath did not  -> an element of banner.css
+  //     is hit-testable where the pixel is transparent;
+  //   neither page saw it                                -> the click never left the
+  //     banner's view, so the fault is the view's bounds in main.js;
+  //   the page beneath saw it                            -> the pixel is live.
+  //
+  // Every page underneath is armed rather than one, and each reports on its own:
+  // with the loading cover over the gateway page, which of the two is on top at
+  // this point is the app's business and not something to guess at here.
+  const beneath = beneathPages;
+
+  let through = null;
+  if (!targets.dead) {
+    note('the through-click', 'skipped: the banner draws no stack to measure');
+  } else if (targets.dead.overACard) {
+    note('the through-click', 'skipped: the only free point on the sweep row landed on a card');
+  } else {
+    const bannerBefore = await ask(bc, 'window.__clawBannerClicks', 2000);
+    const hitsBefore = await ask(bc, '(window.__clawBannerHits || []).length', 2000);
+    for (const page of beneath) await ask(page.wc, 'window.__clawBeneathProbe = 0', 2000);
+    const point = {
+      x: contentBounds.x + targets.dead.cx,
+      y: contentBounds.y + inset + targets.dead.cy,
+    };
+    console.log(`note aiming at: the transparent area under the banner, page ${Math.round(targets.dead.cx)},`
+      + `${Math.round(targets.dead.cy)} = screen ${Math.round(point.x)},${Math.round(point.y)}`);
+    // Is the point inside the banner's own rectangle at this moment? A point that
+    // is outside it is aimed at the page beneath by construction, and a reading
+    // taken there says nothing about the overlay.
+    const bounds = viewBoundsFor(bc.id);
+    if (bounds) {
+      const inside = targets.dead.cy >= bounds.y - inset
+        && targets.dead.cy <= bounds.y - inset + bounds.height;
+      note('the banner view at the moment of the click', `page y ${bounds.y - inset}..`
+        + `${bounds.y - inset + bounds.height} (height ${bounds.height}); the point is `
+        + `${inside ? 'inside it' : 'OUTSIDE IT, so this run measures the page beneath instead'}`);
+    } else {
+      note('the banner view at the moment of the click', 'its view was not found in the window');
+    }
+    await shot('before-through-click');
+    const delivered = await clickAt(point.x, point.y);
+    await delay(1200);
+    await shot('after-through-click');
+    const bannerAfter = await ask(bc, 'window.__clawBannerClicks', 2000);
+    const bannerSaw = typeof bannerBefore === 'number' && typeof bannerAfter === 'number'
+      ? bannerAfter - bannerBefore
+      : null;
+    // WHICH element of the banner's document received it, and where. On the root
+    // element at a point where nothing is drawn, the click has been dispatched
+    // into this document with no element under it: that is a container still
+    // taking hit tests, and it is not the same reading as the click being
+    // ignored. Named rather than counted, because the two have different fixes.
+    const hits = typeof hitsBefore === 'number'
+      ? await ask(bc, `JSON.stringify((window.__clawBannerHits || []).slice(${hitsBefore}))`, 2000)
+      : null;
+    note('what the banner page received', hits || 'nothing readable');
+    const saw = [];
+    for (const page of beneath) {
+      const count = await ask(page.wc, 'window.__clawBeneathProbe', 2000);
+      if (typeof count === 'number' && count > 0) saw.push(`${page.name}: ${count}`);
+    }
+    through = { bannerSaw, saw };
+    console.log(`note the through-click: the clicker ${delivered.error ? `did NOT deliver (${delivered.error})` : 'delivered'}`
+      + `; the banner page saw ${bannerSaw === null ? 'nothing readable' : bannerSaw} mouse-down(s)`
+      + `; the page beneath saw ${saw.join(', ') || 'nothing'}`);
+  }
+
+  if (TARGET === 'dead') {
+    if (!through) {
+      check('a click in the transparent area could be aimed at all', false,
+        'no point on the banner was measurable, so nothing was proved either way');
+    } else if (EXPECT === 'dead') {
+      check('the click in the transparent area is swallowed (the fault, reproduced)', !through.saw.length,
+        `the page beneath saw it (${through.saw.join(', ')}), so this pixel was already live`);
+    } else {
+      check('a click in the transparent area reaches the page beneath it', through.saw.length > 0,
+        'nothing under the banner saw the click: '
+        + (through.bannerSaw ? 'the banner page captured it, so something in banner.css is still '
+          + 'hit-testable where the pixel is transparent' : 'the click never left the banner\'s view, so the '
+          + 'fault is the view bounds in main.js and no stylesheet can fix it'));
+    }
+    console.log(failed ? 'FAILED' : 'ALL OK');
+    app.exit(failed ? 1 : 0);
+    return;
   }
 
   const screenX = contentBounds.x + target.cx;
