@@ -607,6 +607,86 @@ test('★ clearing the card gives up the transfer where the library allows it, a
   assert.match(main, /updater\.on\('update-cancelled'/, 'the library has an event for it, and it is handled');
 });
 
+/*
+ * ---------------------------------------------------------------------------
+ * The card that came back after a relaunch.
+ *
+ * Abi, 2026-09-17: the 0% card was "just hung here on my mac even after a
+ * restart". A clear that lived only in memory could not survive that, because the
+ * card is raised by a check that runs on EVERY launch, and nothing about the
+ * attempt was ever written down. So the rules below are all about what survives a
+ * quit: the record on disk, who may start a fetch, and what a reader is told.
+ * ---------------------------------------------------------------------------
+ */
+
+test('About says when a version is not being fetched on its own, and why', () => {
+  const cleared = updates.statusLine({
+    action: updates.INSTALL,
+    reason: 'signed with a Developer ID',
+    suppressed: { version: '1.0.2', reason: 'cleared' },
+  });
+  assert.match(cleared, /not fetching 1\.0\.2 on its own \(you cleared it\)/,
+    'a reader who ended a transfer has to be able to find that out');
+  // "nothing arrived" and "you cleared it" are different things to be told, so the
+  // two reasons are not collapsed into one sentence.
+  const stalled = updates.statusLine({
+    action: updates.INSTALL,
+    reason: 'signed with a Developer ID',
+    suppressed: { version: '1.0.2', reason: 'stalled' },
+  });
+  assert.match(stalled, /it produced nothing/);
+  // And the ordinary line is unchanged, because a caveat on every launch is one
+  // nobody reads.
+  const plain = updates.statusLine({ action: updates.INSTALL, reason: 'signed with a Developer ID' });
+  assert.ok(!/not fetching/.test(plain), 'no suppression, no sentence about one');
+});
+
+test('the desktop re-exports the fetch decision rather than writing its own', () => {
+  // One owner: a second copy here is how the two clients start disagreeing about
+  // what a check is allowed to start.
+  assert.deepEqual(updates.fetchPlan({ action: updates.INSTALL, version: '1.0.2', trigger: 'startup' }),
+    { fetch: true, quiet: true, offer: null });
+  assert.deepEqual(updates.fetchPlan({ action: updates.INSTALL, version: '1.0.2', suppressedVersion: '1.0.2', trigger: 'startup' }),
+    { fetch: false, quiet: true, offer: null });
+});
+
+test('★ a cleared transfer is recorded on disk, because memory does not survive a relaunch', () => {
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+  // The write: the record the next launch reads.
+  assert.match(main, /config\.update\(\{ updateSuppression: \{ version, reason, at: Date\.now\(\) \} \}\)/,
+    'the suppression is written to the config file rather than held in a variable');
+  assert.match(main, /function suppressedUpdate\(\)/, 'and read back from it');
+  // The clear: the reported symptom is that dismissing the card did nothing for
+  // the next launch, so the reader's own action has to be the thing recorded.
+  const abandon = /function abandonUpdateDownload\(\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(abandon, 'abandonUpdateDownload was not found');
+  assert.match(abandon[0], /suppressUpdate\(version, 'cleared'\)/, 'clearing the card records why it was cleared');
+  // The read, on the path that raises it: the offer consults the shared decision,
+  // and a background fetch is silent.
+  assert.match(main, /updates\.fetchPlan\(\{/, 'the fetch decision comes from the shared core');
+  assert.match(main, /beginUpdateDownload\(info\.version, \{ quiet: fetch\.quiet \}\)/,
+    'and a quiet fetch is started without a card');
+  // The record has to be dropped when it stops being true, or a version nobody can
+  // fetch is suppressed forever.
+  assert.match(main, /clearUpdateSuppression\(/, 'and the record is cleared somewhere');
+});
+
+test('★ a background fetch draws no card until it has evidence', () => {
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+  const begin = /function beginUpdateDownload\(version, \{ quiet = false \} = \{\}\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(begin, 'beginUpdateDownload was not found');
+  // The quiet path must not raise the notice, and must still arm the watchdog: a
+  // transfer that never moves still has to be given up on.
+  assert.match(begin[0], /if \(quiet\) downloadCardRaised = false;/, 'a quiet attempt raises nothing');
+  assert.match(begin[0], /armStallWatch\(\)/, 'and is still bounded by the stall window');
+  // The stall path records a quiet attempt rather than announcing it, because
+  // nothing was ever shown to the reader.
+  const stall = /function onDownloadStall\(\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(stall, 'onDownloadStall was not found');
+  assert.match(stall[0], /suppressUpdate\(downloadVersion, 'stalled'\)/,
+    'a background transfer that produced nothing is recorded, not announced');
+});
+
 test('★ a download that completes is reported even for an attempt the reader cleared', () => {
   // Deliberate, and worth pinning so it does not read as an oversight later. What
   // the reader cleared is a PROGRESS card for one transfer; a finished download is

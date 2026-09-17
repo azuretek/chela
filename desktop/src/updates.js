@@ -22,6 +22,10 @@ import {
   AVAILABLE, CURRENT, UNAVAILABLE, FAILED,
   STABLE_INTERVAL_MS, PRERELEASE_INTERVAL_MS,
   STALL_MS, stallRemaining, offeredStanding, offeredCaveat, downloadingMessage, stalledMessage,
+  // What a check may FETCH, and what it says while it does. Shared core for the
+  // same reason the policy is, and re-exported here so src/main.js reads one
+  // module. See fetchPlan in core/updates.js.
+  fetchPlan, OFFER_INSTALL, OFFER_RELEASE,
 } from '../../core/updates.js';
 // ★ The desktop's answer to "is the feed's newest build newer than this one"
 // comes from the same owner the phone calls, not from a comparison written
@@ -42,8 +46,11 @@ export {
   // The download phase: how long a transfer may say nothing before the card stops
   // calling it progress, the re-arm rule, and the wording for both phases. Shared
   // core, re-exported here so src/main.js and test/updates.test.js keep reading one
-  // module, the same shape the whole policy moved in.
+  // module, the same shape the whole policy moved in. fetchPlan is the same
+  // split one layer down: how long a transfer may be silent before it stops
+  // being called progress is core's, and so is whether a check may start one.
   STALL_MS, stallRemaining, offeredStanding, offeredCaveat, downloadingMessage, stalledMessage,
+  fetchPlan, OFFER_INSTALL, OFFER_RELEASE,
 };
 
 /**
@@ -66,9 +73,10 @@ export {
  * @param {string|null} [opts.channel] from channelOf()
  * @param {number|null} [opts.checkedAt]  Date.now() of the last completed check
  * @param {string|null} [opts.result]     how that check ended
+ * @param {{version: string, reason: string}|null} [opts.suppressed]  a version this app will not fetch on its own
  * @param {number} [opts.now]
  */
-export function statusLine({ action, reason, channel = null, checkedAt = null, result = null, now = Date.now() }) {
+export function statusLine({ action, reason, channel = null, checkedAt = null, result = null, suppressed = null, now = Date.now() }) {
   const follows = `${channel || 'stable'} channel`;
   if (action === NONE) return `Updates: not checked, ${reason}`;
 
@@ -78,7 +86,15 @@ export function statusLine({ action, reason, channel = null, checkedAt = null, r
   }[action] || 'announced, installed by hand';
   const when = checkedAt === null ? null : ago(now - checkedAt);
   const last = when ? `last checked ${when}${result ? `, ${result}` : ''}` : 'no check yet this run';
-  return `Updates: ${follows}, ${behaviour}; ${last}`;
+  // ★ A version this app has been told to stop fetching on its own is a state a
+  // reader has to be able to FIND, or the quiet it buys reads as the app having
+  // forgotten the release. It rides here rather than on the bar, which is what
+  // the suppression is for, and it says which of the two reasons it was, because
+  // "nothing arrived" and "you cleared it" are different things to be told.
+  const held = suppressed && suppressed.version
+    ? `; not fetching ${suppressed.version} on its own (${suppressed.reason === 'cleared' ? 'you cleared it' : 'it produced nothing'})`
+    : '';
+  return `Updates: ${follows}, ${behaviour}; ${last}${held}`;
 }
 
 /**
@@ -139,4 +155,5 @@ export default {
   INSTALL, MANUAL, NOTIFY, NONE, MAC_SIGNED, STABLE_INTERVAL_MS, PRERELEASE_INTERVAL_MS,
   AVAILABLE, CURRENT, UNAVAILABLE, FAILED,
   STALL_MS, stallRemaining, offeredStanding, offeredCaveat, downloadingMessage, stalledMessage,
+  fetchPlan, OFFER_INSTALL, OFFER_RELEASE,
 };

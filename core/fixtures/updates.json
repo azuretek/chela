@@ -158,5 +158,128 @@
       "input": { "outcome": "error", "trigger": "startup", "current": "1.0.1", "error": "The Internet connection appears to be offline." },
       "output": null
     }
+  ],
+  "fetch": [
+    {
+      "name": "a scheduled check on a build that installs for itself fetches, and says nothing until it has evidence",
+      "input": {
+        "action": "install",
+        "version": "1.0.2",
+        "trigger": "scheduled"
+      },
+      "output": {
+        "fetch": true,
+        "quiet": true,
+        "offer": null
+      }
+    },
+    {
+      "name": "the launch check is a background check too, and is just as quiet",
+      "input": {
+        "action": "install",
+        "version": "1.0.2",
+        "trigger": "startup"
+      },
+      "output": {
+        "fetch": true,
+        "quiet": true,
+        "offer": null
+      }
+    },
+    {
+      "name": "a person who pressed Check is owed the card at once",
+      "input": {
+        "action": "install",
+        "version": "1.0.2",
+        "trigger": "manual"
+      },
+      "output": {
+        "fetch": true,
+        "quiet": false,
+        "offer": null
+      }
+    },
+    {
+      "name": "a version the reader cleared is not fetched again on our own, and says nothing in the background",
+      "input": {
+        "action": "install",
+        "version": "1.0.2",
+        "suppressedVersion": "1.0.2",
+        "trigger": "startup"
+      },
+      "output": {
+        "fetch": false,
+        "quiet": true,
+        "offer": null
+      }
+    },
+    {
+      "name": "and that same version is still offered, with the button, to someone who asks",
+      "input": {
+        "action": "install",
+        "version": "1.0.2",
+        "suppressedVersion": "1.0.2",
+        "trigger": "manual"
+      },
+      "output": {
+        "fetch": false,
+        "quiet": false,
+        "offer": "install"
+      }
+    },
+    {
+      "name": "the suppression names one version: a later release is fetched normally",
+      "input": {
+        "action": "install",
+        "version": "1.0.3",
+        "suppressedVersion": "1.0.2",
+        "trigger": "startup"
+      },
+      "output": {
+        "fetch": true,
+        "quiet": true,
+        "offer": null
+      }
+    },
+    {
+      "name": "automatic updates off: nothing is fetched by itself, and the reader is offered the fetch",
+      "input": {
+        "action": "manual",
+        "version": "1.0.2",
+        "trigger": "startup"
+      },
+      "output": {
+        "fetch": false,
+        "quiet": false,
+        "offer": "install"
+      }
+    },
+    {
+      "name": "a build that cannot install points at the release page",
+      "input": {
+        "action": "notify",
+        "version": "1.0.2",
+        "trigger": "scheduled"
+      },
+      "output": {
+        "fetch": false,
+        "quiet": false,
+        "offer": "release"
+      }
+    },
+    {
+      "name": "and still points there for a version the reader cleared, because announcing is all it can do",
+      "input": {
+        "action": "notify",
+        "version": "1.0.2",
+        "suppressedVersion": "1.0.2",
+        "trigger": "scheduled"
+      },
+      "output": {
+        "fetch": false,
+        "quiet": false,
+        "offer": "release"
+      }
+    }
   ]
 }

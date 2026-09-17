@@ -2470,6 +2470,70 @@ let downloadCancelToken = null;
 // invisible, see updates.statusLine() for why that is worth a line.
 let lastCheck = { at: null, result: null };
 
+// ★ The trigger the running check was started with. The updater's own events do
+// not carry it, and what a check may FETCH turns on it (updates.fetchPlan): a
+// person who pressed Check is owed a card at once, while a background check is
+// owed silence until there is evidence of movement. That difference is the whole
+// of the reported 0% card.
+let lastTrigger = 'scheduled';
+// Whether the check in flight started a transfer this build has DECLINED. The
+// library starts a download by itself when it finds a release, so declining one
+// means giving up the handle it hands back, and that handle only exists once
+// checkForUpdates() resolves. Hence a flag and a cancel rather than one step.
+let declinedFetch = false;
+
+/**
+ * The version whose transfer this app has already been told to stop reporting,
+ * as a record on disk, or null.
+ *
+ * ★ Why this is PERSISTED rather than held in memory like `clearedAttempt`.
+ * The card it suppresses is raised by a check that runs on every LAUNCH (see
+ * UPDATE_FIRST_CHECK_MS), so an in-memory mark is undone by quitting and
+ * reopening the app: the reader clears the card, relaunches, and the same
+ * transfer is started and announced all over again. Measured 2026-09-17 by
+ * scripts/test-update-relaunch.js, which found exactly that.
+ *
+ * It lives in the app's own config file rather than one of its own, because that
+ * is where this app already keeps state that outlives a run and About shows the
+ * reader its path. It is deliberately NOT a claim that a download is in flight:
+ * nothing is ever restored from it as live progress. What it decides is
+ * fetchPlan() in core/updates.js.
+ */
+function suppressedUpdate() {
+  const record = config.get().updateSuppression;
+  if (!record || typeof record.version !== 'string') return null;
+  return record;
+}
+
+/**
+ * Record that this version's transfer ended without arriving, so that no check
+ * starts it again by itself.
+ *
+ * `reason` is 'cleared' when the reader ended it and 'stalled' when it produced
+ * nothing for the whole stall window. Both are honest, neither is a failure, and
+ * About's status line keeps them apart because they mean different things to the
+ * person reading it.
+ */
+function suppressUpdate(version, reason) {
+  if (!version) return;
+  config.update({ updateSuppression: { version, reason, at: Date.now() } });
+  console.log(`[claw-desktop] updates: ${version} will not be fetched on its own again (${reason})`);
+}
+
+/**
+ * Drop the record, because what it described has stopped being true: the reader
+ * took the offer up, the transfer arrived after all, or the feed is offering a
+ * different release. Passing a version clears only that version, so a stale
+ * record for an older release can never suppress a newer one.
+ */
+function clearUpdateSuppression(version = null) {
+  const record = suppressedUpdate();
+  if (!record) return false;
+  if (version !== null && record.version !== version) return false;
+  config.update({ updateSuppression: null });
+  return true;
+}
+
 function updatePolicy() {
   return updates.policy({
     platform: process.platform,
@@ -2537,6 +2601,7 @@ function initUpdates() {
     downloadCancelToken = null;
     downloadCardRaised = false;
     downloadVersion = null;
+    downloadQuiet = false;
   });
   updater.on('error', (err) => {
     // Never unprompted. A machine that is offline, or behind a proxy, or hitting
@@ -2580,6 +2645,15 @@ function initUpdates() {
     const offered = info && typeof info.version === 'string' ? info.version : null;
     if (offered && updates.isNewerBuild(offered, app.getVersion())) {
       pendingManualCheck = false;
+      // This raises the same card, from a background check, for a release the
+      // updater's own comparison refused -- so a version whose transfer the reader
+      // already ended must not come back through this door either.
+      const record = suppressedUpdate();
+      if (record && record.version === offered) {
+        setLastCheck(`${offered} available`);
+        return;
+      }
+      if (record) clearUpdateSuppression();
       offerRefusedByUpdater(offered);
       return;
     }
@@ -2710,12 +2784,20 @@ async function checkForUpdates(trigger = 'manual') {
     return;
   }
   pendingManualCheck = updates.shouldReportNoUpdate(trigger);
+  lastTrigger = trigger;
+  // Set by onUpdateAvailable, below, when the plan declines this version.
+  declinedFetch = false;
   try {
     const result = await updater.checkForUpdates();
     // The download a check starts on its own carries the token `checkForUpdates`
     // just handed back, so this is the cancel handle for it. Kept rather than
     // discarded so that clearing the card can give up the transfer too.
     if (result && result.cancellationToken) downloadCancelToken = result.cancellationToken;
+    // ★ A transfer this build declined is given up the moment its handle exists,
+    // because a check has ALREADY told the library to fetch by the time we are
+    // asked about it (autoDownload), and leaving 130MB arriving behind a card the
+    // reader told us to stop showing is not what ending a transfer means.
+    if (declinedFetch) declineFetchedTransfer();
     // ★ And the promise it returns is attached to here rather than left dangling.
     // It is the download itself, and until now nothing in this app awaited it: a
     // failed auto-download rejected into the void, which Electron reports as an
@@ -2782,17 +2864,44 @@ function onUpdateAvailable(info) {
   pendingManualCheck = false;
   offeredUpdate = info;
   setLastCheck(`${info.version} available`);
-  // A build that downloads without being asked gets the progress notice now.
-  // It used to say nothing here, on the reasoning that the only useful news was
-  // the restart at the end; a download with a bar in the banner is news all the
-  // way through, and it is the same thing the manual offer shows.
-  if (plan.action === updates.INSTALL) {
+
+  // ★ What this check may fetch, and what it says while it does. One owner for the
+  // decision, shared with the phone (updates.fetchPlan), because the rule is about
+  // a READER rather than about this surface: nobody asked for this transfer, so it
+  // says nothing until it has evidence of movement, and a version whose transfer
+  // already ended here is not started again by itself at all.
+  const record = suppressedUpdate();
+  const suppressedVersion = record && record.version === info.version ? record.version : null;
+  // A different release supersedes whatever the reader ended: the record is about
+  // ONE transfer of ONE version, so it is dropped here rather than left to suppress
+  // a build nobody has ever been offered.
+  if (record && !suppressedVersion) clearUpdateSuppression();
+
+  const fetch = updates.fetchPlan({
+    action: plan.action,
+    version: info.version,
+    suppressedVersion,
+    trigger: lastTrigger,
+  });
+  // The library has already started this transfer on its own (autoDownload), so
+  // declining it means giving up the handle checkForUpdates() is about to return.
+  declinedFetch = suppressedVersion !== null && plan.action === updates.INSTALL;
+
+  if (fetch.fetch) {
     // The answer to any manual check is superseded by this, which is a better
     // answer to the same question.
     clearNotice(UPDATE_ANSWER);
-    beginUpdateDownload(info.version);
+    // A quiet attempt draws ITSELF the moment it has something true to say; see
+    // beginUpdateDownload and onDownloadProgress.
+    beginUpdateDownload(info.version, { quiet: fetch.quiet });
     return;
   }
+
+  // No card and no fetch: this version's transfer ended here already, and it was
+  // the reader who ended it. The silence is the point -- a card for it is the
+  // dismissal undone by a relaunch -- and About's status line is where the state
+  // is written down rather than re-announced (see statusLine).
+  if (!fetch.offer) return;
 
   // The wording comes from the shared composition, so the sentence the desktop
   // puts in its banner is the one the phone puts in its own. `checkAnswer`
@@ -2806,10 +2915,10 @@ function onUpdateAvailable(info) {
     reason: plan.reason,
   });
 
-  // Two different offers, and making the wrong one is worse than making none:
-  // MANUAL means this build can install it and is waiting to be told, NOTIFY
-  // means it genuinely cannot and the release page is the only way on.
-  const canInstallNow = plan.action === updates.MANUAL;
+  // The offer comes from the same decision, because which of the two is TRUE
+  // depends on the policy action: a build that can install offers to fetch, while
+  // one that cannot must point at the release page, where a button would do
+  // nothing.
   // The answer to any manual check is superseded by this, which is a better
   // answer to the same question.
   clearNotice(UPDATE_ANSWER);
@@ -2817,7 +2926,7 @@ function onUpdateAvailable(info) {
     tone: noticeStore.INFO,
     message,
     detail,
-    action: canInstallNow
+    action: fetch.offer === updates.OFFER_INSTALL
       ? { label: 'Download and install', command: 'update-download' }
       : { label: 'Open release page', command: 'update-release-page' },
   });
@@ -2827,6 +2936,9 @@ function onUpdateAvailable(info) {
 async function downloadOfferedUpdate() {
   if (!updater || !offeredUpdate) return;
   const version = offeredUpdate.version;
+  // Taking the offer up is the reader asking for this transfer by hand, which is
+  // the one event that ends a suppression: the record says "not on your own".
+  clearUpdateSuppression(version);
   // Straight to downloadUpdate rather than flipping autoDownload: this is a
   // one-off yes to this version, not a change to the preference.
   beginUpdateDownload(version);
@@ -2939,6 +3051,10 @@ let downloadAttempt = 0;
 let clearedAttempt = -1;
 let downloadVersion = null;
 let downloadStartedAt = 0;
+// ★ Whether this attempt is one nobody asked for. A quiet attempt raises no card
+// until a progress event gives it something true to say, and stays off the bar
+// entirely if it never moves: see beginUpdateDownload and onDownloadStall.
+let downloadQuiet = false;
 // The last evidence of MOVEMENT: the attempt starting, or any progress event. The
 // stall window is measured from here rather than from downloadStartedAt, which is
 // what lets a slow download run as long as it likes without being cut off.
@@ -2983,7 +3099,15 @@ function armStallWatch() {
 function onDownloadStall() {
   downloadWatchdog = null;
   if (downloadAttempt === clearedAttempt) return;
-  if (!downloadCardRaised) return;
+  if (!downloadCardRaised) {
+    // ★ A background fetch that produced nothing at all. Nothing was ever shown,
+    // so there is nothing to take away and nothing to announce: what is recorded
+    // is that this version's transfer did not move here, which is what stops the
+    // next launch (and the next check) from starting it again only to sit at a
+    // card that never changes.
+    if (downloadQuiet) suppressUpdate(downloadVersion, 'stalled');
+    return;
+  }
   const percent = lastProgressPercent;
   console.warn(`[claw-desktop] update download stalled at ${percent}% after ${Math.round(updates.STALL_MS / 1000)}s with no progress event`);
   showUpdateNotice(stalledNotice(downloadVersion || 'the update'));
@@ -3005,15 +3129,52 @@ function showUpdateNotice(notice) {
   setNotice('update-available', notice);
 }
 
-/** Start a download's notice at zero, and let the next percent through. */
-function beginUpdateDownload(version) {
+/**
+ * Start a download's notice, and let the next percent through.
+ *
+ * ★ `quiet` is the background fetch, and it is the reported bug's fix. A card
+ * that says "Downloading X" with a bar at zero is a claim about movement made
+ * before any movement has happened; for a transfer the reader never asked for,
+ * that claim is drawn from nothing but having asked the feed for the file. So a
+ * quiet attempt arms everything the loud one does -- the state machine, the stall
+ * window -- and raises NOTHING until a progress event arrives, at which point the
+ * card it draws has evidence behind it. If nothing ever arrives, no card was ever
+ * raised to lie about it, and onDownloadStall records that instead of announcing
+ * it. Only the press path raises at zero, because a person who asked is owed the
+ * card immediately.
+ */
+function beginUpdateDownload(version, { quiet = false } = {}) {
   downloadAttempt += 1;
   downloadVersion = version;
   downloadStartedAt = Date.now();
   downloadMovedAt = downloadStartedAt;
   lastProgressPercent = 0;
-  showUpdateNotice(downloadingNotice(version, { percent: 0 }));
+  downloadQuiet = quiet;
+  if (quiet) downloadCardRaised = false;
+  else showUpdateNotice(downloadingNotice(version, { percent: 0 }));
   armStallWatch();
+}
+
+/**
+ * Give up a transfer this build declined to make. See fetchPlan() in
+ * core/updates.js for when that is, and checkForUpdates() for why the decision
+ * and the cancel are two steps: the handle the library hands back does not exist
+ * yet at the moment the offer arrives.
+ *
+ * A failed cancel is not reported to the reader: the attempt was never shown to
+ * them, so there is no card to settle and nothing they could do about it.
+ */
+function declineFetchedTransfer() {
+  declinedFetch = false;
+  const token = downloadCancelToken;
+  downloadCancelToken = null;
+  if (!token) return;
+  try {
+    token.cancel();
+    console.log('[claw-desktop] update download given up: this version is not fetched on its own');
+  } catch (err) {
+    console.warn(`[claw-desktop] could not give up the declined update download: ${err && err.message}`);
+  }
 }
 
 /**
@@ -3040,10 +3201,18 @@ function beginUpdateDownload(version) {
  */
 function abandonUpdateDownload() {
   stopStallWatch();
+  // ★ The version is read BEFORE the state is cleared, because the record below
+  // is written in its name and there is nothing to name once this has run.
+  const version = downloadVersion || (offeredUpdate && offeredUpdate.version) || null;
   clearedAttempt = downloadAttempt;
   downloadCardRaised = false;
   downloadVersion = null;
   downloadMovedAt = 0;
+  downloadQuiet = false;
+  // ★ Written to disk, not only done to the screen. This card is raised again by
+  // a check that runs on every launch, so a clear that lived only in memory was
+  // undone by quitting and reopening the app -- which is the reported bug.
+  suppressUpdate(version, 'cleared');
 
   const token = downloadCancelToken;
   downloadCancelToken = null;
@@ -3073,6 +3242,7 @@ function abandonUpdateDownload() {
 function settleFailedDownload(err) {
   stopStallWatch();
   downloadCancelToken = null;
+  downloadQuiet = false;
   if (!downloadCardRaised) return;
   if (downloadAttempt === clearedAttempt) return;
   const version = downloadVersion || (offeredUpdate && offeredUpdate.version) || 'the update';
@@ -3125,6 +3295,11 @@ function onUpdateDownloaded(info) {
   downloadCancelToken = null;
   downloadCardRaised = false;
   downloadVersion = null;
+  downloadQuiet = false;
+  // The transfer ARRIVED, so anything a record said about it not arriving has
+  // stopped being true. Cleared rather than left to rot: a suppression is about
+  // one transfer, and this one is finished.
+  clearUpdateSuppression(info.version);
   updateReady = info.version;
   offeredUpdate = info;
   lastProgressPercent = 0;
@@ -3190,6 +3365,10 @@ function aboutState() {
       channel: updates.channelOf(app.getVersion()),
       checkedAt: lastCheck.at,
       result: lastCheck.result,
+      // A version this app has been told not to fetch on its own is a state the
+      // reader has to be able to FIND, or the silence reads as the app having
+      // forgotten the release. This box is where someone goes to ask.
+      suppressed: suppressedUpdate(),
     }),
     // The About box is where someone goes to ask "is it even updating?", so it
     // has to be able to answer "no, and here is the switch" as well as "yes".

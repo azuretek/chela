@@ -243,6 +243,74 @@ export function policy({ autoUpdate = true, ...opts }) {
   };
 }
 
+/** What a notice may offer when a release exists. */
+export const OFFER_INSTALL = 'install'; // fetch it here, on the button
+export const OFFER_RELEASE = 'release'; // go and get it from the release page
+
+/**
+ * Whether a check that found a release may fetch it, and what it owes the reader.
+ *
+ * ★ This exists because the card it governs is not a report of the download. It
+ * is a report to a READER, and a reader who never asked for anything is owed
+ * nothing until there is something true to say. Electron-updater on a signed mac
+ * starts fetching the moment a check finds a release, with nobody in the loop,
+ * so the app raised a progress bar at 0% on the strength of having asked for the
+ * file -- a claim about movement made before a single byte had moved. When that
+ * request then produced nothing at all and never errored (the library has no
+ * request timeout anywhere), the bar sat on the screen unchanging, and because
+ * the attempt was re-created by every LAUNCH's own check, restarting the app
+ * brought it straight back. Measured 2026-09-17 by scripts/test-update-relaunch.js.
+ *
+ * Three answers, and each is a different sentence to the reader:
+ *
+ *   fetch, quiet    start it and say NOTHING until evidence of movement arrives
+ *                   (a background check: nobody asked, so a bar at zero is a
+ *                   claim with nothing behind it)
+ *   fetch, loud     start it and show the card at once (someone pressed Check,
+ *                   so the card is the answer to their press)
+ *   no fetch        do not start this version's transfer again on our own, and
+ *                   say nothing about it in the background. The reader ended
+ *                   that transfer once already -- they cleared the card, or it
+ *                   produced nothing for the whole stall window -- and re-raising
+ *                   it on the next launch is precisely the bug above.
+ *
+ * `suppressedVersion` is that record, and it is ONE version: a later release is a
+ * different transfer and is offered normally, which is why the caller compares
+ * rather than this function keeping history.
+ *
+ * The offer a notice carries is composed here rather than by the client, because
+ * which of the two offers is TRUE depends on the policy action: a build that can
+ * install for itself offers to fetch, and one that cannot must point at the
+ * release page, because a button that quietly did nothing would be this same
+ * class of fault in a new place.
+ *
+ * @param {object} opts
+ * @param {string} opts.action            from policy()
+ * @param {string} [opts.version]         the release the check found
+ * @param {string|null} [opts.suppressedVersion]  a version whose transfer already ended here
+ * @param {string} [opts.trigger]         'manual', 'startup' or 'scheduled'
+ * @returns {{fetch: boolean, quiet: boolean, offer: string|null}}
+ */
+export function fetchPlan({ action, version = null, suppressedVersion = null, trigger = 'scheduled' }) {
+  const asked = trigger === 'manual';
+  const suppressed = typeof version === 'string' && suppressedVersion === version;
+
+  if (action === INSTALL) {
+    if (suppressed) {
+      // Nothing in the background, and the offer only to someone who pressed:
+      // a card for a transfer they already ended is the dismissal being undone.
+      // The offer is not silence, so `quiet` follows the press here too.
+      return { fetch: false, quiet: !asked, offer: asked ? OFFER_INSTALL : null };
+    }
+    return { fetch: true, quiet: !asked, offer: null };
+  }
+
+  // A build that cannot fetch by itself has nothing to stay quiet about: the
+  // card IS the answer, and it is the only way on.
+  if (action === MANUAL) return { fetch: false, quiet: false, offer: OFFER_INSTALL };
+  return { fetch: false, quiet: false, offer: OFFER_RELEASE };
+}
+
 /**
  * Message for the "a new version exists" dialog.
  *
