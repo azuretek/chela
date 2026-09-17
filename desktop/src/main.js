@@ -42,6 +42,11 @@ import updates from './updates.js';
 import secrets from './secrets.js';
 import defaults from './defaults.js';
 import { withTokenHandoff } from '../../core/gateway-url.js';
+// Whether an address is an OpenClaw gateway. The signals and the sentences are
+// core/spec/gateway-identity.json's; this imports the module that reads it, and
+// the iOS client bundles the same spec. Answering is not identifying: this is
+// what stops a 200 from a stranger's page being put behind our chrome.
+import * as gatewayIdentity from '../../core/gateway-identity.js';
 // The pairing copy and the approve command, read from the shared contract rather
 // than written down here: the screen the desktop shows and the screen the phone
 // shows say the same thing because they read the same file. The phase names, the
@@ -590,6 +595,34 @@ function loadActiveGateway() {
     showSettingsAsPage({ firstRun: true });
     return null;
   }
+  // IDENTIFY, THEN CONNECT. The address is checked before anything is pointed at
+  // it, which is the difference between telling a reader their address is not an
+  // OpenClaw gateway and showing them whatever that address happens to serve.
+  //
+  // Asynchronous while this function is not, because a probe is a network round
+  // trip and the two callers that matter (a launch, and the pairing cadence's
+  // retries) both want the answer rather than a blocking pause. The gateway is
+  // re-read when the probe lands: a reader who changed gateway or left Settings
+  // while it was in flight must not be connected to the one they were on.
+  void identifyBeforeConnect(gw).then((ok) => {
+    if (!ok) return;
+    const current = config.activeGateway();
+    if (!current || current.id !== gw.id || current.url !== gw.url) {
+      console.log(`[claw-desktop] the active gateway changed while ${gw.url} was being identified; not connecting`);
+      return;
+    }
+    beginGatewayConnect(gw);
+  });
+  return gw;
+}
+
+/**
+ * The connect itself, once the address is known to be an OpenClaw gateway.
+ *
+ * Split from `loadActiveGateway` only so the identification can happen first and
+ * asynchronously; everything below is the attempt it always was.
+ */
+function beginGatewayConnect(gw) {
   settingsIsPage = false;
   autofilled = false;
   // Re-seed the appearance from the gateway being switched TO, before anything
@@ -771,14 +804,53 @@ async function maybeRefreshForNewBuild(wc) {
  * on the error page where this is most likely to be reached for.
  */
 async function clearCacheAndReload() {
+  const gw = config.activeGateway();
   const active = activeOrigin();
   const origins = active ? [active] : gatewayOrigins();
   console.log(`[claw-desktop] clearing cache for ${origins.join(', ') || '(no gateway)'}`);
-  await cache.clear(session.defaultSession, origins);
+  const results = await cache.clear(session.defaultSession, origins);
   // Drop the recorded ids too, so the load that follows records what it finds
   // instead of comparing against a build whose cache no longer exists.
   forgetBuildIds(origins);
+  // The next gateway load is the one the reader asked for, so it is the one that
+  // reports back to whoever asked. Recorded BEFORE the load is started, because
+  // the load can finish faster than the line after it runs.
+  clearedLoadPending = true;
   loadActiveGateway();
+
+  const failed = results.filter((r) => !r.ok);
+  return {
+    ok: failed.length === 0,
+    origins,
+    // What was actually cleared, per origin, so the reader is told the effect
+    // rather than the intention: a step that refused is reported as refused.
+    cleared: results.filter((r) => r.ok).map((r) => r.origin),
+    failed: failed.map((r) => ({ origin: r.origin, error: r.error })),
+    // The kinds of cache this drops, named for the reader rather than for the API.
+    kinds: [...cache.CACHE_STORAGES],
+    reloading: true,
+    gateway: gw ? { label: gw.label || gw.url, url: gw.url } : null,
+  };
+}
+
+// Set when the reader presses Clear cache and refresh, cleared by the first
+// gateway load that lands afterwards. Its whole job is that confirmation: the
+// About box says "Reloading..." and can then say the reload really happened,
+// rather than assuming a load that was asked for is a load that arrived.
+let clearedLoadPending = false;
+
+/**
+ * Tell the About box that the reload it asked for has landed.
+ *
+ * Sent from the load that finishes rather than from the press, and that is the
+ * only honest place to send it from: `loadActiveGateway` starts an off-screen
+ * attempt when a document is already on screen, so the clear returning is not the
+ * same event as the fresh payload arriving. A message that said "reloaded" when
+ * the clear returned would be the app asserting something it had not seen.
+ */
+function notifyCacheCleared(ok, detail) {
+  const view = overlayViews.get('about');
+  if (view && !view.webContents.isDestroyed()) view.webContents.send('app:cache-cleared', { ok, detail });
 }
 
 /**
@@ -1374,6 +1446,16 @@ function createGatewayView({ attempt = false } = {}) {
       // that proves it -- a load that finished on a page that is not ours.
       clearNotice('connection');
       hideLoadingCover();
+      // The reader asked for a reload from the About box, and this is the load that
+      // answered it. Reported from the LOAD rather than from the press, because
+      // the clear returning and a fresh payload arriving are two different events
+      // here: with a document already on screen the attempt is made off to the
+      // side, so "reloaded" said at the press would be the app asserting something
+      // it had not seen yet.
+      if (clearedLoadPending) {
+        clearedLoadPending = false;
+        notifyCacheCleared(true, `The Control UI reloaded from ${wc.getURL()}.`);
+      }
     }
     maybeAutofill(wc);
     void maybeRefreshForNewBuild(wc);
@@ -1382,6 +1464,14 @@ function createGatewayView({ attempt = false } = {}) {
   wc.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!connectionState.isRealFailure({ code: errorCode, isMainFrame })) return;
     pageReloading = false;
+    // A reload the reader asked for from the About box that then failed is told to
+    // them there, rather than left as a box still saying "Reloading...": a
+    // confirmation that never arrives looks the same as one that was never asked
+    // for, and the reader would be left waiting on a page that is not coming.
+    if (clearedLoadPending) {
+      clearedLoadPending = false;
+      notifyCacheCleared(false, `The cache was cleared, but the Control UI did not reload: ${errorDescription || `error ${errorCode}`}.`);
+    }
     // The connection this app was showing is over, whichever view failed, so the
     // hold ends: a failed attempt must not leave the document it was going to
     // replace on screen, and the visible view's failure must not either. Without
@@ -3036,51 +3126,292 @@ function applyLaunchAtLogin() {
 // Reachability probe for the settings screen. Deliberately does NOT grant trust:
 // when the TLS chain is rejected we retry with verification off purely to read
 // back the fingerprint, and report it so the user can compare it to the prompt.
-function testGateway(rawUrl) {
+/* ------------------------------------------------- is this a gateway at all? */
+
+// Whether an address is an OpenClaw gateway, asked BEFORE a web view is pointed
+// at it.
+//
+// Answering is not identifying, and this app used to conflate the two: any reply
+// under 500 was "Reachable", and the connect path went further and loaded the
+// address unconditionally. So a typo that landed on a captive portal, a router's
+// admin page, or a different service on the same host was painted behind the
+// app's own chrome, and the reader was left to work out from the page itself that
+// it was not their gateway. Measured on 2026-09-16: `http://127.0.0.1:1/` failed
+// correctly while a stranger's page on a reachable port was accepted whole.
+//
+// The rule and the sentences are core/gateway-identity.js's, which both clients
+// read, so this file only makes the requests and hands over what came back. What
+// it is and is not is the spec's to say, and the short version is that it is a
+// correctness boundary rather than a security one: it authenticates nothing and
+// does not defend against a host that means to impersonate OpenClaw.
+
+/** How many redirects the document request follows before the answer is taken as final. */
+const PROBE_REDIRECTS = 3;
+
+const REDIRECT_CODES = [301, 302, 303, 307, 308];
+
+// The TLS failures that mean "a gateway on its own listener", which is the one
+// failure worth asking about twice: a gateway on :18789 presents a self-signed
+// certificate by design, so the second attempt is how the fingerprint is read at
+// all. Anything else is the host not answering and is reported as such.
+const TLS_REFUSALS = ['UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'ERR_TLS_CERT_ALTNAME_INVALID', 'CERT_HAS_EXPIRED'];
+
+/**
+ * One GET, following a bounded number of redirects, reading at most the window the
+ * identity rule searches.
+ *
+ * The body is read rather than discarded because the required signal lives IN it:
+ * a header is the cheapest thing on the wire to copy, and OpenClaw's own marker on
+ * `<html>` is what actually proves the payload. The read is bounded by the spec's
+ * window so an address that streams forever cannot hold the probe open, and the
+ * marker sits on the opening tag of every build measured.
+ *
+ * @returns {Promise<{status?: number, contentType?: string, headers?: object, body?: string, fingerprint?: string|null, error?: string, tlsRefused?: string}>}
+ */
+function probeRequest(target, rejectUnauthorized, redirectsLeft = PROBE_REDIRECTS) {
   return new Promise((resolve) => {
-    let target;
+    let url;
     try {
-      target = new URL(rawUrl);
+      url = new URL(target);
     } catch {
-      return resolve({ ok: false, status: null, message: 'That is not a valid URL.' });
+      return resolve({ error: 'That is not a valid URL.' });
     }
-    if (!/^https?:$/.test(target.protocol)) {
-      return resolve({ ok: false, status: null, message: 'Use an http:// or https:// URL.' });
-    }
-
-    const attempt = (rejectUnauthorized) => {
-      const mod = target.protocol === 'https:' ? https : http;
-      const req = mod.request(
-        { method: 'GET', hostname: target.hostname, port: target.port || (target.protocol === 'https:' ? 443 : 80), path: target.pathname || '/', rejectUnauthorized, timeout: 8000, servername: target.hostname },
-        (res) => {
-          let fingerprint = null;
-          if (!rejectUnauthorized && res.socket.getPeerCertificate) {
-            const cert = res.socket.getPeerCertificate();
-            if (cert && cert.fingerprint256) fingerprint = `sha256/${Buffer.from(cert.fingerprint256.replace(/:/g, ''), 'hex').toString('base64')}`;
-          }
+    const mod = url.protocol === 'https:' ? https : http;
+    const req = mod.request(
+      {
+        method: 'GET',
+        hostname: url.hostname,
+        port: url.port || (url.protocol === 'https:' ? 443 : 80),
+        path: `${url.pathname}${url.search}`,
+        rejectUnauthorized,
+        timeout: 8000,
+        servername: url.hostname,
+        headers: { accept: 'text/html,application/json;q=0.9' },
+      },
+      (res) => {
+        let fingerprint = null;
+        if (!rejectUnauthorized && res.socket.getPeerCertificate) {
+          const cert = res.socket.getPeerCertificate();
+          if (cert && cert.fingerprint256) fingerprint = `sha256/${Buffer.from(cert.fingerprint256.replace(/:/g, ''), 'hex').toString('base64')}`;
+        }
+        // A redirect is followed rather than judged, because the answer worth
+        // identifying is what the reader would actually be shown: a gateway
+        // mounted behind a proxy that bounces `/` to `/chat/main` is a real
+        // gateway, and refusing it on the strength of its 301 would be exactly the
+        // too-strict failure this check has to avoid.
+        if (REDIRECT_CODES.includes(res.statusCode) && res.headers.location && redirectsLeft > 0) {
           res.resume();
-          resolve({
-            ok: res.statusCode > 0 && res.statusCode < 500,
-            status: res.statusCode,
-            message: rejectUnauthorized
-              ? `Reachable. HTTP ${res.statusCode}.`
-              : `Reachable. HTTP ${res.statusCode}, but the certificate is self-signed. You will be asked to trust it once on connect.`,
-            fingerprint,
-          });
-        },
-      );
-      req.on('timeout', () => { req.destroy(); resolve({ ok: false, status: null, message: 'Timed out after 8s. Is the gateway running, and are you on the tailnet?' }); });
-      req.on('error', (err) => {
-        const tls = ['UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'ERR_TLS_CERT_ALTNAME_INVALID', 'CERT_HAS_EXPIRED'];
-        if (rejectUnauthorized && tls.includes(err.code)) return attempt(false);
-        resolve({ ok: false, status: null, message: `${err.code || 'Error'}: ${err.message}` });
-      });
-      req.end();
-    };
-
-    attempt(true);
+          let next;
+          try {
+            next = new URL(res.headers.location, url).toString();
+          } catch {
+            return resolve({ status: res.statusCode, contentType: res.headers['content-type'] || '', headers: res.headers, body: '', fingerprint });
+          }
+          return resolve(probeRequest(next, rejectUnauthorized, redirectsLeft - 1));
+        }
+        const chunks = [];
+        let size = 0;
+        res.on('data', (chunk) => {
+          if (size >= gatewayIdentity.MAX_BYTES) return;
+          chunks.push(chunk);
+          size += chunk.length;
+        });
+        res.on('end', () => resolve({
+          status: res.statusCode,
+          contentType: res.headers['content-type'] || '',
+          headers: res.headers,
+          body: Buffer.concat(chunks).toString('utf8').slice(0, gatewayIdentity.MAX_BYTES),
+          fingerprint,
+        }));
+      },
+    );
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ error: 'Timed out after 8s. Is the gateway running, and are you on the tailnet?' });
+    });
+    req.on('error', (err) => {
+      if (rejectUnauthorized && TLS_REFUSALS.includes(err.code)) return resolve({ tlsRefused: err.code, error: `${err.code}: ${err.message}` });
+      resolve({ error: `${err.code || 'Error'}: ${err.message}` });
+    });
+    req.end();
   });
 }
+
+/**
+ * Everything the identity rule needs about one address.
+ *
+ * Two requests at most, and the second is the health marker and is allowed to
+ * fail: it SUGGESTS a gateway-shaped service and cannot accept one on its own, so
+ * a gateway that does not answer it loses nothing. The document request is the one
+ * that decides, and it is made strict first and lenient second so that a gateway
+ * on its own self-signed listener is still identified rather than refused.
+ *
+ * @param {string} rawUrl the address as configured
+ * @returns {Promise<object>} the `observed` object core/gateway-identity.js classifies, plus `fingerprint`
+ */
+async function probeGateway(rawUrl) {
+  const targets = gatewayIdentity.probeTargets(rawUrl);
+  if (!targets.document) return { document: null, health: null, headers: {}, error: 'That is not a valid URL.' };
+
+  let document = await probeRequest(targets.document, true);
+  let fingerprint = null;
+  if (document.tlsRefused) {
+    fingerprint = null;
+    const lenient = await probeRequest(targets.document, false);
+    fingerprint = lenient.fingerprint || null;
+    document = lenient;
+  }
+  if (document.error && !document.status) {
+    return { document: null, health: null, headers: {}, error: document.error, fingerprint };
+  }
+
+  let health = null;
+  for (const candidate of targets.health) {
+    // eslint-disable-next-line no-await-in-loop
+    const answer = await probeRequest(candidate, true);
+    if (answer.status) { health = answer; break; }
+  }
+
+  return {
+    document: { status: document.status, contentType: document.contentType, body: document.body },
+    health: health ? { status: health.status, contentType: health.contentType, body: health.body } : null,
+    headers: document.headers || {},
+    fingerprint,
+  };
+}
+
+/**
+ * The verdict for an address, in the shape the settings page and the connect path
+ * both read.
+ *
+ * `identity` is carried alongside `ok` rather than folded into it, because the two
+ * accepted strengths are not the same claim and the caller may want to say which
+ * one ran. `ok: true` with `identity.strength === 'corroborated'` means the payload
+ * never identified itself directly and the address was accepted on its health
+ * marker and headers, which is the weaker evidence and is worded that way.
+ */
+async function testGateway(rawUrl) {
+  let target;
+  try {
+    target = new URL(rawUrl);
+  } catch {
+    return { ok: false, status: null, message: 'That is not a valid URL.', fingerprint: null };
+  }
+  if (!/^https?:$/.test(target.protocol)) {
+    return { ok: false, status: null, message: 'Use an http:// or https:// URL.', fingerprint: null };
+  }
+
+  const observed = await probeGateway(rawUrl);
+  const verdict = gatewayIdentity.identify(observed);
+
+  // The certificate note survives the identity check rather than being replaced
+  // by it: a self-signed listener is still the routine state of a gateway on its
+  // own port, and the reader still needs to be told they will be asked to trust
+  // it once on connect.
+  const message = observed.fingerprint && verdict.ok
+    ? `${verdict.message} Its certificate is self-signed, so you will be asked to trust it once on connect.`
+    : verdict.message;
+
+  return {
+    ok: verdict.ok,
+    status: verdict.status,
+    message,
+    fingerprint: observed.fingerprint || null,
+    identity: { accepted: verdict.ok, strength: verdict.strength, evidence: verdict.evidence },
+  };
+}
+
+/* ------------------------------------------- refusing an address before loading */
+
+// What has already been identified in this run, per gateway, so the check does
+// not run again on every retry.
+//
+// The pairing cadence reissues the connect every few seconds while a device waits
+// for approval, and a probe on each of those beats would be two extra requests per
+// beat against a gateway that is already busy being approved. Keyed by the
+// gateway's id AND its URL, so editing an address re-probes it and switching
+// between two gateways does not reuse one's answer for the other's.
+const identifiedGateways = new Map();
+
+function identityKey(gw) {
+  return `${gw.id} ${gw.url}`;
+}
+
+/**
+ * Whether this gateway has already been identified in this run, and as what.
+ *
+ * Exported through the module scope rather than written per call site so the
+ * connect path, the retry cadence and the settings button cannot disagree about
+ * what is already known.
+ */
+function knownIdentity(gw) {
+  return identifiedGateways.get(identityKey(gw)) || null;
+}
+
+/**
+ * Identify a gateway before the web view is pointed at it, and refuse it when the
+ * address is not an OpenClaw payload.
+ *
+ * This is the half that matters, because "Test connection" is a button someone
+ * presses and this is every connect. The reader is told plainly what the address
+ * answered and that nothing was loaded, rather than being shown whatever it serves:
+ * that is the whole difference between this and the behaviour it replaces.
+ *
+ * A failure here is NOT a connection failure and is deliberately not dressed as
+ * one. `connection` reports whether the gateway answered, and an address that is
+ * not a gateway at all is a different sentence with a different next step (check
+ * the address, or add one that is running OpenClaw), so it goes out as its own
+ * notice.
+ *
+ * @returns {Promise<boolean>} true when the reader may be sent to the address
+ */
+async function identifyBeforeConnect(gw) {
+  const known = knownIdentity(gw);
+  if (known) return known.accepted;
+
+  // The row reports the attempt while the address is being identified, because a
+  // probe is a network round trip and an 8s timeout on a host that is not there
+  // would otherwise be eight seconds of silence where the app used to say
+  // something. The reducer is used rather than a literal so an attempt issued
+  // while a device waits for approval still HOLDS the pending phase.
+  setConnection({
+    gatewayId: gw.id,
+    phase: connectionState.nextPhase(connection.phase, { type: 'connect' }),
+    error: null,
+  });
+
+  const observed = await probeGateway(gw.url);
+  const verdict = gatewayIdentity.identify(observed);
+  identifiedGateways.set(identityKey(gw), { accepted: verdict.ok, strength: verdict.strength, message: verdict.message });
+
+  if (verdict.ok) {
+    // The weaker acceptance is logged where a support question would look, and it
+    // is the only place the two strengths are told apart in the field.
+    if (verdict.strength === gatewayIdentity.CORROBORATED) {
+      console.warn(`[claw-desktop] ${gw.url} answers like an OpenClaw gateway but did not identify itself as one; accepted on its health marker and headers`);
+    }
+    return true;
+  }
+
+  console.warn(`[claw-desktop] refusing to load ${gw.url}: ${verdict.message}`);
+  // FAILED rather than a new phase, because the connection really did not
+  // establish: the row's own words (Cannot connect) are true, and the banner
+  // carries the sentence that says why and what to do about it.
+  setConnection({ gatewayId: gw.id, phase: connectionState.FAILED, error: null });
+  setNotice('connection', {
+    tone: 'error',
+    message: `${gw.label || 'That address'} is not an OpenClaw gateway`,
+    detail: verdict.message,
+    action: { label: 'Open Settings', command: 'settings' },
+  });
+  return false;
+}
+
+/** Forget an address's verdict, so the next connect identifies it again. */
+function forgetIdentity(gw) {
+  if (gw) identifiedGateways.delete(identityKey(gw));
+}
+
 
 /* -------------------------------------------------------------------- IPC */
 
@@ -3179,6 +3510,12 @@ function currentState() {
 function registerIpc() {
   ipcMain.handle('app:state', () => currentState());
   ipcMain.handle('app:test-gateway', (_e, url) => testGateway(url));
+  // The same clear-and-reload the File menu and the tray offer, reached from the
+  // About box rather than a second implementation of it: one path, so the two
+  // cannot come to mean different things. It returns what it cleared, because the
+  // reader pressed a button about their caches and is owed the effect rather than
+  // a spinner.
+  ipcMain.handle('app:clear-cache-and-reload', () => clearCacheAndReload());
   ipcMain.handle('app:add-gateway', (_e, entry) => { config.addGateway(entry); buildTray(); return currentState(); });
   ipcMain.handle('app:update-gateway', (_e, id, patch) => {
     config.updateGateway(id, patch || {});

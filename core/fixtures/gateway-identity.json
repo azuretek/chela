@@ -1,0 +1,170 @@
+{
+  "description": "Golden input/output pairs for core/gateway-identity.js, asserted by core/test/gateway-identity.test.js and by the iOS client's GatewayIdentityParityTests. What is pinned is the DECISION, meaning ok and strength, and never the sentence: the sentences come from core/spec/gateway-identity.json, which both clients read, so pinning them here as well would give them a second owner. The document bodies are trimmed to the part that decides the answer, which is the opening tag, with the real measured values kept where a value matters.",
+  "cases": [
+    {
+      "name": "the served Control UI, exactly as a gateway hands it over",
+      "why": "The required signal, measured from a running gateway on 2026-09-16. The attribute is emitted by OpenClaw's own ui/index.html at build time, so a response carrying it is OpenClaw's shell.",
+      "observed": {
+        "document": {
+          "status": 200,
+          "contentType": "text/html; charset=utf-8",
+          "body": "<!doctype html>\n<html data-openclaw-control-ui-base-path=\"\" data-openclaw-terminal-enabled=\"true\" data-openclaw-control-ui-build-id=\"2026.9.4-release-3a9d69db306c\" lang=\"en\">"
+        },
+        "health": { "status": 200, "contentType": "application/json; charset=utf-8", "body": "{\"ok\":true,\"status\":\"live\"}" },
+        "headers": { "x-frame-options": "DENY", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'self'; frame-ancestors 'none'" }
+      },
+      "output": { "ok": true, "strength": "payload" }
+    },
+    {
+      "name": "a throwaway gateway started with no auth and no configuration",
+      "why": "A case we rely on for testing, and the reason nothing here mentions credentials or configuration state: --auth none --allow-unconfigured serves the same shell and the same health marker, so it is accepted on the payload attribute alone.",
+      "observed": {
+        "document": {
+          "status": 200,
+          "contentType": "text/html; charset=utf-8",
+          "body": "<html data-openclaw-control-ui-base-path=\"\" data-openclaw-control-ui-build-id=\"__OPENCLAW_CONTROL_UI_BUILD_ID__\">"
+        },
+        "health": null,
+        "headers": {}
+      },
+      "output": { "ok": true, "strength": "payload" }
+    },
+    {
+      "name": "a gateway mounted under a base path",
+      "why": "The unusual-host case. The marker is in the BODY, so a proxy that rewrites or drops headers cannot take it away, and no rule reads the hostname.",
+      "observed": {
+        "document": {
+          "status": 200,
+          "contentType": "text/html",
+          "body": "<html data-openclaw-control-ui-base-path=\"/openclaw/\" data-openclaw-control-ui-build-id=\"2026.9.4-release-3a9d69db306c\">"
+        },
+        "health": { "status": 200, "contentType": "application/json", "body": "{\"ok\":true,\"status\":\"live\"}" },
+        "headers": {}
+      },
+      "output": { "ok": true, "strength": "payload" }
+    },
+    {
+      "name": "an ordinary web page",
+      "why": "The defect: any 200 used to be enough, so a typo that landed here was put behind the app's chrome. Common security headers are present and change nothing, because a header is the cheapest thing on the wire to copy.",
+      "observed": {
+        "document": {
+          "status": 200,
+          "contentType": "text/html; charset=utf-8",
+          "body": "<!doctype html><html lang=\"en\"><head><title>Example Domain</title></head><body><h1>Example Domain</h1></body></html>"
+        },
+        "health": { "status": 404, "contentType": "text/html", "body": "<h1>Not Found</h1>" },
+        "headers": { "x-frame-options": "DENY", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'self'" }
+      },
+      "output": { "ok": false, "strength": null }
+    },
+    {
+      "name": "a page that only mentions the product in prose",
+      "why": "The reason the check is an ATTRIBUTE and not a search for the word: text is trivially claimable, and a page describing OpenClaw is not a gateway.",
+      "observed": {
+        "document": {
+          "status": 200,
+          "contentType": "text/html",
+          "body": "<!doctype html><html><body><h1>OpenClaw Control UI</h1><p>This page is about OpenClaw, its Control UI and its gateway.</p></body></html>"
+        },
+        "health": null,
+        "headers": {}
+      },
+      "output": { "ok": false, "strength": null }
+    },
+    {
+      "name": "a different service on the same host",
+      "why": "A router's admin page, a JSON API, anything that answers: all refused for the same reason, which is that answering is not identifying.",
+      "observed": {
+        "document": {
+          "status": 200,
+          "contentType": "application/json",
+          "body": "{\"service\":\"admin\",\"version\":\"2.1\"}"
+        },
+        "health": { "status": 200, "contentType": "application/json", "body": "{\"ok\":true,\"status\":\"live\"}" },
+        "headers": { "x-frame-options": "DENY", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'self'" }
+      },
+      "output": { "ok": false, "strength": null }
+    },
+    {
+      "name": "a gateway that gates its Control UI HTML behind a credential",
+      "why": "The one case the required signal cannot reach, and the weaker path that exists for it. Accepted, and named as weaker everywhere it is used so nobody reads the two as one rule.",
+      "observed": {
+        "document": {
+          "status": 401,
+          "contentType": "text/html",
+          "body": "<html><body>Sign in</body></html>"
+        },
+        "health": { "status": 200, "contentType": "application/json; charset=utf-8", "body": "{\"ok\":true,\"status\":\"live\"}" },
+        "headers": { "x-frame-options": "DENY", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'self'" }
+      },
+      "output": { "ok": true, "strength": "corroborated" }
+    },
+    {
+      "name": "the health marker alone",
+      "why": "A health marker is a shape, not a product. On its own it must never be why an address is accepted.",
+      "observed": {
+        "document": {
+          "status": 200,
+          "contentType": "text/html",
+          "body": "<html><body>hello</body></html>"
+        },
+        "health": { "status": 200, "contentType": "application/json", "body": "{\"ok\":true,\"status\":\"live\"}" },
+        "headers": {}
+      },
+      "output": { "ok": false, "strength": null }
+    },
+    {
+      "name": "the security headers alone",
+      "why": "The other half of the same rule, and the reason the header names are recorded as suggestive rather than required.",
+      "observed": {
+        "document": {
+          "status": 200,
+          "contentType": "text/html",
+          "body": "<html><body>hello</body></html>"
+        },
+        "health": null,
+        "headers": { "x-frame-options": "DENY", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'self'" }
+      },
+      "output": { "ok": false, "strength": null }
+    },
+    {
+      "name": "a json health body that is not the marker",
+      "why": "Measured shape rather than merely valid JSON, so a service that answers {\"ok\":false} or an empty object is not read as the marker.",
+      "observed": {
+        "document": {
+          "status": 200,
+          "contentType": "text/html",
+          "body": "<html><body>hello</body></html>"
+        },
+        "health": { "status": 200, "contentType": "application/json", "body": "{\"ok\":false}" },
+        "headers": { "x-frame-options": "DENY", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'self'" }
+      },
+      "output": { "ok": false, "strength": null }
+    },
+    {
+      "name": "nothing answered at all",
+      "why": "The direction that must stay distinguishable from a rejection: the address is not there, which is a different sentence for the reader and a different next step.",
+      "observed": {
+        "document": null,
+        "health": null,
+        "headers": {},
+        "error": "ECONNREFUSED: connect ECONNREFUSED 127.0.0.1:1"
+      },
+      "output": { "ok": false, "strength": null }
+    },
+    {
+      "name": "a failure that answered, but not with a payload",
+      "why": "A gateway that is up while its Control UI cannot be served is refused, and the reader is told what came back instead.",
+      "observed": {
+        "document": {
+          "status": 502,
+          "contentType": "text/html",
+          "body": "<html><body>Bad Gateway</body></html>"
+        },
+        "health": null,
+        "headers": {}
+      },
+      "output": { "ok": false, "strength": null }
+    }
+  ]
+}

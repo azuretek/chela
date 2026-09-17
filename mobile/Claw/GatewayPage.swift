@@ -3,7 +3,6 @@ import WebKit
 
 /// The handle this client keeps on the gateway page, so a surface that needs the
 /// page to DO something can ask it rather than growing a web view of its own.
-///
 /// There is one such ask today. The settings page's "Go to the Control UI" takes
 /// the reader to the Control UI's OWN settings, which is a different place from
 /// this app's settings and is not ours to navigate: the Control UI owns that
@@ -22,6 +21,79 @@ import WebKit
 final class GatewayPage: ObservableObject {
     /// Set by `WebView.makeUIView`, which is the only thing that creates one.
     weak var webView: WKWebView?
+
+    /// Clear this app's cached Control UI code and reload the gateway page.
+    ///
+    /// The phone's half of the desktop's Clear cache and refresh, and it keeps the
+    /// same boundary for the same reason. What is dropped is CACHE and nothing
+    /// else: the device keypair the gateway recognises a paired client by lives in
+    /// localStorage and IndexedDB, which `WKWebsiteDataStore` also holds, so a
+    /// clear that named every type would sign the reader out and raise a fresh
+    /// login alert on the gateway. That would be a far worse fault than the
+    /// staleness this button exists to fix. See `CACHE_DATA_TYPES` below and
+    /// `desktop/src/cache.js` for the other client's half of the same rule.
+    ///
+    /// It returns what happened as a sentence rather than a bool, because the
+    /// reader is owed the effect rather than the intention: a reload that never
+    /// started and one that never landed are different things, and neither is
+    /// "reloaded".
+    @MainActor
+    func clearCacheAndReload() async -> (ok: Bool, detail: String) {
+        let cleared = await Self.clearCachedCode()
+        guard let webView else {
+            return (false, "There is no Control UI page to reload: the app is not connected to a gateway.")
+        }
+        let landed = await reloadAndWait(webView)
+        if !landed {
+            return (false, "The cached code was cleared\(cleared), but the Control UI did not reload.")
+        }
+        return (true, "Cleared cached code\(cleared) and reloaded the Control UI from the server.")
+    }
+
+    /// The cache types a clear drops, and the ONLY ones it drops.
+    ///
+    /// localStorage and IndexedDB are deliberately absent: they hold this device's
+    /// paired identity, so a clear that included them would make the gateway see a
+    /// brand-new client.
+    private static let CACHE_DATA_TYPES: Set<String> = [
+        WKWebsiteDataTypeDiskCache,
+        WKWebsiteDataTypeMemoryCache,
+        WKWebsiteDataTypeFetchCache,
+        WKWebsiteDataTypeOfflineWebApplicationCache,
+        WKWebsiteDataTypeServiceWorkerRegistrations,
+    ]
+
+    /// Drop the cache data types above, and say what was askable in the report.
+    private static func clearCachedCode() async -> String {
+        await withCheckedContinuation { continuation in
+            let store = WKWebsiteDataStore.default()
+            store.fetchDataRecords(ofTypes: CACHE_DATA_TYPES) { records in
+                let names = records.map(\.displayName).filter { !$0.isEmpty }
+                store.removeData(ofTypes: CACHE_DATA_TYPES, modifiedSince: .distantPast) {
+                    continuation.resume(returning: names.isEmpty ? "" : " for \(names.joined(separator: ", "))")
+                }
+            }
+        }
+    }
+
+    /// Reload the page and wait for the navigation to actually finish.
+    ///
+    /// Bounded, because a reload that never starts and one that never lands are
+    /// both states this has to be able to report: the first is a page that is gone
+    /// and the second is a gateway that is not answering, and neither is a
+    /// confirmation. `started` is what makes the difference between them, since
+    /// `isLoading` is false both before a load begins and after one ends.
+    private func reloadAndWait(_ webView: WKWebView, timeout: TimeInterval = 12) async -> Bool {
+        webView.reload()
+        let deadline = Date().addingTimeInterval(timeout)
+        var started = false
+        while Date() < deadline {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            if webView.isLoading { started = true }
+            else if started { return true }
+        }
+        return false
+    }
 
     /// Ask the Control UI for its live design tokens.
     ///

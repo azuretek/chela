@@ -38,6 +38,16 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
     /// `closeOverlay('about')`.
     private let onClose: () -> Void
 
+    /// Clear this client's cached Control UI code and reload it from the server.
+    ///
+    /// Injected rather than implemented here for the same reason `makeCheck` is:
+    /// the About host owns a page, not a gateway web view, and the thing that has
+    /// to reload is the session behind the sheet. The default is the honest
+    /// refusal, so a host built without this does not offer a button that appears
+    /// to work: the page hides the section when the command is absent, and this
+    /// makes the command absent rather than broken.
+    private let clearCacheAndReload: () async -> (ok: Bool, detail: String)
+
     /// How a press on the page's Check for updates button builds its check.
     ///
     /// A closure rather than a check built here, because a screenshot run has to
@@ -54,11 +64,15 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
     init(
         notices: NoticeBoard,
         onClose: @escaping () -> Void,
-        makeCheck: (() -> UpdateCheck)? = nil
+        makeCheck: (() -> UpdateCheck)? = nil,
+        clearCacheAndReload: (() async -> (ok: Bool, detail: String))? = nil
     ) {
         self.notices = notices
         self.onClose = onClose
         self.makeCheck = makeCheck ?? { UpdateCheck(board: notices) }
+        self.clearCacheAndReload = clearCacheAndReload ?? {
+            (false, "This build cannot clear its own cache.")
+        }
         super.init()
     }
 
@@ -84,6 +98,7 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
         (function () {
           var pending = {};
           var changed = [];
+          var cleared = [];
           var seq = 0;
 
           window.__clawAboutReply = function (id, ok, value, error) {
@@ -96,6 +111,12 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
           window.__clawAboutEmit = function () {
             for (var i = 0; i < changed.length; i += 1) {
               try { changed[i](); } catch (e) { /* a listener that throws must not stop the others */ }
+            }
+          };
+
+          window.__clawAboutCacheCleared = function (report) {
+            for (var i = 0; i < cleared.length; i += 1) {
+              try { cleared[i](report); } catch (e) { /* the same rule as above */ }
             }
           };
 
@@ -121,6 +142,8 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
             checkUpdates: function () { post('checkUpdates', []); return Promise.resolve(); },
             openReleases: function () { post('openReleases', []); },
             closeOverlay: function (name) { post('closeOverlay', [name]); },
+            clearCacheAndReload: function () { return invoke('clearCacheAndReload', []); },
+            onCacheCleared: function (fn) { cleared.push(fn); },
             onAboutChanged: function (fn) { changed.push(fn); }
           };
         })();
@@ -143,6 +166,23 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
     func emitChanged() {
         webView?.evaluateJavaScript("window.__clawAboutEmit && window.__clawAboutEmit()")
     }
+
+    /// Tells the page what the clear-and-reload did, the phone's version of the
+    /// desktop's `app:cache-cleared` push. The desktop sends its own from the load
+    /// that landed; this one is sent once the reload has resolved, which is the
+    /// same claim. See `GatewayPage.reloadAndWait()`.
+    func emitCacheCleared(ok: Bool, detail: String) {
+        let report: [String: Any] = ["ok": ok, "detail": detail]
+        guard let json = Self.json(report, fallback: "null") else { return }
+        webView?.evaluateJavaScript("window.__clawAboutCacheCleared && window.__clawAboutCacheCleared(\(json))")
+    }
+
+    /// The kinds of cache a clear drops, named for the reader rather than for the
+    /// API. The list is the point: it is the same boundary the desktop's
+    /// `src/cache.js` keeps, and it deliberately EXCLUDES the stores that hold this
+    /// device's paired identity. A button that signed the reader out would be a far
+    /// worse fault than the staleness it fixes.
+    static let cacheKinds = ["cached code", "service worker"]
 
     #if DEBUG
     /// Press the page's Check for updates, for a screenshot run.
@@ -179,6 +219,27 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
             // saying "checking".
             await makeCheck().run(trigger: .manual)
             emitChanged()
+
+        case "clearCacheAndReload":
+            // The same command the desktop's About page calls, and the same two
+            // parts: the effect is reported when it has happened, and the reload is
+            // confirmed when the load actually lands. Sent from the load rather
+            // than from the press, because "cleared" and "reloaded" are two
+            // different events and a page that said the second at the first would
+            // be asserting something it had not seen.
+            let report = await clearCacheAndReload()
+            if let id {
+                reply(id, value: [
+                    "ok": report.ok,
+                    "origins": ["this device's Control UI"],
+                    "cleared": report.ok ? ["this device's Control UI"] : [],
+                    "failed": report.ok ? [] : [["origin": "this device's Control UI", "error": report.detail]],
+                    "kinds": Self.cacheKinds,
+                    "reloading": true,
+                    "gateway": NSNull(),
+                ])
+            }
+            emitCacheCleared(ok: report.ok, detail: report.detail)
 
         case "openReleases":
             // The REAL release notes, which is what the button says. It used to

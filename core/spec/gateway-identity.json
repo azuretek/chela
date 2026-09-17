@@ -1,0 +1,33 @@
+{
+  "description": "What identifies an OpenClaw payload, and the ONE owner of that answer. Both clients read this file before they point a web view at a configured address: the desktop imports core/gateway-identity.js, which reads it, and the iOS client bundles it and reads it through GatewayIdentity.swift, exactly as the app-settings affordance spec is read by both. The signals are here rather than typed into each client so that 'is this an OpenClaw gateway' has one answer instead of one per platform, and so that the answer can be tested without a network.",
+  "why": [
+    "The defect this exists for. `Test connection` asked whether the address ANSWERED, and so did the connect path: a 200 from anything was enough, so a typo that landed on a router's admin page, a captive portal, or a different service on the same host put that page behind our chrome and left the reader to work out for themselves that it was not their gateway. Answering is not identifying, and the two questions are now separate.",
+    "The signals are ordered by what they can actually PROVE, and that ordering is the design rather than a detail. Only one of them is required, and it is the one carried inside the payload rather than beside it.",
+    "`payloadAttributes` is the REQUIRED signal and the only one that proves anything. Both names are emitted by OpenClaw's own ui/index.html at build time (measured against the checkout, ui/index.html:92, and against the served bundle, whose <html> element carries data-openclaw-control-ui-build-id=\"2026.9.4-release-...\"). A response carrying one of these is OpenClaw's own Control UI shell: the address cannot claim it without actually serving OpenClaw's bundle and its hashed assets, which is what makes it worth requiring and what separates it from every signal below. It is checked for PRESENCE and never for a value, so a dev build wearing the unsubstituted placeholder passes, and so a gateway whose build moves on does not fail a check that has no business knowing its version.",
+    "`healthPath` SUGGESTS and does not prove. Measured on a running gateway: GET /healthz answers 200 application/json {\"ok\":true,\"status\":\"live\"}. That shape says a gateway-shaped HTTP service is there, and any service may answer it, so it is corroboration: it can raise confidence and it can never be the reason an address is accepted on its own.",
+    "`headerNames` SUGGEST and do not prove, and they are deliberately NOT required. A header is the cheapest thing on the wire to copy, so a host that wanted to look like a gateway can set all three without serving one byte of it: they are evidence about a deployment's shape, never about the payload. They are also the signal that breaks first behind a reverse proxy, which is exactly the 'unusual host' case that must keep working, and that is the second reason they cannot be required.",
+    "The strictly-required half is what keeps a THROWAWAY GATEWAY working, because that is a case we rely on: a gateway started with --auth none --allow-unconfigured --bind loopback serves the same Control UI shell and the same health marker as the production one (measured on port 19099, 2026-09-16), so it is accepted on the payload attribute alone and no rule here mentions authentication, configuration state, TLS, or a hostname. A gateway behind an unusual host, a base path, a tailnet name or a proxy is likewise accepted or rejected on the content of the response it actually serves.",
+    "The second accepted path exists for the one case the required signal cannot reach, and it is marked weaker everywhere it is used rather than being quietly equivalent. A deployment that gates its Control UI HTML behind a credential answers the document request with something that is not OpenClaw's shell, and its health marker and security headers are then all we have. So `corroborated` is accepted, reported as weaker in the result and in the log, and named here so that nobody later mistakes the two for one rule.",
+    "WHAT THIS IS NOT. It is a correctness boundary, not a security guarantee, and the difference is worth stating because the shape of the code invites the opposite reading. It does not authenticate the gateway, does not check a token or a certificate, does not protect against a host that deliberately impersonates OpenClaw, and does not make the loaded page trustworthy: a host that serves real OpenClaw markup is accepted whether it is your gateway or someone else's. What it does is stop the reader being handed an address that is plainly not an OpenClaw payload, and tell them which of the two happened, and nothing beyond that should be read into it.",
+    "`maxBytes` is a bound on how much of a response is read to look for the marker, not a limit the gateway is held to: a document larger than this is still searched within the window, and the marker lives on the opening <html> element, which is inside the first kilobyte of every build measured."
+  ],
+  "payloadAttributes": [
+    "data-openclaw-control-ui-build-id",
+    "data-openclaw-control-ui-base-path"
+  ],
+  "healthPath": "/healthz",
+  "healthOkKey": "ok",
+  "headerNames": [
+    "x-frame-options",
+    "x-content-type-options",
+    "content-security-policy"
+  ],
+  "maxBytes": 262144,
+  "messages": {
+    "notOpenClaw": "That address is not an OpenClaw gateway, so nothing was loaded. It answered HTTP {status}, but its reply carries no OpenClaw Control UI marker. Check the address, or add a gateway that is running OpenClaw.",
+    "notOpenClawNoDocument": "That address is not an OpenClaw gateway, so nothing was loaded. {reason} It answered, but nothing it served identifies OpenClaw.",
+    "reached": "Reachable, and it is an OpenClaw gateway. HTTP {status}.",
+    "reachedCorroborated": "Reachable. HTTP {status}. It answers like an OpenClaw gateway, but its Control UI did not identify itself directly, so this was accepted on the weaker evidence: its health marker and security headers. Check the address if you did not expect that.",
+    "unreachable": "That address did not answer: {reason}"
+  }
+}

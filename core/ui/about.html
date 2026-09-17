@@ -94,6 +94,37 @@
           </div>
         </div>
 
+        <!-- The manual escape hatch, and it is a section of its own because it is
+             a different subject from updating: the row above asks whether a new
+             build exists, and this one throws away the cached copy of the build
+             this app is already showing. It belongs here rather than in Settings
+             because About is where someone looks when the app is behaving oddly,
+             which is the state this button answers.
+
+             The description says what it does NOT touch, because that is the
+             question a reader actually has before pressing it: the gateway's
+             paired-device identity lives in origin storage, and a button that
+             quietly signed them out would be a much worse bug than the staleness
+             it fixes. See src/cache.js for where that boundary is enforced. -->
+        <div class="settings-group" id="clear-cache-group">
+          <div class="settings-row settings-row--stacked">
+            <div class="settings-row__text">
+              <span class="settings-row__title">Cached Control UI code</span>
+              <span class="settings-row__desc">
+                This app closes to the tray rather than quitting, so the Control UI's own cache can
+                go stale under it. Clearing it drops the cached code and the service worker and
+                reloads from the server. Your paired-device identity and sign-in are not touched.
+              </span>
+            </div>
+          </div>
+          <div class="settings-row settings-row--actions">
+            <div class="settings-row__control">
+              <button id="clear-cache">Clear cache and refresh</button>
+            </div>
+            <div class="result" id="clear-result"></div>
+          </div>
+        </div>
+
         <!-- Filled in by about.js: one row per thing a bug report asks for. -->
         <div id="facts"></div>
 
