@@ -7,8 +7,8 @@
 //
 //   npx electron scripts/test-affordance-placement.js [--gateway URL] [--shots DIR]
 //
-// Needs a reachable Control UI. By default it points at a throwaway gateway on
-// this host, which is what the deliverable was verified against:
+// Needs a reachable Control UI WITH a sidebar footer. By default it points at a
+// throwaway gateway on this host:
 //
 //   OPENCLAW_STATE_DIR=/tmp/claw-affordance-gw/state \
 //   OPENCLAW_CONFIG_PATH=/tmp/claw-affordance-gw/openclaw.json \
@@ -17,6 +17,14 @@
 // A throwaway gateway on a spare port with its own state directory, never the
 // live one: this needs a Control UI whose footer it can inspect, and the real
 // gateway's is behind a credential.
+//
+// AND IT MUST HAVE A MODEL PROVIDER, or the Control UI parks on its first-run
+// model-setup flow, which has no sidebar and therefore no footer. That flow is the
+// reason this harness used to insert footer markup of its own, which was the wrong
+// artifact and hid a real difference between the served bundle and the OpenClaw
+// checkout. It now requires the real footer and fails loudly without one: add a
+// provider to the throwaway config (any reachable one will do) and the app reaches
+// /chat/main, where the footer the anchors are about actually renders.
 //
 // The profile is pinned BOTH ways; main.js decides isolation from the
 // `--user-data-dir` SWITCH rather than from the path. See scripts/dump-overlays.js.
@@ -219,6 +227,10 @@ const placementQuery = `(() => {
     bottom: style.bottom,
     parent: node.parentElement ? node.parentElement.className : null,
     label: node.getAttribute('aria-label'),
+    // What the PAGE says about where it put the control, rather than what this
+    // harness infers from geometry: a control in the corner is indistinguishable
+    // from a control whose footer never rendered, and this is the difference.
+    placement: node.getAttribute('data-claw-app-settings-placement'),
   };
 })()`;
 
@@ -259,33 +271,50 @@ app.whenReady().then(async () => {
   /* ------------------------------------- the layout the app actually shows */
 
   // The chat layout, which is where a configured client sits and where the
-  // Control UI renders the footer this control belongs in. This gateway cannot
-  // reach it: the Control UI refuses to leave its first-run model-setup flow
-  // without a provider it can actually talk to, and the flow has no main sidebar
-  // at all. So the footer MARKUP the running bundle renders is inserted, verbatim
-  // from its own template
-  // (dist/control-ui/assets/control-ui-boot-shared-*.js), and the assertion is
-  // about what the real script does with it: the anchors, the placement and the
-  // upgrade are the product's own, and only the host node is the harness's. A
-  // control that lands in this row lands in the real one, because the real one is
-  // this markup.
-  const inserted = await wc.executeJavaScript(`(() => {
-    const shell = document.querySelector('.settings-sidebar') || document.body;
-    const bar = document.createElement('div');
-    bar.className = 'sidebar-footer-bar';
-    const actions = document.createElement('span');
-    actions.className = 'sidebar-footer-actions';
-    const home = document.createElement('button');
-    home.type = 'button';
-    home.className = 'sidebar-brand__icon sidebar-footer-bar__home';
-    home.setAttribute('aria-label', 'Home panel');
-    actions.appendChild(home);
-    bar.appendChild(actions);
-    shell.appendChild(bar);
-    return { shell: shell.className, actions: Boolean(document.querySelector('.sidebar-footer-actions')) };
+  // Control UI renders the footer this control belongs in.
+  //
+  // NO SYNTHETIC FOOTER. This step used to INSERT the footer markup, taken from
+  // the running bundle's own template, and assert the placement against that. It
+  // was the wrong artifact and it hid a real difference: the bundle the gateway
+  // serves is the one the client loads, and the OpenClaw CHECKOUT on the machine
+  // can be ahead of it. Measured 2026-09-16: the checkout carries a Settings icon
+  // in the footer action strip (commit 362492d7340) that the served build
+  // predates, so a check that read either one could not see the other, and a
+  // harness that built its own footer could not see either.
+  //
+  // So the footer now has to BE there, and the failure is loud rather than
+  // substituted. A gateway reaches this layout once it has a model provider it can
+  // talk to; the header says how to start one that does.
+  const footer = await wc.executeJavaScript(`(() => {
+    const bar = document.querySelector('.sidebar-footer-bar');
+    if (!bar) return { present: false, route: location.pathname + location.search, body: document.body.className };
+    return {
+      present: true,
+      route: location.pathname + location.search,
+      actions: Boolean(document.querySelector('.sidebar-footer-actions')),
+      settingsControl: Boolean(document.querySelector('.sidebar-footer-bar__settings')),
+      controls: [...bar.querySelectorAll('button')].map((b) => b.getAttribute('aria-label') || b.className),
+      // The evidence, kept short: the class structure is what the anchors are
+      // about, and printing every attribute of someone else's markup would bury it.
+      // Whitespace is flattened by the caller rather than here, so this script has
+      // no escape sequences in it at all.
+      html: bar.outerHTML.slice(0, 4000),
+    };
   })()`);
-  console.log(`note footer markup inserted into .${inserted.shell} (the bundle's own template); actions present: ${inserted.actions}`);
-  await delay(2500);
+  console.log(`note the SERVED footer at ${footer.route}: ${footer.controls ? footer.controls.length : 0} control(s)`);
+  if (footer.controls) for (const label of footer.controls) console.log(`note   served control: ${label}`);
+  if (footer.html) console.log(`note served footer markup: ${String(footer.html).replace(/\s+/g, ' ').slice(0, 900)}`);
+  check('the SERVED page has a real sidebar footer to place into',
+    footer.present && footer.actions,
+    'no .sidebar-footer-actions on the page: start the throwaway gateway with a model provider so the '
+    + 'Control UI leaves its first-run flow, rather than substituting markup for the real thing');
+  // The artifact difference itself, asserted rather than noted: on the served
+  // build the footer has no settings control, so `controlUiSettings` matching
+  // nothing is CORRECT there, and a harness that treated that as a failure would
+  // be the same mistake in the other direction.
+  console.log(`note the served footer ${footer.settingsControl ? 'HAS' : 'has NO'} settings control `
+    + `(the checkout is a different artifact; see core/spec/app-settings-affordance.json's servedFooter)`);
+  await delay(1500);
 
   const anchorsThere = await wc.executeJavaScript(`(() => {
     const spec = window.__clawAppSettingsConfig && window.__clawAppSettingsConfig.anchors;
@@ -299,6 +328,14 @@ app.whenReady().then(async () => {
   })()`);
   console.log(`note anchors at ${anchorsThere.route}:`);
   for (const [key, value] of Object.entries(anchorsThere)) if (key !== 'route') console.log(`note   ${key}: ${value}`);
+  // Every placement anchor must match the page that ships, and the required one
+  // must be the footer's action row: this is the assertion the earlier check made
+  // against the wrong artifact.
+  for (const key of ['primary', 'footer', 'sidebar']) {
+    check(`the ${key} anchor matches the SERVED page`,
+      /^MATCH/.test(String(anchorsThere[key])),
+      `${key} is ${appSettingsAffordance.AFFORDANCE_ANCHORS[key]} and the served page has nothing matching it`);
+  }
 
   const where = await wc.executeJavaScript(placementQuery);
   check('the affordance is placed at all', where.placed === true, JSON.stringify(where));
@@ -310,6 +347,9 @@ app.whenReady().then(async () => {
     // stylesheet's own values in place. This is the upgrade step's other half.
     check('and the corner fallback did not fire, or was cleared by the move',
       where.position !== 'absolute', JSON.stringify(where));
+    check('and the page itself records which anchor it used',
+      where.placement === 'footer-actions',
+      `the control reports its placement as ${JSON.stringify(where.placement)}`);
     check('and it carries the label the spec names', where.label === 'App settings', String(where.label));
   }
   const shot = await capture('affordance-placement');

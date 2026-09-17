@@ -25,10 +25,16 @@ enum AppSettingsAffordance {
         /// The handoff's timing, which both clients must hold to the same line.
         /// Read from the spec for the same reason the route is: a number two
         /// clients have to agree on needs one owner. See
-        /// `readyTimeoutMs` and `pollMs` in the spec's `handoff` object.
+        /// `readyTimeoutMs` and `pollMs` in the spec's `handoff` object, and
+        /// `placementRetryMs`, which is the injected script's own backstop
+        /// rather than this client's (it is handed to the page in the config).
         struct Handoff: Decodable {
             let readyTimeoutMs: Int
             let pollMs: Int
+            /// Optional, because a spec that predates it is a build that installs
+            /// the script without the backstop rather than one that fails to
+            /// install it at all. See `AppSettingsAffordance.placementRetryMs`.
+            let placementRetryMs: Int?
         }
 
         let global: String
@@ -48,7 +54,7 @@ enum AppSettingsAffordance {
 
     private static func loadSpec() -> Spec {
         let empty = Spec(global: "", configGlobal: "", marker: "", anchors: [:], routes: nil,
-                         handoff: Spec.Handoff(readyTimeoutMs: 0, pollMs: 0), script: [])
+                         handoff: Spec.Handoff(readyTimeoutMs: 0, pollMs: 0, placementRetryMs: nil), script: [])
         guard let url = Bundle.main.url(forResource: "app-settings-affordance", withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let spec = try? JSONDecoder().decode(Spec.self, from: data),
@@ -87,7 +93,7 @@ enum AppSettingsAffordance {
     /// as part of the footer without this client having to resolve the Control
     /// UI's palette, which is the page's to own.
     private static var config: [String: Any] {
-        [
+        var config: [String: Any] = [
             "label": "App settings",
             "tooltip": "\(Naming.product) settings",
             "anchors": spec.anchors,
@@ -97,6 +103,13 @@ enum AppSettingsAffordance {
             "routes": spec.routes ?? [String: String](),
             "tokens": [String: String](),
         ]
+        // And the script's placement backstop, so a corner the page falls back to
+        // is re-offered a better anchor on the same cadence both clients would
+        // use rather than on a number typed into one of them.
+        if let placementRetryMs = spec.handoff.placementRetryMs {
+            config["placementRetryMs"] = placementRetryMs
+        }
+        return config
     }
 
     /// The call that takes the reader to the CONTROL UI's own settings.
@@ -124,6 +137,12 @@ enum AppSettingsAffordance {
     /// often to ask. The spec's, so the phone and the desktop wait alike.
     static var readyTimeoutMs: Int { spec.handoff.readyTimeoutMs }
     static var pollMs: Int { spec.handoff.pollMs }
+
+    /// How often the injected script re-offers a corner placement a better
+    /// anchor. The script's own backstop rather than this client's, but read from
+    /// the same spec so the desktop's config and this one cannot carry different
+    /// cadences for the same page. See `handoff.placementRetryMs`.
+    static var placementRetryMs: Int? { spec.handoff.placementRetryMs }
 
     /// The question that tells this client whether the destination has ARRIVED.
     ///
