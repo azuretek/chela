@@ -101,6 +101,11 @@ function card(notice) {
  * you want after a bad morning is the bar gone, and doing that a card at a time
  * is a chore that ends with one left over.
  *
+ * It is the bar's FOOTER and it lives at the BOTTOM of the bar, which is the
+ * shape Abi asked for on 2026-09-17 ("mark all read button should be at the
+ * bottom still, inline doesnt make sense") after a previous fix had tucked it
+ * inside the last card, where it read as part of that card's own row.
+ *
  * Nothing here can lose a condition: reading is not clearing, and a notice that
  * refuses to be dismissed refuses this too, so the finished update download
  * survives the sweep.
@@ -175,31 +180,23 @@ async function render() {
     }
   }
 
-  // Rebuilt last every time, so it lands on whichever card is last as cards come
-  // and go, and absent when the only thing left is a notice it would not act on.
+  // Rebuilt last every time, so it is the bottom of the bar and stays there as
+  // cards come and go, and absent when the only thing left is a notice it would
+  // not act on.
   //
-  // It hangs INSIDE that card rather than under the stack, which is a hit-testing
-  // fact rather than a layout preference. The bar is drawn in a view sized to the
-  // stack, and a view claims every mouse event inside its own rectangle whatever
-  // the page draws there, so a row of its own would be a full-width strip that
-  // the reader can see the page through and cannot click. That is exactly the
-  // strip Abi reported, measured 2026-09-17: a click under the cards was
-  // delivered into the banner's own document at a pixel with nothing drawn on it
-  // and reached neither the bar nor the page. Inside a card it costs no pixel of
-  // its own, because the card it joins is drawn there anyway.
-  //
-  // The host is the last card that is staying, not the last node in the stack: a
-  // card on its way out is still a child while it plays its departure, and the
-  // way out of the bar must not disappear with it.
+  // ★ A row of its own again, and the reason that is safe is a RULE rather than
+  // the row's position: THE BAR AND ITS VIEW ARE THE SAME RECTANGLE. The stack
+  // paints a surface over its whole box (see banner.css), so a child of the stack
+  // sits on pixels the bar draws, and the view main sizes to this stack's height
+  // has no unpainted pixel inside it at all. The fault this row caused the first
+  // time was never that it was a row: it was that its strip was INVISIBLE while
+  // still belonging to the view, so a click on it was delivered into the banner's
+  // own document at a pixel with nothing drawn on it and reached neither the
+  // control nor the page underneath. A pixel the reader can see through has to
+  // belong to what they can see; a pixel the bar paints is the bar's.
   const previous = document.getElementById(ACTIONS_ID);
   if (previous) previous.remove();
-  const staying = [...stack.children].filter((node) => node.id && wanted.has(node.id.slice(2)));
-  const host = staying[staying.length - 1];
-  if (host && notices.some((n) => n.dismissible !== false)) {
-    const row = actions();
-    const dismiss = typeof host.querySelector === 'function' ? host.querySelector('.banner__close') : null;
-    if (dismiss) host.insertBefore(row, dismiss); else host.append(row);
-  }
+  if (notices.some((n) => n.dismissible !== false)) stack.append(actions());
 
   report();
 }

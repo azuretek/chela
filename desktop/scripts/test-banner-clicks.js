@@ -12,7 +12,7 @@
 // The honest instrument is a real click at real screen coordinates, which is
 // what this does, through System Events.
 //
-//   npx electron scripts/test-banner-clicks.js [--target close|action|readall|dead]
+//   npx electron scripts/test-banner-clicks.js [--target close|action|readall|edge]
 //                                              [--expect dead|alive]
 //                                              [--shots DIR]
 //
@@ -21,17 +21,28 @@
 // the fix makes. Both are asserted, so this file records the fault rather than
 // quietly passing once it is gone.
 //
-// `--target dead` is the OTHER half of "the click reaches what a person aimed
-// at", and it is the direction that was reported three times in this area: a
-// point inside the banner's own rectangle that is NOT one of its controls, aimed
-// at the transparent strip below the cards in the sweep control's row. A click
-// there belongs to the page underneath, because that is what the reader can see
-// through it. Three readings are printed for it, and they name different faults:
-// the banner page saw the click and the page beneath did not (an element of the
-// banner is hit-testable where the pixel is transparent, which is a declaration
-// in banner.css); neither saw it (the click never left the banner's view, which
-// is the view bounds in main.js and no stylesheet can fix); or the page beneath
-// saw it, which is live.
+// ★ `--target edge` is the other half of "the click reaches what a person aimed
+// at", and it is the direction that was reported three times in this area: A CLICK
+// JUST OUTSIDE THE BAR'S VISIBLE EDGE MUST REACH THE PAGE BENEATH. That is what
+// proves no invisible click-eating area is left, and it is the one reading no
+// stylesheet assertion can make, because the fault twice lived in the view's
+// bounds and in hit testing rather than in a rule anyone could read.
+//
+// It replaces `--target dead`, which aimed at the transparent strip BELOW THE
+// CARDS, and that name is kept as an alias so the recorded command still runs. The
+// point had to move with the fix rather than stay put: the bar now paints its
+// whole rectangle (see the rule at the top of core/ui/banner.css), so the strip
+// under the cards is the bar's own surface rather than a hole, and a point there
+// measures the bar rather than the edge. The point measured now is 8px BELOW the
+// bar's own bottom edge, which is the view's bottom edge, and the readings printed
+// for it name different faults: the banner page saw the click and the page beneath
+// did not (an element of the banner is hit-testable where the pixel is not the
+// bar's, which is a declaration in banner.css); neither saw it (an invisible strip
+// of the overlay is still eating it, which is the view bounds in main.js and no
+// stylesheet can fix); or the page beneath saw it, which is live. The run also
+// prints whether the point was inside the banner's own rectangle at the moment of
+// the click, because a point outside it is aimed at the page by construction and
+// would say nothing.
 //
 // Isolation is pinned BOTH ways, because main.js decides whether a run is
 // isolated from the '--user-data-dir' SWITCH rather than from the path: a harness
@@ -54,7 +65,10 @@ const arg = (name, fallback) => {
   return i === -1 ? fallback : process.argv[i + 1];
 };
 const SHOTS = arg('--shots', null);
-const TARGET = arg('--target', 'close');
+// `edge` is the name; `dead` is what the recorded command called it before the
+// point moved to the bar's own edge, and it is kept as an alias so that command
+// still runs.
+const TARGET = ({ dead: 'edge' })[arg('--target', 'close')] || arg('--target', 'close');
 const EXPECT = arg('--expect', 'alive');
 
 // The gateway this run points at, SERVED FROM HERE unless one is given.
@@ -125,8 +139,11 @@ const note = (name, value) => record(`note ${name}: ${value}`);
 
 /** Ask a web contents something, but never wait on one that cannot answer. */
 const ask = (wc, script, ms = 2500) => Promise.race([
-  wc.executeJavaScript(script).catch(() => null),
-  delay(ms).then(() => null),
+  // The reason a page did not answer is recorded, because a harness that swallows
+  // it cannot tell "this page would not run the script" from "this page threw",
+  // and a null that reaches a note below is reported as a fault in the app.
+  wc.executeJavaScript(script).catch((e) => { record(`note executeJavaScript failed: ${e.message}`); return null; }),
+  delay(ms).then(() => { record(`note executeJavaScript did not answer within ${ms}ms`); return null; }),
 ]);
 
 console.log(`note log file: ${LOG}`);
@@ -197,7 +214,54 @@ app.whenReady().then(async () => {
   }
   check('the banner view exists', Boolean(bc), 'no banner webContents found after 10s');
   if (!bc) { app.exit(1); return; }
-  await delay(600);
+  // Anything the banner's own renderer says is recorded, because an
+  // executeJavaScript that throws arrives here as one sentence with no line and
+  // no error: "Script failed to execute". Without this the reason a measurement
+  // came back empty is invisible, which is how a harness reports a fault in the
+  // app that is a fault in the harness.
+  bc.on('console-message', (...args) => {
+    const message = typeof args[1] === 'string' ? args[1] : (args[0] && args[0].message);
+    if (message) record(`note banner renderer: ${message}`);
+  });
+  // ★ Its webContents exists as soon as its page has been ASKED for, which is
+  // before the document it will show has committed: and \`document.body\` does not
+  // exist until it has, so the instrumentation below throws on a null body if it
+  // is asked any earlier. Measured 2026-09-17, on the first runs after the banner
+  // was loaded off the window: the whole measurement came back null and was
+  // reported as a page that would not answer.
+  let bannerReady = false;
+  for (let i = 0; i < 40 && !bannerReady; i += 1) {
+    bannerReady = await ask(bc, 'Boolean(document.body && document.querySelector(".banner-stack"))', 2000) === true;
+    if (!bannerReady) await delay(250);
+  }
+  check('the banner page is on screen and readable', bannerReady,
+    'the banner document never became readable, so nothing below could be measured');
+  // ★ And wait for the bar to SETTLE before measuring it. Its view is sized from
+  // the height the page reports, so for the first frames after it appears the view
+  // is still its provisional height and the cards are still in their arrival
+  // animation, which puts their rectangles above the viewport. A click aimed from
+  // a rectangle read then lands somewhere else entirely, and the run reports a bar
+  // that is still moving as a bar that does not work. Measured 2026-09-17: the
+  // controls read at page y -51 while the view was 76px against a page reporting
+  // 118.
+  const bannerBounds = () => {
+    for (const view of window.contentView.children || []) {
+      try { if (view.webContents && view.webContents.id === bc.id) return view.getBounds(); } catch { /* not a web contents view */ }
+    }
+    return null;
+  };
+  let settled = false;
+  let settledNote = 'no reading';
+  for (let i = 0; i < 30 && !settled; i += 1) {
+    const bounds = bannerBounds();
+    const height = await ask(bc, '(() => { const s = document.querySelector(".banner-stack"); return s ? Math.round(s.getBoundingClientRect().height) : -1; })()', 2000);
+    const firstCard = await ask(bc, '(() => { const c = document.querySelector(".banner"); return c ? Math.round(c.getBoundingClientRect().y) : -1; })()', 2000);
+    settledNote = `view ${bounds && bounds.height}, page ${height}, first card at page y ${firstCard}`;
+    if (bounds && typeof height === 'number' && height > 0 && Math.abs(bounds.height - height) <= 1
+      && typeof firstCard === 'number' && firstCard >= 0) settled = true;
+    else await delay(200);
+  }
+  check('★ the bar has settled: its view is the height its page reports, and its card is in place', settled, settledNote);
 
   const targets = await ask(bc, `(() => {
     const rect = (sel) => {
@@ -216,11 +280,15 @@ app.whenReady().then(async () => {
       // control sitting on an opaque block rather than over the content.
       readall: rect('.banner__readall'),
       stack: rect('.banner-stack'),
-      // The point Abi reported: inside the banner's own rectangle, below the
-      // cards, in the row the sweep control sits in and to the LEFT of it. It
-      // is a pixel the page beneath is showing through, so it is exactly where
-      // a click must belong to that page rather than to the banner.
-      dead: (() => {
+      // ★ JUST OUTSIDE THE BAR'S VISIBLE EDGE: 8px below the bottom of the
+      // stack, which is the rectangle main sizes the view to and the last pixel
+      // the bar paints. The bar's visible edge and its view's edge are the same
+      // edge by design (see the rule at the top of core/ui/banner.css), so a
+      // click here has left the overlay entirely and belongs to the page the
+      // reader can see. Defined against the STACK rather than against the row or
+      // the cards, because the stack is what the view is sized to: this is the
+      // same relation before and after any row moves.
+      edge: (() => {
         const box = (sel) => {
           const node = document.querySelector(sel);
           if (!node) return null;
@@ -229,21 +297,15 @@ app.whenReady().then(async () => {
         };
         const stack = box('.banner-stack');
         if (!stack) return null;
-        const cards = [...document.querySelectorAll('.banner')].map((n) => n.getBoundingClientRect());
-        if (!cards.length) return null;
-        // THE STRIP UNDER THE CARDS: 24px below the lowest card they draw, in the
-        // leading part of the width where nothing is drawn. Defined against the
-        // CARDS rather than against the sweep's own row, because the row is what
-        // the fix removes and a point that follows it would move with it: this is
-        // the same pixel of the window before and after, which is what makes the
-        // two readings a comparison.
-        const lowest = Math.max(...cards.map((c) => c.y + c.height));
         const x = stack.x + 200;
-        const y = lowest + 24;
-        const overACard = cards.some((c) => x >= c.x && x <= c.x + c.width && y >= c.y && y <= c.y + c.height);
+        // h and not height: box() returns the same short keys its sibling does,
+        // and a key that is simply undefined turns the click point into NaN, which
+        // the clicker refuses without saying so.
+        const y = stack.y + stack.h + 8;
         return {
-          x: Math.round(x), y: Math.round(y), w: 0, h: 0, cx: x, cy: y, overACard,
-          label: 'the transparent area under the cards',
+          x: Math.round(x), y: Math.round(y), w: 0, h: 0, cx: x, cy: y,
+          overACard: false,
+          label: 'just outside the bottom edge of the bar',
         };
       })(),
       // How many cards are up, so a click that dismissed one can be told apart
@@ -347,10 +409,10 @@ app.whenReady().then(async () => {
   }
   if (!regionsSeen) note('drag regions', 'none on any page, so nothing can swallow a click above the page');
 
-  // `dead` aims at a PIXEL rather than at a control, so it has no entry here:
+  // `edge` aims at a PIXEL rather than at a control, so it has no entry here:
   // its own block below makes the verdict and ends the run.
   const target = { close: targets.close, action: targets.action, readall: targets.readall }[TARGET];
-  if (TARGET !== 'dead') {
+  if (TARGET !== 'edge') {
     check(`the banner has the ${TARGET} control to aim at`, Boolean(target), `the ${TARGET} control is not in the banner`);
     if (!target) { app.exit(1); return; }
   }
@@ -453,30 +515,28 @@ app.whenReady().then(async () => {
   const beneath = beneathPages;
 
   let through = null;
-  if (!targets.dead) {
+  if (!targets.edge) {
     note('the through-click', 'skipped: the banner draws no stack to measure');
-  } else if (targets.dead.overACard) {
-    note('the through-click', 'skipped: the only free point on the sweep row landed on a card');
   } else {
     const bannerBefore = await ask(bc, 'window.__clawBannerClicks', 2000);
     const hitsBefore = await ask(bc, '(window.__clawBannerHits || []).length', 2000);
     for (const page of beneath) await ask(page.wc, 'window.__clawBeneathProbe = 0', 2000);
     const point = {
-      x: contentBounds.x + targets.dead.cx,
-      y: contentBounds.y + inset + targets.dead.cy,
+      x: contentBounds.x + targets.edge.cx,
+      y: contentBounds.y + inset + targets.edge.cy,
     };
-    console.log(`note aiming at: the transparent area under the banner, page ${Math.round(targets.dead.cx)},`
-      + `${Math.round(targets.dead.cy)} = screen ${Math.round(point.x)},${Math.round(point.y)}`);
-    // Is the point inside the banner's own rectangle at this moment? A point that
-    // is outside it is aimed at the page beneath by construction, and a reading
-    // taken there says nothing about the overlay.
+    console.log(`note aiming at: just outside the bar's bottom edge, page ${Math.round(targets.edge.cx)},`
+      + `${Math.round(targets.edge.cy)} = screen ${Math.round(point.x)},${Math.round(point.y)}`);
+    // Is the point inside the banner's own rectangle at this moment? This target
+    // AIMS to be outside it, so an inside reading means the view grew after the
+    // point was computed and the run measured the overlay rather than the edge.
     const bounds = viewBoundsFor(bc.id);
     if (bounds) {
-      const inside = targets.dead.cy >= bounds.y - inset
-        && targets.dead.cy <= bounds.y - inset + bounds.height;
+      const inside = targets.edge.cy >= bounds.y - inset
+        && targets.edge.cy <= bounds.y - inset + bounds.height;
       note('the banner view at the moment of the click', `page y ${bounds.y - inset}..`
         + `${bounds.y - inset + bounds.height} (height ${bounds.height}); the point is `
-        + `${inside ? 'inside it' : 'OUTSIDE IT, so this run measures the page beneath instead'}`);
+        + `${inside ? 'INSIDE it, so this run measured the overlay rather than its edge' : 'outside it, which is what this target aims at'}`);
     } else {
       note('the banner view at the moment of the click', 'its view was not found in the window');
     }
@@ -508,19 +568,19 @@ app.whenReady().then(async () => {
       + `; the page beneath saw ${saw.join(', ') || 'nothing'}`);
   }
 
-  if (TARGET === 'dead') {
+  if (TARGET === 'edge') {
     if (!through) {
-      check('a click in the transparent area could be aimed at all', false,
+      check('a click just outside the bar could be aimed at all', false,
         'no point on the banner was measurable, so nothing was proved either way');
     } else if (EXPECT === 'dead') {
-      check('the click in the transparent area is swallowed (the fault, reproduced)', !through.saw.length,
+      check('the click just outside the bar is swallowed (the fault, reproduced)', !through.saw.length,
         `the page beneath saw it (${through.saw.join(', ')}), so this pixel was already live`);
     } else {
-      check('a click in the transparent area reaches the page beneath it', through.saw.length > 0,
+      check('★ a click just outside the bar reaches the page beneath it', through.saw.length > 0,
         'nothing under the banner saw the click: '
         + (through.bannerSaw ? 'the banner page captured it, so something in banner.css is still '
-          + 'hit-testable where the pixel is transparent' : 'the click never left the banner\'s view, so the '
-          + 'fault is the view bounds in main.js and no stylesheet can fix it'));
+          + 'hit-testable outside the bar' : 'the click never left the banner\'s view, so an invisible '
+          + 'strip of the overlay is still eating it and no stylesheet can fix it'));
     }
     console.log(failed ? 'FAILED' : 'ALL OK');
     app.exit(failed ? 1 : 0);

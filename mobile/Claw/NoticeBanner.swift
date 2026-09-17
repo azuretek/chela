@@ -30,27 +30,43 @@ struct NoticeStack: View {
 
     var body: some View {
         let style = NoticeCardStyle.forMode(mode)
-        VStack(alignment: .trailing, spacing: style.stackGap) {
-            ForEach(board.unread, id: \.id) { notice in
-                NoticeCard(
-                    notice: notice,
-                    style: style,
-                    markRead: { board.markRead(notice.id) },
-                    run: { board.run($0) }
-                )
-                .transition(.move(edge: .top).combined(with: .opacity))
+        VStack(alignment: .trailing, spacing: 0) {
+            // ★ THE BAR, painted behind what it holds and hugging it: the cards
+            // above, the sweep row at the bottom, and one surface behind them all.
+            // That is the same shape the desktop's banner has (see the rule at the
+            // top of core/ui/banner.css), where the bar must paint every pixel of
+            // the rectangle its view is sized to or the rest is a dead strip over
+            // the Control UI.
+            //
+            // It is INSIDE the full-screen frame and not on it, and that
+            // distinction is this client's whole safety: the frame is the screen so
+            // that the bar can sit at its top, and a surface, a contentShape or a
+            // gesture on the frame would claim every touch on the page underneath.
+            // See NoticeStackHitTests.
+            VStack(alignment: .trailing, spacing: style.stackGap) {
+                ForEach(board.unread, id: \.id) { notice in
+                    NoticeCard(
+                        notice: notice,
+                        style: style,
+                        markRead: { board.markRead(notice.id) },
+                        run: { board.run($0) }
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                if board.unread.contains(where: { $0.dismissible }) {
+                    MarkAllReadRow(style: style) { board.markAllRead() }
+                }
             }
-            if board.unread.contains(where: { $0.dismissible }) {
-                MarkAllReadRow(style: style) { board.markAllRead() }
-            }
-            // Trailing filler rather than a fixed height, so the stack is only as
-            // tall as the cards it holds and the web view underneath keeps every
-            // touch outside them. A view that covered the page to draw nothing on
-            // it would eat taps the way an over-tall desktop banner view does.
+            .padding(.horizontal, style.inset)
+            .padding(.vertical, style.inset)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .background(style.surface)
+            // Trailing filler rather than a fixed height, so the bar is only as
+            // tall as what it holds and the web view underneath keeps every touch
+            // outside it. A view that covered the page to draw nothing on it would
+            // eat taps the way an over-tall desktop banner view does.
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, style.inset)
-        .padding(.top, style.inset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(style.arrival, value: board.unread.map(\.id))
     }

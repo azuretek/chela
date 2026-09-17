@@ -1603,6 +1603,9 @@ function createMainWindow() {
     bannerHeight = 0;
     loadingView = null;
     overlayViews.clear();
+    // The set of views that were on the window: they die with the window, and a
+    // stale entry would make restackViews try to re-add a destroyed view.
+    attachedViews.clear();
     // A recreated window is a new window, and it has to be allowed to show.
     windowRevealed = false;
     // The cover went with the window, so nothing is listening for progress.
@@ -1809,6 +1812,7 @@ function openOverlay(name, opts = {}) {
     log: (msg) => console.error(`[claw-desktop] ${name} overlay: ${msg}`),
   });
   mainWindow.contentView.addChildView(view);
+  attachedViews.add(view);
   restackViews();
   layoutViews();
   wc.loadFile(path.join(UI_DIR, OVERLAY_PAGES[name]), { search: opts.search || overlaySearch() });
@@ -1879,6 +1883,7 @@ async function closeOverlay(name, { animate = true } = {}) {
   overlayViews.delete(name);
   themeCssKeys.delete(view.webContents.id);
   if (animate) await leaveSurface(view);
+  attachedViews.delete(view);
   try {
     mainWindow?.contentView.removeChildView(view);
   } catch { /* window already gone; the view goes with it */ }
@@ -2082,12 +2087,53 @@ let coverStyled = false;
  * and it is the right way round: the modal is a page someone opened and can
  * scroll, the notice is the app saying something changed underneath them.
  */
+// The views that are ON the window, as opposed to being prepared off it. A view
+// is prepared, loaded and then attached, which is what keeps its page from taking
+// the reader's keyboard; see attachReadyView.
+const attachedViews = new Set();
+
 function restackViews() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  // Only views that have been PUT there are restacked. A view of ours loads its
+  // page BEFORE it joins the window (see attachReadyView), so a view that is
+  // still preparing is not on the window to be restacked, and re-adding it here
+  // would put it on screen half-loaded and take the reader's keyboard with it.
   for (const view of [loadingView, ...overlayViews.values(), bannerView]) {
-    if (!view || view.webContents.isDestroyed()) continue;
+    if (!view || !attachedViews.has(view) || view.webContents.isDestroyed()) continue;
     try { mainWindow.contentView.addChildView(view); } catch { /* window gone */ }
   }
+}
+
+/**
+ * Put one of our views on the window, and remember that it is there.
+ *
+ * The order this exists for is LOAD, THEN ATTACH, and it is a focus rule rather
+ * than a tidy-up. Measured 2026-09-17 on Electron 44: a `WebContentsView` added
+ * to the window and THEN loaded hands the window's keyboard to its own page the
+ * moment the document commits, and it keeps it. Nothing in this app calls focus
+ * on it; the load does. So the loading cover and the notice banner, which are
+ * surfaces that appear on their own, are loaded while they are OFF the window and
+ * attached once their document is ready. Measured in the same run: loaded
+ * detached, the page underneath keeps the keyboard through the load, the attach,
+ * a DOM change and the view's removal; loaded while attached, the keyboard moves
+ * to the new view within 150ms and never comes back.
+ *
+ * It also fixes the other half of the same order: the style sheets are inserted
+ * before the view is on screen, so the first frame anyone SEES is the styled one,
+ * where attaching first could paint an unstyled banner for a frame.
+ *
+ * A hidden view is not an answer: `setVisible(false)` while loading still took the
+ * keyboard in the same measurement.
+ */
+function attachReadyView(view) {
+  if (!view || !mainWindow || mainWindow.isDestroyed()) return;
+  if (view.webContents.isDestroyed()) return;
+  try {
+    mainWindow.contentView.addChildView(view);
+    attachedViews.add(view);
+  } catch { /* window gone */ }
+  restackViews();
+  layoutViews();
 }
 
 /* --------------------------------------------------------------- progress */
@@ -2160,6 +2206,14 @@ async function styleLoadingCover(wc) {
   try {
     await applyTokenCss(wc);
     await applyThemeCss(wc);
+    // ★ And only NOW onto the window. A cover is a surface the reader did not
+    // ask for, so it may not take their keyboard either, and a view loaded while
+    // attached takes it whether or not anything asks (see attachReadyView). So it
+    // is loaded off the window and attached here, once its own page is styled:
+    // the cover's first visible frame is the styled one, and the page underneath
+    // keeps the caret it was typing into until the cover is genuinely in front of
+    // it.
+    if (loadingView && loadingView.webContents === wc) attachReadyView(loadingView);
   } catch { /* the page keeps ui.css's own palette */ }
   coverStyled = true;
   revealMainWindow();
@@ -2184,8 +2238,9 @@ function showLoadingCover() {
   loadingView.setBackgroundColor(currentTheme.surface);
   const wc = loadingView.webContents;
   attachContextMenu(wc);
-  mainWindow.contentView.addChildView(loadingView);
-  restackViews();
+  // Off the window while it loads, and put on it by styleLoadingCover once its
+  // own page is styled. Same reason as the notice bar: a view loaded while it is
+  // attached takes the reader's keyboard on its own. See attachReadyView.
   wc.loadFile(path.join(UI_DIR, 'loading.html'), { search: overlaySearch() });
   // Styled FIRST, revealed second, and the order is the fix rather than a
   // tidy-up. The cover is the first thing this window ever paints, so it is the
@@ -2213,6 +2268,7 @@ function hideLoadingCover() {
   // cover that was never styled cannot hold the reveal back once it is gone.
   loadingView = null;
   coverStyled = true;
+  attachedViews.delete(view);
   themeCssKeys.delete(view.webContents.id);
   tokenCssKeys.delete(view.webContents.id);
   // The cover is the ONE view painted opaque, so it has to be made see-through
@@ -2268,12 +2324,27 @@ function refreshBanner() {
   // leave an empty strip eating clicks on the Control UI underneath.
   if (!notices.unread().length) {
     if (bannerView) {
-      try { mainWindow.contentView.removeChildView(bannerView); } catch { /* window gone */ }
-      try { if (!bannerView.webContents.isDestroyed()) bannerView.webContents.close(); } catch { /* gone */ }
-      themeCssKeys.delete(bannerView.webContents.id);
-      tokenCssKeys.delete(bannerView.webContents.id);
+      const view = bannerView;
+      const wc = view.webContents;
+      // Whether the keyboard is on the bar, asked BEFORE it is taken away. The
+      // bar never takes it by itself (see attachReadyView), but the reader may
+      // have given it deliberately by tabbing to one of its controls, and a view
+      // taken off the window with the keyboard in it leaves the window with NONE.
+      const held = !wc.isDestroyed() && wc.isFocused();
+      attachedViews.delete(view);
+      try { mainWindow.contentView.removeChildView(view); } catch { /* window gone */ }
+      try { if (!wc.isDestroyed()) wc.close(); } catch { /* gone */ }
+      themeCssKeys.delete(wc.id);
+      tokenCssKeys.delete(wc.id);
       bannerView = null;
       bannerHeight = 0;
+      // Hand the keyboard back the way closeOverlay does, and only when it was
+      // actually there: a dismissal must not move the reader's focus at all.
+      if (held) {
+        const top = [...overlayViews.values()].filter((v) => !v.webContents.isDestroyed()).pop();
+        if (top) top.webContents.focus();
+        else page()?.focus();
+      }
     }
     return;
   }
@@ -2289,12 +2360,27 @@ function refreshBanner() {
     bannerView.setBackgroundColor('#00000000');
     const wc = bannerView.webContents;
     attachContextMenu(wc);
-    mainWindow.contentView.addChildView(bannerView);
-    // Over the cover, under any modal that is already open.
-    restackViews();
+    // ★ LOADED BEFORE IT IS PUT ON THE WINDOW, and that order is a FOCUS rule
+    // rather than a tidy-up. A WebContentsView added to the window and then
+    // loaded takes the window's keyboard the moment its document commits,
+    // whether or not anything asks for it: measured 2026-09-17 on Electron 44,
+    // the keyboard moved to the bar within 150ms of the load and stayed there for
+    // the life of the view, which is Abi's report exactly -- a card arriving
+    // mid-sentence stopped the reader typing, and nothing in this file calls
+    // focus() on the bar, so the ORDER is the only place the rule can live. See
+    // attachReadyView for the measurement and for the half that fails.
+    //
+    // Attached on dom-ready, which lands after the page's script has run and
+    // before its first card exists (the page awaits its own IPC read first), so
+    // the arrival still plays where it can be seen.
+    wc.once('dom-ready', async () => {
+      if (!bannerView || bannerView.webContents !== wc) return; // replaced while it loaded
+      await applyTokenCss(wc);
+      await applyThemeCss(wc);
+      if (!bannerView || bannerView.webContents !== wc) return;
+      attachReadyView(bannerView);
+    });
     wc.loadFile(path.join(UI_DIR, 'banner.html'), { search: overlaySearch() });
-    wc.once('did-finish-load', () => { void applyTokenCss(wc).then(() => applyThemeCss(wc)); });
-    layoutViews();
     return;
   }
 

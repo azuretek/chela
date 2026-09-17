@@ -14,9 +14,17 @@
  *
  * Three things about the page this styles:
  *
- * - It lives in a view sized to exactly its own height (see refreshBanner in
- *   src/main.js), so the body must add nothing of its own. A stray margin here
- *   becomes a transparent strip that eats clicks on the UI underneath.
+ * - ★ THE BAR PAINTS ITS WHOLE RECTANGLE, and that is the rule the whole file is
+ *   built around rather than a look. It lives in a view sized to exactly the
+ *   stack's height (see refreshBanner in src/main.js), and a view claims every
+ *   mouse event inside its own rectangle whatever is drawn there, so any pixel of
+ *   that rectangle this page does not paint is a dead zone over the Control UI:
+ *   the reader can see the page underneath and cannot click it. The stack
+ *   therefore carries its own surface (see .banner-stack), which covers its
+ *   padding and the gaps between its cards as well as the cards themselves, and
+ *   every child of it, a card or the footer row carrying Mark all read, sits on a
+ *   pixel the bar paints. The body must still add nothing of its own: a margin
+ *   here would be inside the view and outside the bar.
  * - It runs under `style-src 'self'`, so no style attribute may be written
  *   through the DOM. Everything an element needs is a class or a property set
  *   from a stylesheet.
@@ -32,12 +40,14 @@
  *   The fault it answers, and the third of its kind in this one area: the page's
  *   grab band over the banner, then the banner itself, and then this, the stack's
  *   own transparent furniture. The strip reported was the row carrying Mark all
- *   read, which spans the whole width while its control sits at the trailing
+ *   read, which spanned the whole width while its control sat at the trailing
  *   edge, so the empty part of that row looked exactly like the page underneath
- *   and ate every click that landed on it. The stack's padding and the gaps
+ *   and ate every click that landed on it; the stack's padding and the gaps
  *   between cards did the same. Measured 2026-09-17 by clicking at a real screen
  *   point in that row: the click was delivered into this document and reached
- *   nothing, while the page beneath saw nothing at all.
+ *   nothing, while the page beneath saw nothing at all. The first fix moved the
+ *   row inside a card, which removed the strip and read wrong; the second paints
+ *   the bar, which removes the strip without moving the row.
  */
 
 /* The view is not a window-drag surface. Kept as the declared intent, and NOT
@@ -107,15 +117,37 @@ body.banner-body {
   pointer-events: auto;
 }
 
-/* The stack is a CONTAINER: its padding and the gaps between its cards are
-   pixels of the page underneath. Its controls, one level down, turn hit testing
-   back on for themselves. */
+/* ★ THE BAR. One surface across the whole rectangle the view is sized to, which
+   is what makes every pixel inside that rectangle the bar's rather than a hole:
+   the padding, the gaps between the cards, and the corners the cards' own radii
+   round off are all painted here.
+
+   The surface, the blur and the hairline are the CARD's own material, from the
+   same tokens (--notice-surface at --notice-surface-alpha, --notice-blur), and
+   deliberately so rather than for want of a second colour: the bar and the cards
+   on it are one object, and the cards are read off it by their tone stripe, their
+   hairline and their shadow rather than by a second shade of glass. It is also
+   what keeps the two clients honest, since there is no bar-colour token in
+   spec/tokens.json for them to disagree about.
+
+   No border-radius: the bar spans the window under the title strip, so its
+   corners are the window's. Its bottom hairline is the edge the reader sees over
+   the page.
+
+   `pointer-events: none` stays: the bar is not a control, it is the surface the
+   reader's controls sit on, and its controls turn hit testing back on for
+   themselves. */
 .banner-stack {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 10px 12px;
   pointer-events: none;
+  background: color-mix(in srgb, var(--notice-surface) var(--notice-surface-alpha), transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--notice-border) var(--notice-border-alpha), transparent);
+  box-shadow: var(--notice-shadow);
+  backdrop-filter: blur(var(--notice-blur));
+  -webkit-backdrop-filter: blur(var(--notice-blur));
 }
 
 /* The card. Surface, hairline, radius, shadow and blur are the Control UI's
@@ -299,25 +331,28 @@ body.banner-body {
 }
 .banner__close:hover { background: var(--notice-dismiss-hover-surface); color: var(--notice-dismiss-hover-colour); }
 
-/* Closing the whole bar. Right-aligned under the cards and deliberately quiet:
-   it is the way out, not the point, and the notices above it are. */
-/* The sweep's own row, which lives INSIDE the last card (see the render in
-   banner.js) and is drawn at the card's trailing end, before its X.
+/* Closing the whole bar. The FOOTER of the bar: right-aligned, under the cards,
+   and deliberately quiet, because it is the way out rather than the point.
 
-   It is not a row of the stack, and that is the whole of this fault's fix: a row
-   of its own was full width with its control at the far edge, so its leading half
-   was a strip the reader saw the page through and could not click. Inside a card
-   it costs no pixel of its own, because the card it joins is drawn there anyway,
-   and the strip under the cards is the page again.
+   ★ A row of the stack at the bottom, and the reason that is safe is the rule at
+   the top of this file rather than the row's position: the stack paints its whole
+   rectangle, so this row's full width is the bar's own surface and never a strip
+   the reader sees the page through. What the first version of this row got wrong
+   was exactly that and not its place in the stack: it had nothing painted behind
+   it, so its leading half was a dead zone. Abi asked for it back at the bottom on
+   2026-09-17; see the render in banner.js.
 
-   The pair below is the general shape: a container is `none`, the control in it
-   is the only thing put back into hit testing. */
+   Its hairline is what says the row belongs to the bar rather than floating in
+   it, and it is drawn from the bar's own border token so the two read as one
+   object. The pair below is the general shape: a container is `none`, the control
+   in it is the only thing put back into hit testing. */
 .banner-actions {
   flex: none;
-  align-self: center;
   display: flex;
   justify-content: flex-end;
   pointer-events: none;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--notice-border) var(--notice-border-alpha), transparent);
 }
 .banner__readall {
   min-height: var(--notice-action-min-height);

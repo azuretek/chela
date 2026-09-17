@@ -19,8 +19,15 @@
 
        This page lives in a view sized to exactly the height it reports, because
        a view swallows every mouse event inside its bounds no matter what is
-       drawn there, an over-tall banner would be an invisible strip eating
-       clicks on the UI underneath. See refreshBanner in src/main.js. -->
+       drawn there: an over-tall banner would be an invisible strip eating clicks
+       on the UI underneath. ★ So the two things must be the same rectangle, and
+       the bar paints ALL of it: see the rule at the top of banner.css. See also
+       refreshBanner in src/main.js, which loads this page BEFORE putting the
+       view on the window, because a view loaded while it is attached takes the
+       reader's keyboard and nothing here asks it to.
+
+       Its one job to the host is that height, reported on every render, and the
+       bar's footer row is part of it. -->
   <div class="banner-stack" id="stack"></div>
   <script src="surface.js"></script>
   <script src="banner.js"></script>

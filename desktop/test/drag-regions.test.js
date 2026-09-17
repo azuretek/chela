@@ -284,6 +284,52 @@ test('the overlay that is not a control gives the click up', () => {
   }
 });
 
+test('★ the bar paints the whole rectangle its view is sized to', () => {
+  // The rule the sweep row's place depends on, and the one thing the earlier fixes
+  // in this area did not have. The banner's view is sized to exactly the stack's
+  // height (refreshBanner in src/main.js), and a view claims every mouse event
+  // inside its own rectangle whatever the page draws there, so any pixel of that
+  // rectangle left unpainted is a strip the reader can see the page through and
+  // cannot click. Painting the bar is what makes a row of its own safe again:
+  // every child of the stack, a card or the sweep footer, then sits on a pixel the
+  // bar draws, which is why the invariant in banner.test.js is about the bar's
+  // shape rather than about every child being a card.
+  //
+  // Asserted on the declarations rather than in a screenshot, because a stack that
+  // paints and one that does not are indistinguishable until the pixel under them
+  // is measured, and because the three ways it can silently stop painting are
+  // exactly what is checked: a surface that is transparent or absent, a margin
+  // that puts the bar's own edge inside the view, and a radius that leaves the
+  // corners of the view unpainted.
+  const rules = pageStylesheets(pages.filter((p) => p.name === 'banner.html'));
+  const stack = rules.find((rule) => rule.selector.split(',').map((s) => s.trim()).includes('.banner-stack'));
+  assert.ok(stack, 'banner.css has no .banner-stack rule');
+
+  const background = stack.decls.get('background');
+  assert.ok(background, 'the bar paints nothing: .banner-stack must carry the bar\'s own surface, or the view '
+    + 'sized to it is a transparent strip eating clicks on the page underneath');
+  assert.notEqual(background, 'transparent',
+    'the bar\'s surface is transparent, so the view sized to it is a strip of nothing');
+  const clip = stack.decls.get('background-clip');
+  assert.ok(!clip || clip === 'border-box' || clip === 'padding-box',
+    `the bar's surface is clipped to \"${clip}\", which does not cover its own padding: the view inside it is `
+    + 'sized to the padding BOX, so anything the surface does not cover is an unpainted strip');
+
+  // A margin is inside the view and outside the bar, and the sizing cannot know
+  // about it: the one pixel band that would go on eating clicks with every check
+  // in this file still passing.
+  assert.equal(stack.decls.get('margin'), undefined,
+    'the bar must not carry a margin: the view is sized to the stack\'s box, so a margin is an unpainted band '
+    + 'inside it over the Control UI');
+
+  // A radius rounds the bar's own corners off and leaves them unpainted, which is
+  // the same fault at four pixels instead of a strip. The bar spans the window
+  // under the title strip, so its corners are the window's anyway.
+  assert.equal(stack.decls.get('border-radius'), undefined,
+    'the bar must not be rounded: its corners would be unpainted pixels inside the view, and the bar spans '
+    + 'the window, so its corners are the window\'s');
+});
+
 test('the pages that cover the strip are the ones that may move the window', () => {
   // The other side of the same rule, so the guard cannot be satisfied by simply
   // deleting every band: while an overlay covers the strip the band is the only

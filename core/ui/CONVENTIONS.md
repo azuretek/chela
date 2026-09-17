@@ -95,6 +95,65 @@ and the observer's `socketClosed` report in `core/spec/pairing.json`. Guarded by
 `desktop/test/payload-freshness.test.js` (the host's half) and
 `desktop/scripts/test-held-gateway-view.js` (the frames).
 
+## ★ The third rule: nothing takes focus unless by rule
+
+Abi, 2026-09-17: *"can we also make these banners not change our focus? when they
+pop up what I'm typing gets stopped. nothing should take focus unless its by
+rule"*. This is the third fault in this one area, after click-swallowing and the
+transparent overlay, and it is a rule rather than a fix because the first two were
+each re-introduced by the next change that seemed reasonable on its own.
+
+**What may take the keyboard is an action the reader took, and nothing else.**
+
+| MAY take focus | MAY NOT take focus |
+|---|---|
+| A control the reader pressed, or a field they clicked into. | A surface that APPEARED on its own, meaning the notice bar or the loading cover. |
+| A surface the reader OPENED: Settings, About, pairing, and anything a notice offers to open. | A card being dismissed, or the bar going away. |
+| A key that moves focus by convention, such as the tab bar's own arrow keys. | A value, a status or a count changing where it sits. |
+| The window itself, when the reader asks for it: the tray, the global shortcut, the Dock. | A list rebuilding, or a view being replaced under the reader. |
+
+**A caret and a text buffer survive everything in the right-hand column.** That is
+the test rather than a side effect: focus is the reader's, so a notice arriving
+mid-sentence must leave their cursor exactly where it was and their half-typed text
+in the field it was in.
+
+**★ The mechanism, because it is not a `focus()` call and reading the code will not
+find it.** Measured 2026-09-17 on Electron 44: a `WebContentsView` that is added to
+the window and THEN loaded hands the window's keyboard to its own page the moment
+its document commits, and it keeps it. `new WebContentsView(...)` does not do it,
+`contentView.addChildView(...)` does not do it, `setVisible(false)` does not stop
+it, and removing the view afterwards drops the keyboard to NOTHING rather than
+handing it back. So the fix is the ORDER: **load a view while it is OFF the
+window, then attach it**, which is `attachReadyView` in `desktop/src/main.js`.
+Measured in the same run: loaded detached, the page underneath kept the keyboard
+through the load, the attach, a DOM change and the view's removal.
+
+So a surface that appears on its own, the notice bar and the loading cover, is
+loaded off the window and attached once its document is ready, and a surface the
+reader OPENED is attached first and explicitly focused. That second half is part of
+the rule rather than an exception to it: a dialog the reader cannot type into is a
+dialog that does not work, and the reader opening it is the action that licenses
+the keyboard.
+
+### Every place a surface of ours moves focus
+
+Walked on 2026-09-17, one row per call site, so a new one can be added here or
+named as deliberate rather than left to be discovered by a report.
+
+| Where | What happens | Why it is right |
+|---|---|---|
+| `main.js` `showMainWindow()` | `mainWindow.focus()` | The tray, the global shortcut and the Dock are the reader asking for the window. |
+| `main.js` `openOverlay()` | `wc.focus()` once the page has loaded, and again when an already-open overlay is re-opened | The reader opened Settings or About. A surface they are meant to type into must own the keyboard. |
+| `main.js` `closeOverlay()` | Hands the keyboard to the overlay still under it, else to the gateway page | The reader closed a surface, and this is the keyboard going back where they were. |
+| `main.js` `refreshBanner()` | **Nothing, and that is the change.** Its page is loaded off the window; a dismissal hands the keyboard back only if the reader had tabbed into the bar | The bar appearing, changing and going are all things nobody did. |
+| `main.js` `showLoadingCover()` and `styleLoadingCover()` | The cover no longer takes the keyboard at all: loaded off the window, attached once styled | A cover appearing on its own is not an action, so the page underneath keeps the caret while it is up. |
+| `main.js` `hideLoadingCover()` | Hands the keyboard to the top overlay, else to the page | The view the reader was typing in may have been REPLACED while the cover was up, so the keyboard has to be put somewhere rather than left with nothing. |
+| `main.js` `createMainWindow()` and `beginGatewayConnect()` | The gateway page is attached and then loaded, so it takes the keyboard as it loads | The reader's own page, opened by their own action, and the Control UI's own composer must be typable the moment it arrives. |
+| `settings.js`, the filter's clear control | `gatewayFilter.focus()` | The reader pressed it, and the cursor goes back to the field they were filtering by. |
+| `settings.js`, the tab bar | `tab-<name>.focus()` on arrow, Home and End | The reader pressed the key, and moving focus within the tab list is the convention for a tab bar. |
+| `banner.js`, `banner.html` | No `focus()` call and no `autofocus` anywhere. Its controls are focusable | The reader may tab into the bar, which is an action and is why the bar must stay reachable by keyboard; nothing is ever pressed on them. |
+| `mobile/Claw/NoticeBanner.swift`, `ContentView.swift` | The banner is a plain SwiftUI overlay: no `@FocusState`, no `becomeFirstResponder`, no sheet for a notice | The phone's half of the same rule. A SwiftUI overlay appearing does not move focus, so nothing had to change; this client's fault was the desktop's view hierarchy, not a shared page. |
+
 ## ★ What counts as a transition
 
 **A transition is any change the reader can SEE, and it does not have to change the
