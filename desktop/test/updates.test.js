@@ -705,3 +705,82 @@ test('★ a download that completes is reported even for an attempt the reader c
   assert.match(downloaded[0], /setNotice\('update-available'/, 'and raises the ready card');
 });
 
+/*
+ * ---------------------------------------------------------------------------
+ * The two cards a background check has to keep apart.
+ *
+ * Abi, 2026-09-17: on the phone, "I've only ever seen the banner when I click to
+ * check". The same shape was here. A background check that found a release went
+ * straight into a quiet transfer and told the reader nothing, so the app only ever
+ * mentioned an update to somebody who asked. That is the trap the quiet rule walks
+ * into, and it is why the rule is written down as two different cards:
+ *
+ *   availability   a release EXISTS. Read off the feed, needing no evidence, and
+ *                  news whether or not anybody asked. It must be raised.
+ *   progress       a transfer has MOVED. A claim about movement made before any
+ *                  byte moved is the card that hung at 0% forever, so a background
+ *                  transfer stays quiet until a progress event gives it something
+ *                  true to say.
+ *
+ * The wrong reading is one clause wide and tempting: "background is quiet" must
+ * not be applied to the availability card, because a client that only mentions an
+ * update to somebody who asks is a client that never tells them.
+ * ---------------------------------------------------------------------------
+ */
+
+test('★ a background check that finds a release raises the availability card', () => {
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+  const handler = /function onUpdateAvailable\(info\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(handler, 'the update-available handler was not found');
+  const body = handler[0];
+
+  // The quiet fetch raises the news, and raises it as a notice with a sentence and
+  // nothing else: no bar, and no action, because the transfer is already under way
+  // and the first progress event is what replaces this card.
+  assert.match(
+    body,
+    /if \(fetch\.quiet\) \{\s*setNotice\('update-available', \{ tone: noticeStore\.INFO, message, detail \}\);/,
+    'a quiet transfer must not silence the availability notice',
+  );
+  // The transfer itself is still quiet, which is the half that must not be undone.
+  assert.match(body, /beginUpdateDownload\(info\.version, \{ quiet: fetch\.quiet \}\)/,
+    'the transfer keeps the plan\'s own quiet');
+  // One wording, composed once, for every path that tells the reader a release
+  // exists: the sentence cannot differ between a press and a background check.
+  assert.match(body, /const \{ message, detail \} = updates\.checkAnswer\(\{/,
+    'the sentence is the shared one');
+
+  // The decision this rests on is core's, and it says one thing per trigger: a press
+  // is loud, a background check is quiet. Asserted from the shared rule rather than
+  // from a comment, because a fetchPlan that changed its mind would take this path
+  // with it silently.
+  assert.deepEqual(updates.fetchPlan({ action: updates.INSTALL, version: '1.0.2', trigger: 'manual' }),
+    { fetch: true, quiet: false, offer: null });
+  assert.deepEqual(updates.fetchPlan({ action: updates.INSTALL, version: '1.0.2', trigger: 'scheduled' }),
+    { fetch: true, quiet: true, offer: null });
+});
+
+test('★ the quiet half stays quiet: no progress card before movement, and none for a version the reader ended', () => {
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+
+  // A quiet attempt still raises nothing at zero and still arms the stall window.
+  const begin = /function beginUpdateDownload\(version, \{ quiet = false \} = \{\}\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(begin, 'beginUpdateDownload was not found');
+  assert.match(begin[0], /if \(quiet\) downloadCardRaised = false;/, 'a quiet attempt draws no card');
+  assert.match(begin[0], /else showUpdateNotice\(downloadingNotice\(version, \{ percent: 0 \}\)\);/,
+    'the zero-percent card belongs to the reader who asked');
+  assert.match(begin[0], /armStallWatch\(\);/, 'and the window is still armed');
+
+  // The suppression is checked before the offer is raised, so a version whose
+  // transfer already ended here says nothing in the background: the availability
+  // card is not a way around the record the reader created.
+  const handler = /function onUpdateAvailable\(info\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(handler, 'the update-available handler was not found');
+  const body = handler[0];
+  const suppressed = body.indexOf('if (!fetch.offer) return;');
+  const offered = body.lastIndexOf("setNotice('update-available'");
+  assert.ok(suppressed !== -1 && offered !== -1, 'the handler lost a branch');
+  assert.ok(suppressed < offered,
+    'a transfer the reader already ended is still silent, so the card cannot come back through this door');
+});
+
