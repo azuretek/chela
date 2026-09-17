@@ -146,6 +146,24 @@ let mainWindow = null;
 // `position: fixed` overlay anchored to a corner. Linux keeps its OS frame, so
 // there the view simply fills the window and this costs nothing.
 let pageView = null;
+
+/**
+ * Whether the view on screen is holding a Control UI payload.
+ *
+ * The one fact that decides how a load is made: a fresh payload replaces this one,
+ * and a fresh payload that does not exist must leave it exactly as it is. Set when
+ * a gateway document is on screen and accepted, cleared when the view is given one
+ * of our own pages instead or when a load into it fails.
+ */
+let payloadOnScreen = false;
+
+/**
+ * The load attempt in flight, when it is being made beside the payload on screen.
+ *
+ * One at a time, and never added to the window until it has loaded: see
+ * `createGatewayView` for why an attempt cannot be made in the visible view.
+ */
+let attemptView = null;
 // The strip above it, on macOS and Windows. See ui/titlebar.html.
 let stripView = null;
 // Settings, About and message dialogs are views layered over the main window's
@@ -455,6 +473,10 @@ function reachMilestone(milestone) {
 function showSettingsAsPage(opts = {}) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   settingsIsPage = true;
+  // Our own page is what this view holds from here, so there is no payload to fall
+  // back to until a gateway answers again.
+  payloadOnScreen = false;
+  if (attemptView && !attemptView.webContents.isDestroyed()) destroyGatewayView(attemptView);
   // A modal of the same page over the top of itself is not an improvement.
   closeOverlay('settings');
   page()?.loadFile(path.join(UI_DIR, 'settings.html'), {
@@ -475,7 +497,7 @@ function showSettingsAsPage(opts = {}) {
  * offering. The window keeps showing the loading cover it was already showing
  * while the connect was in flight, now in its stopped state.
  */
-function showConnectionFailure(detail) {
+function showConnectionFailure(detail, { cover = true } = {}) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const gw = config.activeGateway();
   const label = gw ? gw.label || gw.url : null;
@@ -493,7 +515,13 @@ function showConnectionFailure(detail) {
   setNotice('connection', connectionState.failureNotice({ label, error: connection.error }));
   // Already up from the connect attempt; this re-asserts it for the case where
   // the very first load failed before anything covered the window.
-  showLoadingCover();
+  //
+  // Not when an attempt failed BESIDE a payload on screen: no cover was raised for
+  // it (there was nothing to cover), and putting one up now would hide a working
+  // interface in order to report that a fresh copy of it is not available, which is
+  // the opposite of what is wanted. The banner still says what happened.
+  if (cover) showLoadingCover();
+  else hideLoadingCover();
   // One last push so the bar lands on the stage the load genuinely reached, then
   // stop: nothing is progressing, and a line of jokes still cycling under a dead
   // connection reads as an app that has not noticed.
@@ -554,12 +582,28 @@ function loadActiveGateway() {
   // Raised before the load rather than after, because the whole point is to
   // cover the gap: a `loadURL` to an unreachable host leaves the previous
   // document, or a blank view, on screen for as long as it takes to fail.
-  showLoadingCover();
+  //
+  // Unless a payload is already on screen, which is the same sentence read the
+  // other way: there is nothing there to cover but a working interface, and the
+  // attempt is made beside it instead (see createGatewayView). A cover raised on
+  // every retry would also blink the window the whole time a gateway is restarting.
+  const hasPayload = payloadOnScreen && pageView && !pageView.webContents.isDestroyed();
+  if (!hasPayload) showLoadingCover();
   const creds = secrets.load(gw.id);
   const supplied = [creds.token && 'token', creds.password && 'password', creds.headers.length && `${creds.headers.length} header(s)`]
     .filter(Boolean).join(', ');
   console.log(`[claw-desktop] connecting to ${gw.label || gw.url} <${gw.url}>${supplied ? ` (supplying ${supplied})` : ''}`);
-  page()?.loadURL(withTokenHandoff(gw.url, creds.token), FRESH_DOCUMENT);
+  const url = withTokenHandoff(gw.url, creds.token);
+  // A payload on screen is never navigated away from just to find out whether a
+  // fresh one exists: see createGatewayView for what a failed navigation does to
+  // the frame. So the attempt happens off to the side and is swapped in only if it
+  // loads.
+  if (hasPayload) {
+    startGatewayAttempt(gw, url);
+    return;
+  }
+  payloadOnScreen = false;
+  page()?.loadURL(url, FRESH_DOCUMENT);
 }
 
 // The server's payload rather than a cached copy of it, on the one load the app
@@ -1098,27 +1142,31 @@ function setStripLabel(session) {
   ).catch(() => {});
 }
 
-function createMainWindow() {
-  const cfg = config.get();
-  configureSession(session.defaultSession, config.activeGateway());
-
-  mainWindow = new BrowserWindow({
-    ...restoredBounds(),
-    ...chrome.windowOptions(currentTheme),
-    minWidth: defaults.minWindow.width,
-    minHeight: defaults.minWindow.height,
-    show: false,
-    backgroundColor: currentTheme.surface,
-    autoHideMenuBar: true,
-    title: chrome.APP_NAME,
-    icon: process.platform === 'linux' ? path.join(ASSETS, 'icon.png') : undefined,
-  });
-
-  if (cfg.window.maximized) mainWindow.maximize();
-
-  createStrip();
-
-  pageView = new WebContentsView({
+/**
+ * A gateway page view: created and wired, and not yet navigated.
+ *
+ * Extracted from `createMainWindow` because a load attempt may have to be made in a
+ * view nobody is looking at. A failed navigation commits Chromium's own error
+ * document over whatever was in that frame, so an attempt made in the view on
+ * screen DESTROYS the payload there, and by the time the failure is known there is
+ * nothing left to fall back to. Measured 2026-09-16 against a marker gateway: after
+ * a reconnect to a gateway that had stopped listening, the page's own markers read
+ * null and the view's Cache Storage read empty, because the frame was no longer the
+ * Control UI at all. See scripts/test-payload-freshness.js.
+ *
+ * So an attempt is loaded off to the side and swapped in only once it has actually
+ * loaded, which is what makes "the server's payload when there is one, the one
+ * already on screen when there is not" true by construction rather than by
+ * predicting whether the gateway will answer.
+ *
+ * `attempt` changes two things, both about what a failure MEANS. A failure on the
+ * view on screen is the app's failure surface, cover and all, exactly as it was. A
+ * failure of an attempt is a fresh payload that does not exist: the attempt is
+ * thrown away, the payload behind it is left alone, and the failure is reported
+ * OVER that payload rather than in place of it.
+ */
+function createGatewayView({ attempt = false } = {}) {
+  const view = new WebContentsView({
     webPreferences: {
       preload: PRELOAD,
       contextIsolation: true,
@@ -1129,16 +1177,13 @@ function createMainWindow() {
       allowRunningInsecureContent: false,
     },
   });
-  pageView.setBackgroundColor(currentTheme.surface);
-  mainWindow.contentView.addChildView(pageView);
-
-  const wc = pageView.webContents;
+  view.setBackgroundColor(currentTheme.surface);
+  const wc = view.webContents;
   attachNavigationGuards(wc);
   // The pairing observer needs no arming here: it is installed by this view's own
   // preload at document start, on the first document and every one after it. See
   // the device-pairing section below for why, and for the CDP route that looked
   // like it worked and did not.
-  layoutViews();
 
   // The Control UI sets document.title to "<session>, OpenClaw", and Electron
   // mirrors a page title onto the window by default. That put the upstream name
@@ -1182,6 +1227,12 @@ function createMainWindow() {
     // document for a failed main frame and that fires this too, so the phase
     // decides; see shouldMarkConnected in src/connection.js.
     if (connectionState.shouldMarkConnected({ phase: connection.phase, url: wc.getURL() })) {
+      // An attempt that really answered takes the place of the view on screen, and
+      // ONLY here: the swap happens on a loaded document rather than on the intent
+      // to load one, which is what keeps a failed attempt from having already
+      // destroyed the payload it was replacing.
+      if (attempt) promoteGatewayView(view);
+      payloadOnScreen = true;
       // Through the reducer, and the pending case is why: a page that loaded is
       // NOT the same as a gateway that accepted this device. An unapproved device
       // is served the page and then has its socket closed 1008, so this holds
@@ -1206,12 +1257,104 @@ function createMainWindow() {
 
   wc.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!connectionState.isRealFailure({ code: errorCode, isMainFrame })) return;
+    if (attempt) {
+      // No fresh payload, so the one on screen is the payload. Throw the attempt
+      // away, leave the view on screen untouched, and report the failure over it
+      // without the cover: a cover here would hide a working interface to announce
+      // that a copy of it could not be fetched.
+      destroyGatewayView(view);
+      showConnectionFailure({ errorCode, errorDescription, url: validatedURL }, { cover: false });
+      return;
+    }
+    payloadOnScreen = false;
     showConnectionFailure({ errorCode, errorDescription, url: validatedURL });
   });
 
   wc.on('render-process-gone', (_e, details) => {
+    if (attempt) {
+      destroyGatewayView(view);
+      showConnectionFailure(
+        { errorCode: details.reason, errorDescription: `The window stopped responding (${details.reason}).` },
+        { cover: false },
+      );
+      return;
+    }
     showConnectionFailure({ errorCode: details.reason, errorDescription: `The window stopped responding (${details.reason}).` });
   });
+
+  return view;
+}
+
+/**
+ * Put a loaded attempt in the window, and throw away what it replaces.
+ *
+ * Added and then restacked, so the cover, the overlays and the banner keep the
+ * order they are supposed to have rather than the new view landing over a modal.
+ */
+function promoteGatewayView(view) {
+  const previous = pageView;
+  pageView = view;
+  attemptView = null;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.contentView.addChildView(view);
+    restackViews();
+    layoutViews();
+  }
+  if (previous && previous !== view) destroyGatewayView(previous);
+}
+
+/** Throw a view away: off the window, and its contents closed. */
+function destroyGatewayView(view) {
+  if (!view) return;
+  if (attemptView === view) attemptView = null;
+  themeCssKeys.delete(view.webContents.id);
+  try { mainWindow?.contentView.removeChildView(view); } catch { /* window already gone */ }
+  // Detaching is the part that unblocks things, so nothing after it may throw:
+  // this runs on the crash path too, where the contents are already gone.
+  try { if (!view.webContents.isDestroyed()) view.webContents.close(); } catch { /* already torn down */ }
+}
+
+/**
+ * Load a fresh payload beside the one on screen.
+ *
+ * One attempt at a time: a second while the first is in flight would leave the
+ * older one to be promoted after the newer had already been decided, and the pair
+ * would race for the same slot.
+ */
+function startGatewayAttempt(gw, url) {
+  if (attemptView && !attemptView.webContents.isDestroyed()) destroyGatewayView(attemptView);
+  const view = createGatewayView({ attempt: true });
+  attemptView = view;
+  console.log(`[claw-desktop] loading ${gw.label || gw.url} beside the payload on screen; a failure leaves that payload alone`);
+  view.webContents.loadURL(url, FRESH_DOCUMENT);
+}
+
+function createMainWindow() {
+  const cfg = config.get();
+  configureSession(session.defaultSession, config.activeGateway());
+
+  mainWindow = new BrowserWindow({
+    ...restoredBounds(),
+    ...chrome.windowOptions(currentTheme),
+    minWidth: defaults.minWindow.width,
+    minHeight: defaults.minWindow.height,
+    show: false,
+    backgroundColor: currentTheme.surface,
+    autoHideMenuBar: true,
+    title: chrome.APP_NAME,
+    icon: process.platform === 'linux' ? path.join(ASSETS, 'icon.png') : undefined,
+  });
+
+  if (cfg.window.maximized) mainWindow.maximize();
+
+  createStrip();
+
+  pageView = createGatewayView();
+  mainWindow.contentView.addChildView(pageView);
+  // Named `wc` here because the reveal below is the WINDOW's business rather than
+  // the view's: the first paint of the gateway view is what lets the window show.
+  const wc = pageView.webContents;
+  layoutViews();
 
   // Every event that changes the content size has to re-lay the views out, the
   // page's own size now depends on this, not just the modal's, so a missed one
@@ -1237,6 +1380,10 @@ function createMainWindow() {
   // stale one would have `showMainWindow` hand work to a destroyed WebContents.
   mainWindow.on('closed', () => {
     pageView = null;
+    // The attempt view and the payload flag go with it: a recreated window is a
+    // new window, with nothing on screen and nothing to preserve.
+    attemptView = null;
+    payloadOnScreen = false;
     stripView = null;
     bannerView = null;
     bannerHeight = 0;

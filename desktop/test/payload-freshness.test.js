@@ -98,4 +98,49 @@ test('the marker harness that proves this still asserts a first paint', () => {
   assert.match(source, /EXPECT_FIRST/, 'the harness no longer has a first-paint expectation, so a stale first paint would pass it');
   assert.match(source, /did-start-navigation/, 'the harness no longer records the navigations a launch made');
   assert.match(source, /Clear cache and reload/, 'the harness no longer reaches the manual cache clear');
+  assert.match(source, /AFTER-RECONNECT/, 'the harness no longer checks what survives a failed reconnect');
+  assert.match(source, /AFTER-RESTORE/, 'the harness no longer checks that a fresh payload replaces the kept one');
+});
+
+/* ------------------------------------------------ a payload that is on screen */
+
+// No fresh payload must not mean no payload. A failed navigation commits Chromium's
+// own error document over the frame, so an attempt made in the view on screen
+// destroys what is there and there is nothing left to fall back to by the time the
+// failure is known. Measured 2026-09-16, and the three assertions below are the
+// three ways that guarantee is arranged: the attempt happens elsewhere, it is
+// promoted only once it has loaded, and its failure is reported over the payload
+// rather than in place of it.
+
+test('a load attempt is made beside the payload on screen, not over it', () => {
+  assert.match(main, /function startGatewayAttempt\(/,
+    'there is no attempt-off-screen path, so a reconnect can only be made in the visible view');
+  assert.match(main, /if \(hasPayload\) \{\s*startGatewayAttempt\(gw, url\);\s*return;/,
+    'loadActiveGateway no longer diverts to an off-screen attempt when a payload is on screen, so a failed reconnect will destroy it');
+  assert.match(main, /createGatewayView\(\{ attempt: true \}\)/,
+    'the attempt view is not created as an attempt, so its failure would be handled as the visible view\'s');
+  // The cold case is deliberately unchanged: with nothing on screen there is
+  // nothing to protect, and the visible view takes the load as it always did.
+  assert.match(main, /page\(\)\?\.loadURL\(url, FRESH_DOCUMENT\)/,
+    'the first load no longer goes into the visible view');
+});
+
+test('an attempt is promoted only once it has actually loaded', () => {
+  const finish = main.slice(main.indexOf("wc.on('did-finish-load'"), main.indexOf("wc.on('did-fail-load'"));
+  const failure = main.slice(main.indexOf("wc.on('did-fail-load'"), main.indexOf("wc.on('render-process-gone'"));
+  assert.match(finish, /if \(attempt\) promoteGatewayView\(view\);/, 'a loaded attempt no longer takes the place of the view on screen');
+  assert.doesNotMatch(failure, /promoteGatewayView/, 'a FAILED attempt can be promoted, which is how an error document becomes the payload');
+  assert.match(failure, /destroyGatewayView\(view\)/, 'a failed attempt is no longer thrown away');
+});
+
+test('a failed attempt is reported over the payload, with no cover', () => {
+  // The cover exists to cover a gap where nothing is on screen. Putting it up over
+  // a payload that was kept would hide a working interface in order to announce
+  // that a fresh copy of it could not be fetched.
+  assert.match(main, /function showConnectionFailure\(detail, \{ cover = true \} = \{\}\)/,
+    'showConnectionFailure cannot be told to leave the screen alone');
+  assert.match(main, /if \(cover\) showLoadingCover\(\);\s*else hideLoadingCover\(\);/,
+    'the cover is raised unconditionally again, so a kept payload is covered by the failure surface');
+  assert.match(main, /showConnectionFailure\(\{ errorCode, errorDescription, url: validatedURL \}, \{ cover: false \}\)/,
+    'a failed attempt reports with the cover, hiding the payload it just preserved');
 });
