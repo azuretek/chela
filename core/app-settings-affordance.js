@@ -50,6 +50,31 @@ export const DEFAULT_LABEL = 'App settings';
 export const DEFAULT_TOOLTIP = 'Open this app\u2019s settings';
 
 /**
+ * How long a client holds its own surface waiting for the Control UI's settings
+ * page to arrive, and how often it asks.
+ *
+ * Read from the spec rather than written here, because the phone has to hold the
+ * same line and a number that two clients must agree on needs one owner. A
+ * DEADLINE rather than an open wait, and the reason is the failure it bounds: a
+ * Control UI that never reaches the route (a renamed surface node, a gateway that
+ * redirects away, a page that is simply broken) must not leave a reader behind a
+ * surface that never lets go. Past the deadline the client reveals anyway and logs
+ * it, which is the behaviour of the day before rather than a new way to be stuck.
+ *
+ * The number is generous on purpose. The gap this exists to remove is the
+ * destination's own load, which on a remote gateway is seconds rather than
+ * milliseconds, and holding a working settings page a moment longer is strictly
+ * better than showing a page the reader did not ask for. What it is NOT is
+ * unbounded: ten seconds is longer than any gateway this app talks to takes to
+ * paint its own settings page, and a surface still holding at that point is
+ * reporting a fault rather than waiting on a load.
+ */
+export const CONTROL_UI_SETTINGS_READY_TIMEOUT_MS = spec.handoff.readyTimeoutMs;
+
+/** The interval between readiness questions. Cheap: the statement is one boolean. */
+export const CONTROL_UI_SETTINGS_POLL_MS = spec.handoff.pollMs;
+
+/**
  * The injected script, exactly as the spec holds it. One copy, two engines.
  *
  * The desktop runs these bytes through executeJavaScript and the phone through
@@ -112,6 +137,47 @@ export function controlUiSettingsSource() {
     if (config && typeof config.openControlUiSettings === 'function') return config.openControlUiSettings();
   } catch (e) { return false; }
   return false;
+})()`;
+}
+
+/**
+ * The question that tells a client whether the destination has ARRIVED.
+ *
+ * The other half of the handoff, and the reason the handoff is atomic. The
+ * source above asks the Control UI to show its settings; this one answers
+ * whether it has, so a client can hold its own surface until there is something
+ * to reveal rather than dismissing into a load it cannot see the end of.
+ *
+ * Asked REPEATEDLY against the live page rather than awaited inside the page,
+ * and that is forced by the mechanism rather than chosen: the shipping Control UI
+ * has no footer settings control, so the ask falls through to the Control UI's own
+ * route, and a route is a FULL DOCUMENT LOAD. A promise returned by the page is
+ * destroyed by the very navigation it is waiting on, so the wait has to be driven
+ * from outside the document, where it can survive the swap and re-ask the new one.
+ *
+ * Both halves of the answer are necessary and neither is sufficient. The ROUTE is
+ * what makes it the destination the reader asked for, and it is also what makes
+ * the answer mean "arrived" rather than "already there": the settings shell is up
+ * on every `/settings/*` route, so a reader who came from the Control UI's own
+ * settings page would satisfy a node-only question at the instant they pressed.
+ * The NODE, painted, is what makes it rendered rather than committed, since the
+ * route lands a frame or more before the page has drawn anything.
+ *
+ * The selectors and the route come from the spec, spliced in as JSON, so there is
+ * one owner of every Control UI fact this depends on and the Swift client builds
+ * the same statement from the same file rather than a hand-copied selector.
+ */
+export function controlUiSettingsReadySource() {
+  const surface = spec.anchors.controlUiSettingsSurface;
+  const route = spec.routes.appearance;
+  return `(function () {
+  try {
+    if (location.pathname !== ${JSON.stringify(route)}) return false;
+    var node = document.querySelector(${JSON.stringify(surface)});
+    if (!node) return false;
+    var box = node.getBoundingClientRect();
+    return box.width > 0 && box.height > 0;
+  } catch (e) { return false; }
 })()`;
 }
 /**
