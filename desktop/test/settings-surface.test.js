@@ -460,3 +460,110 @@ test('the measured half of this still asks the phone\'s question, on both pages'
     'the harness no longer asserts that the surface\'s blocks are separated');
   assert.match(harness, /share one leading edge/, 'the harness no longer asserts the header\'s leading edge');
 });
+
+/* ---------------------------------------- the handoff to the Control UI */
+
+// "Go to the Control UI" takes the reader from OUR settings surface to the
+// Control UI's own. It used to CLOSE this surface first and ask second, so the
+// reader was returned to whatever the Control UI had been showing and watched it
+// for the whole of the destination's load, a visible few seconds, before the
+// settings page painted. The destination was never wrong; the journey showed them
+// a page they had not asked for.
+//
+// What is asserted here is the SHAPE of the fix, in this file's own split: that
+// the reveal comes after a wait, that the wait is bounded and conditional, and
+// that nothing dismisses the surface early. What the transition actually LOOKS
+// like is a claim about a composited window, which no static reading can make, so
+// it is measured by scripts/test-affordance-placement.js, and the last test here
+// checks that the harness is still carrying that proof.
+
+/** The body of a top-level function, by its opening line. */
+function functionBody(source, signature) {
+  const start = source.indexOf(signature);
+  assert.ok(start >= 0, `${signature} is gone from the source`);
+  const open = source.indexOf('{', start);
+  let depth = 0;
+  for (let i = open; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1;
+    else if (source[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(open, i + 1);
+    }
+  }
+  throw new Error(`unbalanced braces after ${signature}`);
+}
+
+test('the handoff reveals the destination only once it is ready', () => {
+  const main = read(DESKTOP, 'src', 'main.js');
+  const body = functionBody(main, 'async function openControlUiSettings(');
+
+  // The ask is unchanged: the Control UI's own control or its own route, from the
+  // shared script, rather than a URL this client builds.
+  assert.match(body, /controlUiSettingsSource\(\)/, 'the ask is no longer the shared script\'s');
+  assert.ok(!/location\s*=\s*|loadURL\(/.test(body), 'the client is building its own navigation again');
+
+  // The fix, as an ORDER: on the path that has somewhere to go, the wait is
+  // awaited and only then does the surface go away. A `closeSettings()` that ran
+  // before the wait is the bug, and it reads as correct in a diff that does not
+  // compare positions.
+  const waited = body.indexOf('await waitForControlUiSettings(');
+  assert.ok(waited >= 0, 'nothing waits for the destination any more');
+
+  // Exactly two dismissals, and each one is accounted for: the early-out, which
+  // runs only when there is no gateway page behind the surface at all (a first run,
+  // where the card that carries this is hidden anyway), and the reveal.
+  const dismissals = [...body.matchAll(/closeSettings\(\)/g)].map((m) => m.index);
+  assert.equal(dismissals.length, 2, `closeSettings() appears ${dismissals.length} times`);
+  const reveal = dismissals[dismissals.length - 1];
+  assert.ok(reveal > waited, 'the surface is dismissed BEFORE the destination is waited for');
+
+  // The early-out is the one that is NOT the reveal, and it is guarded by there
+  // being no page to hand off to. Unguarded, it would dismiss the surface on the
+  // path this whole change is about.
+  const earlyOut = dismissals[0];
+  const guard = body.lastIndexOf('if (!wc)', earlyOut);
+  assert.ok(guard >= 0 && earlyOut - guard < 60, 'a dismissal runs unguarded before the wait');
+
+  // And the reveal is the last thing that happens, so no later statement can
+  // quietly undo it or put the surface back.
+  assert.ok(body.slice(reveal).replace(/\s+$/, '').length < 40,
+    'the reveal is no longer the last statement of the handoff');
+
+  // Conditional on the ask having gone somewhere, so a Control UI with nothing to
+  // press does not hold the reader for the whole deadline.
+  assert.match(body, /if \(asked === true\) await waitForControlUiSettings\(wc\);/,
+    'the wait is no longer conditional on the ask having asked for something');
+});
+
+test('the wait is bounded by the shared deadline, and cannot end early', () => {
+  const main = read(DESKTOP, 'src', 'main.js');
+  const body = functionBody(main, 'function waitForControlUiSettings(');
+
+  // The numbers are the spec's, so the phone holds the same line.
+  assert.match(body, /CONTROL_UI_SETTINGS_READY_TIMEOUT_MS/, 'the deadline is no longer the spec\'s');
+  assert.match(body, /CONTROL_UI_SETTINGS_POLL_MS/, 'the interval is no longer the spec\'s');
+  // It must resolve on BOTH answers. A waiter that only ever resolved on ready
+  // would hold the reader behind our surface forever on a Control UI that never
+  // arrives, which is a worse fault than the one being fixed.
+  assert.match(body, /resolve\(false\)/, 'the wait can no longer give up, so a broken destination traps the reader');
+  // A page that goes away mid-wait is an answer, not a hang.
+  assert.match(body, /isDestroyed\(\)/, 'a destroyed page no longer ends the wait');
+  // Every path that is not a yes re-asks rather than concluding.
+  assert.match(body, /then\(\(ready\)/, 'the readiness answer is no longer read');
+});
+
+test('the measured half of the handoff is still a proof of the transition', () => {
+  // The same shape as the test above it, and for the same reason: the claim is
+  // about what is on screen DURING the handoff, which needs a composited window. A
+  // harness that stopped capturing frames, or stopped asserting the intermediate
+  // view, would go on printing OK.
+  const harness = read(DESKTOP, 'scripts', 'test-affordance-placement.js');
+  assert.match(harness, /no frame showed a view the reader did not ask for/,
+    'the harness no longer asserts that no intermediate view was shown');
+  assert.match(harness, /after the click/, 'the harness no longer measures the gap');
+  assert.match(harness, /openControlUiSettings|open-control-ui-settings/,
+    'the harness no longer drives the handoff at all');
+  // The frame half, which is what makes it a capture rather than a pair of reads.
+  assert.match(harness, /frameDiff\(/, 'the harness no longer compares frames');
+  assert.match(harness, /transition-before|transition-revealed/, 'the harness no longer captures the transition');
+});

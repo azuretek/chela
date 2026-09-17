@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import {
   AFFORDANCE_GLOBAL, AFFORDANCE_CONFIG_GLOBAL, AFFORDANCE_MARKER, AFFORDANCE_ANCHORS, AFFORDANCE_ROUTES,
   affordanceSource, configStatement, installation, controlUiSettingsSource,
+  controlUiSettingsReadySource, CONTROL_UI_SETTINGS_READY_TIMEOUT_MS, CONTROL_UI_SETTINGS_POLL_MS,
 } from '../app-settings-affordance.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -490,4 +491,91 @@ test('the anchors are flat strings, so the client that mirrors them can decode t
   }
   assert.ok(spec.anchors.controlUiSettings, 'the Control UI settings control is named');
   assert.ok(spec.anchors.controlUiSettingsFallback, 'and has a fallback');
+  assert.ok(spec.anchors.controlUiSettingsSurface, 'and the surface that proves the destination arrived');
+});
+
+/* ------------------------------- waiting for the destination to be ready */
+
+// The atomic half of the handoff. Both clients used to take the reader to the
+// Control UI's settings by CLOSING their own surface first and asking second, so
+// the reader watched whatever the Control UI had been showing for the whole of the
+// destination's load. The ask is unchanged; what is new is that nothing is
+// revealed until this question answers yes.
+//
+// Run against a stub rather than a browser because the question is a claim about
+// the Control UI's DOM, which is another program's: what is asserted here is the
+// RULE (route and painted node, neither alone), the fail-soft direction, and that
+// every Control UI fact it depends on comes from the spec.
+
+/** Evaluate the readiness question against just enough of a page. */
+function runReady({ pathname = '/settings/appearance', found = true, box = { width: 287, height: 884 }, throws = false } = {}) {
+  const node = {
+    getBoundingClientRect() {
+      if (throws) throw new Error('the page refused the question');
+      return box;
+    },
+  };
+  const context = {
+    location: { pathname },
+    document: { querySelector: (selector) => (found && selector === spec.anchors.controlUiSettingsSurface ? node : null) },
+    console: { debug() {} },
+  };
+  return vm.runInNewContext(controlUiSettingsReadySource(), context);
+}
+
+test('the destination is not ready until the route AND the painted surface are both there', () => {
+  assert.strictEqual(runReady(), true, 'on the destination route, with the surface painted');
+  // Neither half alone. This is the pair that the handoff needs and the one the
+  // first version of this would have got wrong in the field.
+  assert.strictEqual(runReady({ found: false }), false, 'the route without the surface is the load, not the page');
+  assert.strictEqual(
+    runReady({ box: { width: 0, height: 0 } }),
+    false,
+    'a surface that is present but unpainted is a committed route, not a rendered page',
+  );
+});
+
+test('a reader who came from the Control UI\'s OWN settings page is not already "ready"', () => {
+  // The reason the route is required and not just the node, measured against a
+  // live Control UI: the settings SHELL is on screen for every `/settings/*`
+  // route, including the first-run model-setup flow. A node-only question would
+  // answer yes the instant the reader pressed, on the page they were already
+  // looking at, and the reveal would be the non-atomic sequence again.
+  assert.strictEqual(
+    runReady({ pathname: '/settings/model-setup', found: true, box: { width: 287, height: 884 } }),
+    false,
+    'the first-run settings flow has the same shell but is not the destination',
+  );
+  assert.strictEqual(runReady({ pathname: '/chat/main' }), false, 'and neither is the chat layout');
+});
+
+test('the readiness question fails soft, and the soft direction is "not ready"', () => {
+  // A page we do not own may throw inside it, and a question that cannot be
+  // answered must not be read as an answer. This is the direction that costs the
+  // reader a bounded wait rather than revealing something they did not ask for:
+  // the caller re-asks, and the deadline is what ends it.
+  assert.doesNotThrow(() => runReady({ throws: true }));
+  assert.strictEqual(runReady({ throws: true }), false, 'a question that throws is not a yes');
+});
+
+test('the readiness question is built from the spec, so both clients claim the same thing', () => {
+  const source = controlUiSettingsReadySource();
+  assert.ok(source.includes(JSON.stringify(spec.anchors.controlUiSettingsSurface)),
+    'the surface it looks for is the spec\'s, not a selector copied into a client');
+  assert.ok(source.includes(JSON.stringify(spec.routes.appearance)),
+    'and so is the route it requires');
+  // It reads the PAGE, never the app: a readiness question that needed our own
+  // config global would be unanswerable in the document that replaces one.
+  assert.ok(!source.includes(spec.configGlobal), 'it depends on no global a client installs');
+});
+
+test('the handoff timing has one owner, and the clients read it rather than carrying it', () => {
+  // Two clients have to hold the same line, so the numbers live in the spec the
+  // phone bundles and the desktop imports.
+  assert.strictEqual(CONTROL_UI_SETTINGS_READY_TIMEOUT_MS, spec.handoff.readyTimeoutMs);
+  assert.strictEqual(CONTROL_UI_SETTINGS_POLL_MS, spec.handoff.pollMs);
+  assert.ok(CONTROL_UI_SETTINGS_READY_TIMEOUT_MS > CONTROL_UI_SETTINGS_POLL_MS,
+    'the deadline is longer than one interval, or the wait would never ask twice');
+  assert.ok(CONTROL_UI_SETTINGS_READY_TIMEOUT_MS >= 3000,
+    'and long enough to cover a remote destination\'s own load, which is what the gap was');
 });

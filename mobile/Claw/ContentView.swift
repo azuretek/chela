@@ -347,12 +347,17 @@ struct ContentView: View {
                 // settings, which is where the desktop's About-over-Settings
                 // overlay lands too.
                 onOpenAbout: { showingAbout = true },
-                // "Go to the Control UI": close this surface, then let the page
-                // open its OWN settings, which is what the card promises. Both
-                // halves in one closure, because the order is the action.
+                // "Go to the Control UI": ask the page for its OWN settings, and
+                // dismiss this sheet only once the destination is on screen, which
+                // is what the card promises. Both halves in one closure, because
+                // the order is the action, and the order used to be the wrong way
+                // round: dismissing first returned the reader to the gateway page
+                // for the whole of the Control UI's load, so they watched a page
+                // they had not asked for before the settings page arrived. The
+                // dismissal is unconditional inside the completion, so the sheet
+                // still goes away on every path that cannot reach the destination.
                 onOpenControlUiSettings: {
-                    showingSettings = false
-                    gatewayPage.openControlUiSettings()
+                    gatewayPage.openControlUiSettings { showingSettings = false }
                 }
             )
         }

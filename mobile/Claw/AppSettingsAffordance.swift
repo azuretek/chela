@@ -22,6 +22,15 @@ import Foundation
 /// copy existing, and a second copy is the fork the shared file exists to prevent.
 enum AppSettingsAffordance {
     private struct Spec: Decodable {
+        /// The handoff's timing, which both clients must hold to the same line.
+        /// Read from the spec for the same reason the route is: a number two
+        /// clients have to agree on needs one owner. See
+        /// `readyTimeoutMs` and `pollMs` in the spec's `handoff` object.
+        struct Handoff: Decodable {
+            let readyTimeoutMs: Int
+            let pollMs: Int
+        }
+
         let global: String
         let configGlobal: String
         let marker: String
@@ -31,13 +40,15 @@ enum AppSettingsAffordance {
         /// NAME rather than mirrored in Swift, because it is a path the Control UI
         /// owns and a second copy could be wrong the day upstream moves a route.
         let routes: [String: String]?
+        let handoff: Handoff
         let script: [String]
     }
 
     private static let spec: Spec = loadSpec()
 
     private static func loadSpec() -> Spec {
-        let empty = Spec(global: "", configGlobal: "", marker: "", anchors: [:], routes: nil, script: [])
+        let empty = Spec(global: "", configGlobal: "", marker: "", anchors: [:], routes: nil,
+                         handoff: Spec.Handoff(readyTimeoutMs: 0, pollMs: 0), script: [])
         guard let url = Bundle.main.url(forResource: "app-settings-affordance", withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let spec = try? JSONDecoder().decode(Spec.self, from: data),
@@ -107,6 +118,62 @@ enum AppSettingsAffordance {
           return false;
         })()
         """
+    }
+
+    /// How long to hold our own surface waiting for the destination, and how
+    /// often to ask. The spec's, so the phone and the desktop wait alike.
+    static var readyTimeoutMs: Int { spec.handoff.readyTimeoutMs }
+    static var pollMs: Int { spec.handoff.pollMs }
+
+    /// The question that tells this client whether the destination has ARRIVED.
+    ///
+    /// The port of `controlUiSettingsReadySource()` in
+    /// `core/app-settings-affordance.js`, built from the same spec fields, so the
+    /// claim about the Control UI's DOM has one owner rather than one per client.
+    /// Asked repeatedly against the live page, never awaited inside it: the
+    /// shipping Control UI has no footer settings control to press, so the ask
+    /// falls through to its own settings ROUTE, and a route is a full document
+    /// load that destroys any promise waiting on it.
+    ///
+    /// Both halves are necessary and neither is sufficient. The route is what
+    /// makes it the page the reader asked for, and also what makes the answer mean
+    /// "arrived" rather than "already there": the settings shell is up on every
+    /// `/settings/*` route, including the first-run flow, so a reader who came
+    /// from the Control UI's own settings page would satisfy a node-only question
+    /// the instant they pressed. The painted node is what makes it rendered rather
+    /// than merely committed.
+    ///
+    /// `nil` when this build's spec carries no surface or route to look for, which
+    /// is a broken bundle rather than a state to guess at: the caller skips the
+    /// wait and says so, rather than holding the reader against a question it
+    /// cannot ask. A shipped build cannot reach this, because
+    /// `AppSettingsAffordanceParityTests` asserts the spec carries both.
+    static func controlUiSettingsReadySource() -> String? {
+        guard let surface = spec.anchors["controlUiSettingsSurface"], !surface.isEmpty,
+              let route = spec.routes?["appearance"], !route.isEmpty
+        else { return nil }
+        return """
+        (function () {
+          try {
+            if (location.pathname !== \(jsonString(route))) return false;
+            var node = document.querySelector(\(jsonString(surface)));
+            if (!node) return false;
+            var box = node.getBoundingClientRect();
+            return box.width > 0 && box.height > 0;
+          } catch (e) { return false; }
+        })()
+        """
+    }
+
+    /// A Swift string as a JavaScript string literal. The values spliced into the
+    /// statements above are the Control UI's own selectors and route, so a quote
+    /// or a backslash in one is unlikely rather than impossible, and an escaping
+    /// mistake would produce a script that throws inside a page we do not own.
+    private static func jsonString(_ value: String) -> String {
+        guard let data = try? JSONEncoder().encode(value),
+              let json = String(data: data, encoding: .utf8)
+        else { return "\"\"" }
+        return json
     }
 
     /// The bridge shim, then the configuration, then the shared script.

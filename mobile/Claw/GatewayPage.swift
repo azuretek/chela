@@ -58,26 +58,94 @@ final class GatewayPage: ObservableObject {
         }
     }
 
-    /// Ask the Control UI to open its own settings.
+    /// Ask the Control UI to open its own settings, and report when the
+    /// destination has ARRIVED.
+    ///
+    /// The completion is the whole fix and it is why this is not fire-and-forget
+    /// any more. The reader used to be returned to the gateway page FIRST and the
+    /// ask sent second, so they watched whatever the Control UI had been showing
+    /// for the whole of the destination's load, a visible few seconds, before the
+    /// settings page painted. The destination was never wrong; the journey showed
+    /// them a page they had not asked for. So the ask goes first, the settings
+    /// sheet stays up while it lands, and the sheet is dismissed from the
+    /// completion once the Control UI's own settings page is genuinely on screen.
+    /// Same shape as the desktop's `openControlUiSettings()`, and the same shape
+    /// as the loading cover: revealed only once there is something to reveal.
+    ///
+    /// The completion runs on every path, including the ones that go wrong, so a
+    /// sheet that cannot be dismissed is not a state this can produce: a client
+    /// holding the reader behind a surface that will not let go is a worse fault
+    /// than the one being fixed.
     ///
     /// Every non-answer is logged rather than swallowed: no page at all, a script
-    /// that threw, or a footer with no settings control to press all leave the
-    /// reader exactly where they were, and a button that appears to do nothing is
-    /// worth a line in the app's own log. Nothing is fetched or navigated here,
-    /// so the worst a failure can mean is that the settings sheet closed and the
-    /// Control UI is showing what it showed before.
-    func openControlUiSettings() {
+    /// that threw, or a footer with no settings control to press. The reader is
+    /// then handed back the sheet they were on, which is where they started.
+    func openControlUiSettings(completion: @escaping () -> Void) {
         guard let webView else {
             NSLog("[claw] no gateway page to open the Control UI settings in")
+            completion()
             return
         }
         webView.evaluateJavaScript(AppSettingsAffordance.controlUiSettingsSource()) { result, error in
             if let error {
                 NSLog("[claw] could not open the Control UI settings: %@", String(describing: error))
+                completion()
                 return
             }
-            if (result as? Bool) == false {
+            guard (result as? Bool) == true else {
                 NSLog("[claw] the Control UI has no footer settings control to press; the reader stays on the page")
+                completion()
+                return
+            }
+            self.waitForControlUiSettings(completion: completion)
+        }
+    }
+
+    /// Hold the completion until the Control UI has rendered the settings page the
+    /// handoff promises.
+    ///
+    /// Polled from out here rather than awaited inside the page, and that is
+    /// forced by the mechanism rather than chosen: the shipping Control UI has no
+    /// footer settings control, so the ask falls through to the Control UI's own
+    /// settings ROUTE, which is a full document load. A promise waiting inside the
+    /// page is destroyed by the very navigation it is waiting on, so the question
+    /// has to be asked again from outside, where it survives the swap. The SPA
+    /// case is unchanged: if upstream ever ships the control, this same wait
+    /// resolves on the render that follows the click.
+    ///
+    /// Bounded by the spec's deadline, past which the completion runs anyway and
+    /// the log says which happened, so a Control UI that never arrives costs the
+    /// reader the wait and nothing else.
+    private func waitForControlUiSettings(completion: @escaping () -> Void) {
+        guard let source = AppSettingsAffordance.controlUiSettingsReadySource() else {
+            NSLog("[claw] this build's affordance spec names no settings surface to wait for; revealing at once")
+            completion()
+            return
+        }
+        askReady(source: source, deadline: Date().addingTimeInterval(Double(AppSettingsAffordance.readyTimeoutMs) / 1000), completion: completion)
+    }
+
+    /// One readiness question. Anything that is not a yes re-asks rather than
+    /// giving up, because the commonest non-answer here is not a failure but the
+    /// navigation itself: asking a document that is being replaced cannot be
+    /// answered, and the answer worth having is in the document that replaces it.
+    private func askReady(source: String, deadline: Date, completion: @escaping () -> Void) {
+        guard let webView else {
+            completion()
+            return
+        }
+        webView.evaluateJavaScript(source) { result, _ in
+            if (result as? Bool) == true {
+                completion()
+                return
+            }
+            if Date() >= deadline {
+                NSLog("[claw] the Control UI did not render its settings page within %dms; revealing anyway", AppSettingsAffordance.readyTimeoutMs)
+                completion()
+                return
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(AppSettingsAffordance.pollMs) / 1000) {
+                Task { @MainActor in self.askReady(source: source, deadline: deadline, completion: completion) }
             }
         }
     }

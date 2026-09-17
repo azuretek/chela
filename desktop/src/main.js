@@ -1647,16 +1647,99 @@ function closeSettings() {
  * be a second copy of a decision that is not ours, it would be a full reload of a
  * page that is already loaded behind this one, and it would have to know the path
  * for the app's settings to land beside the gateway's.
+ *
+ * ATOMIC, and the order is the fix rather than the decoration. It used to close
+ * this surface first and press second, which left the reader looking at whatever
+ * the Control UI had been showing for the whole of the destination's load, a
+ * visible few seconds, and only then at the settings page. Nothing was wrong with
+ * the destination; the journey showed them a page they had not asked for. So the
+ * ask comes first, this surface stays up while it lands, and the reveal happens
+ * once the destination is genuinely on screen. The reader now goes from app
+ * settings to the Control UI's settings page directly, which is the same shape as
+ * the loading cover: revealed only once there is something to reveal.
+ *
+ * Both halves still run even when the ask finds nothing, because a surface that
+ * will not let go is a worse fault than the one being fixed: the reveal is
+ * unconditional, and only the WAIT is conditional on there being something to
+ * wait for.
  */
-function openControlUiSettings() {
-  closeSettings();
+async function openControlUiSettings() {
   const wc = page();
-  if (!wc) return;
-  wc.executeJavaScript(appSettingsAffordance.controlUiSettingsSource(), true)
-    .then((pressed) => {
-      if (!pressed) console.warn('[claw-desktop] the Control UI has no footer settings control to press; the reader stays on the page');
-    })
-    .catch((err) => console.warn(`[claw-desktop] could not open the Control UI settings: ${err.message}`));
+  // Nothing behind this surface to hand off to (a first run, where settings IS the
+  // window's content), so there is nothing to wait for and the card that carries
+  // this is hidden anyway.
+  if (!wc) {
+    closeSettings();
+    return;
+  }
+  let asked = false;
+  try {
+    asked = await wc.executeJavaScript(appSettingsAffordance.controlUiSettingsSource(), true);
+  } catch (err) {
+    console.warn(`[claw-desktop] could not open the Control UI settings: ${err.message}`);
+  }
+  if (asked === true) await waitForControlUiSettings(wc);
+  else console.warn('[claw-desktop] the Control UI has no footer settings control to press; the reader stays on the page');
+  closeSettings();
+}
+
+/**
+ * Whether the Control UI's own settings page is on screen yet, asked of the live
+ * page.
+ *
+ * A separate statement from the ask (core/app-settings-affordance.js owns both)
+ * because the two are answered by different documents: the ask is answered by the
+ * page the reader was on, and this one has to be answered by the page they are
+ * going to, once it exists.
+ */
+function controlUiSettingsReady(wc) {
+  return wc.executeJavaScript(appSettingsAffordance.controlUiSettingsReadySource(), true);
+}
+
+/**
+ * Wait until the Control UI has rendered the settings page this handoff promises.
+ *
+ * Polled from OUT here rather than awaited inside the page, and that is forced by
+ * the mechanism. The shipping Control UI has no footer settings control to press,
+ * so the ask falls through to the Control UI's own settings ROUTE, which is a full
+ * document load: a promise returned by the page is destroyed by the very
+ * navigation it would have been waiting on, and the question can only be asked
+ * again from outside. It also survives the SPA case unchanged, which is what the
+ * same wait will do if upstream ever ships the control.
+ *
+ * Every way of not getting an answer re-asks rather than giving up, because the
+ * commonest non-answer here is not a failure but the navigation itself: asking a
+ * document that is being replaced cannot be answered, and the answer worth having
+ * is in the document that replaces it.
+ *
+ * Bounded by the shared deadline. Past it the caller reveals anyway, so a Control
+ * UI that never arrives costs the reader the wait and nothing else, and the log
+ * says which one happened.
+ */
+function waitForControlUiSettings(wc) {
+  return new Promise((resolve) => {
+    const deadline = Date.now() + appSettingsAffordance.CONTROL_UI_SETTINGS_READY_TIMEOUT_MS;
+    const ask = () => {
+      if (wc.isDestroyed()) {
+        console.warn('[claw-desktop] the gateway page went away while waiting for the Control UI settings');
+        resolve(false);
+        return;
+      }
+      const again = () => {
+        if (Date.now() >= deadline) {
+          console.warn(`[claw-desktop] the Control UI did not render its settings page within ${appSettingsAffordance.CONTROL_UI_SETTINGS_READY_TIMEOUT_MS}ms; revealing anyway`);
+          resolve(false);
+          return;
+        }
+        setTimeout(ask, appSettingsAffordance.CONTROL_UI_SETTINGS_POLL_MS);
+      };
+      controlUiSettingsReady(wc).then((ready) => {
+        if (ready === true) resolve(true);
+        else again();
+      }, again);
+    };
+    ask();
+  });
 }
 
 /* ------------------------------------------------------------- first paint */

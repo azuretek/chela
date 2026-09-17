@@ -15,10 +15,17 @@ import XCTest
 /// sheet through a message handler rather than an IPC.
 final class AppSettingsAffordanceParityTests: XCTestCase {
     private struct SpecOnly: Decodable {
+        struct Handoff: Decodable {
+            let readyTimeoutMs: Int
+            let pollMs: Int
+        }
+
         let global: String
         let configGlobal: String
         let marker: String
         let anchors: [String: String]
+        let routes: [String: String]?
+        let handoff: Handoff
         let script: [String]
     }
 
@@ -95,6 +102,53 @@ final class AppSettingsAffordanceParityTests: XCTestCase {
         )
         // The shared script is installed unchanged, at the end.
         XCTAssertTrue(installation.hasSuffix(AppSettingsAffordance.script), "the shared script is installed verbatim")
+    }
+
+    // MARK: - The readiness question, which is what makes the handoff atomic
+
+    /// A Swift string as the JavaScript literal the statements splice in. The same
+    /// three lines the app's own `jsonString` uses, and deliberately so: the
+    /// assertion is that the values came FROM THE SPEC, and comparing against the
+    /// same encoding is what makes that checkable without a JavaScript engine.
+    private func jsonString(_ value: String) throws -> String {
+        String(data: try JSONEncoder().encode(value), encoding: .utf8) ?? "\"\""
+    }
+
+    func testTheReadinessQuestionAsksAboutTheSpecsOwnSurfaceAndRoute() throws {
+        let spec = try repoSpec()
+        let surface = try XCTUnwrap(spec.anchors["controlUiSettingsSurface"],
+            "the spec names no surface, so nothing can prove the destination arrived")
+        let route = try XCTUnwrap(spec.routes?["appearance"], "the spec names no destination route")
+        let source = try XCTUnwrap(AppSettingsAffordance.controlUiSettingsReadySource(),
+            "this build cannot build the readiness question, so the handoff would reveal onto a load")
+
+        // Built from the spec rather than from a selector written into this client,
+        // so a Control UI change is one edit in the one owner both clients read.
+        XCTAssertTrue(source.contains(try jsonString(surface)),
+            "the readiness question does not look for the surface the spec names")
+        XCTAssertTrue(source.contains(try jsonString(route)),
+            "the readiness question does not require the route the spec names")
+    }
+
+    func testTheReadinessQuestionNeedsBothTheRouteAndThePaintedNode() throws {
+        let source = try XCTUnwrap(AppSettingsAffordance.controlUiSettingsReadySource())
+        // Both halves are load-bearing and neither is decorative: the route is what
+        // makes it the page the reader asked for, and the box is what makes it
+        // rendered rather than merely committed.
+        XCTAssertTrue(source.contains("location.pathname"), "the route half is gone")
+        XCTAssertTrue(source.contains("getBoundingClientRect"), "the painted half is gone")
+        XCTAssertTrue(source.contains("width > 0"), "a zero-width node would count as painted")
+        XCTAssertTrue(source.contains("catch"), "a question that throws has nowhere to fail soft to")
+    }
+
+    func testTheHandoffTimingIsTheSpecsSoBothClientsHoldTheSameLine() throws {
+        let spec = try repoSpec()
+        XCTAssertGreaterThan(spec.handoff.readyTimeoutMs, spec.handoff.pollMs,
+            "the deadline is not longer than one interval, so the wait would never ask twice")
+        XCTAssertGreaterThanOrEqual(spec.handoff.readyTimeoutMs, 3000,
+            "the deadline is too short to cover the destination's own load")
+        XCTAssertEqual(AppSettingsAffordance.readyTimeoutMs, spec.handoff.readyTimeoutMs)
+        XCTAssertEqual(AppSettingsAffordance.pollMs, spec.handoff.pollMs)
     }
 
     // MARK: - The bridge relays exactly one ask
