@@ -230,7 +230,12 @@ final class UpdateCheck {
             ))
             return
         }
-        announce(version)
+        // ★ The same call for EVERY trigger, including the scheduled one, and that
+        // is the rule rather than an oversight: a release that EXISTS is news
+        // whatever started the check. Only the three non-answers above are gated on
+        // somebody having asked, which is what keeps a flaky network off the banner
+        // while an update nobody is watching for still raises it.
+        announce(version, trigger: trigger)
     }
 
     /// Raise an answer to a pressed check, if one is owed.
@@ -265,8 +270,14 @@ final class UpdateCheck {
     /// the user to where the build is. The message names no download and no
     /// restart, which is what keeps it true on the one platform that can do
     /// neither.
-    private func announce(_ version: String) {
+    private func announce(_ version: String, trigger: UpdateTrigger) {
         Self.announcedVersion = version
+        // ★ The app's own log is the health signal for a lane nobody watches, and
+        // this line is the answer to "did the background check raise it, or did the
+        // reader have to ask": it names the trigger that found the release, so the
+        // route is measured rather than inferred from the code. A screenshot run and
+        // a device log both read it.
+        NSLog("[claw] update banner raised by a %@ check: %@ is available", trigger.rawValue, version)
         // The wording comes from the same shared composition the desktop raises
         // from, with this client's own pointer at where the build is: the phone
         // cannot install an update itself, so the honest last sentence is TestFlight

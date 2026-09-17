@@ -96,6 +96,17 @@ struct ContentView: View {
     /// nobody can otherwise reach are rendered for a screenshot.
     @StateObject private var notices = NoticeBoard.live()
 
+    /// The background update checks, on the cadence this build's own version names.
+    /// Held rather than built per appearance, because it owns a repeating task: a
+    /// second one would double every request for the life of the app. See
+    /// `UpdateSchedule` and `UpdateCadence`.
+    @State private var updateSchedule: UpdateSchedule?
+
+    /// Whether the app is on screen. A phone app spends most of its life suspended,
+    /// where none of our timers run, so the cadence is re-asked here when it comes
+    /// back rather than left to a sleep that was frozen with the process.
+    @Environment(\.scenePhase) private var scenePhase
+
     /// Which appearance the app is in, which is this client's to decide and not
     /// the Control UI's: the native chrome here is real (a status bar, a sheet,
     /// the strips the safe area leaves above and below the page) and the page's
@@ -289,6 +300,14 @@ struct ContentView: View {
         // already connecting, so it has to be told when the phase moves. Passive
         // rather than polled: this is the view that observes it.
         .onChange(of: connection.phase) { _, _ in host?.emit("state") }
+        // The cadence, asked again when the app comes back. A suspended process
+        // runs no timers of ours, so this is where a phone that has been in a pocket
+        // overnight catches up, and a check is run only when the interval has really
+        // elapsed, so returning to the app repeatedly is not a burst of requests.
+        // See `UpdateSchedule.becameActive`.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { updateSchedule?.becameActive() }
+        }
         // The gateway row follows the pairing state, and this is where the two are
         // joined. An unapproved device is `pending` (the page loaded, the gateway
         // is holding the session), and only a socket that survived its settle
@@ -481,11 +500,22 @@ struct ContentView: View {
             pairing.closed(SettingsSpec.screenshotPairingRefusal)
         }
         #endif
-        // Look for a newer build once per launch, against the public feed. It is
-        // detached and every non-answer is silent (see `UpdateCheck.run`), so a
-        // slow or unreachable feed neither blocks the first frame nor puts
+        // Look for a newer build now, and keep looking on this build's own
+        // cadence. Every background non-answer is silent (see `UpdateCheck.run`),
+        // so a slow or unreachable feed neither blocks the first frame nor puts
         // anything on screen; only a genuinely newer version raises the banner.
-        startUpdateCheck()
+        //
+        // ★ Once per launch was the whole of this until now, and that is the report
+        // it answers: a phone app is resident for days, so a release published after
+        // the launch check was invisible until somebody pressed Check for updates.
+        // Both halves come from the same builder (see `updateCheck`), so a
+        // screenshot run's scheduled raise is drawn from the same feed its launch
+        // banner was.
+        if updateSchedule == nil {
+            let schedule = UpdateSchedule(makeCheck: { Self.updateCheck(board: notices) })
+            updateSchedule = schedule
+            schedule.start()
+        }
     }
 
     /// Kick off the once-per-launch update check.
@@ -535,12 +565,7 @@ struct ContentView: View {
         return UpdateCheck(board: board)
     }
 
-    /// Kick off the once-per-launch update check: a background one, so it is
-    /// silent unless it finds a release.
-    private func startUpdateCheck() {
-        let check = Self.updateCheck(board: notices)
-        Task { await check.run() }
-    }
+
 }
 
 /// How this client presents a shared web surface as a sheet, in one place so

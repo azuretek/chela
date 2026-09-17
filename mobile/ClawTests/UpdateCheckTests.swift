@@ -282,4 +282,193 @@ final class UpdateCheckTests: XCTestCase {
                      "a seeded feed naming this build is the no-update case")
     }
     #endif
+
+    /*
+     * ★ A BACKGROUND CHECK IS NEWS; ONLY A NON-ANSWER IS NOT.
+     *
+     * The report this section exists for: on the phone the banner only ever
+     * appeared when somebody pressed Check for updates. The raise was never the
+     * cause -- it has been ungated since the banner existed, because a release that
+     * EXISTS is news whatever started the check. The cause was the CADENCE: one
+     * check at launch, and a phone app is then resident for days, so a release
+     * published after that launch was nobody's news until a press asked for it.
+     * `UpdateCadence` and `UpdateSchedule` are that half, and these assert what it
+     * has to keep true: every BACKGROUND trigger announces a release it finds, and a
+     * background non-answer stays silent.
+     */
+
+    /// A scheduled check that finds a newer build raises the standing banner with no
+    /// press anywhere in this test.
+    func testAScheduledCheckRaisesTheBannerWithNoPress() async throws {
+        let board = board()
+        let newer = "1.0.1-dev.150.abc1234567"
+        let feed = atom(newer)
+        let check = UpdateCheck(board: board, currentVersion: "1.0.1-dev.148.abc1234567", fetch: { _ in feed })
+
+        await check.run(trigger: .scheduled)
+
+        let notice = try XCTUnwrap(board.all.first { $0.id == UpdateCheck.noticeId },
+                                   "a background check that finds a release must raise the banner")
+        XCTAssertTrue(notice.message.contains(newer), notice.message)
+        XCTAssertNotNil(board.unread.first { $0.id == UpdateCheck.noticeId }, "and the banner draws it")
+        XCTAssertEqual(notice.action?.command, UpdateCheck.openTestFlightCommand)
+        // The standing notice, not a reply: nobody asked a question, so no answer
+        // notice exists for the banner to be showing instead.
+        XCTAssertNil(board.all.first { $0.id == UpdateCheck.answerNoticeId })
+    }
+
+    /// The other half of the same rule: a background check that finds nothing says
+    /// nothing, in both of the ways it can find nothing.
+    func testABackgroundCheckThatFindsNothingStaysSilent() async throws {
+        let board = board()
+        for trigger in [UpdateTrigger.startup, .scheduled] {
+            let matching = atom("1.0.1-dev.148.abc1234567")
+            let current = UpdateCheck(board: board, currentVersion: "1.0.1-dev.148.abc1234567",
+                                      fetch: { _ in matching })
+            await current.run(trigger: trigger)
+            XCTAssertTrue(board.all.isEmpty, "\(trigger.rawValue): nothing newer is not news")
+
+            struct Offline: Error {}
+            let offline = UpdateCheck(board: board, currentVersion: "1.0.1-dev.148.abc1234567",
+                                      fetch: { _ in throw Offline() })
+            await offline.run(trigger: trigger)
+            XCTAssertTrue(board.all.isEmpty, "\(trigger.rawValue): a feed that could not be read is not news")
+        }
+    }
+
+    /// The cadence follows this build's own channel, which is the rule the desktop's
+    /// `checkIntervalMs` follows, read from the same spec.
+    func testTheCadenceFollowsTheBuildsOwnChannel() {
+        XCTAssertEqual(UpdateCadence.intervalMs(for: "1.0.1-dev.51.e8de8f92c2"), UpdatePolicy.prereleaseIntervalMs)
+        XCTAssertEqual(UpdateCadence.intervalMs(for: "1.0.1"), UpdatePolicy.stableIntervalMs)
+        // A version that cannot be read gets the SLOW interval: an unreadable
+        // version must not become a reason to poll GitHub twelve times an hour.
+        for version in ["", "not-a-version", "0"] {
+            XCTAssertEqual(UpdateCadence.intervalMs(for: version), UpdatePolicy.stableIntervalMs, version)
+        }
+        // A cadence of zero would be a request loop rather than a cadence.
+        XCTAssertGreaterThan(UpdatePolicy.prereleaseIntervalMs, 0)
+        XCTAssertGreaterThanOrEqual(UpdatePolicy.stableIntervalMs, UpdatePolicy.prereleaseIntervalMs)
+    }
+
+    /// A check is due at launch, and after the interval, and NOT before it.
+    func testACheckIsDueWithoutAHistoryAndAfterTheInterval() {
+        let interval = 300_000
+        XCTAssertTrue(UpdateCadence.isDue(lastCheckMs: nil, nowMs: 1_000_000, intervalMs: interval),
+                      "a build that has never looked is due, which is the launch check")
+        XCTAssertFalse(UpdateCadence.isDue(lastCheckMs: 1_000_000, nowMs: 1_000_000 + interval - 1, intervalMs: interval),
+                       "a returning app inside the interval is not a second check")
+        XCTAssertTrue(UpdateCadence.isDue(lastCheckMs: 1_000_000, nowMs: 1_000_000 + interval, intervalMs: interval),
+                      "at the interval it is due, with no grace period to remember")
+        XCTAssertFalse(UpdateCadence.isDue(lastCheckMs: 2_000_000, nowMs: 1_000_000, intervalMs: interval),
+                       "a clock that moved backwards is not a reason to check")
+    }
+
+    /// ★ The schedule is what turns those two rules into a check that happens.
+    ///
+    /// The launch check runs once, and the ask is a second one: a started schedule
+    /// looks immediately, and a foreground return inside the interval looks at
+    /// nothing. That pair is the reported bug -- a phone resident for days that
+    /// never looked again -- asserted as the behaviour rather than as the wiring.
+    func testTheScheduleChecksAtLaunchAndAgainOnlyAfterTheInterval() async throws {
+        let board = board()
+        let version = "1.0.1-dev.148.abc1234567"
+        let feed = atom("1.0.1-dev.150.abc1234567")
+        let counter = FetchCounter()
+        var clock = 1_000_000
+        let schedule = UpdateSchedule(
+            makeCheck: {
+                UpdateCheck(board: board, currentVersion: version, fetch: { _ in
+                    await counter.bump()
+                    return feed
+                })
+            },
+            currentVersion: { version },
+            now: { clock }
+        )
+
+        // A schedule that was never started looks at nothing: this is the guard
+        // that keeps a view appearing twice from doubling the cadence.
+        schedule.becameActive()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let beforeStart = await counter.value
+        XCTAssertEqual(beforeStart, 0, "an unstarted schedule does not check")
+
+        schedule.start()
+        try await eventually { await counter.value == 1 }
+        XCTAssertNotNil(board.all.first { $0.id == UpdateCheck.noticeId },
+                        "the schedule's own first check announced the release")
+
+        // The same instant, so nothing has elapsed.
+        schedule.becameActive()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let insideInterval = await counter.value
+        XCTAssertEqual(insideInterval, 1, "coming back inside the interval is not a check")
+
+        // Past the interval, coming back IS the check -- and it still announces the
+        // same release rather than a second, different card.
+        clock += UpdateCadence.intervalMs(for: version)
+        schedule.becameActive()
+        try await eventually { await counter.value == 2 }
+        XCTAssertEqual(board.all.filter { $0.id == UpdateCheck.noticeId }.count, 1,
+                       "a re-announcement is idempotent rather than a second card")
+    }
+
+    /// ★ The cadence itself runs: a started schedule looks again by itself, on the
+    /// interval, with nobody touching the app.
+    ///
+    /// The interval is injected so this is a 40ms wait rather than five minutes: the
+    /// rule being asserted is "the loop looks again with no press and no foreground
+    /// return", and it is the loop that turns a cadence into an announcement on a
+    /// phone left open. `becameActive` is asserted separately, and in production
+    /// the two use the same `UpdateCadence` numbers, which
+    /// `UpdatePolicyParityTests` holds to the shared spec.
+    func testTheScheduleLooksAgainOnItsOwnCadence() async throws {
+        let board = board()
+        let version = "1.0.1-dev.148.abc1234567"
+        let feed = atom("1.0.1-dev.150.abc1234567")
+        let counter = FetchCounter()
+        let schedule = UpdateSchedule(
+            makeCheck: {
+                UpdateCheck(board: board, currentVersion: version, fetch: { _ in
+                    await counter.bump()
+                    return feed
+                })
+            },
+            currentVersion: { version },
+            intervalMs: { _ in 40 }
+        )
+
+        schedule.start()
+        try await eventually { await counter.value >= 3 }
+        XCTAssertNotNil(board.all.first { $0.id == UpdateCheck.noticeId },
+                        "the release the cadence keeps finding is announced, not only the first one")
+        XCTAssertEqual(board.all.filter { $0.id == UpdateCheck.noticeId }.count, 1,
+                       "and re-announcing it does not stack a card per cycle")
+    }
+
+    /// Whether `condition` becomes true within a second, letting the run loop turn
+    /// while it waits: `UpdateSchedule` does its work in detached tasks, so a test
+    /// cannot assert on the line after it starts one.
+    private func eventually(_ condition: @escaping () async -> Bool, timeoutMs: Int = 2000) async throws {
+        let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000)
+        while !(await condition()) {
+            if Date() > deadline {
+                XCTFail("condition did not hold within \(timeoutMs)ms")
+                return
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+}
+
+/// How many times a check actually reached the feed.
+///
+/// An actor rather than a captured `var`: the fetch closure is not main-actor
+/// isolated, so a plain counter mutated inside it is the data race Swift 6 refuses
+/// and a flaky count in practice.
+private actor FetchCounter {
+    private(set) var value = 0
+
+    func bump() { value += 1 }
 }
