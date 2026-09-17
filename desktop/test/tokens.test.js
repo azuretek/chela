@@ -50,6 +50,19 @@ function referenced(css) {
   return new Set([...css.matchAll(/var\((--[\w-]+)/g)].map((m) => m[1]));
 }
 
+/**
+ * A stylesheet's declarations, without its comments.
+ *
+ * The two "hardcodes no colour" scans below are claims about what a stylesheet
+ * DRAWS with, and a comment draws nothing. Measured 2026-09-16: a comment that
+ * quoted a measured colour in `rgb()` form failed the scan, which is a guard
+ * reporting prose and a reader being told to delete the evidence. Stripping the
+ * comments first makes the scan check exactly what it says it checks.
+ */
+function withoutComments(css) {
+  return css.replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
 /** Every custom property a stylesheet declares. */
 function declared(css) {
   return new Set([...css.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]));
@@ -111,7 +124,7 @@ test('every tone the model can raise has a rule in the banner stylesheet', () =>
 });
 
 test('the banner stylesheet hardcodes no colour', () => {
-  const literals = [...BANNER_CSS.matchAll(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(\s*[\d.]/gi)].map((m) => m[0]);
+  const literals = [...withoutComments(BANNER_CSS).matchAll(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(\s*[\d.]/gi)].map((m) => m[0]);
   assert.deepStrictEqual(literals, [], `banner.css holds colours of its own: ${literals.join(', ')}`);
 });
 
@@ -213,7 +226,7 @@ test('the loading cover hardcodes no colour of its own', () => {
   // in one appearance and arriving in another. Every colour it draws with has
   // to be a token the shared layer owns, which is what lets the host resolve the
   // appearance for it instead of the stylesheet deciding one.
-  const section = loadingSection();
+  const section = withoutComments(loadingSection());
   const literals = [...section.matchAll(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(\s*[\d.]/gi)].map((m) => m[0]);
   assert.deepStrictEqual(literals, [], `ui.css's loading section holds colours of its own: ${literals.join(', ')}`);
 });
