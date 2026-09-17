@@ -143,6 +143,29 @@ body.banner-body {
   .banner--enter { animation: none; }
 }
 
+/* Leaving, and it is the arrival played backwards so a card goes out through the
+   edge it came in by. Faster than the arrival (--duration-fast against
+   --duration-normal): the reader has read it and is waiting for it to go.
+
+   It keeps the ARRIVAL's curve, because it is the same movement in reverse rather
+   than a movement of its own: the card travels the path it came down. See the
+   departure rule in ui/CONVENTIONS.md, and the reason it cannot borrow the
+   surface exit curve: this stylesheet reads only what the token layer emits, which
+   is asserted by desktop/test/tokens.test.js.
+
+   It rides on a class rather than on removal because a node taken out of the tree
+   on the same tick as the dismissal never paints a frame of its own departure,
+   which is the same shape as the arrival problem above. banner.js puts it on, then
+   takes the node away when the animation ends. */
+@keyframes banner-out {
+  from { transform: none; opacity: 1; }
+  to   { transform: translateY(-140%); opacity: 0; }
+}
+.banner--leave { animation: banner-out var(--duration-fast) var(--ease-out) both; }
+@media (prefers-reduced-motion: reduce) {
+  .banner--leave { animation: none; }
+}
+
 /* The headline, on the Control UI's card heading: --text-strong at the weight
    sidebar-issues.css gives .sidebar-issues-panel__heading. */
 .banner__message {

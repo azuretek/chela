@@ -117,10 +117,22 @@ test('every tone the model can raise has a rule in the banner stylesheet', () =>
   }
   // And nothing else does, so a rule for a tone that cannot be raised is a
   // stylesheet describing a client nobody ships.
+  //
+  // The MOTION states are not tones, and they are named here rather than dropped
+  // one at a time so a third one has to be added deliberately: this list is also
+  // asserted to be ruled below, so naming a state is not a way to lose it. See the
+  // motion section of ui/CONVENTIONS.md.
+  const MOTION_STATES = ['enter', 'leave'];
   const styled = [...BANNER_CSS.matchAll(/\.banner--([\w-]+)/g)]
     .map((m) => m[1])
-    .filter((name) => name !== 'enter');
+    .filter((name) => !MOTION_STATES.includes(name));
   assert.deepStrictEqual([...new Set(styled)].sort(), Object.keys(NOTICES_SPEC.tones).sort());
+  for (const state of MOTION_STATES) {
+    assert.ok(
+      BANNER_CSS.includes(`.banner--${state}`),
+      `.banner--${state} is named as a motion state and has no rule, so a card would ${state} with nothing to play`,
+    );
+  }
 });
 
 test('the banner stylesheet hardcodes no colour', () => {

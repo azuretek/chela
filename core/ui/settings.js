@@ -774,15 +774,40 @@ const SUBTITLES = {
 let tab = ALL_TAB_IDS[0];
 
 /**
+ * Play a panel's arrival, once.
+ *
+ * The class has to come off and go back on with a layout read in between, or a
+ * panel arriving a second time runs nothing: the browser sees the class it already
+ * applied and the animation does not restart. The read is the `offsetWidth`, which
+ * forces the style to be computed before the class goes back on.
+ */
+function replayPanelIn(panel, toward) {
+  panel.classList.remove('panel--in-from-left', 'panel--in-from-right');
+  void panel.offsetWidth;
+  panel.classList.add(`panel--in-from-${toward}`);
+}
+
+/**
  * Show one panel and hide the rest.
  *
  * The scroll reset matters: panels differ in length, so switching from a long
  * one to a short one otherwise lands you scrolled past the whole of it, looking
  * at blank space and concluding the tab is empty.
+ *
+ * The incoming panel animates in from the side the reader moved TOWARD, so the
+ * motion points the way they went, and only the incoming one: the outgoing panel
+ * is hidden on the same line, because two panels on screen at once is a view the
+ * reader did not ask for to look at a view they did. See ui/CONVENTIONS.md.
  */
 function showTab(name) {
   if (!visibleTabs().includes(name)) return;
+  const previous = tab;
   tab = name;
+  const to = ALL_TAB_IDS.indexOf(name);
+  const from = ALL_TAB_IDS.indexOf(previous);
+  // No direction when the tab did not change, and none on the first call: the
+  // first panel arrives with the surface, which animates as a whole.
+  const toward = to === from ? null : (to > from ? 'right' : 'left');
   for (const t of ALL_TAB_IDS) {
     const on = t === name;
     const button = $(`tab-${t}`);
@@ -798,7 +823,11 @@ function showTab(name) {
     // A panel this client does not have stays hidden whatever is asked for. The
     // guard at the top covers the tab the spec gave us; this covers the panel
     // that goes with a tab we did not.
-    if (panel) panel.hidden = !on || !surfaceTabIds().includes(t);
+    if (panel) {
+      const shown = on && surfaceTabIds().includes(t);
+      panel.hidden = !shown;
+      if (shown && toward) replayPanelIn(panel, toward);
+    }
   }
   const body = document.querySelector('.modal__body');
   if (body) body.scrollTop = 0;
