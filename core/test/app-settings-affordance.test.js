@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   AFFORDANCE_GLOBAL, AFFORDANCE_CONFIG_GLOBAL, AFFORDANCE_MARKER, AFFORDANCE_ANCHORS, AFFORDANCE_ROUTES,
+  AFFORDANCE_PLACEMENT_ATTRIBUTE, PLACEMENT_RETRY_MS,
   affordanceSource, configStatement, installation, controlUiSettingsSource,
   controlUiSettingsReadySource, CONTROL_UI_SETTINGS_READY_TIMEOUT_MS, CONTROL_UI_SETTINGS_POLL_MS,
 } from '../app-settings-affordance.js';
@@ -120,7 +121,7 @@ function makeDom({ selectors = [] } = {}) {
     trigger() { this.cb([]); }
   }
 
-  return { document, MutationObserver, anchorElements, registry, observers };
+  return { document, MutationObserver, anchorElements, registry, observers, warns: [], timers: [] };
 }
 
 function run(dom, { open, frozenBridge = false } = {}) {
@@ -130,12 +131,29 @@ function run(dom, { open, frozenBridge = false } = {}) {
   // rather than followed: the assertion is which route it handed the OS.
   const visited = [];
   window.location = { assign(url) { visited.push(url); } };
+  // The script reaches its logging through `window.console`, which is what a page
+  // has. Attached here rather than only on the context global, because a harness
+  // that put it in the wrong place would silence every warning it is supposed to
+  // be able to see.
+  const consoleLike = {
+    debug() {},
+    // Captured rather than dropped: a placement the script is unhappy about is
+    // supposed to be VISIBLE, so a test has to be able to see it.
+    warn(...parts) { dom.warns.push(parts.join(' ')); },
+  };
+  window.console = consoleLike;
   const context = {
     window,
     location: window.location,
     document: dom.document,
     MutationObserver: dom.MutationObserver,
-    console: { debug() {} },
+    console: consoleLike,
+    // The corner's retry backstop is a real timer in a browser and would keep the
+    // test process alive here. The stub records the interval and its callback so a
+    // test can step it deliberately, which is also what makes "the corner is not
+    // permanent" assertable without waiting for a wall clock.
+    setInterval(fn, ms) { dom.timers.push({ fn, ms }); return dom.timers.length; },
+    clearInterval(id) { if (dom.timers[id - 1]) dom.timers[id - 1].cleared = true; },
   };
   // The bridge is on its own global. `frozenBridge` reproduces the desktop's
   // contextBridge case: a non-writable, frozen property the script must never
@@ -578,4 +596,243 @@ test('the handoff timing has one owner, and the clients read it rather than carr
     'the deadline is longer than one interval, or the wait would never ask twice');
   assert.ok(CONTROL_UI_SETTINGS_READY_TIMEOUT_MS >= 3000,
     'and long enough to cover a remote destination\'s own load, which is what the gap was');
+});
+
+/* ----------------------------------- the footer that actually SHIPS */
+
+// The anchors are a claim about the SERVED page, and the artifact this was checked
+// against before was the OpenClaw checkout, which can be AHEAD of the build a
+// gateway serves: at the time of writing the checkout carries a Settings icon in
+// the footer action strip that the shipped bundle predates. Nothing about the
+// served page is visible from the checkout, so the shape of the shipped footer is
+// recorded in the spec and the script is driven against it here, with no browser,
+// no gateway and no checkout.
+
+/**
+ * One element, with the class list the markup gave it.
+ *
+ * Enough of a DOM for the script and no more: attributes, children, a style that
+ * can set and remove, listeners that dispatch, and a class-list `matches`.
+ */
+function makeServedElement(tag, attrs) {
+  const listeners = {};
+  const classMatch = /class="([^"]*)"/.exec(attrs || '');
+  return {
+    tagName: String(tag).toUpperCase(),
+    classNames: classMatch ? classMatch[1].split(/\s+/).filter(Boolean) : [],
+    children: [],
+    attributes: {},
+    innerHTML: '',
+    title: '',
+    id: '',
+    clicks: 0,
+    style: {
+      props: {},
+      setProperty(name, value) { this.props[name] = value; },
+      getPropertyValue(name) { return this.props[name] || ''; },
+      removeProperty(name) { delete this.props[name]; },
+    },
+    setAttribute(name, value) { this.attributes[name] = String(value); },
+    getAttribute(name) { return name in this.attributes ? this.attributes[name] : null; },
+    appendChild(child) { this.children.push(child); child.parent = this; return child; },
+    addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
+    dispatch(type, event = {}) { (listeners[type] || []).forEach((fn) => fn(event)); },
+    click() { this.clicks += 1; this.dispatch('click', { preventDefault() {}, stopPropagation() {} }); },
+    matches(selector) {
+      return String(selector).split(',').map((s) => s.trim()).some((one) => {
+        const classes = one.split('.').filter(Boolean);
+        return classes.length > 0 && classes.every((name) => this.classNames.includes(name));
+      });
+    },
+    querySelector() { return null; },
+  };
+}
+
+/**
+ * A document built from the served footer's own markup.
+ *
+ * A PARSER rather than a hand-written set of anchors, and that is the whole point:
+ * the class names come OUT of the markup the spec records, so a rename in the
+ * served bundle turns the assertions below red instead of leaving them green
+ * against a shape nobody serves. It supports exactly what the script asks of a
+ * document, which is querySelector over class selectors and comma lists in
+ * document order.
+ */
+function makeServedDom(markup) {
+  const elements = [];
+  const stack = [];
+  const tagPattern = /<(\/?)([a-zA-Z][\w-]*)((?:\s[^>]*?)?)(\/?)>/g;
+  let match;
+  while ((match = tagPattern.exec(markup)) !== null) {
+    const [, closing, tag, attrs, selfClosed] = match;
+    if (closing) { stack.pop(); continue; }
+    const el = makeServedElement(tag, attrs);
+    const parent = stack[stack.length - 1];
+    if (parent) parent.children.push(el);
+    elements.push(el);
+    if (!selfClosed) stack.push(el);
+  }
+
+  const documentElement = makeServedElement('html', '');
+  documentElement.children = elements.filter((el) => !el.parent);
+
+  const document = {
+    readyState: 'complete',
+    documentElement,
+    _domListeners: {},
+    createElement: (tag) => { const el = makeServedElement(tag, ''); elements.push(el); return el; },
+    addEventListener(type, fn) { (this._domListeners[type] = this._domListeners[type] || []).push(fn); },
+    dispatch(type, event = {}) { (this._domListeners[type] || []).forEach((fn) => fn(event)); },
+    querySelector(selector) {
+      for (const part of String(selector).split(',').map((s) => s.trim())) {
+        const found = elements.find((el) => el.matches(part));
+        if (found) return found;
+      }
+      return null;
+    },
+  };
+
+  const observers = [];
+  class ServedMutationObserver {
+    constructor(cb) { this.cb = cb; observers.push(this); }
+    observe() {}
+    trigger() { this.cb([]); }
+  }
+
+  return { document, MutationObserver: ServedMutationObserver, registry: elements, observers, warns: [], timers: [] };
+}
+
+/** The served footer's markup, as the spec records it. */
+function servedDom() {
+  return makeServedDom(spec.servedFooter.markup.join('\n'));
+}
+
+// The one test that decides whether the anchors are held to the right artifact.
+// A control that lands in the shipped action row passes; one parked anywhere else,
+// including the corner, fails here rather than in the field.
+test('the control lands in the footer that actually SHIPS, not a corner', () => {
+  const dom = servedDom();
+  run(dom);
+  dom.document.dispatch('DOMContentLoaded');
+
+  const button = affordanceButton(dom);
+  assert.ok(button, 'the control was not placed against the served footer at all');
+  assert.deepStrictEqual(button.parent.classNames, ['sidebar-footer-actions'],
+    `the control did not land in the shipped action row; it is in ${JSON.stringify(button.parent.classNames)}`);
+  assert.strictEqual(button.getAttribute(AFFORDANCE_PLACEMENT_ATTRIBUTE), 'footer-actions',
+    'the placement the page itself records is not the footer');
+  assert.strictEqual(button.style.getPropertyValue('position'), '',
+    'the corner styling was left on a footer placement');
+  assert.strictEqual(button.style.getPropertyValue('bottom'), '',
+    'the corner offsets were left on a footer placement');
+  assert.deepStrictEqual(dom.warns, [], `a footer placement complained: ${dom.warns.join(' | ')}`);
+});
+
+test('the anchors the placement depends on are the ones the served footer has', () => {
+  // Read off the recorded markup rather than restated, so this cannot pass while
+  // the markup moved: every placement anchor must match something in the shipped
+  // footer, and the primary one must be the action row.
+  const dom = servedDom();
+  for (const key of ['primary', 'footer', 'sidebar']) {
+    assert.ok(dom.document.querySelector(spec.anchors[key]),
+      `the ${key} anchor matches nothing in the served footer: ${spec.anchors[key]}`);
+  }
+  assert.deepStrictEqual(dom.document.querySelector(spec.anchors.primary).classNames,
+    ['sidebar-footer-actions'], 'the primary anchor is not the shipped action row');
+  assert.ok(dom.document.querySelector(spec.anchors.sidebar), 'the last-resort anchor matches nothing either');
+});
+
+test('the served footer is recorded, and the record says what the checkout missed', () => {
+  assert.ok(spec.servedFooter, 'the shape of the shipped footer is no longer recorded');
+  assert.match(spec.servedFooter.actions, /sidebar-footer-actions/);
+  assert.match(spec.servedFooter.bar, /sidebar-footer-bar/);
+  assert.strictEqual(spec.servedFooter.settingsControl, null,
+    'the shipped footer now has a settings control, so the click anchors and this record disagree');
+  assert.match(spec.servedFooter.settingsControlNote, /checkout/,
+    'the record no longer says where the other shape comes from, so the next reader re-checks the wrong artifact');
+  // The speculative anchor is named as speculative, so a passing placement check
+  // is not read as both halves working.
+  assert.match(spec.servedFooter.settingsControlNote, /OPPORTUNISTIC/,
+    'the record no longer says which half is speculative, so a green placement check reads as both working');
+});
+
+test('the shipped footer has no settings control, so the click falls through to the route', () => {
+  // Upstream added a footer settings control after the build this app was pointed
+  // at, so on the served page the preferred press has nothing to press. Asserted
+  // rather than assumed, because it is the half the placement check cannot see.
+  const dom = servedDom();
+  assert.strictEqual(dom.document.querySelector(spec.anchors.controlUiSettings), null,
+    'the shipped footer now carries a settings control, so this spec is out of date');
+  assert.strictEqual(dom.document.querySelector(spec.anchors.controlUiSettingsFallback), null,
+    'the fallback press matched something in the shipped footer, which it must not');
+
+  const { window, visited } = run(dom);
+  assert.strictEqual(window[spec.configGlobal].openControlUiSettings(), true,
+    'the shipped page did not reach the Control UI settings at all');
+  assert.deepStrictEqual(visited, [spec.routes.appearance],
+    'the shipped page must reach the route its own settings entry opens');
+});
+
+/* ------------------------- the corner is a last resort, not a quiet one */
+
+test('a corner placement is recorded on the control and complained about', () => {
+  // The half a moving control does not cover: a control parked in a corner with
+  // nothing said about it is indistinguishable from a page whose footer never
+  // rendered, and the bug that put it there reads as the page's shape.
+  const sidebarSelector = spec.anchors.sidebar.split(',')[0].trim();
+  const dom = makeDom({ selectors: [sidebarSelector] });
+  run(dom);
+  dom.document.dispatch('DOMContentLoaded');
+
+  const button = affordanceButton(dom);
+  assert.ok(button, 'the corner fallback did not fire at all');
+  assert.strictEqual(button.getAttribute(AFFORDANCE_PLACEMENT_ATTRIBUTE), 'corner',
+    'the page does not record that the fallback was used');
+  assert.strictEqual(dom.warns.length, 1, `expected exactly one warning, got ${dom.warns.length}`);
+  assert.match(dom.warns[0], /last-resort corner/, 'the warning does not name the placement');
+  assert.match(dom.warns[0], new RegExp(spec.anchors.primary.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+    'the warning does not name the anchor that failed, so the next reader has to guess');
+});
+
+test('the corner is re-offered a better anchor, so it cannot become permanent', () => {
+  // A fallback that is only ever left on a mutation is a fallback that can settle:
+  // the page can stop mutating with the control still in the corner, and nothing
+  // would ever ask again. The retry is the answer to that, and it retires itself.
+  const sidebarSelector = spec.anchors.sidebar.split(',')[0].trim();
+  const dom = makeDom({ selectors: [sidebarSelector] });
+  run(dom);
+  dom.document.dispatch('DOMContentLoaded');
+
+  assert.strictEqual(dom.timers.length, 1, 'no backstop was armed for a corner placement');
+  assert.strictEqual(dom.timers[0].ms, PLACEMENT_RETRY_MS, 'the backstop is not on the spec\'s cadence');
+  assert.strictEqual(PLACEMENT_RETRY_MS, spec.handoff.placementRetryMs);
+
+  // The footer becomes available with NO mutation to notice, which is the case the
+  // observer structurally cannot see.
+  const actions = dom.document.createElement('div');
+  actions._selectors = [spec.anchors.primary];
+  dom.anchorElements.set(spec.anchors.primary, actions);
+  dom.registry.push(actions);
+
+  dom.timers[0].fn();
+  const moved = affordanceButton(dom);
+  assert.strictEqual(moved.parent, actions, 'the corner was not left when a footer appeared');
+  assert.strictEqual(moved.getAttribute(AFFORDANCE_PLACEMENT_ATTRIBUTE), 'footer-actions',
+    'the control moved but the page still records the corner');
+  assert.strictEqual(moved.style.getPropertyValue('position'), '', 'the corner positioning was left behind');
+
+  dom.timers[0].fn();
+  assert.ok(dom.timers[0].cleared, 'the backstop kept running after the control reached a footer');
+});
+
+test('a footer placement arms the backstop too, and it retires on the first beat', () => {
+  // The backstop must not be a corner-only thing: arming it uniformly is what keeps
+  // the "is the control in a footer" question in one place, and retiring on the
+  // first beat is what keeps it free on a page that is behaving.
+  const dom = makeDom({ selectors: [spec.anchors.primary] });
+  run(dom);
+  dom.document.dispatch('DOMContentLoaded');
+  assert.strictEqual(dom.timers.length, 1, 'no backstop was armed');
+  dom.timers[0].fn();
+  assert.ok(dom.timers[0].cleared, 'the backstop stayed armed on a page whose control is in the footer');
 });

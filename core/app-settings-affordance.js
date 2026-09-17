@@ -32,6 +32,17 @@ export const AFFORDANCE_CONFIG_GLOBAL = spec.configGlobal;
 /** The attribute the injected control carries, so a re-render cannot stack two of them. */
 export const AFFORDANCE_MARKER = spec.marker;
 
+/**
+ * Where the control ended up, recorded on the control itself.
+ *
+ * The placement is a claim about the page, and until this existed the only way to
+ * read it was to ask `closest()` from outside. A control in the last-resort corner
+ * is indistinguishable from a control whose footer never rendered, so the page
+ * now says which it got and a harness can read the answer off the DOM rather than
+ * inferring it from geometry.
+ */
+export const AFFORDANCE_PLACEMENT_ATTRIBUTE = spec.placementAttribute;
+
 /** The selectors the script tries in order: the footer actions, the footer bar, then any sidebar. */
 export const AFFORDANCE_ANCHORS = spec.anchors;
 
@@ -75,6 +86,16 @@ export const CONTROL_UI_SETTINGS_READY_TIMEOUT_MS = spec.handoff.readyTimeoutMs;
 export const CONTROL_UI_SETTINGS_POLL_MS = spec.handoff.pollMs;
 
 /**
+ * How often a placement in the corner is re-offered a better anchor.
+ *
+ * A backstop beside the mutation observer, and the reason it is a number in the
+ * spec rather than a literal in the script: the same value has to be readable by
+ * a test that drives the script, and a corner that can only be left on a mutation
+ * is a corner that becomes the settled state of a page nothing is mutating.
+ */
+export const PLACEMENT_RETRY_MS = spec.handoff.placementRetryMs;
+
+/**
  * The injected script, exactly as the spec holds it. One copy, two engines.
  *
  * The desktop runs these bytes through executeJavaScript and the phone through
@@ -105,6 +126,9 @@ export function configStatement({ label = DEFAULT_LABEL, tooltip = DEFAULT_TOOLT
     label: String(label || DEFAULT_LABEL),
     tooltip: String(tooltip || DEFAULT_TOOLTIP),
     anchors: spec.anchors,
+    // How often a corner placement is re-offered a better anchor, from the same
+    // owner as the anchors so a client cannot ship a different cadence.
+    placementRetryMs: spec.handoff.placementRetryMs,
     // The Control UI's own route for the destination its settings entry opens.
     // Handed in like the anchors, so a route change is one edit in the spec
     // rather than one per client, and so the script that uses it runs identical
