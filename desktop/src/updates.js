@@ -22,12 +22,22 @@ import {
   AVAILABLE, CURRENT, UNAVAILABLE, FAILED,
   STABLE_INTERVAL_MS, PRERELEASE_INTERVAL_MS,
 } from '../../core/updates.js';
+// ★ The desktop's answer to "is the feed's newest build newer than this one"
+// comes from the same owner the phone calls, not from a comparison written
+// here. It has to: electron-updater ranks the build and commit tail itself
+// (`semver.gt` inside its `isUpdateAvailable`), and that tail's basis has
+// changed, so the dependency can conclude this build is AHEAD of the feed and
+// report nothing. main.js re-decides with this. See `isNewerBuild` in
+// core/feed.js for the rule and `compareRelease` in core/version.js for why the
+// tail must never be ranked.
+import { newerVersion, isNewerBuild } from '../../core/feed.js';
 
 export {
   capability, policy, availableMessage, checkAnswer, shouldReportNoUpdate, channelOf, allowPrerelease,
   checkIntervalMs, ago, INSTALL, MANUAL, NOTIFY, NONE, MAC_SIGNED,
   AVAILABLE, CURRENT, UNAVAILABLE, FAILED,
   STABLE_INTERVAL_MS, PRERELEASE_INTERVAL_MS,
+  newerVersion, isNewerBuild,
 };
 
 /**
@@ -119,7 +129,7 @@ export function transferDetail(info) {
 
 export default {
   capability, policy, availableMessage, checkAnswer, shouldReportNoUpdate, channelOf, allowPrerelease,
-  checkIntervalMs, ago, statusLine, downloadProgress, transferDetail,
+  checkIntervalMs, ago, statusLine, downloadProgress, transferDetail, newerVersion, isNewerBuild,
   INSTALL, MANUAL, NOTIFY, NONE, MAC_SIGNED, STABLE_INTERVAL_MS, PRERELEASE_INTERVAL_MS,
   AVAILABLE, CURRENT, UNAVAILABLE, FAILED,
 };
