@@ -42,6 +42,29 @@ function fact(label, value) {
   ]);
 }
 
+/**
+ * The Control UI this build targets, as the one line About shows for it.
+ *
+ * The two fields come from the pin that records which upstream revision our
+ * borrowed components came out of (core/spec/upstream-reference.json). The line
+ * is composed HERE rather than by each host, and that is the whole reason this
+ * function exists: both clients render this page, so a sentence written in
+ * src/main.js and another written in AboutHost.swift would be two sentences about
+ * one revision, and the one nobody looked at would be the one that went stale.
+ * No version is ever typed into this file.
+ *
+ * Ten characters of the commit, the same length the app stamps its own build line
+ * with (SHORT_LENGTH in desktop/src/build-info.js), so the line above and this one
+ * read alike, and a commit is what tells two builds of one release apart: the
+ * number names a release, the sha names the revision.
+ */
+function controlUILine(reference) {
+  const version = reference && reference.version ? String(reference.version) : '';
+  if (!version) return '';
+  const sha = reference && typeof reference.commit === 'string' ? reference.commit.slice(0, 10) : '';
+  return sha ? `${version} (${sha})` : version;
+}
+
 function render(state) {
   $('build').textContent = state.build;
   $('update-status').textContent = state.updateStatus;
@@ -62,7 +85,22 @@ function render(state) {
   // version, its device) has none on the desktop. Each entry is a
   // `{ label, value }` pair, already stringified.
   const facts = Array.isArray(state.facts) ? state.facts : [];
-  $('facts').replaceChildren(...facts.map((f) => fact(f.label, f.value)));
+  const rows = facts.map((f) => fact(f.label, f.value));
+
+  // Which Control UI this build targets, in the same list as the other build
+  // facts. It sits at the end because the rows above it are this client's own
+  // (its version, the runtime a rendering bug would be blamed on) and this one is
+  // about someone else's code that the client wraps and depends on, so a reader
+  // scanning for "what am I running" is answered before "what does it render".
+  //
+  // Drawn only when the host hands it over: a host with no pin behind it passes
+  // nothing, and a row about a reference nothing recorded would be worse than no
+  // row at all. That absence is a failing test in every suite that reads this
+  // surface, not something the page should invent a value for.
+  const line = controlUILine(state.controlUI);
+  if (line) rows.push(fact('Control UI', line));
+
+  $('facts').replaceChildren(...rows);
 }
 
 async function refresh() {

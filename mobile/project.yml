@@ -137,6 +137,14 @@ targets:
         buildPhase: resources
       - path: ../core/ui/about.js
         buildPhase: resources
+      # The pin that records which Control UI this build was built against, beside
+      # the page that names it. Bundled rather than mirrored, for the reason the
+      # other specs here are: it is the ONE owner of that revision, and AboutHost
+      # reads it at runtime so About names what the class guard keeps true against
+      # the checkout. A Swift constant would be a second copy of it, and
+      # AboutHostTests asserts this copy is the repository's byte for byte.
+      - path: ../core/spec/upstream-reference.json
+        buildPhase: resources
       # The icon the About header draws, under `assets/` beside the page so the
       # `src="assets/claw.svg"` link resolves. `type: folder` makes this a folder
       # reference, which copies the directory into the bundle whole and keeps the

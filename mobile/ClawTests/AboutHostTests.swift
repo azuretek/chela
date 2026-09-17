@@ -137,7 +137,7 @@ final class AboutHostTests: XCTestCase {
             let facts = state["facts"] as? [[String: String]] ?? []
             return (present, facts)
         }
-        for key in ["build", "updateStatus", "updateReady", "canInstall", "autoUpdate", "facts"] {
+        for key in ["build", "updateStatus", "updateReady", "canInstall", "autoUpdate", "facts", "controlUI"] {
             XCTAssertTrue(keys.contains(key), "the About state is missing \(key), which the page reads")
         }
 
@@ -148,5 +148,71 @@ final class AboutHostTests: XCTestCase {
             XCTAssertNotNil(fact["label"], "a fact has no label")
             XCTAssertNotNil(fact["value"], "a fact has no value")
         }
+    }
+
+    // MARK: The reference
+
+    /// The pin, as the repository has it.
+    private func repositoryPin() throws -> (version: String, commit: String) {
+        struct Pin: Decodable {
+            struct Upstream: Decodable {
+                let version: String
+                let commit: String
+            }
+
+            let upstream: Upstream
+        }
+        let url = try Fixtures.root()
+            .appendingPathComponent("core")
+            .appendingPathComponent("spec")
+            .appendingPathComponent("upstream-reference.json")
+        let pin = try JSONDecoder().decode(Pin.self, from: Data(contentsOf: url))
+        return (pin.upstream.version, pin.upstream.commit)
+    }
+
+    func testTheBundledPinIsTheRepositorysCopyByteForByte() throws {
+        // The pin is the one owner of which Control UI this build targets, and the
+        // page names it from the copy in this bundle. A bundled copy that drifted
+        // from the repository's would leave the phone's About naming a revision
+        // nobody is editing against, the same drift this file guards for the page
+        // itself.
+        let bundled = try XCTUnwrap(
+            Bundle.main.url(forResource: "upstream-reference", withExtension: "json"),
+            "core/spec/upstream-reference.json is not in the bundle, so About would name no Control UI"
+        )
+        let repo = try Fixtures.root()
+            .appendingPathComponent("core")
+            .appendingPathComponent("spec")
+            .appendingPathComponent("upstream-reference.json")
+        XCTAssertEqual(
+            try Data(contentsOf: bundled),
+            try Data(contentsOf: repo),
+            "the bundled pin has drifted from core/spec/upstream-reference.json"
+        )
+    }
+
+    func testTheStateNamesTheControlUIThePinRecords() throws {
+        // What this catches is the pair going out of step, in the direction that is
+        // invisible: a revision written into this client instead of read from the
+        // pin agrees with it on the day it is typed and keeps agreeing after the
+        // pin moves. So both fields are compared against the file rather than
+        // asserted to exist.
+        let (version, commit) = try repositoryPin()
+        let reference: [String: String]? = MainActor.assumeIsolated {
+            let state = AboutHost(notices: NoticeBoard(), onClose: {}).state
+            return state["controlUI"] as? [String: String]
+        }
+        let carried = try XCTUnwrap(
+            reference,
+            "the About state carries no controlUI, so About names no Control UI revision"
+        )
+        XCTAssertEqual(
+            carried["version"], version,
+            "About names a different Control UI version from the one the pin records"
+        )
+        XCTAssertEqual(
+            carried["commit"], commit,
+            "About names a different commit from the one the pin records"
+        )
     }
 }

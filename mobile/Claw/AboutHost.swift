@@ -220,10 +220,12 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
     /// The desktop's `aboutState()` in `src/main.js` is the other half of this
     /// shape, and the two carry the same keys the page reads: `build` and the
     /// update fields it renders, plus `facts`, the list of `{ label, value }`
-    /// rows. The facts are this client's own, because what a build runs on is the
-    /// client's to describe and a desktop fact (Electron, Chromium) has no meaning
-    /// here; the page reads whatever the host lists rather than hardcoding either
-    /// client's.
+    /// rows, and `controlUI`, the Control UI this build targets. The facts are
+    /// this client's own, because what a build runs on is the client's to
+    /// describe and a desktop fact (Electron, Chromium) has no meaning here; the
+    /// page reads whatever the host lists rather than hardcoding either client's.
+    /// The reference is the one key that is NOT a client's own: it comes from the
+    /// pin both clients read, so it says the same thing on both.
     var state: [String: Any] {
         let plan = UpdatePolicy.policy(platform: "ios", packaged: true)
         return [
@@ -246,6 +248,10 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
             // the runtime and device are what a rendering bug is blamed on here,
             // as Electron and Chromium are on the desktop.
             "facts": Self.facts,
+            // The one row here that is not this client's own: the Control UI this
+            // build targets, read from the pin that records it. The page composes
+            // the line, and this only hands over the pin's two fields.
+            "controlUI": Self.controlUI,
         ]
     }
 
@@ -267,6 +273,49 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
             ["label": "System", "value": "\(device.systemName) \(device.systemVersion)"],
             ["label": "Device", "value": PromptMetadata.machineIdentifier()],
         ]
+    }
+
+    /// The pin that records which Control UI this build targets, as it is read.
+    ///
+    /// Claw wraps the Control UI and our own pages borrow ITS components, so the
+    /// revision those came out of is a fact about a reference rather than about
+    /// this client, which is why it lives in one file both clients read
+    /// (`core/spec/upstream-reference.json`) instead of a constant here. Bundled
+    /// rather than mirrored, the same way the App-settings affordance is: a Swift
+    /// constant beside the pin would be a second copy of it, and the pin is what
+    /// the class guard keeps true against the checkout.
+    private struct Pin: Decodable {
+        struct Upstream: Decodable {
+            let version: String
+            let commit: String
+        }
+
+        let upstream: Upstream
+    }
+
+    /// The two fields the shared page composes its line from, or nil.
+    ///
+    /// The page does the composing rather than this client, because both clients
+    /// draw that row and two sentences about one revision is how one of them ends
+    /// up stale. See `controlUILine` in core/ui/about.js.
+    private static let reference: [String: String]? = {
+        guard let url = Bundle.main.url(forResource: "upstream-reference", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let pin = try? JSONDecoder().decode(Pin.self, from: data)
+        else {
+            // A build that did not bundle the pin draws no reference row at all,
+            // rather than one invented here. `AboutHostTests` is what turns that
+            // into a failing build instead of a quietly missing line in the field.
+            return nil
+        }
+        return ["version": pin.upstream.version, "commit": pin.upstream.commit]
+    }()
+
+    /// The reference as the state carries it, and `NSNull` when there is none: the
+    /// page skips the row for a host that has nothing to say, which is what keeps
+    /// an About page with no pin behind it from reading "undefined".
+    private static var controlUI: Any {
+        reference ?? NSNull()
     }
 
     // MARK: Replying

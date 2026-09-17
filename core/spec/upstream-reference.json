@@ -6,12 +6,15 @@
     "`replaces` names what a class took over from in our own markup, and it is why several entries name the same upstream class: the back control is one control with a base rule, a hover rule, a focus ring, an icon box, an icon and an esc chip, and our old markup had one button carrying all of it.",
     "`values` is the banner's half, and the reason it is not a second file: the banner is a strip over someone else's page rather than a panel in a sidebar, so it borrows the card's MEASUREMENTS and not its markup, and that borrowing belongs under the same guard as the classes. `path` is the key in core/spec/tokens.json that holds the value, so a drift is findable from either end.",
     "`ours` lists the parts of that card that are deliberately NOT upstream's, with the reason, so that a value nobody could verify is a stated decision rather than an omission. Two of them are corrections: `.sidebar-issues-panel__dismiss:hover` does not exist upstream at all, and the card's padding is widened on purpose.",
-    "This file records CLASSES, VALUES and not a stylesheet. Copying upstream's sheets in here would be a second owner of them, and the copy would be the one that goes stale: the point of the pin is to compare against the original, not to keep a snapshot of it."
+    "This file records CLASSES, VALUES and not a stylesheet. Copying upstream's sheets in here would be a second owner of them, and the copy would be the one that goes stale: the point of the pin is to compare against the original, not to keep a snapshot of it.",
+    "`upstream` is the identity of the reference, and it is here rather than in each consumer because this app WRAPS the Control UI and depends on it in a pinned way, so 'which version did we build against' is a fact about the pin rather than about a client. A version written into the About page, or into either host, would be a second copy of it and would be the copy that goes stale, since the classes are re-read from the checkout by this file's guard and a version beside them would not be. About reads the two fields below and shows one line, so the sentence and the pin cannot say different things."
   ],
   "upstream": {
     "repo": "openclaw",
     "package": "ui",
     "version": "2026.9.4",
+    "commit": "362492d73404fc751827667a883515c92201c0c7",
+    "identifiedBy": "The version is the `openclaw` root package.json of the checkout below, which is where the release number lives: the Control UI's own package (`openclaw-control-ui`) is private and carries no version field at all, so there is nowhere else in the checkout to read one from. The commit is the tree the classes and values in this file were read from and are verified against, read with `git rev-parse HEAD` in the checkout, and it is what tells two builds of the same version apart: the number names a release, the commit names the revision our borrowed components came out of. core/test/upstream-classes.test.js compares the checkout's own package.json against `version`, so a checkout that moves to a new release re-runs this pin rather than agreeing with it by accident.",
     "checkout": "the OpenClaw checkout, not this repo: $CLAW_OPENCLAW_UI, defaulting to ~/src/openclaw/ui, which is the fleet convention for ~/src/<repo>. Read-only, and never vendored here.",
     "readOnly": true
   },
