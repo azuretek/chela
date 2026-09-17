@@ -500,6 +500,15 @@ jobs:
       # version whose downloads could never finish, which is a download card
       # that hangs at 0% and survives a restart, with nothing local to blame.
       #
+      # The upload is two stages, and the split is measured rather than tidy. The
+      # action's concurrent uploader is the fast one, roughly 600 MB in about 25
+      # seconds, so it stays the bulk route onto the release. The completeness
+      # check below is the verdict, and it refills whatever that uploader lost.
+      # Uploading one file at a time was tried as the only route and abandoned
+      # the same day: the first 127 MB file had not completed after 3m36s on a
+      # runner, so the per-file path is a bounded top-up rather than the way the
+      # payload travels.
+      #
       # desktop/test/release-artifacts.test.js asserts that the artifact gate runs
       # before anything is uploaded, and anchors its second half on
       # `action-gh-release`. Publication is now the last step of this job rather
@@ -565,14 +574,34 @@ jobs:
           # to main, and so every release body was the compare link and nothing
           # else. The setting worked; it had no pull requests to work on.
           body_path: ${{ steps.notes.outputs.changelog }}
-          # Draft, and deliberately no `files:` here. The action's own uploader
-          # is the thing that lost five of these files without reporting them,
-          # so every file is attached by the step below instead: one at a time,
-          # retried, and verified against the release before anything publishes.
+          # Draft, and the whole set goes on here, because this uploader is the
+          # one that reliably moves large files off a runner: it runs the 16
+          # uploads concurrently and takes about 25 seconds over ~600 MB. It is
+          # NOT trusted to have finished, though. `continue-on-error` is set
+          # below deliberately, so a lost file cannot end the run before the next
+          # step has had its say, and cannot be mistaken for a complete set
+          # either: that step compares the release against the artifacts, refills
+          # what is missing, and fails loudly with the draft withdrawn if it
+          # cannot. The verdict is the asset set, never this step's exit code.
+          #
           # A rerun against an already-published release keeps it published
           # (the action preserves an existing release's draft state) and the
           # attach step refills whatever that release is missing.
           draft: true
+          files: artifacts/**/*
+          # A release that publishes with no installers attached looks finished
+          # and is useless; fail loudly instead.
+          fail_on_unmatched_files: true
+          # Replaced rather than skipped, so a rerun repairs an asset instead of
+          # keeping a first attempt that may be incomplete.
+          overwrite_files: true
+        # ★ Deliberately tolerated, and it weakens nothing: the run's verdict is
+        # the completeness check below, which is stricter than this step's exit
+        # code ever was. Before this change the step both uploaded and PUBLISHED,
+        # so its failure left a live release carrying 10 of its 16 assets; now
+        # its failure leaves a draft, which that check either completes or
+        # withdraws.
+        continue-on-error: true
 
       # ★ Attach every asset, then verify the RELEASE carries them. This is a
       # different claim from the artifact gate above, which reads the directory
@@ -580,16 +609,22 @@ jobs:
       # complete for every platform, this one says they ARRIVED. Every release
       # that shipped hollow passed the first and failed the second.
       #
-      # Uploaded one file at a time rather than as one concurrent batch, because
-      # the batch is what hid the loss: a single rejection ends the step and the
-      # remaining failures are never reported. A per-file retry also means a
-      # transient flake costs seconds instead of a release.
+      # The refill is one file at a time rather than another concurrent batch,
+      # because the batch is what hid the loss: a single rejection ends a batch
+      # and the remaining failures are never reported at all. Each refill is also
+      # bounded, since gh's uploader has no timeout anywhere and a stalled
+      # connection would otherwise hold this step until the job's own limit: a
+      # hang is not a failure anything downstream can act on.
       #
       # The expected set is read from the downloaded artifacts rather than
       # restated here, so a target added to electron-builder.yml is carried by
       # this check the day it is added, exactly as the artifact gate above does.
       - name: Attach and verify every asset
         id: attach
+        # A cap on the whole step, so a pathological refill loop cannot sit here
+        # until the job's own limit. The verification is what the release's fate
+        # depends on, and it has to be reachable.
+        timeout-minutes: 20
         env:
           GH_TOKEN: ${{ github.token }}
           ARTIFACTS: artifacts
@@ -612,12 +647,31 @@ jobs:
           fi
           echo "this release must carry $total asset(s)"
 
+          # The draft has to be there. It is missing when the step above could not
+          # create it at all, and every refill below would then fail one file at a
+          # time instead of saying so once.
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::$TAG has no release to attach to, so nothing can be verified"
+            exit 1
+          fi
+
           # Only an asset GitHub has finished storing counts. A name present in
           # any other state is not a download anyone can complete.
           uploaded_names() {
             gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
               --json assets --jq '.assets[] | select(.state == "uploaded") | .name' \
               | LC_ALL=C sort
+          }
+
+          # A refill with a time limit, so one stalled upload cannot hold a pass
+          # open: gh's uploader has no timeout of its own, and a hang is not a
+          # failure anything downstream can act on.
+          upload_bounded() {
+            if command -v timeout >/dev/null 2>&1; then
+              timeout 300 gh release upload "$TAG" "$1" --repo "$GITHUB_REPOSITORY" --clobber
+            else
+              gh release upload "$TAG" "$1" --repo "$GITHUB_REPOSITORY" --clobber
+            fi
           }
 
           # Three passes, each attaching whatever is still missing. A pass with
@@ -640,7 +694,7 @@ jobs:
               fi
               # --clobber because a pass may be replacing an attempt GitHub
               # registered but never finished, which is not downloadable either.
-              if gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber; then
+              if upload_bounded "$file"; then
                 echo "attached $name"
               else
                 echo "::warning::pass $pass could not attach $name, so it is retried"
