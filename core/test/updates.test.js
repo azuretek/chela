@@ -323,7 +323,7 @@ test('a version whose transfer already ended here is not fetched again on our ow
   // A person who presses Check still gets an answer, with the button: the
   // suppression is about fetching by ourselves, not about telling them.
   assert.deepEqual(fetchPlan({ action: INSTALL, version: '1.0.2', suppressedVersion: '1.0.2', trigger: 'manual' }),
-    { fetch: false, quiet: false, offer: OFFER_INSTALL });
+    { fetch: true, quiet: false, offer: null });
 });
 
 test('the suppression names ONE version, so the next release is fetched normally', () => {

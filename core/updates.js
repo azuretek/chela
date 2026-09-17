@@ -296,12 +296,13 @@ export function fetchPlan({ action, version = null, suppressedVersion = null, tr
   const suppressed = typeof version === 'string' && suppressedVersion === version;
 
   if (action === INSTALL) {
-    if (suppressed) {
-      // Nothing in the background, and the offer only to someone who pressed:
-      // a card for a transfer they already ended is the dismissal being undone.
-      // The offer is not silence, so `quiet` follows the press here too.
-      return { fetch: false, quiet: !asked, offer: asked ? OFFER_INSTALL : null };
-    }
+    // ★ A version whose transfer already ended here is not started AGAIN by
+    // itself, and that is the whole of the suppression. It is not a refusal: a
+    // person who presses Check is asking now, and their ask is the thing the card
+    // answers, so the fetch happens and is loud. Only the background path is
+    // held back, because only the background path is the one that cannot be
+    // answered, as nobody asked the question.
+    if (suppressed && !asked) return { fetch: false, quiet: true, offer: null };
     return { fetch: true, quiet: !asked, offer: null };
   }
 

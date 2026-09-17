@@ -2885,7 +2885,8 @@ function onUpdateAvailable(info) {
   });
   // The library has already started this transfer on its own (autoDownload), so
   // declining it means giving up the handle checkForUpdates() is about to return.
-  declinedFetch = suppressedVersion !== null && plan.action === updates.INSTALL;
+  // Only the suppressed BACKGROUND check declines: a press is an ask.
+  declinedFetch = !fetch.fetch && plan.action === updates.INSTALL;
 
   if (fetch.fetch) {
     // The answer to any manual check is superseded by this, which is a better
