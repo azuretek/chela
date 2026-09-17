@@ -12,7 +12,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { newerVersion, tagVersion, newestOnChannel, feedUrl, releaseNotesUrl, channelFor, DEV_CHANNEL, STABLE_CHANNEL } from '../feed.js';
+import { newerVersion, isNewerBuild, tagVersion, newestOnChannel, feedUrl, releaseNotesUrl, channelFor, DEV_CHANNEL, STABLE_CHANNEL } from '../feed.js';
+// The two comparisons, side by side on purpose: `compare` is the one an update
+// check must NOT make, and these tests say so by asserting it disagrees.
+import { compare, release, compareRelease, isNewerRelease } from '../version.js';
 import spec from '../spec/feed.json' with { type: 'json' };
 import naming from '../spec/naming.json' with { type: 'json' };
 import { releasesUrl } from '../naming.js';
@@ -103,4 +106,108 @@ test('the feed URL is the releases Atom feed, built from the repo slug', () => {
   // five-minute dev check, and public so the phone needs no gateway auth to read
   // it.
   assert.ok(feedUrl(repo).startsWith('https://github.com/'), 'a public github.com https URL');
+});
+
+/*
+ * ★ THE RELEASE-ONLY RULE, and the bug it fixes.
+ *
+ * Our dev versions carry a tail after the release (`1.0.1-dev.195.6387043585`)
+ * that is build and commit information. Its BASIS changed, so a newer build can
+ * carry a LOWER number than an older one, and a check that RANKS that tail
+ * inverts: it decides the installed build is ahead of the feed, offers nothing,
+ * and the client stops updating while its number appears to go backwards.
+ *
+ * These are that failure, in both directions, because a check that always says
+ * yes is as wrong as one that always says no.
+ */
+
+test('release() drops the build and commit tail, and compareRelease() ignores it', () => {
+  assert.equal(release('1.0.1-dev.195.6387043585'), '1.0.1');
+  assert.equal(release('1.0.1'), '1.0.1');
+  assert.equal(release('1.0.1-dev.12.1758000000.dirty'), '1.0.1');
+  assert.equal(release('latest'), null, 'not a version at all');
+
+  // Two builds of the same release are EQUAL by release, whatever their tails
+  // say. That equality is what makes the order uninvertible.
+  assert.equal(compareRelease('1.0.1-dev.12.1758000000', '1.0.1-dev.195.6387043585'), 0);
+  assert.equal(isNewerRelease('1.0.1-dev.12.1758000000', '1.0.1-dev.195.6387043585'), false);
+  // The release still orders, which is the one thing it is allowed to refuse.
+  assert.equal(isNewerRelease('1.0.0-dev.900.1700000000', '1.0.1-dev.195.6387043585'), false);
+  assert.equal(isNewerRelease('1.0.2-dev.1.1', '1.0.1-dev.195.6387043585'), true);
+});
+
+test('★ the reported bug: an old-scheme tail that looks HIGHER than the feed is still offered the newest', () => {
+  // Installed: a build from the old scheme, where the number after `dev` was a
+  // commit count. In the feed: builds from the new scheme, where it is a build
+  // count, so every number published since is LOWER.
+  const installed = '1.0.1-dev.195.6387043585';
+  const newest = '1.0.1-dev.12.1758000000';
+  const document = {
+    entries: [
+      { id: `.../releases/v${newest}` },
+      { id: '.../releases/v1.0.1-dev.11.1757000000' },
+    ],
+  };
+
+  // The old comparison, which is what shipped, says there is nothing to offer.
+  // This assertion is the bug, pinned: if it ever flips, the retired comparator
+  // has started ranking the release only and the fix can be simplified.
+  assert.equal(compare(newest, installed) > 0, false,
+    'ranking the tail concludes the installed build is AHEAD, which is the frozen check');
+
+  assert.equal(isNewerBuild(newest, installed), true);
+  assert.equal(newerVersion(document, installed), newest);
+});
+
+test('★ with the feed tails running BACKWARDS, the newest by feed order still wins', () => {
+  // Every published number is below the installed one and they descend as they
+  // get newer. The feed's own ordering is the signal, so the newest entry is
+  // still the answer.
+  const document = {
+    entries: [
+      { id: '.../releases/v1.0.1-dev.3.1759000000' },
+      { id: '.../releases/v1.0.1-dev.20.1758500000' },
+    ],
+  };
+  assert.equal(compare('1.0.1-dev.3.1759000000', '1.0.1-dev.20.1758500000') > 0, false,
+    'the tail ranks this lower than the installed build');
+  assert.equal(newerVersion(document, '1.0.1-dev.20.1758500000'), '1.0.1-dev.3.1759000000');
+});
+
+test('★ a genuinely OLDER release is still not offered, in both channels', () => {
+  const dev = { entries: [{ id: '.../releases/v1.0.0-dev.900.1700000000' }] };
+  assert.equal(newerVersion(dev, '1.0.1-dev.195.6387043585'), null,
+    'an older release is a step backwards, not an update');
+
+  const stable = { entries: [{ id: '.../releases/v1.0.0' }] };
+  assert.equal(newerVersion(stable, '1.0.1'), null);
+  assert.equal(isNewerBuild('1.0.0', '1.0.1'), false);
+});
+
+test('the build we are running is not offered back to us', () => {
+  // The tail still counts here, for what it literally is: an identity. Without
+  // that, a check that cannot tell the feed's newest from the build in front of
+  // it would offer the same build on every check forever.
+  assert.equal(isNewerBuild('1.0.1-dev.12.1758000000', '1.0.1-dev.12.1758000000'), false);
+  const document = { entries: [{ id: '.../releases/v1.0.1-dev.12.1758000000' }] };
+  assert.equal(newerVersion(document, '1.0.1-dev.12.1758000000'), null);
+});
+
+test('★ one owner: newerVersion() and isNewerBuild() cannot disagree', () => {
+  // The desktop reaches the rule through isNewerBuild directly (its updater's
+  // own comparison ranks the tail, so main.js re-decides with this), and the
+  // feed path reaches it through newerVersion. Same owner, so a candidate the
+  // feed path offers is one the desktop path offers.
+  const { cases } = load('feed.json');
+  for (const { name, document, current, newer, throws } of cases) {
+    if (throws) continue;
+    const advertised = newestOnChannel(document, channelFor(current));
+    const decision = advertised === null ? null : (isNewerBuild(advertised, current) ? advertised : null);
+    assert.equal(decision, newer, `${name}: isNewerBuild disagrees with newerVersion`);
+  }
+});
+
+test('an unreadable version is a surfaced fault on both sides of the rule', () => {
+  assert.throws(() => isNewerBuild('1.0.2', 'latest'), /not a version/);
+  assert.throws(() => isNewerBuild('latest', '1.0.1'), /not a version/);
 });
