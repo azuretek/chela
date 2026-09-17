@@ -189,3 +189,25 @@ test('the measured half of the motion is still a proof of the transition', () =>
   assert.match(harness, /prefers-reduced-motion|reducedMotion/,
     'the harness no longer covers the reduced-motion pass');
 });
+
+test('the in-place half is still a proof of the transition, in both directions', () => {
+  // The gateway editor's own disclosure, which is the case the rule's widening was
+  // written for. Its claims are about what was on screen DURING a change INSIDE one
+  // surface, so they need a capture for the same reason the ones above do, and a
+  // harness that quietly stopped making them would go on printing OK.
+  const harness = read(DESKTOP, 'scripts', 'test-gateway-edit-motion.js');
+  for (const claim of [
+    'the panel EXPANDED through intermediate frames rather than popping',
+    'the panel COLLAPSED through intermediate frames rather than popping',
+    'the panel was still mounted, mid-departure, on the tick of the press',
+    'the card below it ramped too, so the page did not jump',
+  ]) {
+    assert.ok(harness.includes(claim), `the harness no longer checks that ${claim}`);
+  }
+  // Both appearances, and both preferences.
+  assert.match(harness, /for \(const mode of \['light', 'dark'\]\)/, 'the harness no longer covers both appearances');
+  assert.match(harness, /force-prefers-reduced-motion/, 'the harness no longer covers the reduced-motion pass');
+  // The departure is the half that gets skipped, so it is asserted to be measured
+  // on its own and not inferred from the arrival.
+  assert.match(harness, /'Done'/, 'the harness never presses the control that closes the panel');
+});

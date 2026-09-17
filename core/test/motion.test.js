@@ -114,7 +114,9 @@ test('the sweep is looking at real animations, not at nothing', () => {
   // A parser that stopped matching would make the test above pass by finding no
   // animations at all, which is the way this kind of guard dies.
   const found = CLEAN.flatMap(([, css]) => animatedRules(css).map(([selector]) => selector));
-  for (const expected of ['.scrim', '.modal', '.banner--enter', '.banner--leave', '.loading']) {
+  for (const expected of ['.scrim', '.modal', '.banner--enter', '.banner--leave', '.loading',
+    '.editor-disclosure--arriving', '.editor-disclosure--arriving > *',
+    '.editor-disclosure--leaving', '.editor-disclosure--leaving > *']) {
     assert.ok(found.includes(expected), `${expected} is no longer seen as animated, so the sweep is broken`);
   }
   assert.ok(REDUCED.includes('animation: none'), 'no reduce block was parsed at all');
@@ -135,6 +137,13 @@ test('the view-change rules use the timings the conventions pin', () => {
     [CLEAN[0][1], '.panel--in-from-right', '--duration-fast'],
     [CLEAN[1][1], '.banner--enter', '--duration-normal'],
     [CLEAN[1][1], '.banner--leave', '--duration-fast'],
+    // The in-place case, added with the rule's widening. Both directions are here
+    // for the reason the rule is: the departure is the half nothing navigated for,
+    // and it is the half that gets left as a pop.
+    [CLEAN[0][1], '.editor-disclosure--arriving', '--duration-fast'],
+    [CLEAN[0][1], '.editor-disclosure--arriving > *', '--duration-fast'],
+    [CLEAN[0][1], '.editor-disclosure--leaving', '--duration-fast'],
+    [CLEAN[0][1], '.editor-disclosure--leaving > *', '--duration-fast'],
   ];
   for (const [css, selector, token] of expected) {
     // The rule that DECLARES the animation, not simply the first rule with this
@@ -273,6 +282,142 @@ test('the conventions doc names what the stylesheets actually use', () => {
   for (const name of ['panel', 'scrim', 'card', 'notice card']) {
     assert.ok(DOC.toLowerCase().includes(name), `the doc does not describe what a ${name} does`);
   }
+  // The widened scope, asserted as wording rather than left to a reader's memory of
+  // a conversation. Each of the three claims is one a future edit could quietly drop
+  // while every sheet above went on passing.
+  assert.match(DOC, /any change the reader can SEE/i, 'the doc no longer says what a transition is');
+  assert.match(DOC, /in-place change is NOT exempt/i,
+    'the doc no longer says an in-place change is covered, which is the whole correction');
+  assert.match(DOC, /BOTH directions/i, 'the doc no longer says a transition runs both ways');
+  assert.ok(/expanding or collapsing in place/i.test(DOC), 'the doc does not name the form-disclosure case');
+  assert.ok(DOC.includes('grid-template-rows'),
+    'the doc does not describe what the disclosure\'s own height animation is');
+  assert.ok(DOC.includes('--motion-rise'), 'the doc does not name the rise the panel content arrives on');
+  // The audit's outcome, in the doc rather than only in a reply: the in-place
+  // changes that stay still are named with their reasons, so the next reader finds
+  // an answer where the rule is instead of a gap they have to guess about.
+  assert.ok(DOC.includes('In-place changes that deliberately snap'),
+    'the doc no longer names the in-place changes that deliberately snap');
+  for (const named of ['status line', 'Retry', 'filtering', 'notice']) {
+    assert.ok(DOC.includes(named), `the doc no longer gives a reason for the ${named} case`);
+  }
+});
+
+/* ------------------------------------ the in-place case, in the page's half */
+
+/**
+ * The body of a top-level function, by its opening line.
+ *
+ * The same walk desktop/test/settings-surface.test.js and
+ * desktop/test/surface-motion.test.js each carry their own copy of, and a copy here
+ * for the same reason they give: these are three files asserting three different
+ * claims about one source, and a shared helper would be a fourth thing to keep in
+ * step.
+ */
+function functionBody(source, signature) {
+  const start = source.indexOf(signature);
+  assert.ok(start >= 0, `${signature} is gone from the source`);
+  const paren = source.indexOf('(', start);
+  let depth = 0;
+  let close = -1;
+  for (let i = paren; i < source.length; i += 1) {
+    if (source[i] === '(') depth += 1;
+    else if (source[i] === ')') {
+      depth -= 1;
+      if (depth === 0) { close = i; break; }
+    }
+  }
+  assert.ok(close > 0, `${signature} has an unbalanced parameter list`);
+  const open = source.indexOf('{', close);
+  depth = 0;
+  for (let i = open; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1;
+    else if (source[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(open, i + 1);
+    }
+  }
+  throw new Error(`unbalanced braces after ${signature}`);
+}
+
+const SETTINGS_JS = read(UI, 'settings.js');
+
+test('the panel is asked to leave, and only then taken away', () => {
+  // The page's half of the in-place rule, in the same order main.js uses for a whole
+  // surface: a panel removed on the same tick as the press never paints a frame of
+  // its own departure, so the animation would exist in the stylesheet and nowhere a
+  // reader could see it. Measured before it was fixed: the closing press removed the
+  // panel within a millisecond, and it showed as a collapse with no frames in it.
+  const body = functionBody(SETTINGS_JS, 'function collapseEditor(');
+  const asked = body.indexOf("classList.add('editor-disclosure--leaving')");
+  assert.ok(asked >= 0, 'the panel is never asked to leave');
+  // The render that takes it away is the LAST one in here and it is inside the
+  // bounded wait. The earlier ones are the early returns, and those exist for the
+  // two cases with no motion to play.
+  const lastRender = body.lastIndexOf('render()');
+  assert.ok(lastRender > asked, 'the panel is re-rendered before it has been asked to leave');
+  assert.ok(body.slice(asked, lastRender).includes('setTimeout('),
+    'the taking-away render is not inside the wait, so the departure cannot be seen');
+  // The wait is the page's own token and not a number worked out here.
+  assert.match(body, /motionMs\('--duration-fast'\)/, 'the wait does not use the pinned duration');
+  assert.match(body, /if \(reducedMotion\(\)\) \{ render\(\); return; \}/,
+    'reduced motion does not take the panel away on the press, so it waits for an animation that will not run');
+});
+
+test('the arrival is played once, and never with motion turned off', () => {
+  const body = functionBody(SETTINGS_JS, 'function editorDisclosure(');
+  assert.match(body, /if \(opening !== gw.id\) return node;/,
+    'the arrival is not keyed to the press that opened it, so a re-render would replay it');
+  assert.match(body, /opening = null;/, 'the arrival is not consumed');
+  const reduced = body.indexOf('if (reducedMotion()) return node;');
+  const added = body.indexOf("classList.add('editor-disclosure--arriving')");
+  assert.ok(reduced >= 0, 'reduced motion is not handled on the arrival');
+  assert.ok(added > reduced, 'the arriving class can land with motion turned off, so a reader who asked for none gets it');
+  // Read from the page's own handshake rather than the media query a second time.
+  assert.match(body, /reducedMotion\(\)/, 'the arrival decides about motion for itself');
+});
+
+test('the row hands over a panel only when there is one', () => {
+  // The bug this exists for, measured on the second gateway: the loop runs for every
+  // row, so an unconditional assignment left the handle nulled by the last row that
+  // had no panel, and the closing press took the panel away on the same tick.
+  assert.match(SETTINGS_JS, /if \(editor\) editorElement = editor;/,
+    'the panel handle is assigned for every row, so a row with no panel nulls it');
+});
+
+test('the one layout animation is the disclosure, and it is bounded to it', () => {
+  // The rule says a view's height must be final on its first frame, and the
+  // disclosure's own growth is the named exception. This asserts the exception stays
+  // where it was granted rather than becoming licence to animate layout.
+  const open = blocks(CLEAN[0][1], '@keyframes editor-open')[0];
+  const close = blocks(CLEAN[0][1], '@keyframes editor-close')[0];
+  assert.ok(open && close, 'the disclosure keyframes are gone');
+  for (const [name, keyframes] of [['opening', open], ['closing', close]]) {
+    assert.match(keyframes, /grid-template-rows/, `the ${name} keyframes no longer move the track`);
+    for (const property of ['width', 'margin', 'padding', 'position', 'top', 'left', 'transform']) {
+      assert.ok(!new RegExp(`(^|[;{\\s])${property}\\s*:`).test(keyframes),
+        `the disclosure's ${name} keyframes animate ${property}, which is beyond the exception`);
+    }
+  }
+  // The content arrives on opacity and the rise, which is where every other entering
+  // thing on this page arrives from.
+  const content = blocks(CLEAN[0][1], '@keyframes editor-content-in')[0];
+  assert.match(content, /opacity/);
+  assert.match(content, /transform: translateY\(var\(--motion-rise\)\)/,
+    'the panel content no longer rises into place');
+  // Clipping is for the moving classes only. On the resting rule it would cut the
+  // focus ring of the last control in the panel for the whole of the visit.
+  const resting = /\.editor-disclosure \{([^}]*)\}/.exec(CLEAN[0][1]);
+  assert.ok(resting, 'the disclosure has no resting rule, so its height is not fixed when it is still');
+  assert.match(resting[1], /display:\s*grid/, 'the resting rule is not the grid the animated one measures against');
+  assert.ok(!/overflow/.test(resting[1]),
+    'the element at rest is a clip container, so it can cut a focus ring');
+  // And the bare panel level, without which the track cannot reach zero and the
+  // closing press ends in a jump of the editor's own margin, padding and border.
+  assert.match(CLEAN[0][1], /\.editor-disclosure > \* \{[^}]*min-height:\s*0/,
+    'the track item can no longer shrink, so the closing press ends in a jump');
+  assert.match(SETTINGS_JS, /editor-disclosure__panel/,
+    'the bare panel level is gone from the page, so the track floors above zero');
 });
 
 test('the doc is reachable from where the shared surface is documented', () => {
