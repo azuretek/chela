@@ -111,7 +111,11 @@ test('the app pages carry the product name the way the spec spells it', () => {
       file: 'about.html',
       strings: [
         `<title>About ${naming.product}</title>`,
-        `<h1 id="title">${naming.product}</h1>`,
+        // The h1 carries upstream's own `settings-sidebar__title` now, so the
+        // class sits between the id and the name. What this assertion is for is
+        // that the page says the product name the spec spells, not that the tag
+        // has no attributes, so it matches the heading's own opening tag.
+        `<h1 class="settings-sidebar__title" id="title">${naming.product}</h1>`,
       ],
     },
     {

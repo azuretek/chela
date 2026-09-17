@@ -43,22 +43,34 @@
          dismiss target, and a drag region swallows the click that would need, so the window stays movable without costing click-outside-to-close. -->
     <div class="dragbar"></div>
     <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="title">
-      <header class="modal__header">
-        <!-- The way back to the Control UI, drawn as a back arrow rather than a
-             dismissal cross, and placed FIRST in the header because that is what
-             an arrow means: a leading-edge arrow is "go back", and the same glyph
-             on the trailing edge is a dismissal with a badly chosen symbol. Both
-             controls close this surface; only this one says where they go.
+      <header class="modal__header settings-sidebar__header">
+        <!-- The way back to the Control UI, and it is the Control UI's OWN back
+             control: `settings-sidebar__back` with its icon box and its esc chip,
+             copied declaration for declaration from ui/src/styles/layout.css and
+             pinned in core/spec/upstream-classes.json. Upstream's label for it is
+             `nav.exitSettings`, "Back to app", which is exactly what pressing it
+             does here.
+
+             Three things this brings that our own button did not have. The glyph
+             is a stroked SVG at the interface's own icon weight rather than an
+             arrow CHARACTER, so it no longer changes shape with the font.
+             The esc chip NAMES the key that does the same thing, which this page
+             has always answered through its keydown handler and never said.
+             And the focus ring is upstream's, drawn from --bg and --ring, so it is
+             visible on the surface it sits on rather than being the browser's
+             default outline.
 
              It is hidden outright when the page IS the window (a first run, or a
-             phone with no gateway yet, where there is nothing to go back to), so
-             every case it appears in is one where going back is what pressing it
-             does. The id stays `close`, because that is the id the page's own
-             script wires and the id the tests name, so this is a change of glyph,
-             wording and position rather than a second control. -->
-        <button class="modal__close modal__back" id="close" type="button" aria-label="Back" title="Back">&#8592;</button>
-        <div class="stack">
-          <h1 id="title">Settings</h1>
+             phone with no gateway yet, where there is nothing to go back to). The
+             id stays `close`, because that is what the page's own script wires and
+             what the tests name. -->
+        <button class="settings-sidebar__back" id="close" type="button">
+          <span class="settings-sidebar__back-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 19-7-7 7-7" /><path d="M19 12H5" /></svg></span>
+          Back to app
+          <kbd class="settings-sidebar__esc" aria-hidden="true">esc</kbd>
+        </button>
+        <div class="settings-row__text">
+          <h1 class="settings-sidebar__title" id="title">Settings</h1>
           <p class="sub" id="subtitle">Choose which gateway this app connects to.</p>
         </div>
       </header>
@@ -101,19 +113,40 @@
 
     <div id="gateways"></div>
 
-    <div class="card">
-      <div class="field">
-        <span>Add a gateway</span>
-        <input type="text" id="new-label" placeholder="Name (e.g. home)" autocomplete="off">
+    <div class="settings-group">
+      <!-- Upstream draws a labelled field as a stacked row: the title and its
+           description in one column, the control under them at full width. Ours
+           put the label above the input with the control after it, which is why
+           an input and the select beside it never sat on the same rhythm as the
+           rows above. -->
+      <div class="settings-row settings-row--stacked">
+        <div class="settings-row__text">
+          <label class="settings-row__title" for="new-label">Add a gateway</label>
+        </div>
+        <div class="settings-row__control">
+          <input type="text" id="new-label" placeholder="Name (e.g. home)" autocomplete="off">
+        </div>
       </div>
-      <div class="field">
-        <input type="url" id="new-url" placeholder="https://host.example.ts.net" autocomplete="off" spellcheck="false">
+      <!-- Its own row, because a stacked row holds one control: two inputs in
+           one control column is a flex row, and both of them are width 100%,
+           so they would fight for the same line. The text column is empty here
+           rather than removed, so the row keeps the same inset as the one above
+           it and the two inputs line up. -->
+      <div class="settings-row settings-row--stacked">
+        <div class="settings-row__text">
+          <label class="settings-row__title" for="new-url">Address</label>
+        </div>
+        <div class="settings-row__control">
+          <input type="url" id="new-url" placeholder="https://host.example.ts.net" autocomplete="off" spellcheck="false">
+        </div>
       </div>
-      <div class="row">
-        <button id="test">Test connection</button>
-        <button id="add" class="primary">Add</button>
+      <div class="settings-row settings-row--actions">
+        <div class="settings-row__control">
+          <button id="test">Test connection</button>
+          <button id="add" class="primary">Add</button>
+        </div>
+        <div class="result" id="test-result"></div>
       </div>
-      <div class="result" id="test-result"></div>
     </div>
   </section>
 
@@ -137,48 +170,66 @@
 
   <section id="prefs" hidden>
   <div class="panel" id="panel-behaviour" role="tabpanel" aria-labelledby="tab-behaviour" tabindex="0" hidden>
-    <div class="card">
-      <label class="check" data-setting="closeToTray">
-        <input type="checkbox" id="closeToTray">
-        <span class="stack">
-          <span>Keep running when the window is closed</span>
-          <span>Closing hides the window instead of quitting. Quit from the tray or menu bar.</span>
+    <div class="settings-group">
+      <!-- Upstream's checkbox row is a `settings-row--toggle` with the text first
+           and the control at the TRAILING edge, which is a layout change as well
+           as a class change: our checkboxes led their labels, so the switch sat
+           at the left edge of the name it belongs to. The whole row stays a
+           click target, and `<label>` is what does that here where upstream uses
+           a click handler on a div: a native checkbox inside its own label
+           toggles from anywhere on the row for free, and it keeps the control
+           reachable by keyboard without a tabindex. -->
+      <label class="settings-row settings-row--toggle" data-setting="closeToTray">
+        <span class="settings-row__text">
+          <span class="settings-row__title">Keep running when the window is closed</span>
+          <span class="settings-row__desc">Closing hides the window instead of quitting. Quit from the tray or menu bar.</span>
+        </span>
+        <span class="settings-row__control">
+          <input type="checkbox" id="closeToTray">
         </span>
       </label>
-      <label class="check" data-setting="launchAtLogin">
-        <input type="checkbox" id="launchAtLogin">
-        <span class="stack">
-          <span>Open at login</span>
-          <span>Start Claw Control UI automatically when you sign in.</span>
+      <label class="settings-row settings-row--toggle" data-setting="launchAtLogin">
+        <span class="settings-row__text">
+          <span class="settings-row__title">Open at login</span>
+          <span class="settings-row__desc">Start Claw Control UI automatically when you sign in.</span>
+        </span>
+        <span class="settings-row__control">
+          <input type="checkbox" id="launchAtLogin">
         </span>
       </label>
-      <label class="check" data-setting="startHidden">
-        <input type="checkbox" id="startHidden">
-        <span class="stack">
-          <span>Start hidden in the tray</span>
-          <span>Launch to the tray without showing the window.</span>
+      <label class="settings-row settings-row--toggle" data-setting="startHidden">
+        <span class="settings-row__text">
+          <span class="settings-row__title">Start hidden in the tray</span>
+          <span class="settings-row__desc">Launch to the tray without showing the window.</span>
+        </span>
+        <span class="settings-row__control">
+          <input type="checkbox" id="startHidden">
         </span>
       </label>
       <!-- The hint is rewritten by settings.js on a build that cannot install
            an update at all, where the checkbox is disabled and the reason
            matters more than the description. -->
-      <label class="check" id="autoUpdate-row" data-setting="autoUpdate">
-        <input type="checkbox" id="autoUpdate">
-        <span class="stack">
-          <span>Install updates automatically</span>
-          <span id="autoUpdate-hint">Download new versions in the background and offer to restart. Off, the app still tells you when one exists and can install it on request.</span>
+      <label class="settings-row settings-row--toggle" id="autoUpdate-row" data-setting="autoUpdate">
+        <span class="settings-row__text">
+          <span class="settings-row__title">Install updates automatically</span>
+          <span class="settings-row__desc" id="autoUpdate-hint">Download new versions in the background and offer to restart. Off, the app still tells you when one exists and can install it on request.</span>
+        </span>
+        <span class="settings-row__control">
+          <input type="checkbox" id="autoUpdate">
         </span>
       </label>
-      <label class="check" data-setting="promptMetadata">
-        <input type="checkbox" id="promptMetadata">
-        <span class="stack">
-          <span>Include this computer's context in prompts</span>
+      <label class="settings-row settings-row--toggle" data-setting="promptMetadata">
+        <span class="settings-row__text">
+          <span class="settings-row__title">Include this computer's context in prompts</span>
           <!-- The one hint on this page that both clients read, so it names no
                field that only one of them sends. The exact facts are the
                client's, and core/spec/prompt-metadata.json owns them: a phone
                sends fewer of these than a desktop does, and a list here would
                be wrong on one of the two. -->
-          <span>Send facts about this device, such as its name and operating system, with ordinary chat prompts, so Claw Control UI knows which machine is talking. Off by default.</span>
+          <span class="settings-row__desc">Send facts about this device, such as its name and operating system, with ordinary chat prompts, so Claw Control UI knows which machine is talking. Off by default.</span>
+        </span>
+        <span class="settings-row__control">
+          <input type="checkbox" id="promptMetadata">
         </span>
       </label>
       <!-- Which appearance the app is in, and the one setting on this tab whose
@@ -190,15 +241,22 @@
            half: its appearance IS the Control UI's theme, chosen in the Control
            UI, which the app then follows. So the row is absent there rather than
            queued, and the reason is recorded in core/spec/settings.json. -->
-      <div class="field" data-setting="appearance">
-        <span>Appearance</span>
-        <select id="appearance" aria-describedby="appearance-hint">
-          <option value="system">Match the system</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-        </select>
-        <div class="muted-sm hint" id="appearance-hint">
-          Which colours the app uses. Match the system follows this device and changes with it while the app is open.
+      <div class="settings-row settings-row--stacked" data-setting="appearance">
+        <div class="settings-row__text">
+          <!-- A label rather than a span, so clicking the name opens the picker:
+               upstream's own field rows do the same, and a name beside a control
+               reads as clickable whether or not it is. -->
+          <label class="settings-row__title" for="appearance">Appearance</label>
+          <span class="settings-row__desc" id="appearance-hint">
+            Which colours the app uses. Match the system follows this device and changes with it while the app is open.
+          </span>
+        </div>
+        <div class="settings-row__control">
+          <select id="appearance" aria-describedby="appearance-hint">
+            <option value="system">Match the system</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
         </div>
         <!-- Its own answer, next to its own control. Applying this one on the
              spot rather than at Save is the point of it: a colour choice nobody
@@ -206,15 +264,19 @@
              they have to take on trust. -->
         <div class="result" id="appearance-result"></div>
       </div>
-      <div class="field" data-setting="globalShortcut">
-        <span>Global shortcut</span>
-        <input type="text" id="globalShortcut" placeholder="CommandOrControl+Shift+O" spellcheck="false">
-        <!-- `.hint`, not a style attribute: this page's own CSP sets
-             `style-src 'self'`, which the browser applies to style ATTRIBUTES
-             too, so the margin this used to ask for in one was dropped without a
-             word. `.hint` is the same 6px from the stylesheet. -->
-        <div class="muted-sm hint">
-          Shows or hides the window from anywhere. Use Electron accelerator syntax, or clear it to disable.
+      <div class="settings-row settings-row--stacked" data-setting="globalShortcut">
+        <div class="settings-row__text">
+          <label class="settings-row__title" for="globalShortcut">Global shortcut</label>
+          <!-- `.settings-row__desc`, not a style attribute: this page's own CSP
+               sets `style-src 'self'`, which the browser applies to style
+               ATTRIBUTES too, so the margin this used to ask for in one was
+               dropped without a word. -->
+          <span class="settings-row__desc">
+            Shows or hides the window from anywhere. Use Electron accelerator syntax, or clear it to disable.
+          </span>
+        </div>
+        <div class="settings-row__control">
+          <input type="text" id="globalShortcut" placeholder="CommandOrControl+Shift+O" spellcheck="false">
         </div>
       </div>
       <!-- The answer to Save, and it belongs to the button rather than to any
@@ -222,10 +284,12 @@
            client only: the phone has no shortcut, so "Saved." would have been
            written into a hidden element and the button would have looked like it
            did nothing at all. -->
-      <div class="actions">
-        <button id="save" class="primary">Save preferences</button>
+      <div class="settings-row settings-row--actions">
+        <div class="settings-row__control">
+          <button id="save" class="primary">Save preferences</button>
+        </div>
+        <div class="result" id="save-result"></div>
       </div>
-      <div class="result" id="save-result"></div>
     </div>
 
   </div>
@@ -260,13 +324,17 @@
        first run. ONE card, not one per tab: this is the only copy of it in the
        document, and the tests assert that. Hidden when there is no gateway yet
        (a first run), where there is no Control UI behind this to return to. -->
-  <div class="card" id="control-ui-settings" hidden>
-    <div class="stack">
-      <span class="name">Looking for the gateway's own settings?</span>
-      <span class="muted-sm">This screen configures this app and how it connects. The gateway's own settings, its agents, models and channels, live inside the Control UI.</span>
+  <div class="settings-group" id="control-ui-settings" hidden>
+    <div class="settings-row settings-row--stacked">
+      <div class="settings-row__text">
+        <span class="settings-row__title">Looking for the gateway's own settings?</span>
+        <span class="settings-row__desc">This screen configures this app and how it connects. The gateway's own settings, its agents, models and channels, live inside the Control UI.</span>
+      </div>
     </div>
-    <div class="row control-ui-settings__action">
-      <button id="open-control-ui-settings" type="button">Go to the Control UI</button>
+    <div class="settings-row settings-row--actions">
+      <div class="settings-row__control control-ui-settings__action">
+        <button id="open-control-ui-settings" type="button">Go to the Control UI</button>
+      </div>
     </div>
   </div>
 

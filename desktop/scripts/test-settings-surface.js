@@ -123,8 +123,8 @@ function menuItem(label, items = Menu.getApplicationMenu()?.items || []) {
  * the failure this is here to catch.
  */
 const ROWS = `(() => {
-  const rows = [...document.querySelectorAll('#gateways > .card')].map((card) => {
-    const row = card.querySelector('.row');
+  const rows = [...document.querySelectorAll('#gateways > .settings-group')].map((card) => {
+    const row = card.querySelector('.settings-row');
     const badge = row.querySelector('.row__status .badge');
     const actions = row.querySelector('.row__actions');
     const box = (el) => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width, height: r.height }; };
@@ -175,7 +175,7 @@ app.whenReady().then(async () => {
   // `ghost` too: a class selector here clicked Reconnect and started a second
   // connect instead of opening the editor.
   await page.executeJavaScript(`(() => {
-    const card = [...document.querySelectorAll('#gateways > .card')]
+    const card = [...document.querySelectorAll('#gateways > .settings-group')]
       .find((c) => /Alpha gateway/.test(c.innerText));
     const edit = [...card.querySelectorAll('.row__actions button')]
       .find((b) => b.textContent.trim() === 'Edit');
@@ -184,7 +184,7 @@ app.whenReady().then(async () => {
   })()`);
   await delay(600);
   const saved = await page.executeJavaScript(`(() => {
-    const card = [...document.querySelectorAll('#gateways > .card')]
+    const card = [...document.querySelectorAll('#gateways > .settings-group')]
       .find((c) => /Alpha gateway/.test(c.innerText));
     const input = card.querySelector('.editor input[type=password]');
     if (!input) return 'no field';
@@ -201,7 +201,7 @@ app.whenReady().then(async () => {
   // Collapse the editor, so the screenshots show the row the way it reads in the
   // list rather than mid-edit.
   await page.executeJavaScript(`(() => {
-    const card = [...document.querySelectorAll('#gateways > .card')]
+    const card = [...document.querySelectorAll('#gateways > .settings-group')]
       .find((c) => /Alpha gateway/.test(c.innerText));
     const done = [...card.querySelectorAll('.row__actions button')]
       .find((b) => b.textContent.trim() === 'Done');

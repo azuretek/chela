@@ -165,10 +165,35 @@ test('resolve follows a token defined as another token, and refuses the unknown'
 test('the card geometry names tokens rather than repeating their values', () => {
   // The shape half of the file is emitted from spec/tokens.json, so the sheet
   // resolves it to a var() rather than to a second copy of a number.
+  //
+  // The surface is asserted as `--panel` and not `--bg-elevated` because that
+  // was the drift: the card this borrows from is the FLOATING one, whose chrome
+  // mixes --panel, and --bg-elevated is the surface of the panel variant, which
+  // is a different colour in the light theme. The value in the spec is what the
+  // banner paints with, so getting this wrong is a banner that looks different
+  // from the card it is a copy of, in one mode, with nothing in any log.
   const sheet = stylesheet();
   assert.match(cssBlock(sheet, ':root'), /--notice-radius: var\(--radius-lg\)/);
-  assert.match(cssBlock(sheet, ':root'), /--notice-surface: var\(--bg-elevated\)/);
+  assert.match(cssBlock(sheet, ':root'), /--notice-surface: var\(--panel\)/);
   assert.match(cssBlock(sheet, ':root'), /--notice-blur: 10px/);
+});
+
+test('the banner is proven against the card it was copied from, in the checkout', () => {
+  // Every measurement the banner draws with is pinned in
+  // core/spec/upstream-reference.json with the rule it came from, and the guard
+  // that compares the two runs with the OpenClaw checkout in reach: it lives in
+  // core/test, which this suite and the release pipeline do not run. So this is
+  // the pointer, and it fails loudly if the pin or that guard is removed.
+  const pin = JSON.parse(fs.readFileSync(
+    path.join(HERE, '..', '..', 'core', 'spec', 'upstream-reference.json'), 'utf8',
+  ));
+  const guard = path.join(HERE, '..', '..', 'core', 'test', 'upstream-classes.test.js');
+  assert.ok(fs.existsSync(guard), 'the guard that holds the banner to the card it copies is gone');
+  assert.ok(pin.values.length >= 15, `only ${pin.values.length} card values are pinned`);
+  const pinned = pin.values.map((v) => v.path);
+  for (const path of ['card.surface', 'card.gap', 'card.action.minHeight', 'card.dismiss.size']) {
+    assert.ok(pinned.includes(path), `${path} is drawn by the banner and is not pinned against upstream`);
+  }
 });
 
 /* ------------------------------------------------------- the loading cover */

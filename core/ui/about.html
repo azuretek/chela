@@ -36,27 +36,59 @@
   <div class="scrim" id="scrim">
     <div class="dragbar"></div>
     <div class="modal modal--narrow" role="dialog" aria-modal="true" aria-labelledby="title">
-      <header class="modal__header">
-        <img class="modal__icon" src="assets/claw.svg" alt="">
-        <div class="stack">
-          <h1 id="title">Claw Control UI</h1>
-          <p class="sub" id="build">Loading…</p>
+      <header class="modal__header settings-sidebar__header">
+        <!-- The way back, and it is the Control UI's own back control: the same
+             `settings-sidebar__back` with the same icon box and the same esc chip
+             that settings.html carries, because a person arriving here from
+             Settings should find the way out where the rest of the app puts it.
+
+             This page had only a dismissal cross at the trailing edge, which says
+             "close this" and nothing about where you land, and did not say that
+             Escape does the same thing. Both halves are upstream's control rather
+             than our own button, so the two pages cannot drift into two
+             different ways back.
+
+             The label names its own destination rather than repeating
+             upstream's "Back to app": About is presented over Settings, so this
+             returns to Settings, and the shared label would be a lie here. The
+             control, the glyph and the keyboard affordance are the shared part.
+             The id stays `close`, which is what about.js wires and what the
+             tests name. -->
+        <button class="settings-sidebar__back" id="close" type="button">
+          <span class="settings-sidebar__back-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 19-7-7 7-7" /><path d="M19 12H5" /></svg></span>
+          Back to settings
+          <kbd class="settings-sidebar__esc" aria-hidden="true">esc</kbd>
+        </button>
+        <div class="modal__headline">
+          <img class="modal__icon" src="assets/claw.svg" alt="">
+          <div class="settings-row__text">
+            <h1 class="settings-sidebar__title" id="title">Claw Control UI</h1>
+            <p class="sub" id="build">Loading…</p>
+          </div>
         </div>
-        <button class="modal__close" id="close" type="button" aria-label="Close" title="Close (Esc)">&#10005;</button>
       </header>
       <div class="modal__body">
 
-        <div class="card">
-          <div class="stack">
-            <span class="name">Updates</span>
-            <span class="muted-sm" id="update-status">Loading…</span>
-            <span class="muted-sm" id="update-hint" hidden></span>
+        <!-- One group with two rows, which is upstream's shape for a section: the
+             text rows carry the state, and the row that holds nothing but buttons
+             is an actions row. Ours was one card with a stack of three spans and
+             a button row, which is the same content in none of the interface's
+             components. -->
+        <div class="settings-group">
+          <div class="settings-row settings-row--stacked">
+            <div class="settings-row__text">
+              <span class="settings-row__title">Updates</span>
+              <span class="settings-row__desc" id="update-status">Loading…</span>
+              <span class="settings-row__desc" id="update-hint" hidden></span>
+            </div>
           </div>
-          <div class="actions">
-            <button id="check" class="primary">Check for updates</button>
-            <button id="releases" class="ghost">Release notes</button>
+          <div class="settings-row settings-row--actions">
+            <div class="settings-row__control">
+              <button id="check" class="primary">Check for updates</button>
+              <button id="releases" class="ghost">Release notes</button>
+            </div>
+            <div class="result" id="check-result"></div>
           </div>
-          <div class="result" id="check-result"></div>
         </div>
 
         <!-- Filled in by about.js: one row per thing a bug report asks for. -->
