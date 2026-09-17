@@ -201,9 +201,11 @@ struct ContentView: View {
                     connection: connection,
                     pairing: pairing,
                     // The App-settings affordance injected into the Control UI's
-                    // footer posts here when pressed, and raises the same sheet the
-                    // corner button does. The corner button stays as the fallback
-                    // route that does not depend on the injected node existing.
+                    // footer posts here when pressed, and raises the settings
+                    // sheet. It is this client's ONLY settings entry: there is no
+                    // native control beside it, because the footer bar below is
+                    // the interface's own and a second control floating over the
+                    // page was reported as an unwanted duplicate.
                     // The App-settings affordance's bridge, plus the page itself:
                     // the handle is for the one action that asks the Control UI to
                     // do something the Control UI owns. See `GatewayPage`.
@@ -227,15 +229,11 @@ struct ContentView: View {
                     }
                 }
                 .animation(.easeInOut(duration: 0.2), value: pairing.isPairing)
-                // Order is the whole point of these two lines, and it is load
-                // bearing rather than cosmetic: SwiftUI stacks overlays in the
-                // order they are applied, so the notice stack has to come AFTER
-                // the corner button or the button is drawn over the top card's
-                // dismiss X. Measured on an iPhone 17 simulator on 2026-09-16:
-                // with the button last, the first card showed no X at all and the
-                // reader had no way to close a notice except the route to
-                // Settings, which is exactly what was reported.
-                .overlay(alignment: .topTrailing) { SettingsButton { showingSettings = true } }
+                // The notice stack is the last overlay this branch applies, so
+                // no other overlay can be drawn over a card's own dismiss
+                // control. Measured on an iPhone 17 simulator on 2026-09-16,
+                // where an overlay applied after this one left the first card
+                // with no X at all and no way to close a notice.
                 .noticeBanner(notices)
                 // Settings, and About over it. Both fill the screen, presented the
                 // one way this client presents a shared web surface: the surface
