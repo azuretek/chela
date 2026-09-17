@@ -265,6 +265,14 @@ contextBridge.exposeInMainWorld('clawDesktop', {
   openReleases: () => {},
   closeOverlay: () => {},
   onAboutChanged: () => {},
+  // The clear-cache pair, and the reason this stub is now checked against the
+  // page rather than written from memory: about.js hides the whole section when
+  // the host cannot do this, so a stub that forgot these two commands produced
+  // About captures of a page with no clear-cache control on it, while the real
+  // app (desktop/src/preload.cjs) has always had them. A capture harness whose
+  // host is thinner than the real one is measuring a page nobody ships.
+  clearCacheAndReload: async () => ({ cleared: ['example.invalid'], failed: [], origins: ['example.invalid'], gateway: null }),
+  onCacheCleared: () => {},
   // The banner's own host, so the same stub serves all three pages. It reports a
   // height rather than sizing anything: the view is sized to exactly what the
   // page reports, and this harness has no view to size.
@@ -317,6 +325,25 @@ const PROBE = `(() => {
     backVisible: Boolean(back) && !back.hidden && Boolean(box) && box.height > 0 && box.width > 0,
     esc: Boolean(document.querySelector('.settings-sidebar__esc')),
     backIcon: Boolean(document.querySelector('.settings-sidebar__back-icon svg')),
+    // The About page's clear-cache control, read the way the back control above
+    // is: ON SCREEN, not merely in the document. The section is hidden outright
+    // when the host has no such command, so a presence check alone would pass on
+    // a page whose whole section the reader cannot see -- which is the fault this
+    // reading was added for, and it was found by looking at a capture rather than
+    // at the page.
+    clear: (function () {
+      const button = document.getElementById('clear-cache');
+      const group = document.getElementById('clear-cache-group');
+      if (!button) return { present: false };
+      const box = button.getBoundingClientRect();
+      return {
+        present: true,
+        label: button.textContent.trim(),
+        groupHidden: Boolean(group && group.hidden),
+        onScreen: !button.hidden && button.offsetParent !== null
+          && box.width > 0 && box.height > 0,
+      };
+    })(),
     title: document.querySelector('.settings-sidebar__title') ? document.querySelector('.settings-sidebar__title').textContent.trim() : null,
     // The facts list, as the page DREW it. Read off the rendered elements rather
     // than from the state the stub was handed, because the question this answers
@@ -410,9 +437,13 @@ const PROBE = `(() => {
 // `back` is which pages carry the way back, `title` is their heading, `reference`
 // is the pin's own line about which Control UI the page targets, and `cards` is
 // the notice banner's half: one page, no back control, notices instead.
+// `back` is which pages carry the way back, `title` is their heading, `reference`
+// is the pin's own line about which Control UI the page targets, `clear` is the
+// About page's clear-cache control, and `cards` is the notice banner's half: one
+// page, no back control, notices instead.
 const PAGES = [
   { name: 'settings', file: 'settings.html', state: SMALL_STATE, title: 'Settings', back: true },
-  { name: 'about', file: 'about.html', state: ABOUT_STATE, title: 'Claw Control UI', back: true, reference: true },
+  { name: 'about', file: 'about.html', state: ABOUT_STATE, title: 'Claw Control UI', back: true, reference: true, clear: true },
   { name: 'banner', file: 'banner.html', state: BANNER_STATE, title: null, back: false, cards: true },
 ];
 
@@ -583,6 +614,25 @@ app.whenReady().then(async () => {
         check(`${page.name}.html shows no version the pin did not give it`,
           probe.facts.every((f) => !/\b20\d\d\.\d+\.\d+\b/.test(f.value) || f.value === expected),
           JSON.stringify(probe.facts));
+      }
+
+      if (page.clear) {
+        // The manual escape hatch, ON SCREEN, in both appearances. It is on the
+        // About page rather than in Settings because About is where someone looks
+        // when the app is behaving oddly, and it is the one control there that
+        // appears only when the host can actually do it: about.js hides the whole
+        // section otherwise.
+        //
+        // This check is the thing that was missing. The page has carried the
+        // control since f31f5b7, and the real app has always shown it, but this
+        // harness's stub host did not answer clearCacheAndReload, so the page's
+        // own guard hid the section and every About capture it produced was of a
+        // page without it. Nothing failed, because nothing was checking: the
+        // captures were the evidence and they were the evidence that was wrong.
+        check(`${page.name}.html offers the clear-cache control, on screen, with the label it acts on`,
+          probe.clear && probe.clear.present && probe.clear.onScreen
+            && !probe.clear.groupHidden && probe.clear.label === 'Clear cache and refresh',
+          JSON.stringify(probe.clear));
       }
 
       if (page.cards) {
