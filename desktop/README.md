@@ -503,90 +503,27 @@ the CLI flag. Use `gh repo clone`, not `git clone git@…`: Git for Windows ship
 its own `ssh` that cannot see keys held by the Windows OpenSSH agent. Install a
 built installer silently with `/S`.
 
-## The local gate (pre-push hook)
+## The local gate
 
-The checks split in two, because one of them cannot run in CI.
-
-**CI runs the headless half on every push**: `npm test`, `check:imports`, and
-`check:package`. All three work with no display, so they run on every runner.
-
-**The GUI boot smoke cannot run in CI.** GitHub's macOS runners have no session
-to launch Electron into, so `npm run smoke` is gated locally by a `pre-push`
-hook instead. That is the check that catches the fault which actually shipped: a
-build that passed every unit test and still opened a fatal "A JavaScript error
-occurred in the main process" dialog. A green unit-test run is not evidence the
-app starts.
-
-Install the hook once per clone:
-
-```sh
-cd desktop && npm run hooks:install
-```
-
-That sets `core.hooksPath` to this repo's `.githooks` directory, so the hook is
-version-controlled rather than a hand-written file in `.git/hooks`, which git
-does not track and a fresh clone never receives.
-
-What the gate runs, at the push:
-
-- `npm run verify`, meaning the unit tests, the import audit, and the GUI boot
-  smoke.
-- `check:package`, if a packaged build is sitting in `dist/`, which audits the
-  artifact the source tree cannot show.
-
-**This hook is advisory, and it is not the gate.** `git push --no-verify` skips
-it, and a clone without `hooks:install` has no hook at all. The unskippable gate
-is the CI run on the commit you pushed. Skipping is sometimes right, a docs-only
-push or a headless host, but it is never free: the smoke is the only check that
-proves the app still starts.
-
+What the gate is, what it covers and what CI cannot check is shared:
+[../docs/testing.md](../docs/testing.md). Locally it runs `npm run verify`
+in `desktop/`, and it is advisory: `git push --no-verify` skips it, and
+a fresh clone has no hook until `core.hooksPath` points at it.
 ## Builds and releases
 
-Every build, local or CI, is named for what it actually is. `scripts/build.js`
-works that out and hands it to electron-builder, so the filename, the version in
-Settings, and what an updater sees are always the same string:
+The version scheme, the triggers, what a release must carry and how it is
+distributed are shared: [../docs/release.md](../docs/release.md). What is specific
+to this interface:
 
-| Tree state | Version |
-|---|---|
-| On a `v1.0.1` tag, clean | `1.0.1` |
-| Any other commit, clean | `1.0.1-dev.a1b2c3d4e5` |
-| Uncommitted changes | `1.0.1-dev.a1b2c3d4e5.dirty` |
-
-The `.dirty` marker exists for the same reason `build-info.json` records it: a
-commit hash on a build made from a modified tree names something that was never
-committed. A tag on a modified tree is demoted to a dev version too, because
-building "1.0.1" from a dirty checkout would produce something that is not 1.0.1.
-
-CI builds on three triggers, and they mean different things:
-
-| Trigger | Produces | Where it goes |
-|---|---|---|
-| **Push to `main`** | Dev build, `1.0.0-dev.<sha>` | Actions artifacts, 7 days |
-| **Tag `v*`** | Release, `1.0.0` | Published to [Releases](https://github.com/azuretek/claw-control-ui/releases), permanent |
-| **Manual dispatch** | Dev build of any ref | Actions artifacts, 7 days |
-
-CI passes its decision down as `CLAW_BUILD_VERSION`, which `scripts/build.js`
-honours over anything git says, so the workflow's `version` job stays the
-authority there without CI needing a separate mechanism from the one you use.
-
-Docs-only pushes are skipped (`paths-ignore`), and pushing several commits in a
-row cancels the superseded runs, except tag builds, which are never cancelled.
-
-**Cutting a release** is `npm run release [patch|minor|major]`. It bumps
-`package.json` and the lockfile, commits, tags, and pushes; CI does the rest. It
-refuses, with nothing written, off `main`, on a dirty tree, without an upstream,
-or on failing tests.
-
-**Never bump the version by hand.** `artifactName` interpolates it, so a
-hand-pushed tag can publish a release named `v1.1.0` full of
-`…-1.0.0-x64.exe`. CI's `version` job refuses that before either build starts.
-
-That same job also decides *whether* to build. `git push --follow-tags` sends
-the release commit and its tag together, and GitHub raises a separate event for
-each, so the branch run stands down and lets the tag run publish, rather than
-building identical code twice and uploading a misleadingly named dev copy
-beside the release. A manual dispatch is always honoured.
-
+- CI passes its decision down as `CLAW_BUILD_VERSION`, which
+  `scripts/build.js` honours over anything git says, so the workflow's
+  version job is the authority in CI without needing a second mechanism.
+- Cutting a release is `npm run release [patch|minor|major]`: it bumps
+  `package.json` and the lockfile, commits, tags and pushes. It refuses, with
+  nothing written, off `main`, on a dirty tree, without an upstream, or on
+  failing tests.
+- When a push carries a tag, the branch run stands down and lets the tag run
+  publish, rather than building the same code twice.
 ## Layout
 
 ```
