@@ -179,80 +179,22 @@ anything is uploaded: that `CFBundleIconName` is in the built plist, under
 either the top level or `CFBundleIcons`, and that the compiled `Assets.car`
 really holds an icon of that name.
 
-## Testing and releasing to TestFlight
+## Testing and releasing
 
-`.github/workflows/mobile-pipeline.yml` is the whole mobile pipeline in one
-file, and the only one that owns it: version, then a test leg per iOS version,
-then release. Pushing to `main` touching `mobile/` or `core/` tests the commit
-and uploads a dev build; a `v*` tag makes a release; a manual dispatch makes a
-dev build of any ref; a pull request runs the test legs only, needs no Apple
-credential and never signs anything.
+The triggers, the version table, the signing story and the iOS install path are
+shared: [../docs/release.md](../docs/release.md). What is specific to this
+interface:
 
-The release job needs the test matrix, so a failing leg cannot produce a
-TestFlight build. The legs build for the simulator and the release archives for
-a device, so there is no build to share between them: what is shared is within a
-leg, where the compile gate and the test run use one `build-for-testing` product
-through `test-without-building`, and within the release job, where the single
-archive is verified, exported and uploaded without being rebuilt.
-
-TestFlight is the channel for both kinds of build, so the two differ only in
-what they may do once they arrive: a dev build is internal-testing-only and a
-tag build may also go to external testers. How either is signed and uploaded is
-identical.
-
-The versions come from `desktop/scripts/build-version.js`, the same file the
-desktop app is versioned by, and CI passes them to `xcodebuild` as build setting
-overrides rather than editing `project.yml`:
-
-| Where it lands | Dev build | Release build |
-|---|---|---|
-| `CFBundleShortVersionString` | `X.Y.Z` (the next patch) | `X.Y.Z` (the tag) |
-| `CFBundleVersion` | the commit count | the commit count |
-| `ClawBuildVersion` (read by the app) | `X.Y.Z-dev.<count>.<sha>` | `X.Y.Z` |
-
-The first two are the only shapes App Store Connect accepts: three dot separated
-integers, and a build number that increases. The commit count is already the
-leading part of the dev version, so a build number and a version name are one
-number rather than two that can drift.
-
-Signing needs no certificate export, for the archive. The `ASC_*` secrets are an
-App Store Connect key with the App Manager role, and `-allowProvisioningUpdates`
-lets Apple issue the certificate and the profile itself: a run that starts with
-an empty keychain archives successfully, signed by an `Apple Development`
-certificate the service mints on the spot, which is what "Created via API" in
-its name records. The archive therefore carries a development identity, which is
-what an automatically signed archive is; the App Store export is the step that
-re-signs it with an Apple Distribution certificate.
-
-That export is where cloud signing stops, and it stops for a reason in the
-account rather than in this workflow. Xcode asks Apple for a cloud-managed
-distribution certificate and Apple refuses with a 403:
-
-    You haven't been given access to cloud-managed distribution certificates.
-    Please contact your team's Account Holder or an Admin to give you access.
-
-Measured on 2026-09-15 (run 35045131182), and the refusal is specifically about
-the managed certificate Xcode wants rather than about the key's reach: the same
-key registers bundle ids and issues an Apple Distribution certificate through
-the App Store Connect API when it is asked directly. So the export cannot
-succeed until somebody with the Account Holder or Admin role grants access to
-cloud-managed distribution certificates. Until then the run gets past the
-archive and dies in the export with "Cloud signing permission error" and "No
-profiles for 'com.azuretek.claw-mobile' were found", neither of which names a
-cause, which is why the step after the export reads Apple's own answer back out
-of Xcode's distribution log.
-
-One consequence of signing this way is worth knowing: the development
-certificate is minted per run, because every runner starts with an empty
-keychain and no private key that matches one already in the account, so each run
-leaves a certificate behind that can never sign anything again. They are issued
-to a key that died with its runner, and they accumulate in the account.
-
-The app record in App Store Connect is the other thing CI cannot create. The
-workflow checks for it before building and stops with Apple's own message if it
-is missing, and the bundle id itself is registered, so that check fails on the
-app record alone.
-
+- The whole pipeline is `.github/workflows/mobile-pipeline.yml`, one file:
+  version, a test leg per iOS version, then release. The release job needs the
+  test matrix, so a failing leg cannot produce a build.
+- The legs build for the simulator and the release job archives for a device, so
+  nothing is shared across that boundary. Within a leg the compile gate and the
+  test run use one `build-for-testing` product; within the release job the
+  single archive is verified, exported and uploaded without being rebuilt.
+- The app record in App Store Connect is the one thing CI cannot create: the
+  workflow checks for it before building and stops with Apple's own message when
+  it is missing, and the bundle id itself is registered.
 ## Layout
 
 | Path | What it is |
