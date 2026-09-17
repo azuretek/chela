@@ -21,7 +21,8 @@
     "./gateway-url.js": "./gateway-url.js",
     "./gateway-identity.js": "./gateway-identity.js",
     "./native-control-auth.js": "./native-control-auth.js",
-    "./device-identity.js": "./device-identity.js"
+    "./device-identity.js": "./device-identity.js",
+    "./release.js": "./release.js"
   },
   "scripts": {
     "test": "node --test test/*.test.js"

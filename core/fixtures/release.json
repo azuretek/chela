@@ -1,0 +1,42 @@
+{
+  "description": "Golden cases for core/release.js. 'published' is the real asset list of v1.0.1-dev.215.583ac26c1f, read with gh on 2026-09-17: a desktop-complete release with no iOS package, which the check must call incomplete. Adding published.assets and published.missing gives the complete set the same release would need.",
+  "version": "1.0.1-dev.215.583ac26c1f",
+  "channel": "dev",
+  "marketing": "1.0.1",
+  "tag": "v1.0.1-dev.215.583ac26c1f",
+  "published": {
+    "tag": "v1.0.1-dev.215.583ac26c1f",
+    "assets": [
+      "claw-desktop-1.0.1-dev.215.583ac26c1f-arm64.AppImage",
+      "claw-desktop-1.0.1-dev.215.583ac26c1f-arm64.dmg",
+      "claw-desktop-1.0.1-dev.215.583ac26c1f-arm64.zip",
+      "claw-desktop-1.0.1-dev.215.583ac26c1f-arm64.zip.blockmap",
+      "claw-desktop-1.0.1-dev.215.583ac26c1f-x64.dmg",
+      "claw-desktop-1.0.1-dev.215.583ac26c1f-x64.zip",
+      "claw-desktop-1.0.1-dev.215.583ac26c1f-x64.zip.blockmap",
+      "claw-desktop-1.0.1-dev.215.583ac26c1f-x86_64.AppImage",
+      "claw-desktop-Setup-1.0.1-dev.215.583ac26c1f-arm64.exe",
+      "claw-desktop-Setup-1.0.1-dev.215.583ac26c1f-arm64.exe.blockmap",
+      "claw-desktop-Setup-1.0.1-dev.215.583ac26c1f-x64.exe",
+      "claw-desktop-Setup-1.0.1-dev.215.583ac26c1f-x64.exe.blockmap",
+      "dev-linux-arm64.yml",
+      "dev-linux.yml",
+      "dev-mac.yml",
+      "dev.yml"
+    ],
+    "complete": false,
+    "missing": [
+      "claw-mobile-1.0.1-dev.215.583ac26c1f.ipa",
+      "claw-mobile-1.0.1-dev.215.583ac26c1f.manifest.plist"
+    ]
+  },
+  "manifest": {
+    "softwarePackage": "https://github.com/azuretek/claw-control-ui/releases/download/v1.0.1-dev.215.583ac26c1f/claw-mobile-1.0.1-dev.215.583ac26c1f.ipa",
+    "bundleIdentifier": "com.azuretek.claw-mobile",
+    "bundleVersion": "1.0.1",
+    "title": "Claw Control UI",
+    "kind": "software-package",
+    "metadataKind": "software"
+  },
+  "installUrl": "itms-services://?action=download-manifest&url=https://github.com/azuretek/claw-control-ui/releases/download/v1.0.1-dev.215.583ac26c1f/claw-mobile-1.0.1-dev.215.583ac26c1f.manifest.plist"
+}

@@ -1,0 +1,47 @@
+{
+  "description": "What a release must carry before it is published, per child client, and the asset names it is matched by. core/release.js is the logic over this file; core/fixtures/release.json is the golden contract; the iOS client mirrors only the OTA names it builds an install URL from. Same idiom as spec/feed.json and spec/naming.json.",
+  "why": [
+    "One release names one version, and if a release exists then every package that version distributes was built against it: the desktop installers for three platforms and two architectures, their updater metadata, and the iOS app with the manifest that installs it. A release carrying one client's package and not the other's is the bug this file exists to make impossible: measured 2026-09-17, v1.0.1-dev.215.583ac26c1f was published with twelve desktop files and no iOS package, while the phone was offered it and pointed at TestFlight.",
+    "The names are DEFAULTS, not a second copy of anything: electron-builder writes them from desktop/package.json's artifactName and the publish provider's channel, the mobile pipeline will name its own uploads from the same patterns, and the check asserts the release rather than trusting the steps. If a pattern here stops matching what a build produces, the release fails its own check loudly, which is the intended failure.",
+    "The channel token is substituted from spec/feed.json's channels map, which already owns those values for the releases feed. '{channel}-mac.yml' is dev-mac.yml on the dev channel and latest-mac.yml on stable, and that mapping has one owner, so a channel rename moves both together.",
+    "Blockmaps are deliberately NOT listed. They are companions electron-updater reads for a differential download, not packages, and a release missing one still installs in full.",
+    "The iOS pair is listed together because an .ipa alone is not installable: the OTA manifest is the thing that turns it into an install, and a release carrying one without the other would advertise a package the phone cannot act on."
+  ],
+  "tagPrefix": "v",
+  "children": {
+    "desktop": {
+      "assets": [
+        "claw-desktop-{version}-arm64.dmg",
+        "claw-desktop-{version}-x64.dmg",
+        "claw-desktop-{version}-arm64.zip",
+        "claw-desktop-{version}-x64.zip",
+        "claw-desktop-{version}-arm64.AppImage",
+        "claw-desktop-{version}-x86_64.AppImage",
+        "claw-desktop-Setup-{version}-arm64.exe",
+        "claw-desktop-Setup-{version}-x64.exe",
+        "{channel}-mac.yml",
+        "{channel}.yml",
+        "{channel}-linux.yml",
+        "{channel}-linux-arm64.yml"
+      ],
+      "prefix": "claw-desktop",
+      "why": "Eight artifacts from one build matrix: dmg and zip for mac arm64 and x64, AppImage for linux arm64 and x86_64, an NSIS installer for windows arm64 and x64. The prefix is what attributes a companion file, a blockmap, to this child when it matches no required name exactly."
+    },
+    "mobile": {
+      "assets": [
+        "claw-mobile-{version}.ipa",
+        "claw-mobile-{version}.manifest.plist"
+      ],
+      "prefix": "claw-mobile",
+      "why": "One app and the manifest that installs it. The manifest is what makes the .ipa actionable on a device, so the two are required together."
+    }
+  },
+  "ota": {
+    "urlScheme": "itms-services://?action=download-manifest&url=",
+    "appAsset": "claw-mobile-{version}.ipa",
+    "manifestAsset": "claw-mobile-{version}.manifest.plist",
+    "kind": "software-package",
+    "metadataKind": "software",
+    "why": "iOS installs an app from a manifest rather than from a file, which is what makes an OTA install possible without TestFlight. The scheme is a system one: the app asks, iOS shows one Install prompt, and the app is replaced in place with its container kept. Apple has narrowed it over time, so the fallback is the release page and the same prompt."
+  }
+}
