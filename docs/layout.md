@@ -20,12 +20,18 @@ belongs where it is: if two interfaces need it, it is core's.
    an Electron window is framed and how an iOS sheet is presented are the
    interface's. A primitive re-implemented in an interface is the fault this rule
    exists to prevent, because the second copy is the one that drifts.
-2. **A value more than one surface must agree on has one owner.** The specs in
-   `core/spec/` hold those values: imported where the language allows it,
-   mirrored with a parity test where it cannot be (`mobile/Claw` mirrors
-   `core/`), and asserted against the owner in a test for the planes that
-   import nothing at all, which is how a plist, a YAML and a paragraph stay in
-   step. A rename is then one edit plus whatever those assertions name.
+2. **A value more than one surface must agree on has one owner, and how each
+   interface consumes it is declared rather than assumed.** A spec in
+   `core/spec/` is consumed one of two ways. **Mirrored**: the interface
+   ports the values as constants and a parity test asserts them against the file
+   on disk, which is right for a name or a number because two copies of a value
+   can be compared. **Bundled**: the interface ships the file and reads it at
+   runtime, which is right for a file holding a **program**, because a port of a
+   script is a second copy of the program in another language rather than a
+   comparable value. The planes that import nothing at all, meaning a plist, a
+   YAML and a paragraph, are asserted against the owner in a test.
+   `core/test/specs.test.js` is the inventory: an unclassified spec fails it,
+   and the bundled set is asserted equal to what `mobile/project.yml` ships.
 3. **A shared entry point does not live in a child.** `mobile-pipeline.yml`
    used to call `desktop/scripts/build-version.js`, which made one interface
    own something both use. Shared tooling lives in `scripts/`, and a CLI in

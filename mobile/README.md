@@ -216,21 +216,30 @@ The fixtures are located by walking up from the test source file's own path
 pass on the machine that wrote it and fail everywhere else, and the failure
 would look like a parity disagreement rather than a missing file.
 
-`core/spec/*.json` is the source of truth for the data those rules read (the
-milestone floors, the easing constants). The Swift mirrors that data as
-constants rather than reading it at runtime, because a built app cannot read a
-file that lives in the repo and a bundled second copy would be one more thing to
-keep in step. The fixtures are what enforce that: change the spec, regenerate,
-and the Swift test fails until the port moves with it.
+`core/spec/*.json` is the source of truth for the values and the programs both
+interfaces use. How a client consumes one is declared rather than assumed, and
+`core/test/specs.test.js` is the inventory that fails when a spec is neither
+classified nor shipped:
 
-One spec is the exception, and it is the interesting one. `spec/
-prompt-metadata.json` holds the script the clients inject to put the
-client-context block on every outgoing prompt, and a script cannot be mirrored:
-a Swift copy of it would be a second copy of the same script in another
-language, which is exactly the drift the shared file exists to prevent. So the
-app BUNDLES that one spec (`project.yml` copies it in as a resource) and reads
-it at runtime, and `PromptMetadataParityTests` asserts that what it reads is
-byte-identical to the repo's copy and to what the desktop installs. Everything
-else about the block (the marker, the field order, the value rules, the identity)
-is ported and proven against the fixtures in `core/fixtures/prompt-metadata.json`
-like any other rule.
+- **Mirrored** specs are ported as Swift constants and proven against the file on
+  disk by a parity test, which is right for a name or a number because two copies
+  of a value can be compared. The fixtures enforce the behaviour the port
+  reproduces: change the spec, regenerate, and the Swift test fails until the
+  port moves with it.
+- **Bundled** specs are copied into the app by `project.yml` and read at runtime,
+  which is right for the eight that hold a program, or the values a client reads
+  for a shape it cannot restate: `prompt-metadata.json` and
+  `app-settings-affordance.json` hold the injected scripts the clients install,
+  `pairing.json` holds the observer that reports a pairing close,
+  `device-identity.json` holds the two scripts that keep an approved device
+  approved across a reinstall, `native-control-auth.json` holds the global the
+  page authenticates from, `gateway-identity.json` holds the signals a payload
+  is recognised by, `settings.json` travels with the shared settings page, and
+  `upstream-reference.json` is read by the reference page.
+
+A Swift copy of a script would be a second copy of the program in another
+language, which is exactly the drift the shared file exists to prevent, so the
+copy that ships IS the one owner. The parity tests prove it twice over: the
+bundled copy is asserted byte for byte against the repository's, and every value
+the client uses (the marker, the field order, the framing, the value rules, the
+identity) is read from that same file rather than mirrored.
