@@ -30,7 +30,12 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-cert-'));
 const PROFILE = path.join(TMP, 'profile');
 fs.mkdirSync(PROFILE, { recursive: true });
 
+// Pinned BOTH ways: main.js decides whether a run is isolated from the
+// '--user-data-dir' SWITCH, not from the path, so a harness that sets only
+// the path runs on the REAL profile. Measured 2026-09-16: this file did, and
+// the app booted against the live gateway while the harness asserted nothing.
 app.setPath('userData', PROFILE);
+app.commandLine.appendSwitch('user-data-dir', PROFILE);
 fs.writeFileSync(path.join(PROFILE, 'config.json'), `${JSON.stringify({
   gateways: [{ id: 'harness', label: 'Self-signed', url: `https://${HOST}/` }],
   activeGatewayId: 'harness',

@@ -22,7 +22,32 @@
  *   from a stylesheet.
  */
 
-body.banner-body { background: transparent; overflow: hidden; }
+/* The view is not a window-drag surface. Kept as the declared intent, and NOT
+   sufficient on its own: measured 2026-09-16, this declaration left the ✕ as
+   unclickable as before, because the drag region covering it is declared by a
+   SIBLING view (the page underneath, whose top band reaches under the banner) and
+   a non-draggable region in one view does not carve out another's. What fixed it
+   was taking the region off the band itself, in ui.css, where the strip is left
+   as the window's only drag surface. This stays because the banner's own pixels
+   are not a drag area by intent, and because a control added inside the banner
+   should not be the one that turns out to be unclickable. */
+body.banner-body {
+  background: transparent;
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* The shape the Electron documentation specifies for a control inside a drag
+   region: it is clickable only if it opts out itself. Belt and braces for a
+   region declared in THIS document, which the banner does not have. */
+.banner-body button,
+.banner-body a,
+.banner-body input,
+.banner-body [role="button"] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
 
 .banner-stack { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
 
