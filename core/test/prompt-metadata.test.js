@@ -58,10 +58,27 @@ const DESKTOP_HEADER = contextHeader('desktop');
 const MOBILE_HEADER = contextHeader('mobile');
 
 function hookedSocket(config) {
+  // A socket with both directions, because the hook now covers both: `send` is
+  // what the page writes into the wire, and `deliver` is the page receiving an
+  // answer, which is the half that carries a rewind's editor text back. The
+  // listener plumbing is the platform's shape (`addEventListener('message')`),
+  // which is what the Control UI's own browser socket uses.
   class FakeWebSocket {
+    constructor() { this.sent = null; this.listeners = []; }
     send(data) { this.sent = data; }
+    addEventListener(type, listener) { if (type === 'message') this.listeners.push(listener); }
+    deliver(data) {
+      const event = { type: 'message', data, target: this, currentTarget: this, origin: '', lastEventId: '', source: null, ports: [] };
+      for (const listener of this.listeners) listener(event);
+    }
   }
-  const context = { window: {}, WebSocket: FakeWebSocket };
+  // `MessageEvent` is provided because the hook builds a real one where it can:
+  // a rewritten frame is handed to the page as a message event rather than as a
+  // mutated one, which a page may legitimately test with `instanceof`.
+  class FakeMessageEvent {
+    constructor(type, init) { this.type = type; Object.assign(this, init || {}); }
+  }
+  const context = { window: {}, WebSocket: FakeWebSocket, MessageEvent: FakeMessageEvent };
   vm.runInNewContext(clientScript(config), context);
   return new FakeWebSocket();
 }
@@ -221,6 +238,137 @@ test('the model receives the block plus closing on the active turn, at frame lev
   assert.ok(block.endsWith(CLOSING[CLOSING.length - 1]), 'the block ends with the closing line');
 });
 
+/* --------------------------------------- the way back: the rewind boundary */
+
+/*
+ * The other half of the prompt block, and the one the gateway cannot do for us.
+ *
+ * stripInboundMetadata runs on display text, and `sessions.rewind` and
+ * `sessions.fork` return `editorText` straight out of the stored user message,
+ * which carries the block because that is what was sent. The Control UI writes
+ * that string into the composer, so without a boundary on our side a roll-back
+ * hands the reader their own message with the client context glued to the front
+ * of it. These drive the real round trip through the real hook: the frame the
+ * page sends, the answer the gateway gives, and the frame the restored draft
+ * sends next.
+ */
+
+const SAMPLE_FACTS = {
+  host: 'example-host', os: 'macOS 26.6.2 (arm64)', user: 'example-user',
+  home: '/home/example-user', locale: 'en-US', timezone: 'Europe/London',
+  client: 'Claw Control UI (claw-desktop) 1.0.1',
+};
+
+/** The answer the gateway sends for one request id, with `editorText` on it. */
+function rewindAnswer(id, editorText) {
+  return JSON.stringify({ id, result: { editorText, editorAttachments: [] } });
+}
+
+/** Install the hook, register the page's listener, and give both back. */
+function listeningSocket(config) {
+  const socket = hookedSocket(config);
+  const received = [];
+  socket.addEventListener('message', (event) => { received.push(event.data); });
+  return { socket, received };
+}
+
+test('a rewind hands the composer the reader\'s own words, and the block still went out', () => {
+  const block = formatBlock(SAMPLE_FACTS);
+  const typed = 'what time is it?';
+  const { socket, received } = listeningSocket({ enabled: true, block, client: 'desktop' });
+
+  // 1. The frame the page actually sends: the block, the blank line, the words.
+  const sent = sentMessage(socket, typed);
+  assert.strictEqual(sent, `${block}\n\n${typed}`, 'the block rides the outbound frame');
+
+  // 2. The roll-back: the gateway answers with the STORED user message, which is
+  //    what was sent in step 1.
+  socket.send(JSON.stringify({ id: 'rewind-1', method: 'sessions.rewind', params: { sessionKey: 's', entryId: 'e' } }));
+  socket.deliver(rewindAnswer('rewind-1', sent));
+
+  assert.strictEqual(received.length, 1, 'the page got its answer');
+  const restored = JSON.parse(received[0]).result.editorText;
+  assert.strictEqual(restored, typed, 'the composer is handed the words alone');
+  assert.ok(!restored.includes(CONTEXT_MARKER), 'no marker survives into the composer');
+  for (const line of FRAMING) assert.ok(!restored.includes(line), 'no framing line survives into the composer');
+  for (const line of CLOSING) assert.ok(!restored.includes(line), 'no closing line survives into the composer');
+  assert.ok(!restored.includes('end of client context'), 'the boundary marker does not leak either');
+  // And the rest of the answer is untouched, so this is a strip and not a rebuild.
+  const whole = JSON.parse(received[0]);
+  assert.deepStrictEqual(whole.result.editorAttachments, []);
+  assert.strictEqual(whole.id, 'rewind-1');
+
+  // 3. Sending that restored text again puts a FRESH block on the frame: the
+  //    boundary removed the reader's view of the block, not the feature.
+  const resent = sentMessage(socket, restored);
+  assert.strictEqual(resent, `${block}\n\n${typed}`, 'the re-sent prompt carries the block again');
+  assert.ok(resent.includes(CONTEXT_MARKER), 'the model still receives the context');
+});
+
+test('a fork is boundary-checked the same way, because it restores the same field', () => {
+  const block = formatBlock(SAMPLE_FACTS, 'mobile');
+  const typed = 'and this one?';
+  const { socket, received } = listeningSocket({ enabled: true, block, client: 'mobile' });
+
+  socket.send(JSON.stringify({ id: 'fork-1', method: 'sessions.fork', params: { sessionKey: 's' } }));
+  socket.deliver(rewindAnswer('fork-1', `${block}\n\n${typed}`));
+
+  assert.strictEqual(JSON.parse(received[0]).result.editorText, typed);
+});
+
+test('an answer we did not ask for is left byte-identical', () => {
+  const block = formatBlock(SAMPLE_FACTS);
+  const stored = `${block}\n\nhello`;
+  const { socket, received } = listeningSocket({ enabled: true, block });
+
+  // No rewind was sent, so this is somebody else's frame and none of our
+  // business, whatever it happens to contain.
+  socket.deliver(rewindAnswer('someone-elses-1', stored));
+  assert.strictEqual(received[0], rewindAnswer('someone-elses-1', stored));
+
+  // A rewind we DID send, whose text carries no block, is equally untouched:
+  // the boundary removes a block, it does not rewrite an answer.
+  socket.send(JSON.stringify({ id: 'rewind-2', method: 'sessions.rewind', params: {} }));
+  const clean = rewindAnswer('rewind-2', 'just my words');
+  socket.deliver(clean);
+  assert.strictEqual(received[1], clean);
+
+  // And an answer that is not JSON at all, or is a frame of another shape, is
+  // passed through rather than dropped.
+  socket.deliver('not json');
+  socket.deliver(JSON.stringify({ id: 'rewind-3', event: 'chat.delta' }));
+  assert.deepStrictEqual(received.slice(2), ['not json', JSON.stringify({ id: 'rewind-3', event: 'chat.delta' })]);
+});
+
+test('with the feature off, a rewind answer is untouched too', () => {
+  const block = formatBlock(SAMPLE_FACTS);
+  const stored = `${block}\n\nhello`;
+  const { socket, received } = listeningSocket({ enabled: false, block });
+
+  socket.send(JSON.stringify({ id: 'rewind-4', method: 'sessions.rewind', params: {} }));
+  socket.deliver(rewindAnswer('rewind-4', stored));
+
+  // Nothing was injected on the way out because the feature is off, so there is
+  // nothing to remove on the way back and the answer arrives as the gateway sent it.
+  assert.strictEqual(received[0], rewindAnswer('rewind-4', stored));
+});
+
+test('a rewind id is consumed once, so a replay cannot be stripped twice', () => {
+  const block = formatBlock(SAMPLE_FACTS);
+  const typed = 'hello';
+  const { socket, received } = listeningSocket({ enabled: true, block });
+  const stored = `${block}\n\n${typed}`;
+
+  socket.send(JSON.stringify({ id: 'rewind-5', method: 'sessions.rewind', params: {} }));
+  socket.deliver(rewindAnswer('rewind-5', stored));
+  // The same id again (a transport replay): the answer is now somebody else's
+  // frame as far as this hook is concerned, which is the conservative reading.
+  socket.deliver(rewindAnswer('rewind-5', stored));
+
+  assert.strictEqual(JSON.parse(received[0]).result.editorText, typed);
+  assert.strictEqual(received[1], rewindAnswer('rewind-5', stored));
+});
+
 /* ------------------------------------------------------------- one interpreter */
 
 /*
@@ -357,12 +505,21 @@ test('the script decorates a real chat.send frame and leaves every other frame a
   assert.strictEqual(JSON.parse(socket.sent).params.message, `${block}\n\nhello`);
 });
 
-test('the script rewrites outbound frames only, because the gateway does the hiding', () => {
+test('the script rewrites frames in both directions, and only the methods it owns', () => {
   const script = hookSource();
-  assert.doesNotMatch(script, /addEventListener/);
-  assert.doesNotMatch(script, /onmessage/);
-  assert.doesNotMatch(script, /\bfetch\b/);
+  // Outbound: the block goes on. Inbound: a rewind's editor text comes back
+  // without it. Both halves are in ONE script that both clients install, which
+  // is why this is not the second owner the outbound-only revision was avoiding:
+  // it suppresses nothing the gateway already suppresses, it applies the
+  // gateway's own rule to the one field the gateway's stripper never sees.
   assert.match(script, /WebSocket\.prototype\.send/);
+  assert.match(script, /WebSocket\.prototype\.addEventListener/);
+  assert.match(script, /WebSocket\.prototype, 'onmessage'/);
+  // Nothing is fetched, navigated or intercepted outside the socket: the hook is
+  // a wire transformer, not a second HTTP client.
+  assert.doesNotMatch(script, /\bfetch\b/);
+  assert.doesNotMatch(script, /XMLHttpRequest/);
+  assert.doesNotMatch(script, /localStorage/);
 });
 
 test('the platform-free module gathers nothing of its own', () => {
