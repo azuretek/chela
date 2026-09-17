@@ -60,6 +60,33 @@ Three other things can block a publish, and none of them is this gate:
 - The **asset completeness check** in `release.yml`'s release job refuses to PUBLISH a release whose payload is incomplete. The release is created as a draft, every file the build produced is attached and then compared against what the release actually carries, and the draft is published only once the two agree. A run that cannot complete the set fails and withdraws the draft, so a release that is live is always one whose payload is whole. This is the half the artifact gate cannot see, because that gate reads the directory the build runners produced rather than the release itself: a flaky upload passes it, publishes, and leaves a release whose downloads can never finish. The payload is covered by the same rule as a red platform, in the same words: nothing ships while any part of it is missing.
 - The **version job** stands a build down for a commit covered by its own tag build, so no publish is expected at all.
 
+## How long a release takes, and the budget it is held to
+
+**The fast path is a push to `main`, and its budget is 9 minutes to a published desktop release and 13 to a phone upload, on a healthy network.** Measured 2026-09-17, before the speed pass: the desktop released in 9 m 36 s, the phone in 13 m 19 s. The budget is a claim about our own work rather than a promise Apple keeps, because most of what is left is not ours.
+
+| A push to `main`, measured 2026-09-17 | Desktop | Phone |
+|---|---|---|
+| end to end | 9 m 36 s | 13 m 19 s |
+| this platform's own build legs | macOS 8 m 26 s, Windows 2 m 30 s, Linux 51 s | iOS 26 5 m 56 s, iOS 27 5 m 12 s |
+| the gate | 5 m 58 s, in parallel | 8 m 35 s, in parallel |
+| publish job | 50 s | 4 m 21 s |
+
+**Both pipelines are paced by one job, and it is the macOS desktop leg.** The phone pipeline sits on its gate for 8 m 35 s while its own legs finish in under 6 minutes. Inside that leg's 7 m 40 s `Build` step, **6 m 47 s is four Apple notarization round trips taken one after another** (app arm64 2 m 32 s, app x64 2 m 28 s, dmg arm64 52 s, dmg x64 55 s); packaging, signing and dmg-building together are about 53 s. On the phone side the largest single cost was the simulator: 3 m 15 s of a 3 m 57 s test step was booting it and installing the bundles, against about 30 s of suite.
+
+**That is the honest reason the end-to-end numbers cannot go much lower from inside this directory:**
+
+- **The four notarizations are serial inside one electron-builder invocation.** Overlapping them would take the macOS leg to roughly 3 m 30 s, about four minutes off the shared critical path, and it is `electron-builder.yml` and `desktop/scripts/notarize.js` that would have to change, not a workflow.
+- **Both iOS legs are the point of the matrix**, and a leg cannot verify a runtime it never booted.
+- **The payload has to cross a runner boundary.** The build legs upload ~600 MB of installers as artifacts and the publish job downloads them to check the set. On 2026-09-17 the upload path was degraded to about 1 MB/s against 24 MB/s earlier that day, and that, rather than the job's own work, is what a slow publish job on such a day is.
+
+**What the 2026-09-17 speed pass changed**, none of it by weakening a gate:
+
+- Electron's distribution and electron-builder's tool bundles are cached per OS and lockfile (and the artifact upload stores rather than recompresses installers that are already compressed).
+- Each Xcode bundle's version is read from `Contents/version.plist` instead of spawning `xcodebuild -version` once per bundle, which cost 28 s of an iOS 26 leg and 18 s of the phone publish job. The chosen bundle is still asked for its version, so the toolchain is proved to work, and the Xcode 16 floor is unchanged.
+- The simulator is resolved and starts booting BEFORE the compile, and the test step waits for it with `simctl bootstatus -b`, so the boot overlaps the build instead of following it.
+
+**Deliberately left slow**, so nobody removes one of these for a number: the two iOS legs, the whole matrix on a publishing run (the artifact gate refuses a release that is missing a platform), and the draft → attach → verify → publish sequence, whose completeness check is the only thing standing between a flaky upload and a release whose downloads never finish.
+
 ## What this rule does not cover
 
 Named so it is not mistaken for coverage.
