@@ -34,7 +34,10 @@
        It is also a different dialog on each platform, and on Windows it only
        exists at all from Electron 15. See the overlay section in main.js. -->
   <div class="scrim" id="scrim">
-    <div class="dragbar"></div>
+    <!-- A draggable band the height of the title bar: this view covers the whole
+         window including the strip, so About has to be able to move the window
+         by itself. See settings.html and the dragbar section in ui.css. -->
+    <div class="dragbar dragbar--window"></div>
     <div class="modal modal--narrow" role="dialog" aria-modal="true" aria-labelledby="title">
       <header class="modal__header settings-sidebar__header">
         <!-- The way back, and it is the Control UI's own back control: the same

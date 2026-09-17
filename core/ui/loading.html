@@ -21,8 +21,17 @@
        The failure text is not here. It slides down from the top as a notice,
        with the link to Settings, because a failure is a condition rather than a
        place: it should not take the screen away from someone who did not ask to
-       leave it. See failureNotice() in src/connection.js. -->
-  <div class="dragbar"></div>
+       leave it. See failureNotice() in src/connection.js.
+
+       NO GRAB BAND. Every page of ours used to carry one across its own top 50px,
+       and on this page that band was the thing that made the notice banner's own
+       controls unclickable: the cover's view begins at window y 36, below the
+       title strip, so the band landed on window y 36..86 while the banner's ✕ and
+       Open Settings sit at 58..86. This page does not need one, because the strip
+       above it is still on screen while the cover is up, and that strip is the
+       window's drag surface. See the dragbar section in ui.css, and
+       desktop/test/drag-regions.test.js, which fails if a page below the strip
+       carries a band again. -->
   <main class="loading" id="root">
     <div class="loading__mark">
       <img class="loading__logo" src="assets/claw.svg" alt="">

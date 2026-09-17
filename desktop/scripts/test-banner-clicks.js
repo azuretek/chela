@@ -170,6 +170,9 @@ app.whenReady().then(async () => {
       close: rect('.banner__close'),
       action: rect('.banner__action'),
       stack: rect('.banner-stack'),
+      // How many cards are up, so a click that dismissed one can be told apart
+      // from a click that did nothing while a second card kept the view alive.
+      cards: document.querySelectorAll('.banner__close').length,
       height: document.body.scrollHeight,
     };
   })()`, 6000);
@@ -180,22 +183,68 @@ app.whenReady().then(async () => {
   note('banner view', `y ${inset}..${inset + targets.height} (page reports ${targets.height}px tall)`);
   note('banner controls (page coords)', JSON.stringify({ close: targets.close, action: targets.action }));
 
-  // Every other page, and how far its grab band reaches. This is the half that
-  // explains the fault rather than describing it.
+  // Every other page, and every element in it that CLAIMS A DRAG REGION, with
+  // where that region lands in the window.
+  //
+  // The region is the whole question, and reading the band instead is how this was
+  // missed the first time: a band with a region on it and a band without one look
+  // identical in a stylesheet, print identical geometry, and behave opposite ways.
+  // So this asks the computed style of every element on every page rather than
+  // looking for a familiar class, and reports each region against the banner's own
+  // controls rather than against the page it was declared in.
+  //
+  // Each view's own origin comes from the window's child views, not from a table of
+  // page names: a region is registered against the WINDOW, so its page-space
+  // geometry means nothing until the view it belongs to is placed.
+  const origins = new Map();
+  for (const view of window.contentView.children || []) {
+    try {
+      if (view.webContents && !view.webContents.isDestroyed()) origins.set(view.webContents.id, view.getBounds().y);
+    } catch { /* not a web contents view */ }
+  }
+
+  // The band the banner's own controls occupy, in window coordinates:
+  // the strip's height down to the banner view, then the controls inside it.
+  const overTop = inset + Math.round(targets.close ? Math.min(targets.close.y, targets.action ? targets.action.y : 1e9) : 0);
+  const overBottom = inset + Math.round(Math.max(
+    targets.close ? targets.close.y + targets.close.h : 0,
+    targets.action ? targets.action.y + targets.action.h : 0,
+  ));
+  note('the banner band', `window y ${inset}..${inset + targets.height}, its controls ${overTop}..${overBottom}`);
+
+  let regionsSeen = 0;
   for (const wc of webContents.getAllWebContents()) {
     if (wc.isDestroyed() || wc.id === bc.id) continue;
-    const drag = await ask(wc, `(() => {
-        const node = document.querySelector('.dragbar');
-        if (!node) return null;
-        const r = node.getBoundingClientRect();
-        return { top: Math.round(r.y), bottom: Math.round(r.y + r.height), height: Math.round(r.height) };
+    const found = await ask(wc, `(() => {
+        const out = [];
+        for (const el of document.querySelectorAll('*')) {
+          const cs = getComputedStyle(el);
+          if (cs.getPropertyValue('app-region') !== 'drag') continue;
+          const b = el.getBoundingClientRect();
+          out.push({
+            sel: el.tagName.toLowerCase()
+              + (el.className && typeof el.className === 'string' && el.className.trim()
+                ? '.' + el.className.trim().split(/\\s+/).join('.') : '')
+              + (el.id ? '#' + el.id : ''),
+            top: Math.round(b.top), bottom: Math.round(b.bottom),
+          });
+        }
+        return out;
       })()`);
     const name = (wc.getURL().split('/').pop() || wc.getURL()).split('?')[0];
-    if (drag) {
-      const overlaps = drag.top < inset + targets.height && drag.bottom > inset;
-      note(`grab band on ${name}`, `page y ${drag.top}..${drag.bottom} (${drag.height}px) -> window y ${inset + drag.top}..${inset + drag.bottom}` + (overlaps ? '  OVERLAPS THE BANNER' : ''));
+    const origin = origins.has(wc.id) ? origins.get(wc.id) : null;
+    if (!Array.isArray(found) || !found.length) continue;
+    for (const region of found) {
+      regionsSeen += 1;
+      const top = (origin === null ? inset : origin) + region.top;
+      const bottom = (origin === null ? inset : origin) + region.bottom;
+      const over = top < overBottom && bottom > overTop;
+      note(`drag region on ${name}`, `${region.sel} -> window y ${top}..${bottom}`
+        + (origin === null ? ' (view origin unknown, assumed the strip)' : '')
+        + (over ? "  OVER THE BANNER'S CONTROLS" : ''));
     }
   }
+  if (!regionsSeen) note('drag regions', 'none on any page, so nothing can swallow a click above the page');
 
   const target = TARGET === 'action' ? targets.action : targets.close;
   check(`the banner has the ${TARGET} control to aim at`, Boolean(target), `the ${TARGET} control is not in the banner`);

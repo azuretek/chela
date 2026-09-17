@@ -39,9 +39,16 @@
        dim wash in the first case and as a plain themed background in the
        second; the card is identical either way. See openSettings in main.js. -->
   <div class="scrim" id="scrim">
-    <!-- A slim draggable band at the top edge. The rest of the scrim is a
-         dismiss target, and a drag region swallows the click that would need, so the window stays movable without costing click-outside-to-close. -->
-    <div class="dragbar"></div>
+    <!-- A draggable band the height of the title bar, and it is the one band in
+         the app that claims a drag region (`dragbar--window`). This view is laid
+         out over the whole window including the strip, so while Settings is open
+         the strip is not reachable and this band is what moves the window.
+         Claiming the region here rather than across the scrim is what keeps
+         click-outside-to-close working: a drag region swallows the mouse-down it
+         covers. Being the strip's own height and starting at window y 0, it stops
+         where the content area begins and so cannot reach the notice banner; see
+         the dragbar section in core/ui/ui.css. -->
+    <div class="dragbar dragbar--window"></div>
     <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="title">
       <header class="modal__header settings-sidebar__header">
         <!-- The way back to the Control UI, and it is the Control UI's OWN back
