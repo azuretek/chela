@@ -60,11 +60,17 @@ struct SettingsSurface: UIViewRepresentable {
         configuration.userContentController = scripts
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
-        // Painted with the system background rather than left transparent: the
-        // page's first frame would otherwise show whatever is behind the sheet.
+        // Painted with the PAGE's own resolved background, for the reason About
+        // gives in full: this page draws its card on a wash (\`--scrim\` is the
+        // palette's \`--bg\` at 70%), it is not opaque, and anything behind it shows
+        // through — so a host colour that follows the DEVICE rather than the
+        // palette composites to a second shade at the card's edge. Same map, same
+        // page, one rule for both surfaces. A page with no resolved palette keeps
+        // the system colour, which is what its first frame is painted on.
+        let pageBackground = PaletteColour.uiColor(from: tokens["--bg"]) ?? .systemBackground
         webView.isOpaque = false
-        webView.backgroundColor = .systemBackground
-        webView.scrollView.backgroundColor = .systemBackground
+        webView.backgroundColor = pageBackground
+        webView.scrollView.backgroundColor = pageBackground
         webView.overrideUserInterfaceStyle = appearance.userInterfaceStyle
         // The page paints the strips too, rather than leaving them to the native
         // layer.
