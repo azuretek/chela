@@ -120,41 +120,15 @@
 
     <div id="gateways"></div>
 
-    <div class="settings-group">
-      <!-- Upstream draws a labelled field as a stacked row: the title and its
-           description in one column, the control under them at full width. Ours
-           put the label above the input with the control after it, which is why
-           an input and the select beside it never sat on the same rhythm as the
-           rows above. -->
-      <div class="settings-row settings-row--stacked">
-        <div class="settings-row__text">
-          <label class="settings-row__title" for="new-label">Add a gateway</label>
-        </div>
-        <div class="settings-row__control">
-          <input type="text" id="new-label" placeholder="Name (e.g. home)" autocomplete="off">
-        </div>
-      </div>
-      <!-- Its own row, because a stacked row holds one control: two inputs in
-           one control column is a flex row, and both of them are width 100%,
-           so they would fight for the same line. The text column is empty here
-           rather than removed, so the row keeps the same inset as the one above
-           it and the two inputs line up. -->
-      <div class="settings-row settings-row--stacked">
-        <div class="settings-row__text">
-          <label class="settings-row__title" for="new-url">Address</label>
-        </div>
-        <div class="settings-row__control">
-          <input type="url" id="new-url" placeholder="https://host.example.ts.net" autocomplete="off" spellcheck="false">
-        </div>
-      </div>
-      <div class="settings-row settings-row--actions">
-        <div class="settings-row__control">
-          <button id="test">Test connection</button>
-          <button id="add" class="primary">Add</button>
-        </div>
-        <div class="result" id="test-result"></div>
-      </div>
-    </div>
+    <!-- The add form, built by the page rather than written out here, because it
+         is the SAME field set the editor above renders: one builder, one set of
+         fields, one order. A second copy of these rows in the markup is how the
+         two came to offer different things, where this form took a name and an
+         address and the editor took a name, an address, a token, a password and
+         headers, so a gateway created here was half-configured until someone
+         found its row and pressed Edit. See `gatewayFields` and
+         `renderAddForm` in settings.js. -->
+    <div class="settings-group" id="add-gateway"></div>
   </section>
 
   <!-- Still one element, because a first run hides all three of these at once:

@@ -139,6 +139,70 @@ final class SettingsSpecTests: XCTestCase {
         XCTAssertFalse(absent.isEmpty, "expected at least one desktop-only entry to check")
     }
 
+    // MARK: The add form
+
+    func testTheAddGatewayReplyCarriesTheCreatedEntrySoTheFormSavesInOnePass() throws {
+        // The shared page's one-pass add form stores the credential typed into it
+        // against the id this host answers with, because a credential is kept
+        // against a gateway's id and that id does not exist until this side makes
+        // it. A host that answers with the state and no entry leaves the page
+        // nothing to write to, which is the second trip through Edit that the
+        // one-pass form exists to remove.
+        let source = try readSource("SettingsHost.swift")
+        let start = try XCTUnwrap(
+            source.range(of: "case \"addGateway\":"),
+            "the addGateway case is gone from the settings host"
+        )
+        let rest = source[start.lowerBound...]
+        let end = try XCTUnwrap(
+            rest.range(of: "\n        case "),
+            "the addGateway case has no end, so this test cannot read its body"
+        )
+        let body = rest[..<end.lowerBound]
+
+        XCTAssertTrue(body.contains("store.add("), "the addGateway case does not create anything")
+        XCTAssertTrue(
+            body.contains("answer[\"added\"]"),
+            "the addGateway reply carries no entry, so the page cannot store the credential in the same pass"
+        )
+        XCTAssertTrue(
+            body.contains("refusedState()"),
+            "a refused address is no longer reported as a refusal, so the page would report a gateway that was not added"
+        )
+    }
+
+    func testTheSharedPagesAddFormOffersEveryFieldTheEditorDoes() throws {
+        // The add form and the editor render ONE field set, so a gateway cannot be
+        // created half-configured and finished later. This is the phone's half of
+        // a fact both clients hold: the page is the same file in this bundle, so a
+        // page that grew a second shape would be this fault here too, and the
+        // screenshot that would have shown it is taken on a simulator where the
+        // add form is the only gateway form reachable.
+        let page = try String(
+            contentsOf: try Fixtures.root()
+                .appendingPathComponent("core")
+                .appendingPathComponent("ui")
+                .appendingPathComponent("settings.js"),
+            encoding: .utf8
+        )
+        XCTAssertEqual(
+            page.components(separatedBy: "function gatewayFields(").count - 1, 1,
+            "the shared page does not have exactly one gateway field set"
+        )
+        XCTAssertTrue(
+            page.contains("token: 'new-token'"),
+            "the add form carries no token field, so a gateway is created without one"
+        )
+        XCTAssertTrue(
+            page.contains("password: 'new-password'"),
+            "the add form carries no password field"
+        )
+        XCTAssertTrue(
+            page.contains("mode: 'new'") && page.contains("mode: 'stored'"),
+            "the two flows do not both render the shared field set"
+        )
+    }
+
     // MARK: Reading the repository
 
     private func spec() throws -> [String: Any] {

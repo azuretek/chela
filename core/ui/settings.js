@@ -168,16 +168,107 @@ function applySurface() {
 
 /* ---------------------------------------------------------------- gateways */
 
-// The renderer never receives a stored secret, only whether one exists. So the
-// input is always empty, and its placeholder carries the state instead.
-function secretRow(gw, { key, title, has, hint }, out) {
-  const input = el('input', {
-    type: 'password',
-    autocomplete: 'off',
-    spellcheck: false,
-    placeholder: has ? 'Stored, type a new value to replace it' : 'Not set',
-  });
+/**
+ * Everything this app can store for a gateway, in ONE place and one order.
+ *
+ * BOTH flows render this: the "Add a gateway" form under the list, and the
+ * editor that opens under a row. They used to be two shapes, and the difference
+ * between them was the fault rather than a detail of it. The form took a name and
+ * an address; the editor took a name, an address, a token, a password and
+ * headers. So a gateway made on that form was half-configured from the moment it
+ * existed, and finishing it meant finding its row again and pressing Edit. Two
+ * shapes for one object is how a page comes to disagree with itself, so there is
+ * one now, and both flows fill in the same fields.
+ *
+ * Nothing here writes anything. It hands back the rows and the controls and the
+ * caller decides what to save, because the two flows save at genuinely different
+ * moments: the editor writes each credential when its own Save is pressed, and
+ * the add form writes everything in one pass, once there is a gateway to attach
+ * it to.
+ *
+ * The credentials are write-only on both paths, so no value is ever read back:
+ * every credential input starts empty and its placeholder carries the state
+ * instead. `ids` is for the add form, which has to keep the element names its
+ * own harnesses look for; the editor holds its own references and names none.
+ *
+ * @param {{label?: string, url?: string, credentials?: object}} gw the gateway, or blanks
+ * @param {{mode: 'new'|'stored', ids?: object, out?: Element}} opts
+ * @returns {{node: Element, name: Element, url: Element, token: Element,
+ *            password: Element, headerName: Element, headerValue: Element}}
+ */
+function gatewayFields(gw, { mode, ids = {}, out = null }) {
+  const creds = gw.credentials || { hasToken: false, hasPassword: false, headers: [] };
+  const named = (id, props) => el('input', { ...(id ? { id } : {}), ...props });
+  // A stored secret is never read back, so the state lives in the placeholder:
+  // an input holding dots would be this page inventing a value it was never given.
+  const stored = (has) => (mode === 'stored' && has ? 'Stored, type a new value to replace it' : 'Not set');
 
+  const name = named(ids.label, { type: 'text', value: gw.label || '', placeholder: 'Name (e.g. home)', autocomplete: 'off' });
+  const url = named(ids.url, { type: 'url', value: gw.url || '', placeholder: 'https://host.example.ts.net', autocomplete: 'off', spellcheck: false });
+  const token = named(ids.token, { type: 'password', autocomplete: 'off', spellcheck: false, placeholder: stored(creds.hasToken) });
+  const password = named(ids.password, { type: 'password', autocomplete: 'off', spellcheck: false, placeholder: stored(creds.hasPassword) });
+
+  // The one thing a reader cannot find out by looking: a credential is only ever
+  // proven by a connection. Editing an existing gateway, that answer already
+  // arrived, because this gateway is on screen having been connected to. Creating
+  // one, there is nothing to check against yet, so the field SAYS so rather than
+  // being hidden or quietly accepted.
+  const unprovable = mode === 'new'
+    ? ' It cannot be checked here, only on the first connection, so a wrong one is reported then rather than now.'
+    : '';
+
+  // One row per credential, with its own Save and Clear directly under it when
+  // there is a gateway to write to. The buttons belong to the field rather than
+  // to the panel, which is what stops a row of three unexplained Save buttons.
+  const credential = ({ key, title, has, control, hint }) => el('div', {}, [
+    field(`${title}${mode === 'stored' && has ? ' · stored' : ''}`, control, hint),
+    mode === 'stored'
+      ? el('div', { className: 'settings-row settings-row--actions' }, [
+        el('div', { className: 'settings-row__control' }, credentialButtons(gw, control, { key, title, has }, out)),
+      ])
+      : null,
+  ]);
+
+  const headers = hasSetting('gatewayHeaders') ? headerRows(gw, { mode, ids, out }) : null;
+
+  return {
+    node: el('div', {}, [
+      field('Name', name, 'Optional. What this gateway is called in the list. Left empty, it is named after its address.'),
+      field('Address', url, 'Required. The gateway’s own address, for example https://host.example.ts.net'),
+      credential({
+        key: 'token',
+        title: 'Gateway token',
+        has: creds.hasToken,
+        control: token,
+        hint: `Handed to the Control UI when you connect, so a gateway with a token never shows you a sign-in form. From \`openclaw gateway auth-token --show\` on that gateway.${unprovable}`,
+      }),
+      credential({
+        key: 'password',
+        title: 'Gateway password',
+        has: creds.hasPassword,
+        control: password,
+        hint: 'Only for gateways in password mode. There is no URL handoff for passwords, so the app fills the sign-in form instead, best effort.',
+      }),
+      headers ? el('div', {}, [el('hr'), headers.node]) : null,
+    ]),
+    name,
+    url,
+    token,
+    password,
+    headerName: headers ? headers.name : null,
+    headerValue: headers ? headers.value : null,
+  };
+}
+
+/**
+ * One credential's own Save and Clear, which belong to the field above them.
+ *
+ * Only the editor has these, and the reason is the store rather than the
+ * surface: a credential is kept against a gateway's id, so there is nothing to
+ * write one to until the gateway exists. The add form's one button saves its
+ * credentials with everything else, in the same pass that creates it.
+ */
+function credentialButtons(gw, input, { key, title, has }, out) {
   const save = el('button', {
     className: 'primary',
     textContent: 'Save',
@@ -203,12 +294,8 @@ function secretRow(gw, { key, title, has, hint }, out) {
     },
   });
 
-  return el('div', {}, [
-    field(`${title}${has ? ' · stored' : ''}`, input, hint),
-    el('div', { className: 'settings-row settings-row--actions' }, [
-      el('div', { className: 'settings-row__control' }, [save, clear]),
-    ]),
-  ]);}
+  return [save, clear];
+}
 
 /**
  * The extra request headers, which only a client that can set them shows.
@@ -217,41 +304,56 @@ function secretRow(gw, { key, title, has, hint }, out) {
  * rather than built and hidden, because the half that hides it would still have
  * listed this gateway's stored header names on the phone, names the phone cannot
  * use and has no business displaying.
+ *
+ * The two flows differ in their ACTIONS here and never in their fields, which is
+ * the same split the credentials keep: the editor has a gateway to write to, so
+ * it lists what is stored and adds a header when asked. The add form has nothing
+ * stored and no id to write against yet, so its one pair of inputs is saved by
+ * the same press that creates the gateway.
  */
-function headerSection(gw, out) {
+function headerRows(gw, { mode, ids = {}, out = null }) {
   const names = (gw.credentials && gw.credentials.headers) || [];
-  const list = el('div', {}, names.length
-    ? names.map((name) => el('div', { className: 'settings-row' }, [
-      el('span', { className: 'url settings-row__text', textContent: `${name}: ••••••••` }),
-      el('div', { className: 'settings-row__control' }, [
-        el('button', {
-          className: 'ghost danger',
-          textContent: 'Remove',
-          onclick: async () => {
-            const res = await call('removeHeader', gw.id, name);
-            state = res;
-            setResult(out, res.saved.ok ? `Removed ${name}.` : res.saved.error, res.saved.ok ? 'ok' : 'err');
-            render();
-          },
-        }),
-      ]),
-    ]))
-    : el('div', { className: 'muted-sm', textContent: 'No extra headers.' }));
 
-  const name = el('input', { type: 'text', placeholder: 'CF-Access-Client-Id', autocomplete: 'off', spellcheck: false });
-  const value = el('input', { type: 'password', placeholder: 'value', autocomplete: 'off', spellcheck: false });
+  const name = el('input', { ...(ids.headerName ? { id: ids.headerName } : {}), type: 'text', placeholder: 'CF-Access-Client-Id', autocomplete: 'off', spellcheck: false });
+  const value = el('input', { ...(ids.headerValue ? { id: ids.headerValue } : {}), type: 'password', placeholder: 'value', autocomplete: 'off', spellcheck: false });
 
-  const add = el('button', {
-    textContent: 'Add header',
-    onclick: async () => {
-      if (!name.value.trim()) return setResult(out, 'Enter a header name.', 'err');
-      const res = await call('addHeader', gw.id, name.value, value.value);
-      state = res;
-      if (res.saved.ok) { name.value = ''; value.value = ''; }
-      setResult(out, res.saved.ok ? 'Header saved.' : res.saved.error, res.saved.ok ? 'ok' : 'err');
-      render();
-    },
-  });
+  // Our own inline cluster, kept as one: the controls that belong on one line,
+  // where upstream's actions row would wrap them onto three.
+  const controls = mode === 'stored'
+    ? [name, value, el('button', {
+      textContent: 'Add header',
+      onclick: async () => {
+        if (!name.value.trim()) return setResult(out, 'Enter a header name.', 'err');
+        const res = await call('addHeader', gw.id, name.value, value.value);
+        state = res;
+        if (res.saved.ok) { name.value = ''; value.value = ''; }
+        setResult(out, res.saved.ok ? 'Header saved.' : res.saved.error, res.saved.ok ? 'ok' : 'err');
+        render();
+      },
+    })]
+    : [name, value];
+
+  // Only in the editor: the add form has no gateway yet, so there is nothing
+  // stored to list and listing "none" would be a second empty state to read past.
+  const stored = mode === 'stored'
+    ? el('div', {}, names.length
+      ? names.map((headerName) => el('div', { className: 'settings-row' }, [
+        el('span', { className: 'url settings-row__text', textContent: `${headerName}: ••••••••` }),
+        el('div', { className: 'settings-row__control' }, [
+          el('button', {
+            className: 'ghost danger',
+            textContent: 'Remove',
+            onclick: async () => {
+              const res = await call('removeHeader', gw.id, headerName);
+              state = res;
+              setResult(out, res.saved.ok ? `Removed ${headerName}.` : res.saved.error, res.saved.ok ? 'ok' : 'err');
+              render();
+            },
+          }),
+        ]),
+      ]))
+      : el('div', { className: 'muted-sm', textContent: 'No extra headers.' }))
+    : null;
 
   const box = el('div', {}, [
     el('div', { className: 'settings-row settings-row--stacked' }, [
@@ -262,56 +364,49 @@ function headerSection(gw, out) {
           textContent: 'Sent only to this gateway’s own origin. Use for Cloudflare Access or an authenticating reverse proxy.',
         }),
       ]),
-      el('div', { className: 'settings-row__control' }, [list]),
+      el('div', { className: 'settings-row__control' }, [stored]),
     ]),
-    // Our own inline cluster, kept as one: three controls that belong on one
-    // line, where upstream's actions row would wrap them onto three.
     el('div', { className: 'settings-row settings-row--actions' }, [
-      el('div', { className: 'settings-row__control' }, [el('div', { className: 'row' }, [name, value, add])]),
+      el('div', { className: 'settings-row__control' }, [el('div', { className: 'row' }, controls)]),
     ]),
   ]);
   box.setAttribute('data-setting', 'gatewayHeaders');
-  return box;
+  return { node: box, name, value };
 }
 
+/**
+ * One stored gateway's own panel, over the page it belongs to.
+ *
+ * The fields are not built here: they are `gatewayFields` in its stored state,
+ * the same builder the add form uses, so the two cannot come to offer different
+ * things. What this adds is what only an existing gateway can have, meaning the
+ * credentials' own Save and Clear (a credential is kept against a gateway's id,
+ * which does not exist until the gateway does) and the note that a new address
+ * takes effect on the next connect rather than now.
+ */
 function gatewayEditor(gw) {
   const out = el('div', { className: 'result' });
-  const creds = gw.credentials || { hasToken: false, hasPassword: false, headers: [] };
-
-  const label = el('input', { type: 'text', value: gw.label || '', placeholder: 'Name', autocomplete: 'off' });
-  const url = el('input', { type: 'url', value: gw.url, autocomplete: 'off', spellcheck: false });
+  const fields = gatewayFields(gw, { mode: 'stored', out });
 
   const saveAddress = el('button', {
     className: 'primary',
-    textContent: 'Save address',
+    // Named for the two fields it writes. It was "Save address" while it saved
+    // the name as well, beside two other Save buttons that saved a credential
+    // each, so a press had to be guessed at from the button nearest it.
+    textContent: 'Save name and address',
     onclick: async () => {
-      if (!url.value.trim()) return setResult(out, 'Enter a URL first.', 'err');
-      state = await call('updateGateway', gw.id, { label: label.value.trim(), url: url.value.trim() });
+      if (!fields.url.value.trim()) return setResult(out, 'Enter an address first.', 'err');
+      state = await call('updateGateway', gw.id, { label: fields.name.value.trim(), url: fields.url.value.trim() });
       setResult(out, 'Saved. Reconnect to use the new address.', 'ok');
       render();
     },
   });
 
   return el('div', { className: 'editor' }, [
-    field('Name', label),
-    field('URL', url),
+    fields.node,
     el('div', { className: 'settings-row settings-row--actions' }, [
       el('div', { className: 'settings-row__control' }, [saveAddress]),
     ]),
-    el('hr'),
-    secretRow(gw, {
-      key: 'token',
-      title: 'Gateway token',
-      has: creds.hasToken,
-      hint: 'Handed to the Control UI on connect, so you are never asked to paste it. From `openclaw gateway auth-token --show` on that gateway.',
-    }, out),
-    secretRow(gw, {
-      key: 'password',
-      title: 'Gateway password',
-      has: creds.hasPassword,
-      hint: 'Only for gateways in password mode. There is no URL handoff for passwords, so the app fills the sign-in form instead, best effort.',
-    }, out),
-    hasSetting('gatewayHeaders') ? el('div', {}, [el('hr'), headerSection(gw, out)]) : null,
     out,
   ]);
 }
@@ -915,29 +1010,159 @@ if (openAbout) {
   });
 }
 
-$('test').addEventListener('click', async () => {
-  const url = $('new-url').value.trim();
-  const out = $('test-result');
-  if (!url) return setResult(out, 'Enter a URL first.', 'err');
+/* --------------------------------------------------------------- add form */
 
-  $('test').disabled = true;
-  setResult(out, 'Testing…');
-  const res = await call('testGateway', url);
-  $('test').disabled = false;
-  setResult(out, res.message, res.ok ? (res.fingerprint ? 'warn' : 'ok') : 'err');
-});
+/**
+ * The add form, built from the SAME field set the editor renders.
+ *
+ * Built here rather than written out in the markup, because a second copy of
+ * these rows is exactly how the two came to offer different things: the markup
+ * took a name and an address, so a gateway created from it had no token and had
+ * to be found again and reopened to get one. One builder called twice is the fix.
+ *
+ * Built ONCE, at boot, rather than on every render: a form rebuilt under a
+ * keyboard mid-typing throws away whatever was typed into it, which is the same
+ * fault as a field that never saves.
+ *
+ * The actions say what they do. It is "Add gateway" rather than "Add", and the
+ * row above the fields says when the values are kept and that nothing is
+ * contacted until Connect, which is the half of this form a reader had to guess.
+ */
+function renderAddForm() {
+  const host = $('add-gateway');
+  if (!host) return;
+  host.replaceChildren();
 
-$('add').addEventListener('click', async () => {
-  const url = $('new-url').value.trim();
-  const label = $('new-label').value.trim();
-  if (!url) return setResult($('test-result'), 'Enter a URL first.', 'err');
+  const out = el('div', { className: 'result', id: 'test-result' });
+  const fields = gatewayFields({}, {
+    mode: 'new',
+    out,
+    // The element names this form has always had, kept because the harnesses that
+    // drive it look for them. What the form OFFERS is the part that changed.
+    ids: {
+      label: 'new-label',
+      url: 'new-url',
+      token: 'new-token',
+      password: 'new-password',
+      headerName: 'new-header-name',
+      headerValue: 'new-header-value',
+    },
+  });
 
-  state = await call('addGateway', { label, url });
-  $('new-url').value = '';
-  $('new-label').value = '';
-  setResult($('test-result'), 'Added. Use Edit to save its token, password, or headers.', 'ok');
+  const test = el('button', {
+    id: 'test',
+    textContent: 'Test connection',
+    onclick: async () => {
+      const address = fields.url.value.trim();
+      if (!address) return setResult(out, 'Enter an address first.', 'err');
+      test.disabled = true;
+      setResult(out, 'Testing…');
+      const res = await call('testGateway', address);
+      test.disabled = false;
+      setResult(out, res.message, res.ok ? (res.fingerprint ? 'warn' : 'ok') : 'err');
+    },
+  });
+
+  const add = el('button', {
+    id: 'add',
+    className: 'primary',
+    textContent: 'Add gateway',
+    onclick: () => saveNewGateway(fields, out),
+  });
+
+  host.append(
+    // The heading is a row of its own rather than the Name field's label, which
+    // is what it used to be: the section had no name and the name field had two.
+    el('div', { className: 'settings-row settings-row--stacked' }, el('div', { className: 'settings-row__text' }, [
+      el('span', { className: 'settings-row__title', textContent: 'Add a gateway' }),
+      el('span', {
+        className: 'settings-row__desc',
+        textContent: 'Everything here is kept together, the token included. Nothing is contacted until you press Connect on the row it adds.',
+      }),
+    ])),
+    fields.node,
+    el('div', { className: 'settings-row settings-row--actions' }, el('div', { className: 'settings-row__control' }, [test, add])),
+    out,
+  );
+}
+
+/**
+ * Create a gateway and keep everything typed into its form, in ONE pass.
+ *
+ * The form used to take a name and an address and then answer "Added. Use Edit to
+ * save its token, password, or headers", so the gateway existed half-configured
+ * and finishing it was a second trip. A credential is stored against a gateway's
+ * id, so the order is the store's rather than a choice: the gateway is created
+ * first and the credential goes in immediately after, through the SAME command
+ * the editor uses and into the same place. What the reader sees is one press.
+ *
+ * The report names what was kept rather than saying "Added": a save that quietly
+ * dropped the token would read exactly like one that stored it, and a refusal from
+ * the credential store is the one answer that has to be visible.
+ */
+async function saveNewGateway(fields, out) {
+  const url = fields.url.value.trim();
+  const label = fields.name.value.trim();
+  if (!url) return setResult(out, 'Enter an address first.', 'err');
+
+  const res = await call('addGateway', { label, url });
+  state = res;
+  // A host that refuses the address answers in `saved`, the same shape the
+  // credential command uses, and there is then no id to attach a credential to.
+  // Reporting this as an add is what used to happen on a phone given an address
+  // it cannot parse: the page said "Added" over the top of a refusal.
+  if (!res.added) {
+    setResult(out, res.saved && res.saved.error ? res.saved.error : 'That gateway was not added.', 'err');
+    render();
+    return;
+  }
+
+  const id = res.added.id;
+  const creds = {};
+  if (fields.token.value) creds.token = fields.token.value;
+  if (fields.password.value) creds.password = fields.password.value;
+  const headerNamed = Boolean(fields.headerName && fields.headerName.value.trim());
+
+  const problems = [];
+  if (Object.keys(creds).length) {
+    const saved = await call('setCredentials', id, creds);
+    state = saved;
+    if (!saved.saved.ok) problems.push(saved.saved.error);
+  }
+  if (headerNamed) {
+    const saved = await call('addHeader', id, fields.headerName.value, fields.headerValue.value);
+    state = saved;
+    if (!saved.saved.ok) problems.push(saved.saved.error);
+  }
+
+  const kept = [];
+  if (label) kept.push('name');
+  kept.push('address');
+  if (creds.token) kept.push('token');
+  if (creds.password) kept.push('password');
+  if (headerNamed) kept.push('header');
+
+  // Emptied only once the values are stored, so a refusal leaves them on screen
+  // to be corrected rather than making the reader type them again.
+  for (const control of [fields.name, fields.url, fields.token, fields.password, fields.headerName, fields.headerValue]) {
+    if (control) control.value = '';
+  }
+
+  setResult(
+    out,
+    problems.length
+      ? `Added, but ${problems.join(', and ')}`
+      : `Added. Kept its ${listWords(kept)}, and it connects from its own row.`,
+    problems.length ? 'warn' : 'ok',
+  );
   render();
-});
+}
+
+/** One readable list: "address and token", "name, address and token". */
+function listWords(words) {
+  if (words.length <= 1) return words.join('');
+  return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
+}
 
 /* ---------------------------------------------------------------- gateway filter */
 
@@ -1098,6 +1323,10 @@ on('state', async () => {
   // What this client has, before anything is drawn: the spec's split decides
   // both the rows and which of them the first render is allowed to touch.
   applySurface();
+  // The add form, from the field set this client has: it is built here because
+  // which fields exist is the spec's answer, and only once because a form rebuilt
+  // under a keyboard would lose what is being typed into it.
+  renderAddForm();
   // A notice can name the tab that answers it, so "Review" on a refused
   // certificate lands on the fingerprints rather than on Gateways with the work
   // of finding them left to you. The URL carries it on the desktop; the host
