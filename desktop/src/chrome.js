@@ -424,15 +424,57 @@ export function themeFromReport(report) {
     surface,
     symbol,
     tokens: sanitizeTokens(report.tokens),
+    // A page that answered HAS resolved an appearance, so the mode above is a
+    // value that was read rather than a default that was painted. This is the
+    // flag the handoff announces from; see `fallbackTheme` and `applyTheme`.
+    resolved: true,
   };
 }
 
-/** The theme to open windows with before any page has reported one. */
+/**
+ * Why a report could not be turned into a theme, or null if it could.
+ *
+ * Exists so a refusal can be SAID rather than swallowed. A page whose surface is
+ * missing, transparent or unparseable is refused whole (a partly-applied theme is
+ * worse than none), and the app then keeps whatever palette it already had. That
+ * is the right behaviour and it is exactly the case nobody can see: the surface
+ * quietly wears ui.css's own fallback, the fallback is a good-looking dark one,
+ * and the log says nothing at all. Reported 2026-09-17 as "the settings page lost
+ * its theme, it's using the default dark", from a build whose report was fine and
+ * whose LIST was short. The wording here is what the app now prints.
+ */
+export function themeRefusal(report) {
+  if (!report || typeof report !== 'object') return 'the page reported nothing';
+  const raw = report.surface;
+  if (typeof raw !== 'string' || !raw.trim()) return 'it reported no surface at all';
+  if (!normalizeColor(raw)) return `its surface (${raw.trim()}) is not a colour this app can use, which is what a page with no --bg resolves to`;
+  return null;
+}
+
+/**
+ * The theme to open windows with before any page has reported one.
+ *
+ * `resolved` is the half that is easy to lose and expensive to lose quietly.
+ * A mode is only ever one of these two things: a value something READ, or the
+ * value we paint while nothing has. Painting dark for the few hundred
+ * milliseconds before the first report is right; ANNOUNCING that dark as the
+ * resolved appearance is not, because our own pages take what the handoff
+ * announces and would then hold a default the reader never chose. So a caller
+ * with nothing to hand over gets `resolved: false`, the platform is left to
+ * answer (see `applyTheme`), and no page is told an appearance at all.
+ *
+ * Measured, 2026-09-17: with nothing stored the app pinned
+ * `nativeTheme.themeSource` to `dark` at startup, so every surface of ours
+ * resolved dark on a light machine and a Settings page opened before the
+ * gateway answered wore the default palette with its default red accent. That
+ * is "defaulting rather than reading", stated as a colour.
+ */
 export function fallbackTheme(mode) {
+  const known = mode === 'light' || mode === 'dark';
   const base = mode === 'light' ? FALLBACK_LIGHT : FALLBACK_DARK;
   // No tokens: ui.css carries a complete palette of its own for exactly this
   // case, which is what the first run, no gateway, no page, no theme, uses.
-  return { ...base, tokens: {} };
+  return { ...base, tokens: {}, resolved: known };
 }
 
 /**
@@ -445,7 +487,13 @@ export function fallbackTheme(mode) {
  * same answer, so ui.css needs no IPC of its own.
  */
 export function applyTheme(theme, windows = []) {
-  electron.nativeTheme.themeSource = theme.mode;
+  // `system` rather than a mode when nothing has resolved one, so the platform
+  // answers the question we cannot: pinning it to the dark fallback is what
+  // made a first run on a light machine dark, and it also overrode the reader's
+  // own OS setting for our pages' `prefers-color-scheme`. A theme that carries
+  // no opinion (an older caller, a harness) is treated as resolved, because
+  // every caller that has a mode at all has read it.
+  electron.nativeTheme.themeSource = theme.resolved === false ? 'system' : theme.mode;
 
   for (const win of windows) {
     if (!win || win.isDestroyed()) continue;
@@ -481,6 +529,7 @@ export default {
   windowTitle,
   applyTheme,
   themeFromReport,
+  themeRefusal,
   fallbackTheme,
   themeCss,
   sanitizeTokenValue,

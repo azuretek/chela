@@ -44,13 +44,16 @@ const LIVE = new Set(SPEC.live.tokens.map(([name]) => name));
  * A name here is a decision rather than an omission, which is the whole point:
  * the failure message on the guard below says which of the two a reader is
  * looking at.
+ *
+ * Read from the spec rather than listed here, because a second consumer now needs
+ * the same answer: the app-side harness that opens the real settings surface
+ * against a published palette (desktop/scripts/test-settings-theme.js) has to
+ * know which names are OURS before it can tell a name the live theme cannot reach
+ * from one that deliberately is not a live name at all. Two copies of this list
+ * would disagree the first time either moved, which is the drift this file exists
+ * to prevent.
  */
-const OURS = new Map([
-  ['--focus-ring', 'ours: upstream publishes one, but this is the ring our own controls draw with'],
-  ['--ok', 'ours: the Control UI has no --ok to take (see the tone note in the token spec)'],
-  ['--warn', 'ours: the Control UI has no --warn to take (see the tone note in the token spec)'],
-  ['--scrim', 'ours: the Control UI has no scrim to take, and this page writes its own'],
-]);
+const OURS = new Map((SPEC.live.ours || []).map((entry) => [entry.name, entry.reason]));
 
 /**
  * Live names whose value ui.css DERIVES once, from a token that is itself
@@ -134,6 +137,7 @@ test('every palette colour ui.css declares is one the live theme can override, o
 });
 
 test('each stated exception says why, and is really a colour ui.css owns', () => {
+  assert.ok(OURS.size >= 4, `the spec states ${OURS.size} owned names, which is fewer than the ones it has always owned`);
   const dark = new Map(DARK);
   const all = new Map([...DARK, ...LIGHT]);
   for (const [name, reason] of OURS) {
