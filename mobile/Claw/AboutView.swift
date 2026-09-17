@@ -74,7 +74,10 @@ struct AboutSurface: UIViewRepresentable {
         webView.isOpaque = false
         webView.backgroundColor = pageBackground
         webView.scrollView.backgroundColor = pageBackground
-        webView.overrideUserInterfaceStyle = appearance.userInterfaceStyle
+        // The page's appearance comes from the PALETTE rather than from this
+        // client's own setting: see `ThemeTokens.pageTrait`. The setting still
+        // paints the native chrome around the page.
+        webView.overrideUserInterfaceStyle = ThemeTokens.pageTrait(tokens: tokens, own: appearance.userInterfaceStyle)
         // The page paints its own strips, the same reasoning as the settings
         // surface: with the automatic inset off it fills its frame and insets its
         // own content through `env(safe-area-inset-*)`, which ui.css does.
@@ -104,10 +107,14 @@ struct AboutSurface: UIViewRepresentable {
         if context.coordinator.appliedTokens != tokens {
             context.coordinator.appliedTokens = tokens
             webView.evaluateJavaScript(ThemeTokens.applyScript(tokens))
+            // The palette carries the appearance it belongs to, so a map that
+            // arrives after the view was built moves the trait too: a mode is not
+            // something the page can pick up on its own.
+            webView.overrideUserInterfaceStyle = ThemeTokens.pageTrait(tokens: tokens, own: appearance.userInterfaceStyle)
         }
         if context.coordinator.appliedAppearance != appearance {
             context.coordinator.appliedAppearance = appearance
-            webView.overrideUserInterfaceStyle = appearance.userInterfaceStyle
+            webView.overrideUserInterfaceStyle = ThemeTokens.pageTrait(tokens: tokens, own: appearance.userInterfaceStyle)
         }
     }
 

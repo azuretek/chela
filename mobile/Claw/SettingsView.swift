@@ -71,7 +71,11 @@ struct SettingsSurface: UIViewRepresentable {
         webView.isOpaque = false
         webView.backgroundColor = pageBackground
         webView.scrollView.backgroundColor = pageBackground
-        webView.overrideUserInterfaceStyle = appearance.userInterfaceStyle
+        // The page's appearance is the PALETTE's, not this client's own setting:
+        // see `ThemeTokens.pageTrait`, which is what stops the page's colours and
+        // its appearance from being read off two different chains. The setting
+        // still paints the native chrome around the page.
+        webView.overrideUserInterfaceStyle = ThemeTokens.pageTrait(tokens: tokens, own: appearance.userInterfaceStyle)
         // The page paints the strips too, rather than leaving them to the native
         // layer.
         //
@@ -159,13 +163,15 @@ struct SettingsSurface: UIViewRepresentable {
         if context.coordinator.appliedTokens != tokens {
             context.coordinator.appliedTokens = tokens
             webView.evaluateJavaScript(ThemeTokens.applyScript(tokens))
+            // The palette carries the appearance it belongs to, so a map that
+            // arrives after the view was built moves the page's trait with it.
+            webView.overrideUserInterfaceStyle = ThemeTokens.pageTrait(tokens: tokens, own: appearance.userInterfaceStyle)
         }
-        // Then the trait the page's own fallback palette resolves against, so a
-        // change made in this surface repaints it rather than waiting for the next
-        // navigation.
+        // Then the trait the page's own palette resolves against, so a change made
+        // in this surface repaints it rather than waiting for the next navigation.
         if context.coordinator.appliedAppearance != appearance {
             context.coordinator.appliedAppearance = appearance
-            webView.overrideUserInterfaceStyle = appearance.userInterfaceStyle
+            webView.overrideUserInterfaceStyle = ThemeTokens.pageTrait(tokens: tokens, own: appearance.userInterfaceStyle)
         }
         // Nothing to push: the page re-reads its own state when the host raises an
         // event, and every command answers with the state it produced.
