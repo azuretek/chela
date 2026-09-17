@@ -168,3 +168,77 @@ test('a recognised failure still carries the code for the search box', () => {
   assert.match(said, /Tailscale/, 'lost the hint');
   assert.match(said, /\(ERR_NAME_NOT_RESOLVED\)/, 'lost the searchable code');
 });
+
+/* ------------------------------------------- what may be on screen at all */
+
+// A gateway's page on screen is a claim about the reader's state, so it may only
+// be shown while both halves of that claim hold: the document belongs to the
+// gateway this app is pointed at, and the connection it belongs to has not failed
+// or ended. This is the rule the desktop's host reads (`mayPresentGatewayView` is
+// called from loadActiveGateway), recorded here as its truth table so a client
+// cannot decide separately that a document from another gateway, or one whose
+// connection has failed, is still the reader's place.
+//
+// The two cases that matter were both measured on 2026-09-16 with
+// scripts/test-held-gateway-view.js: a connect to a second, failing gateway left
+// the FIRST gateway's Control UI on screen, and a gateway that dropped left its own
+// page on screen for as long as anyone looked. Both looked authenticated and
+// working, because the document was.
+
+test('a document from the gateway being connected, on a live connection, may be shown', () => {
+  for (const phase of [connection.CONNECTED, connection.CONNECTING, connection.PENDING]) {
+    assert.equal(
+      connection.mayPresentGatewayView({ gatewayId: 'a', heldGatewayId: 'a', phase }),
+      true,
+      `a document held through ${phase} is the reader's current place`,
+    );
+  }
+});
+
+test('a FAILED connection may present nothing, whatever is on screen', () => {
+  // The whole rule in one line: a failure means this client is not connected, so
+  // the document cannot be shown no matter which gateway it came from.
+  for (const heldGatewayId of ['a', null]) {
+    assert.equal(
+      connection.mayPresentGatewayView({ gatewayId: 'a', heldGatewayId, phase: connection.FAILED }),
+      false,
+      `a document held over a failed connection was allowed (held=${heldGatewayId})`,
+    );
+  }
+  assert.equal(
+    connection.mayPresentGatewayView({ gatewayId: 'a', heldGatewayId: 'a', phase: connection.IDLE }),
+    false,
+    'an idle client with no gateway may not present a gateway view either',
+  );
+});
+
+test('a document from a DIFFERENT gateway is never shown in place of the destination', () => {
+  // The reader asked to go somewhere else, so this document is not their place,
+  // and holding it through the attempt is how they were shown the gateway they were
+  // last connected to while the new one failed.
+  for (const phase of [connection.CONNECTED, connection.CONNECTING, connection.PENDING, connection.FAILED]) {
+    assert.equal(
+      connection.mayPresentGatewayView({ gatewayId: 'b', heldGatewayId: 'a', phase }),
+      false,
+      `another gateway's document was allowed through ${phase}`,
+    );
+  }
+  assert.equal(
+    connection.mayPresentGatewayView({ gatewayId: null, heldGatewayId: 'a', phase: connection.CONNECTED }),
+    false,
+    'a document was shown with no gateway configured at all',
+  );
+});
+
+test('nothing at all is presented when the view holds one of our own pages', () => {
+  // `heldGatewayId` null is the state after a failure, after a drop, and while the
+  // window is showing our settings page: no document on screen is anybody's.
+  for (const phase of [connection.CONNECTED, connection.CONNECTING, connection.PENDING, connection.FAILED]) {
+    assert.equal(
+      connection.mayPresentGatewayView({ gatewayId: 'a', heldGatewayId: null, phase }),
+      false,
+      `an empty view was presentable through ${phase}`,
+    );
+  }
+  assert.equal(connection.mayPresentGatewayView(), false, 'the default is to present nothing');
+});

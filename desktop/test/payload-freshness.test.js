@@ -102,15 +102,91 @@ test('the marker harness that proves this still asserts a first paint', () => {
   assert.match(source, /AFTER-RESTORE/, 'the harness no longer checks that a fresh payload replaces the kept one');
 });
 
+test('the hold is keyed to the gateway it belongs to, and only that gateway', () => {
+  // A bare boolean meant "there is a payload" without saying whose, so a connect
+  // to a DIFFERENT gateway held the previous gateway's document on screen through
+  // the attempt and left it there afterwards. Measured 2026-09-16 with
+  // scripts/test-held-gateway-view.js --case switch: the second gateway refused the
+  // connection and the reader was left looking at the first gateway's Control UI,
+  // which looked authenticated and working because it was.
+  assert.doesNotMatch(main, /payloadOnScreen/, 'the payload is a boolean again, so nothing records WHOSE document is on screen');
+  assert.match(main, /let payloadGateway = null;/, 'there is no record of which gateway\'s document the view holds');
+  assert.match(main, /payloadGateway = config\.get\(\)\.activeGatewayId;/, 'a finished load no longer records the gateway it brought in');
+});
+
+test('what may be shown is the shared rule, not a decision taken at the call site', () => {
+  // core/connection.js owns it (and core/test/connection.test.js drives its truth
+  // table), so a client cannot decide separately that a document from another
+  // gateway, or one whose connection has failed, is still the reader's place.
+  assert.match(main, /connectionState\.mayPresentGatewayView\(\{[\s\S]{0,200}?gatewayId: gw\.id,[\s\S]{0,120}?heldGatewayId: payloadGateway,[\s\S]{0,120}?phase: connection\.phase,/,
+    'loadActiveGateway no longer asks the shared rule what may be shown, so the hold is a local decision again');
+});
+
+test('a failed attempt ends the hold, and the failure surface takes the screen', () => {
+  // The two halves of the rule that a connected-looking screen breaks. A failure
+  // used to be reportable OVER a held document, with no cover, on the reasoning
+  // that hiding a working interface is worse than leaving it. It is not: the
+  // reader is left looking at a gateway nothing is connected to, so the hold ends
+  // and the app's own surface -- the cover, in its stopped state, with the notice
+  // over it -- is what is on screen.
+  assert.match(main, /function showConnectionFailure\(detail\) \{/,
+    'showConnectionFailure can still be told to leave the screen alone');
+  assert.doesNotMatch(main, /showConnectionFailure\([^)]*\{ cover/, 'a failure can still be reported without the cover');
+  assert.match(main, /showConnectionFailure\(\{ errorCode, errorDescription, url: validatedURL \}\)/,
+    'a failed load no longer reports the ordinary way');
+
+  const failure = main.slice(main.indexOf("wc.on('did-fail-load'"), main.indexOf("wc.on('render-process-gone'"));
+  const crash = main.slice(main.indexOf("wc.on('render-process-gone'"), main.indexOf('return view;'));
+  assert.match(failure, /payloadGateway = null;/, 'a failed load leaves the document it was going to replace on screen');
+  assert.match(crash, /payloadGateway = null;/, 'a dead renderer leaves the previous gateway on screen');
+});
+
+test('a socket the gateway closed ends the hold too', () => {
+  // The other way a connection ends, and the one nothing on this side could see
+  // before: the page holds the socket, so the observer reports the close and the
+  // app ends the hold on it. Measured 2026-09-16: nine seconds of a dropped gateway
+  // with its Control UI still on screen and no notice either.
+  assert.match(main, /function handleSocketDropped\(\) \{/, 'nothing reacts to the page\'s socket closing');
+  const drop = main.slice(main.indexOf('function handleSocketDropped()'), main.indexOf('function handlePairingReport('));
+  assert.match(drop, /payloadGateway = null;/, 'a dropped socket leaves the gateway\'s document presentable');
+  assert.match(drop, /showConnectionFailure\(/, 'a dropped socket is not reported at all');
+  // Guarded, both ways: an attempt in flight and this app's own reload each close
+  // the socket they replace, and neither is the connection ending.
+  assert.match(drop, /connection\.phase !== connectionState\.CONNECTED/, 'a socket close during a connect attempt would be read as a drop');
+  assert.match(drop, /if \(pageReloading\) return;/, 'this app\'s own reload would be read as a drop');
+});
+
+test('the harness that proves this still measures frames, and all three cases', () => {
+  // The pointer, the way this file already points at its own marker harness: the
+  // evidence for a claim about what was on screen is a run, so this fails loudly if
+  // the harness or one of its cases is removed.
+  const harness = path.join(SCRIPTS, 'test-held-gateway-view.js');
+  assert.ok(fs.existsSync(harness), 'the harness that measures what is on screen after a failure is gone');
+  const source = fs.readFileSync(harness, 'utf8');
+  for (const kase of ['switch', 'drop', 'normal']) {
+    assert.match(source, new RegExp(`'${kase}'`), `the ${kase} case is gone from the harness`);
+  }
+  assert.match(source, /function viewTimeline\(frames\)/, 'the harness no longer records what each frame showed');
+  // The reader's answer comes from the app's view stack, and the pixels are
+  // corroboration that is checked for having actually painted: a run of black
+  // captures compares equal to itself, which is how a harness passes while
+  // measuring nothing.
+  assert.match(source, /const MIN_CONTRAST = 6;/, 'the harness no longer refuses a frame with nothing painted on it');
+  assert.match(source, /function contrast\(bitmap\)/, 'the harness no longer measures whether a frame painted anything');
+  assert.match(source, /const visible = win \? win\.isVisible\(\) : false;/, 'the harness records frames from a window that was not on screen');
+  assert.match(source, /desktopCapturer\.getSources/, 'the harness no longer captures the composited window, so the child views are invisible to it');
+});
+
 /* ------------------------------------------------ a payload that is on screen */
 
 // No fresh payload must not mean no payload. A failed navigation commits Chromium's
 // own error document over the frame, so an attempt made in the view on screen
 // destroys what is there and there is nothing left to fall back to by the time the
-// failure is known. Measured 2026-09-16, and the three assertions below are the
-// three ways that guarantee is arranged: the attempt happens elsewhere, it is
-// promoted only once it has loaded, and its failure is reported over the payload
-// rather than in place of it.
+// failure is known. Measured 2026-09-16, and the assertions below are the ways that
+// guarantee is arranged: the attempt happens elsewhere and is promoted only once it
+// has loaded. What changed the same night: the hold ENDS on a failure, because a
+// document kept over a connection that has failed is a screen claiming to be
+// authenticated when nothing is connected.
 
 test('a load attempt is made beside the payload on screen, not over it', () => {
   assert.match(main, /function startGatewayAttempt\(/,
@@ -125,7 +201,7 @@ test('a load attempt is made beside the payload on screen, not over it', () => {
     'the first load no longer goes into the visible view');
 });
 
-test('an attempt is promoted only once it has actually loaded', () => {
+test('a loaded attempt takes the place of the view on screen, and a failed one never does', () => {
   const finish = main.slice(main.indexOf("wc.on('did-finish-load'"), main.indexOf("wc.on('did-fail-load'"));
   const failure = main.slice(main.indexOf("wc.on('did-fail-load'"), main.indexOf("wc.on('render-process-gone'"));
   assert.match(finish, /if \(attempt\) promoteGatewayView\(view\);/, 'a loaded attempt no longer takes the place of the view on screen');
@@ -133,14 +209,5 @@ test('an attempt is promoted only once it has actually loaded', () => {
   assert.match(failure, /destroyGatewayView\(view\)/, 'a failed attempt is no longer thrown away');
 });
 
-test('a failed attempt is reported over the payload, with no cover', () => {
-  // The cover exists to cover a gap where nothing is on screen. Putting it up over
-  // a payload that was kept would hide a working interface in order to announce
-  // that a fresh copy of it could not be fetched.
-  assert.match(main, /function showConnectionFailure\(detail, \{ cover = true \} = \{\}\)/,
-    'showConnectionFailure cannot be told to leave the screen alone');
-  assert.match(main, /if \(cover\) showLoadingCover\(\);\s*else hideLoadingCover\(\);/,
-    'the cover is raised unconditionally again, so a kept payload is covered by the failure surface');
-  assert.match(main, /showConnectionFailure\(\{ errorCode, errorDescription, url: validatedURL \}, \{ cover: false \}\)/,
-    'a failed attempt reports with the cover, hiding the payload it just preserved');
-});
+// scripts/test-held-gateway-view.js --case switch is the frame evidence. The
+// header comment above records what changed and why.

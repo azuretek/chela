@@ -24,6 +24,7 @@ import {
   OBSERVER_GLOBAL,
   PAIRING_REQUIRED,
   RETRY_SECONDS,
+  SOCKET_CLOSED,
   observerScript,
 } from '../../core/pairing.js';
 
@@ -130,6 +131,38 @@ test('a report is narrowed to the contract before it can reach a screen', () => 
   // `--latest` command rather than arbitrary text from the page.
   assert.strictEqual(parseReport({ kind: PAIRING_REQUIRED, reason: 'not-paired', requestId: '../../etc' }).refusal.requestId, null);
   assert.strictEqual(parseReport({ kind: PAIRING_REQUIRED, reason: 'not-paired' }).refusal.requestId, null);
+});
+
+test('a socket the gateway closed is the session ending, and is read as its own thing', () => {
+  // The observer's other report, and it is not pairing: the socket opened and has
+  // now closed without a refusal. The desktop's host ends the hold on it, because
+  // the page held the only socket either side had and a client that keeps showing
+  // the gateway's page after that is claiming to be connected when it is not.
+  assert.deepStrictEqual(parseReport({ kind: SOCKET_CLOSED }), { kind: 'dropped' });
+  // The kind is the spec's, so the script that posts it and the clients that read
+  // it cannot disagree about the string.
+  const spec = JSON.parse(readFileSync(path.join(HERE, '..', '..', 'core', 'spec', 'pairing.json'), 'utf8'));
+  assert.strictEqual(SOCKET_CLOSED, spec.socketClosed);
+  assert.ok(spec.hook.join('\n').includes(`kind: '${SOCKET_CLOSED}'`), 'the observer no longer posts the kind the clients read');
+  // A payload assembled by hand that names that kind must not be confused with a
+  // refusal, and a refusal must not be confused with it.
+  assert.strictEqual(parseReport({ kind: SOCKET_CLOSED, reason: 'not-paired' }).kind, 'dropped');
+  assert.strictEqual(parseReport({ kind: PAIRING_REQUIRED, reason: 'not-paired' }).kind, 'close');
+});
+
+test('the observer only reports a close for a socket it saw OPEN', () => {
+  // The guard that keeps a token the gateway refused out of this: a handshake that
+  // never completed is not a session ending, and the page's own login gate is what
+  // the reader needs on screen there. So the listener records the open first and
+  // reports the close only if it happened.
+  const script = observerScript();
+  assert.match(script, /var opened = false;/, 'the socket no longer tracks whether it ever opened');
+  assert.match(script, /addEventListener\('open', function \(\) \{ opened = true;/, 'an open no longer records itself');
+  assert.match(script, /if \(opened\) \{ post\(\{ kind: 'disconnected' \}\); \}/,
+    'a close is reported without checking that the socket had opened');
+  // And a pairing refusal returns rather than falling through to it: one close,
+  // one meaning, so a 1008 can never also read as a drop.
+  assert.match(script, /requestId: pairing\.requestId \}\); return; \}/, 'a pairing close falls through to the drop report');
 });
 
 test('a payload that is not one of the two reports is dropped', () => {

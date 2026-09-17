@@ -143,6 +143,51 @@ export function status({ isActive, phase = IDLE, error = null, certOffer = null 
 }
 
 /**
+ * Whether the gateway document on screen may still be shown.
+ *
+ * The rule, and the reason it is a function rather than a line at each call site:
+ * **a disconnected or failing client must never present a gateway view**, and a
+ * view change must never show the reader a view they did not ask for. A gateway's
+ * page on screen claims something about the reader's state, so it may only be
+ * shown while both halves of that claim hold: the document belongs to the gateway
+ * this client is pointed at, and the connection it belongs to has not failed or
+ * ended.
+ *
+ * WHAT IT IS NOT. It is not "the connection is live": while an attempt is in
+ * flight the document is still the one the reader asked for, and the attempt may
+ * well succeed, so `connecting` holds. It is not a licence to keep showing a
+ * document either, which is what this predicate is for:
+ *
+ *  - `heldGatewayId` null: the view holds one of the app's own pages, or nothing.
+ *  - a DIFFERENT gateway: the reader asked to go somewhere else, so the document
+ *    on screen is not their current place and it must not stand in for the
+ *    destination while it is fetched. Measured: connecting to a second gateway
+ *    that refuses connections left the FIRST gateway's Control UI on screen, and
+ *    it looked authenticated and working because it was.
+ *  - `failed`: the connection is over. Whatever is on screen is a gateway that
+ *    nothing is connected to.
+ *
+ * The hold must also END when the connection does, so a caller that clears its
+ * record on a failure is doing half this rule's work and this is the other half:
+ * a hold that outlives the connection it belongs to is the fault this exists to
+ * stop, and it has no bound of its own.
+ *
+ * @param {object} opts
+ * @param {string|null} [opts.gatewayId]      the gateway this client is pointed at
+ * @param {string|null} [opts.heldGatewayId]  the gateway whose document is on screen
+ * @param {string} [opts.phase]               IDLE | CONNECTING | CONNECTED | FAILED | PENDING
+ * @returns {boolean}
+ */
+export function mayPresentGatewayView({ gatewayId = null, heldGatewayId = null, phase = IDLE } = {}) {
+  if (!heldGatewayId || heldGatewayId !== gatewayId) return false;
+  // A document that arrived and a document on its way both belong to the
+  // connection the reader is making. `pending` does too: the gateway answered and
+  // is holding this device's approval, which is a state of ours drawn OVER that
+  // document rather than a reason to replace it.
+  return phase === CONNECTED || phase === CONNECTING || phase === PENDING;
+}
+
+/**
  * Whether a finished load means the gateway actually answered.
  *
  * It is not enough that a load finished, and the reason is nasty: after a main

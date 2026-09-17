@@ -50,6 +50,7 @@ import {
   PAIRING_REASONS,
   PAIRING_REQUIRED,
   RETRY_SECONDS,
+  SOCKET_CLOSED,
   approveCommand,
   nextPhase,
   pairingRoute,
@@ -127,7 +128,7 @@ export function injectedSources() {
  * than arbitrary text on a screen.
  *
  * @param {unknown} payload the report as it arrived (a JSON string, or an object)
- * @returns {{kind: 'open'}|{kind: 'close', refusal: {reason: string, requestId: (string|null)}}|null}
+ * @returns {{kind: 'open'}|{kind: 'close', refusal: {reason: string, requestId: (string|null)}}|{kind: 'dropped'}|null}
  */
 export function parseReport(payload) {
   let body = payload;
@@ -141,6 +142,11 @@ export function parseReport(payload) {
   if (!body || typeof body !== 'object') return null;
 
   if (body.kind === AUTHENTICATED) return { kind: 'open' };
+  // The session ending rather than a refusal: the socket opened and has closed.
+  // Two meanings, one payload shape, and which one it is decides what the reader
+  // sees, so it is read here with the other kind the spec names and nothing else
+  // is guessed at.
+  if (body.kind === SOCKET_CLOSED) return { kind: 'dropped' };
   if (body.kind !== PAIRING_REQUIRED) return null;
 
   const named = typeof body.reason === 'string' && PAIRING_REASONS.includes(body.reason) ? body.reason : null;
