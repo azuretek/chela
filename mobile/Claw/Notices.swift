@@ -70,6 +70,17 @@ struct Notice: Equatable {
     var message: String
     var detail: String?
     var dismissible: Bool
+    /// The other half of `dismissible`, and it is about what the card's X MEANS
+    /// rather than whether there is one. Most conditions here are true until
+    /// something fixes them, so reading one is all a reader can honestly do to it
+    /// and the notice stays in the store and under Settings. A download is the
+    /// exception: "I have seen that it is at 4%" is not a thing anybody means, and
+    /// the condition the card describes is one the reader can end by saying so, so
+    /// a dismissClears notice is CLEARED by its own X rather than read.
+    ///
+    /// Not part of `saysTheSame`, like `dismissible`: neither is what the card
+    /// says, both are what its one control does.
+    var dismissClears: Bool
     /// A fraction, 0 to 1, or nil for a notice that is not about something
     /// arriving. Part of the notice rather than a separate channel to the banner,
     /// because the bar and the sentence above it describe one condition, and two
@@ -107,6 +118,7 @@ struct NoticeRaise {
     var message: String
     var detail: String?
     var dismissible: Bool
+    var dismissClears: Bool
     var action: NoticeAction?
     var progress: Double?
 
@@ -115,6 +127,7 @@ struct NoticeRaise {
         message: String,
         detail: String? = nil,
         dismissible: Bool = true,
+        dismissClears: Bool = false,
         action: NoticeAction? = nil,
         progress: Double? = nil
     ) {
@@ -122,6 +135,7 @@ struct NoticeRaise {
         self.message = message
         self.detail = detail
         self.dismissible = dismissible
+        self.dismissClears = dismissClears
         self.action = action
         self.progress = progress
     }
@@ -148,6 +162,7 @@ final class NoticeStore {
                 message: raise.message,
                 detail: raise.detail,
                 dismissible: raise.dismissible,
+                dismissClears: raise.dismissClears,
                 progress: raise.progress,
                 action: raise.action,
                 read: false,
@@ -163,6 +178,7 @@ final class NoticeStore {
             message: raise.message,
             detail: raise.detail,
             dismissible: raise.dismissible,
+            dismissClears: raise.dismissClears,
             progress: raise.progress,
             action: raise.action,
             // Unread, always, because reaching here means something changed. A
@@ -191,16 +207,36 @@ final class NoticeStore {
     /// carries it is the finished update download, kept because losing it means
     /// waiting for the next check to find a version that is already on disk, and a
     /// bulk action is exactly how it would get lost.
+    ///
+    /// A dismissClears notice is skipped too, and for a sharper reason: its X ends
+    /// it rather than reading it, and "end every condition on this bar" is not what
+    /// anybody pressed. The card's own control is one deliberate act and stays the
+    /// only one, matching `markAllRead` in `core/notices.js`.
     @discardableResult
     func markAllRead() -> Bool {
         var changed = false
-        for (id, notice) in notices where notice.dismissible && !notice.read {
+        for (id, notice) in notices where notice.dismissible && !notice.dismissClears && !notice.read {
             var next = notice
             next.read = true
             notices[id] = next
             changed = true
         }
         return changed
+    }
+
+    /// Dismiss the notice under this id, the way its own X means it.
+    ///
+    /// The one entry point a surface should call when a card is closed, because
+    /// the meaning of that act is a property of the condition rather than of the
+    /// control: a transfer is over when the reader says so, and everything else is
+    /// seen and still true. A caller choosing between `markRead` and `clear` by
+    /// hand is how a card that cannot be dismissed comes back, which is the fault
+    /// this exists for. Mirrors `dismiss` in `core/notices.js`.
+    @discardableResult
+    func dismiss(_ id: String) -> Bool {
+        guard let notice = notices[id] else { return false }
+        if notice.dismissClears { return clear(id) }
+        return markRead(id)
     }
 
     /// The condition passed. Returns whether there was anything to clear.

@@ -126,6 +126,11 @@ function applyOp(store, op) {
     case 'set': return store.set(op.id, op.notice);
     case 'markRead': return store.markRead(op.id);
     case 'markAllRead': return store.markAllRead();
+    // The store's own answer to what a card's X means, which is the rule the
+    // download card turns on: a dismissClears notice leaves the store and anything
+    // else is read. In the fixture so both clients agree about which act a closed
+    // card performed, rather than each deciding at its own call site.
+    case 'dismiss': return store.dismiss(op.id);
     case 'clear': return store.clear(op.id);
     default: throw new Error(`unknown op in the notices fixture: ${op.op}`);
   }

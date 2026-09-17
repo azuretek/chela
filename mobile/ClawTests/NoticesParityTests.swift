@@ -100,12 +100,20 @@ final class NoticesParityTests: XCTestCase {
                 message: payload.message,
                 detail: payload.detail,
                 dismissible: payload.dismissible ?? true,
+                dismissClears: payload.dismissClears ?? false,
                 action: payload.action.map { NoticeAction(label: $0.label, command: $0.command) },
                 progress: payload.progress
             ))
         case "markRead":
             guard let id = op.id else { XCTFail("a markRead op with no id"); return false }
             return store.markRead(id)
+        case "dismiss":
+            // The store's own answer to what a card's X means, which is the rule
+            // the download card turns on: a dismissClears notice leaves the store
+            // and everything else is read. Pinned by the fixture so both clients
+            // agree about which act a closed card performed.
+            guard let id = op.id else { XCTFail("a dismiss op with no id"); return false }
+            return store.dismiss(id)
         case "markAllRead":
             return store.markAllRead()
         case "clear":
@@ -173,6 +181,7 @@ struct NoticesFixture: Decodable {
         let message: String
         let detail: String?
         let dismissible: Bool?
+        let dismissClears: Bool?
         let progress: Double?
         let action: Action?
     }

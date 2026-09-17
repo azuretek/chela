@@ -64,13 +64,25 @@ export function create() {
    * to the banner because the bar and the sentence above it describe one
    * condition, and two channels could disagree about which phase it is in.
    *
+   * `dismissClears` is the other half of `dismissible`, and it is about what the
+   * card's X MEANS rather than whether there is one. Most conditions here are true
+   * until something fixes them, so reading one is all a reader can honestly do to
+   * it, and the notice stays in the store and under Settings. A download is the
+   * exception: "I have seen that it is at 4%" is not a thing anybody means, and the
+   * condition the card describes is one the reader can end by saying so. So a
+   * dismissClears notice is CLEARED by its own X rather than read, which is what
+   * makes `dismiss()` below the right entry point for a surface.
+   *
    * @param {string} id  stable per condition, not per occurrence
    * @param {{tone?: string, message: string, detail?: string, dismissible?: boolean,
-   *          progress?: number|null,
+   *          dismissClears?: boolean, progress?: number|null,
    *          action?: {label: string, command: string}}} notice
    * @returns {boolean} whether anything actually changed
    */
-  function set(id, { tone = ERROR, message, detail = null, dismissible = true, action = null, progress = null }) {
+  function set(id, {
+    tone = ERROR, message, detail = null, dismissible = true, dismissClears = false,
+    action = null, progress = null,
+  }) {
     const previous = notices.get(id);
     if (previous && previous.tone === tone && previous.message === message && previous.detail === detail
       && previous.progress === progress
@@ -86,6 +98,10 @@ export function create() {
       message,
       detail,
       dismissible,
+      // Part of the notice rather than of the store, because it is a fact about
+      // this condition: a card whose X means "stop" says so, and one that does not
+      // say so is read.
+      dismissClears,
       progress,
       action: action ? { label: action.label, command: action.command } : null,
       // Unread, always, because reaching here means something changed. A
@@ -122,15 +138,39 @@ export function create() {
    * carries it is the finished update download, kept because losing it means
    * waiting for the next check to find a version that is already on disk, and a
    * bulk action is exactly how it would get lost.
+   *
+   * ★ A dismissClears notice is skipped for the same reason and a sharper one. Its
+   * X does not read it, it ends it, and "end every condition on this bar" is not
+   * what anybody pressed: a sweep over the banner must never decide the fate of a
+   * transfer, which is a decision about network work rather than about reading.
+   * The card's own control is one deliberate act and stays the only one.
    */
   function markAllRead() {
     let changed = false;
     for (const notice of notices.values()) {
-      if (notice.dismissible === false || notice.read) continue;
+      if (notice.dismissible === false || notice.dismissClears || notice.read) continue;
       notice.read = true;
       changed = true;
     }
     return changed;
+  }
+
+  /**
+   * Dismiss the notice under this id, the way its own X means it.
+   *
+   * The one entry point a surface should call when a card is closed, because the
+   * meaning of that act is a property of the condition rather than of the control:
+   * a transfer is over when the reader says so, and everything else is seen and
+   * still true. A caller choosing between markRead() and clear() by hand is how a
+   * card that cannot be dismissed comes back, which is the fault this exists for.
+   *
+   * @returns {boolean} whether that changed anything
+   */
+  function dismiss(id) {
+    const notice = notices.get(id);
+    if (!notice) return false;
+    if (notice.dismissClears) return clear(id);
+    return markRead(id);
   }
 
   /** The condition passed. Returns whether there was anything to clear. */
@@ -171,7 +211,7 @@ export function create() {
     return notices.size;
   }
 
-  return { set, get, markRead, markAllRead, clear, list, unread, size };
+  return { set, get, markRead, markAllRead, dismiss, clear, list, unread, size };
 }
 
 /**

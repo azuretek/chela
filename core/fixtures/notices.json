@@ -811,6 +811,119 @@
           }
         }
       }
+    },
+    {
+      "name": "dismissing a card whose X means stop clears it rather than reading it",
+      "ops": [
+        {
+          "op": "set",
+          "id": "download",
+          "notice": {
+            "tone": "info",
+            "message": "Downloading Claw Control UI 1.0.2.",
+            "dismissible": true,
+            "dismissClears": true,
+            "progress": 0.4
+          }
+        },
+        {
+          "op": "dismiss",
+          "id": "download"
+        }
+      ],
+      "returns": [
+        true,
+        true
+      ],
+      "expect": {
+        "size": 0,
+        "list": [],
+        "unread": [],
+        "notice": {}
+      }
+    },
+    {
+      "name": "dismissing any other card reads it, and the condition stays listed",
+      "ops": [
+        {
+          "op": "set",
+          "id": "shortcut",
+          "notice": {
+            "tone": "warn",
+            "message": "A global shortcut is not active",
+            "detail": "Frobnicate+Zz"
+          }
+        },
+        {
+          "op": "dismiss",
+          "id": "shortcut"
+        }
+      ],
+      "returns": [
+        true,
+        true
+      ],
+      "expect": {
+        "size": 1,
+        "list": [
+          "shortcut"
+        ],
+        "unread": [],
+        "notice": {
+          "shortcut": {
+            "tone": "warn",
+            "message": "A global shortcut is not active",
+            "detail": "Frobnicate+Zz",
+            "dismissible": true,
+            "progress": null,
+            "action": null,
+            "read": true
+          }
+        }
+      }
+    },
+    {
+      "name": "a sweep of the bar never decides the fate of a transfer",
+      "ops": [
+        {
+          "op": "set",
+          "id": "download",
+          "notice": {
+            "tone": "info",
+            "message": "Downloading Claw Control UI 1.0.2.",
+            "dismissible": true,
+            "dismissClears": true,
+            "progress": 0
+          }
+        },
+        {
+          "op": "markAllRead"
+        }
+      ],
+      "returns": [
+        true,
+        false
+      ],
+      "expect": {
+        "size": 1,
+        "list": [
+          "download"
+        ],
+        "unread": [
+          "download"
+        ],
+        "notice": {
+          "download": {
+            "tone": "info",
+            "message": "Downloading Claw Control UI 1.0.2.",
+            "detail": null,
+            "dismissible": true,
+            "progress": 0,
+            "action": null,
+            "read": false
+          }
+        }
+      }
     }
   ]
 }

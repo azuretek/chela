@@ -45,10 +45,20 @@ function card(notice) {
   // Marks it read: the condition carries on, the app just stops saying so. It
   // was a delete until notices could be read, which meant waving away a refused
   // shortcut destroyed the app's own record that it was refused.
+  //
+  // ★ Except for a card whose dismissal MEANS something, which is what
+  // `dismissClears` says. The one that carries it is a download in flight, and a
+  // tooltip promising the card stays listed would be wrong twice: the reader is
+  // asking for the transfer to stop being reported rather than saying they have
+  // seen it, and the store clears it rather than reading it. Same control, honest
+  // label, and the meaning itself still lives in one place (the store) rather than
+  // being decided here from what the card happens to look like.
   const dismiss = notice.dismissible === false ? null : el('button', {
     className: 'banner__close',
     type: 'button',
-    title: 'Mark read. It stays listed under Settings, Problems.',
+    title: notice.dismissClears
+      ? 'Clear this. It stops reporting the download, and it does not come back.'
+      : 'Mark read. It stays listed under Settings, Problems.',
     textContent: '✕',
     onclick: () => { void api.dismissNotice(notice.id); },
   });
