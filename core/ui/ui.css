@@ -607,9 +607,10 @@ a  { color: var(--accent); }
 }
 @keyframes loading-in { from { opacity: 0; } to { opacity: 1; } }
 
-/* Only reserve room for the drag band where the app drew the title bar away. */
-body:not(.frameless) .loading { padding-top: 24px; }
-body.frameless .loading { padding-top: 58px; }
+/* The cover reserved extra room above its content to clear its own grab band,
+   and it no longer has one: the band was the thing sitting on the notice banner,
+   and the title strip above this view is the window's drag surface. The cover's
+   own 24px inset is all that is left to keep, which is what .loading declares. */
 
 .loading__mark {
   position: relative;
@@ -1107,29 +1108,68 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 22px 0 0; }
 
 /* --------------------------------------------------------------- dragbar */
 
-/* The page's own top band, and it does NOT claim a drag region any more.
+/* The band that stands in for the window's title bar, and the only band in the
+   app that is ever allowed to claim a drag region.
 
-   It used to, and that is what made the notice banner unclickable. A drag region
-   is not a drawing: the OS never delivers a mouse-down inside one to any web
-   contents, so a control under one is dead however it is painted. The banner is
-   a view laid over the page's own top, so a band across the page's first 50px
-   covers the banner's first 50px. Measured 2026-09-16 on macOS with a real click
-   at the ✕'s centre: the click was delivered and nothing happened, while the same
-   click below the band dismissed the card. Abi's "almost unclickable other than a
-   very narrow sliver at the bottom" is exactly this, and the sliver is the part
-   of the banner the band did not reach.
+   It does NOT claim one by default, and that default is the whole rule. A drag
+   region is not a drawing: the OS never delivers a mouse-down inside one to any
+   web contents, so whatever sits under a band that claims one is dead however it
+   is painted. And it is registered against the WINDOW rather than against the
+   view that declared it, so a band does not have to be on top of anything to
+   swallow a click on something else. Measured 2026-09-16: the loading cover's
+   view begins at window y 36 (below the strip), so a band at the top of that
+   page occupies window y 36..86, and the notice banner's ✕ and Open Settings sit
+   at window y 58..86 in a view drawn OVER the cover. With the band claiming a
+   region, both controls were dead at their own centres; the same click a few
+   pixels lower worked. Abi's "almost unclickable other than a very narrow sliver
+   at the bottom" is exactly that, and the sliver is the part of the card the
+   band did not reach.
 
-   Nothing is lost by dropping the region here, because the window is dragged by
-   the title strip instead: `titlebar.html` declares the drag region across the
-   full width of the window wherever the app draws its own frame, and
-   `createStrip` does not make a strip at all on the one platform that keeps the
-   OS frame. One drag surface, owned by the thing that looks draggable.
-
-   The element stays where it is: pages use it to reserve the strip's height, and
-   the error page still lays out around it. */
+   So the region is OPT-IN, per page, and opting in is only legitimate for a page
+   whose view covers the title strip (see `.dragbar--window` below). That is also
+   why the band is the title bar's own height: a region stands in for the title
+   bar or it is a click to nowhere, and the notice banner occupies the top of the
+   content area, which begins exactly where the strip ends. A band that stops at
+   the strip's bottom edge therefore cannot reach the banner, by construction.
+   desktop/test/drag-regions.test.js holds that: it fails if any selector other
+   than `.strip-body` and `.dragbar--window` declares a drag region, if this band
+   is anything but the title bar's rectangle at the top of its view, or if a page
+   the app hosts BELOW the strip carries a band at all. */
 .dragbar {
-  position: fixed; top: 0; left: 0; right: 0; height: 50px; z-index: 0;
+  position: fixed; top: 0; left: 0; right: 0; z-index: 0;
+  /* One owner for the number. chrome.stripCss injects --strip-height into the
+     strip; the pages that never receive that injection fall back here, and the
+     guard test asserts this fallback equals chrome.STRIP_HEIGHT so the two
+     cannot drift. */
+  height: var(--strip-height, 36px);
 }
+
+/* The opt-in, and only for a page whose view covers the title strip: Settings,
+   About and the pairing screen are laid out over the whole window, so while one
+   of them is open the strip is not reachable and the band is the only thing left
+   to move the window by. Each of those views starts at window y 0, so its band
+   is the title bar's own rectangle.
+
+   Two pages are refused it, and both refusals are the same fact:
+
+   - The loading cover does not opt in at all. Its view starts below the strip, so
+     the strip is still there to drag the window by, and a band at the top of that
+     view lands at window y 36..72 -- on the banner.
+   - `.as-page` is refused, because it is the one presentation where a page that
+     IS laid out over the whole window is not: settings.js sets it when the page is
+     the window's own content rather than a dialog over it, and such a view also
+     begins below the strip. Without this the settings page would take the band's
+     region in the one presentation where the band is over the banner.
+
+   desktop/test/drag-regions.test.js holds both refusals. */
+body:not(.as-page) .dragbar--window {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+/* Belt and braces, the shape the Electron documentation specifies for a control
+   inside a drag region. Nothing of ours is under a band once the covers and
+   modals are laid out, so this guards the next control somebody puts there. */
 .dragbar ~ * button { -webkit-app-region: no-drag; app-region: no-drag; }
 /* Only reserve space where the frame is actually hidden; Linux keeps its own
    title bar and would otherwise get a 50px gap for nothing. The bar itself

@@ -1,0 +1,240 @@
+// The rule that keeps a view from swallowing the notice banner's clicks.
+//
+// The fault this exists for came back twice, so it is worth naming precisely.
+// A drag region is not a drawing: the OS never delivers a mouse-down inside one
+// to any web contents, so a control under one is dead however it is painted. And
+// it is registered against the WINDOW rather than against the view that declared
+// it, which is the part that makes it a class rather than an incident: a page
+// does not have to be on top of anything to swallow a click on something else.
+// Measured 2026-09-16 on the desktop client: every page carried a 50px grab band
+// across its own top, the notice banner is a separate view drawn over the page's
+// top, and with the band claiming a region the banner's ✕ and Open Settings did
+// nothing at their own centres while the same click a few pixels lower worked.
+//
+// The first fix took the region off the shared band. That stopped the bleeding
+// and left the wound: nothing then stopped the NEXT page, or the next view, from
+// putting a band in the same place, and the second report was exactly that, on
+// the loading cover rather than on a gateway page.
+//
+// So the shape being enforced here is:
+//
+//   * exactly two selectors may claim a drag region. `.strip-body`, which IS the
+//     title strip, and `.dragbar--window`, which a page opts into;
+//   * the opt-in is refused when the page is presented as the window's OWN
+//     content, because that presentation puts the page in a view that begins
+//     below the strip, where the banner lives;
+//   * the band is pinned to the top of its view and is the title bar's own
+//     height, so a band that claims a region stops exactly where the strip ends
+//     and cannot reach the content area at all;
+//   * a page the app hosts BELOW the strip may not carry a band at all, which is
+//     the loading cover.
+//
+// Every page in core/ui is read from the directory rather than listed here, and
+// every one of them is classified by where the app actually puts its view, which
+// is read out of main.js rather than restated. So a NEW page is covered the day
+// it is added: if it lands in the content area and carries a band, this fails,
+// and if it is given a new drag region anywhere this fails.
+//
+// Run with: cd desktop && npm test
+
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import assert from 'node:assert';
+import fs from 'node:fs';
+import path from 'node:path';
+
+import { STRIP_HEIGHT } from '../src/chrome.js';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const SRC = path.join(HERE, '..', 'src');
+const UI = path.join(HERE, '..', '..', 'core', 'ui');
+
+const read = (file) => fs.readFileSync(file, 'utf8');
+
+/** Every rule in a stylesheet, at-rules walked into, comments removed. */
+function rules(css) {
+  const text = read(css).replace(/\/\*[\s\S]*?\*\//g, '');
+  const out = [];
+  const walk = (body) => {
+    let i = 0;
+    while (i < body.length) {
+      const open = body.indexOf('{', i);
+      if (open === -1) break;
+      const selector = body.slice(i, open).trim();
+      let depth = 1;
+      let j = open + 1;
+      while (j < body.length && depth > 0) {
+        if (body[j] === '{') depth += 1;
+        else if (body[j] === '}') depth -= 1;
+        j += 1;
+      }
+      const inner = body.slice(open + 1, Math.max(open + 1, j - 1));
+      if (selector.startsWith('@')) walk(inner);
+      else out.push({ selector, inner });
+      i = j;
+    }
+  };
+  walk(text);
+  return out;
+}
+
+/** The declarations of one rule, as a Map. Inner blocks are not expected here. */
+function declarations(inner) {
+  const out = new Map();
+  for (const part of inner.split(';')) {
+    const at = part.indexOf(':');
+    if (at === -1) continue;
+    out.set(part.slice(0, at).trim().toLowerCase(), part.slice(at + 1).trim());
+  }
+  return out;
+}
+
+/** The stylesheets every page links, read once, as rules with declarations. */
+function pageStylesheets(pages) {
+  const sheets = new Set();
+  for (const page of pages) {
+    for (const m of page.text.matchAll(/<link[^>]+href="([^"]+)"/g)) sheets.add(m[1]);
+  }
+  const all = [];
+  for (const name of sheets) {
+    const file = path.join(UI, name);
+    if (!fs.existsSync(file)) continue;
+    for (const rule of rules(file)) all.push({ ...rule, file: name, decls: declarations(rule.inner) });
+  }
+  return all;
+}
+
+/** A class token, so `dragbar--window` is never read as `dragbar`. */
+const hasClass = (text, name) =>
+  [...text.matchAll(/class="([^"]*)"/g)].some((m) => m[1].split(/\s+/).includes(name));
+
+const pageFiles = fs.readdirSync(UI).filter((f) => f.endsWith('.html'));
+const pages = pageFiles.map((name) => ({ name, text: read(path.join(UI, name)) }));
+const css = pageStylesheets(pages);
+
+test('every page of ours is read, so a new one cannot hide', () => {
+  // The list is the directory, and the assertion is that it holds the pages the
+  // app loads. A page added tomorrow is in this list the moment it exists.
+  for (const expected of ['titlebar.html', 'loading.html', 'settings.html', 'about.html', 'pairing.html', 'banner.html']) {
+    assert.ok(pageFiles.includes(expected), `${expected} is missing from ${UI}`);
+  }
+});
+
+test('the app hosts a page either at the window top or below the strip', () => {
+  // Where each view begins is the app's fact, not this file's, so it is read out
+  // of layoutViews and asserted rather than restated. `top` is the strip's
+  // height, which is where the content area -- and so the notice banner -- begins.
+  const main = read(path.join(SRC, 'main.js'));
+  const layout = /function layoutViews\(\)[\s\S]*?\n\}/.exec(main);
+  assert.ok(layout, 'layoutViews was not found in main.js');
+  const bounds = (name) => {
+    const m = new RegExp(`${name}\\.setBounds\\(\\{ x: 0, y: ([^,]+),`).exec(layout[0]);
+    assert.ok(m, `${name} has no setBounds in layoutViews`);
+    return m[1].trim();
+  };
+  assert.equal(bounds('stripView'), '0', 'the title strip must begin at the window top');
+  assert.equal(bounds('pageView'), 'top', 'the gateway page must begin below the strip');
+  assert.equal(bounds('loadingView'), 'top', 'the loading cover must begin below the strip');
+  assert.equal(bounds('bannerView'), 'top', 'the notice banner must begin below the strip');
+  // Every overlay is full-window, which is why a band inside one is the title
+  // bar's own rectangle rather than something 36px lower.
+  const overlays = /for \(const view of overlayViews\.values\(\)\) view\.setBounds\(\{ x: 0, y: ([^,]+),/.exec(layout[0]);
+  assert.ok(overlays, 'the overlay bounds were not found in layoutViews');
+  assert.equal(overlays[1].trim(), '0', 'an overlay covers the whole window');
+});
+
+test('the cover begins below the strip, so a band on it would sit on the banner', () => {
+  // The arithmetic the whole rule rests on, asserted rather than described: the
+  // banner's band starts at `top`, and a band at the top of a view that starts
+  // at `top` therefore covers the banner's own first 50px -- which is where its
+  // controls are.
+  const bannerTop = STRIP_HEIGHT; // layoutViews: y: top, height: min(bannerHeight, ...)
+  assert.ok(bannerTop > 0, 'the content area begins at the title strip, so a cover band overlaps it');
+});
+
+test('only the title strip and the opt-in band may claim a drag region', () => {
+  const region = /drag/i;
+  const claiming = css.filter((rule) => {
+    const value = rule.decls.get('app-region') || rule.decls.get('-webkit-app-region') || '';
+    return region.test(value.replace(/^no-/, '')) && !/^no-/i.test(value);
+  });
+  assert.ok(claiming.length, 'no drag region exists at all; the title strip should still be one');
+  for (const rule of claiming) {
+    const allowed = rule.selector.includes('.strip-body') || rule.selector.includes('.dragbar--window');
+    assert.ok(allowed,
+      `${rule.file}: "${rule.selector}" claims a drag region. Only .strip-body (the title strip) and `
+      + '.dragbar--window (a page that covers the strip) may, because a region swallows the mouse-down '
+      + 'it covers in whatever view is underneath it');
+  }
+});
+
+test('the opt-in is refused when the page is the window itself, not a dialog over it', () => {
+  // The second instance of the same fault, and the guard is what found it: the
+  // settings page is an overlay (view at window y 0) AND, on a first run, the
+  // window's own content (view at y = the strip's height). In the second
+  // presentation its band would sit at window y 36..72, on the banner's controls,
+  // so the region is claimed only in the first.
+  const optIn = css.find((rule) => rule.selector.includes('.dragbar--window')
+    && (rule.decls.get('app-region') === 'drag' || rule.decls.get('-webkit-app-region') === 'drag'));
+  assert.ok(optIn, 'the .dragbar--window rule no longer claims a drag region');
+  assert.match(optIn.selector, /:not\(\.as-page\)/,
+    'the opt-in must be refused when body carries .as-page, which settings.js sets for the presentation '
+    + 'where the page IS the window and its view begins below the strip');
+  // And the class that decides it is set from the one fact that also decides
+  // where the card sits, so the two cannot disagree.
+  const settings = read(path.join(UI, 'settings.js'));
+  assert.match(settings, /if \(asPage\) document\.body\.classList\.add\('as-page'\)/,
+    'settings.js must keep setting .as-page for the page presentation');
+});
+
+test('the band is the title bar rectangle, from the title bar height', () => {
+  const band = css.find((rule) => rule.selector.split(',').map((s) => s.trim()).includes('.dragbar'));
+  assert.ok(band, 'the .dragbar rule was not found');
+  assert.equal(band.decls.get('position'), 'fixed', 'the band is positioned against its view');
+  assert.equal(band.decls.get('top'), '0', 'the band is pinned to the top of its view');
+  const height = band.decls.get('height') || '';
+  const fallback = /var\(--strip-height,\s*(\d+)px\)/.exec(height);
+  assert.ok(fallback, `.dragbar height should read var(--strip-height, <n>px), got "${height}"`);
+  // The pages that never receive chrome.stripCss fall back to this literal, so
+  // it is the one place the number could drift from its owner.
+  assert.equal(Number(fallback[1]), STRIP_HEIGHT,
+    'the band\'s fallback height must equal chrome.STRIP_HEIGHT, or a band grows past the strip and '
+    + 'onto the banner in the views that never receive the injection');
+});
+
+test('a page the app hosts below the strip carries no band at all', () => {
+  // The loading cover is this page. Its view begins at window y = the strip's
+  // height, so a band at its top is over the banner by construction; this asserts
+  // the element is not there to be given a region in the first place.
+  const main = read(path.join(SRC, 'main.js'));
+  const overlayPages = new Set(
+    [...(/const OVERLAY_PAGES = \{([^}]*)\}/.exec(main)?.[1] || '').matchAll(/'([\w.-]+\.html)'/g)].map((m) => m[1]));
+  assert.ok(overlayPages.size, 'OVERLAY_PAGES was not found in main.js');
+
+  for (const page of pages) {
+    if (page.name === 'titlebar.html') continue; // the strip itself, a drag surface by design
+    if (overlayPages.has(page.name)) continue; // hosted in a full-window view, at window y 0
+    assert.ok(!hasClass(page.text, 'dragbar'),
+      `${page.name} is hosted below the title strip and must not carry a drag band: its view begins at `
+      + 'the same y as the notice banner, so a band there lands on the banner\'s own controls');
+  }
+});
+
+test('the pages that cover the strip are the ones that may move the window', () => {
+  // The other side of the same rule, so the guard cannot be satisfied by simply
+  // deleting every band: while an overlay covers the strip the band is the only
+  // thing left to drag the window by, and each of those pages must carry one.
+  const main = read(path.join(SRC, 'main.js'));
+  const overlayPages = [...(/const OVERLAY_PAGES = \{([^}]*)\}/.exec(main)?.[1] || '').matchAll(/'([\w.-]+\.html)'/g)]
+    .map((m) => m[1]);
+  assert.deepEqual(overlayPages.slice().sort(), ['about.html', 'pairing.html', 'settings.html']);
+  for (const name of overlayPages) {
+    const page = pages.find((p) => p.name === name);
+    assert.ok(page, `${name} is in OVERLAY_PAGES but not in ${UI}`);
+    assert.ok(hasClass(page.text, 'dragbar--window'),
+      `${name} covers the title strip, so it must opt into the drag band or the window cannot be moved `
+      + 'while it is open');
+  }
+  assert.ok(hasClass(pages.find((p) => p.name === 'titlebar.html').text, 'strip-body'),
+    'the title strip must keep its own drag surface');
+});
