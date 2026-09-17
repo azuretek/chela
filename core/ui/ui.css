@@ -284,7 +284,19 @@ body.as-page .modal { border-color: transparent; box-shadow: none; }
   gap: 16px;
   padding-top: 4px;
 }
-.modal__header .sub { margin: 2px 0 0; }
+/* The subtitle, on the header's CONTENT edge rather than on its outer padding.
+   The header holds three things that share one column: the back control (whose
+   own 9px inset is upstream's), the title (upstream pads it 9px for exactly that
+   reason) and this line. Upstream's header has no subtitle, so there is no
+   borrowed rule for the third child to land on, and without this it took the
+   header's 12px padding alone: measured, its text started at x 103 where the
+   control's icon and the title's text both start at 112, so the title BLOCK's
+   left edge was the subtitle's and stuck 9px out past the header's content. That
+   is the misalignment, and it is the subtitle's inset that was missing rather
+   than the title's that was wrong. The 9px is upstream's number for this header,
+   declared here for the third child of it; a padding on our own rule rather than
+   on the borrowed title, whose declaration is pinned. */
+.modal__header .sub { margin: 2px 0 0; padding: 0 9px; }
 
 /* The back control is `settings-sidebar__back` above, with its icon box and its
    esc chip: one control, three rules, and it is the same one on both pages. What
@@ -481,10 +493,28 @@ a  { color: var(--accent); }
   min-width: 0;
 }
 
-/* Upstream spaces its groups from the section that holds them; our panels hold
-   them directly, so the gap lives here instead. A rule of our own, because the
-   one above has to stay upstream's. */
-.settings-group + .settings-group { margin-top: var(--space-3); }
+/* The gap above a group, and it is keyed to the element that HOLDS it rather
+   than to the group next door.
+
+   Upstream's own shape is a holder that owns the gap: `.settings-section` is a
+   flex column with `gap: var(--space-3)`, so the groups inside it are spaced by
+   their section and a group that is first in its section gets nothing. Ours are
+   held by three different kinds of parent, which is why the sibling rule that
+   used to stand here was wrong rather than merely narrow: the script fills a
+   host (`#gateways`, `#certs`, `#notice-history`) with one group per entry, and
+   the two cards at the end of the page are groups on a PANEL and on the modal
+   body, so at both of the edges a reader sees, a host or a section sat between
+   the two groups and `.settings-group + .settings-group` never matched. Measured
+   before: 0px between the last gateway and "Add a gateway", and 0px between that
+   and the Control-UI card, at every width and in both appearances.
+
+   So the rule asks the question the layout actually turns on: is there anything
+   above this group in the element that holds it? A group that is its holder's
+   first child keeps no gap, which is the whole of what the sibling rule got
+   right, and one that has a sibling before it takes the interface's group gap
+   however many wrappers that sibling is nested in. One value, from the scale,
+   declared once. */
+.settings-group:not(:first-child) { margin-top: var(--space-3); }
 
 /* One settings row: a leading text column against a trailing control column. */
 .settings-row {

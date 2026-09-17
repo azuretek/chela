@@ -28,6 +28,15 @@
 // scripts/test-settings-surface.js, which runs the real app, because a stylesheet
 // assertion cannot tell a rule that applies from one that is overridden.
 //
+// Two more joined them for the spacing and the header column, and they are the
+// pair this file's own lesson asks for: the SHAPE of the rules that own a gap and
+// a leading edge is asserted here ("the gap between two blocks belongs to the
+// element that holds them", "every text line in the header declares its own inset"),
+// and what those rules produce on screen is measured, at two widths and in both
+// appearances, by scripts/test-settings-layout.js. Spacing is the case a static
+// assertion cannot finish on its own: a gap vanished because a selector stopped
+// MATCHING, which no reading of the stylesheet can tell you.
+//
 // Run with: npm test
 
 import test from 'node:test';
@@ -342,6 +351,70 @@ test('the narrow-width rule stacks the row inside the width query only', () => {
   assert.ok(!/flex-wrap/.test(baseRow ? baseRow[1] : ''), 'the row wraps at full width now');
 });
 
+test('the gap between two blocks belongs to the element that holds them', () => {
+  // Two settings groups ran into each other on screen with no gap at all, and the
+  // reason was the SHAPE of the rule rather than its value: the gap was declared
+  // with `.settings-group + .settings-group`, which matches only two groups that
+  // are SIBLINGS. Most of this page's groups are not: the script fills a host
+  // (`#gateways`, `#certs`, `#notice-history`) with one group per entry, and the
+  // two cards at the foot are groups on a PANEL and on the modal body, so at both
+  // of the edges a reader sees, a wrapper sat between the two groups and the rule
+  // never applied. Upstream's own arrangement is the other one: its
+  // `.settings-section` is a flex column with `gap: var(--space-3)`, so the gap is
+  // owned by the element HOLDING the groups.
+  //
+  // Which is what this asserts, on the stylesheet, because the fault is invisible
+  // in every way except a rendered box (see scripts/test-settings-layout.js for
+  // that half): adjacency may not be how a group is spaced.
+  //
+  // Read with its comments REMOVED, and that is not tidiness: the comment beside
+  // the rule quotes the selector this asserts is gone, which is how the replaced
+  // shape stays findable, so a raw read of the file tests the prose rather than
+  // the code. Measured on the first run of this test: it failed against the fixed
+  // stylesheet because of the comment explaining the fix.
+  const css = read(REPO, 'core', 'ui', 'ui.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.doesNotMatch(css, /\.settings-group\s*\+\s*\.settings-group/,
+    'settings groups are spaced by sibling adjacency again: a host element between two groups silently removes the gap');
+  assert.match(css, /\.settings-group:not\(:first-child\)\s*\{[^}]*margin-top: var\(--space-3\)/,
+    'nothing gives a settings group the interface gap from the element that holds it');
+
+  // One value, declared once. A second top margin for a group would be a second
+  // owner of the surface's rhythm, which is how the gap this file is about comes
+  // back as a number nobody can move without moving two places.
+  const declared = [...css.matchAll(/\.settings-group[^{]*\{[^}]*margin-top:\s*([^;}]+)/g)]
+    .map((m) => m[1].trim());
+  assert.deepEqual(declared, ['var(--space-3)'],
+    `the gap above a settings group is declared ${declared.length} times: ${JSON.stringify(declared)}`);
+});
+
+test('every text line in the header declares its own inset from the header edge', () => {
+  // The misalignment Abi reported, in the stylesheet's terms: the heading and its
+  // subtitle did not share a leading edge. The title is upstream's rule and insets
+  // itself 9px inside the header's own 12px padding; the subtitle is OURS (upstream
+  // has no subtitle in this header) and took the header's padding alone, so it
+  // started 9px to the left of the title and of the back control's icon. The block
+  // read as two columns.
+  //
+  // So this asserts the agreement rather than either number: the two text rules in
+  // the header inset themselves to the SAME edge, which is the property that broke.
+  // A third line added later without an inset of its own is caught by the rendered
+  // guard, not here.
+  const css = read(REPO, 'core', 'ui', 'ui.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const inlinePadding = (selector) => {
+    const rule = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`).exec(css);
+    assert.ok(rule, `${selector} is not declared in ui.css at all`);
+    const padding = /padding:\s*([^;}]+)/.exec(rule[1]);
+    assert.ok(padding, `${selector} declares no padding, so it sits on the header's outer edge`);
+    const parts = padding[1].trim().split(/\s+/);
+    return parts.length === 1 ? parts[0] : parts.length === 2 ? parts[1] : parts.length === 3 ? parts[1] : parts[3];
+  };
+  const title = inlinePadding('.settings-sidebar__title');
+  const subtitle = inlinePadding('.modal__header .sub');
+  assert.notEqual(title, '0px', 'the title no longer insets itself from the header padding');
+  assert.equal(subtitle, title,
+    `the subtitle is inset ${subtitle} where the title is inset ${title}: the header's text is on two edges again`);
+});
+
 test('the Control-UI settings card is one node, outside every panel, beside About', () => {
   // It was inside the Gateways panel, which is a card nobody on the Certificates
   // tab can see, and the fix is a move rather than a second copy: one node, in the
@@ -365,4 +438,25 @@ test('the Control-UI settings card is one node, outside every panel, beside Abou
     'the card has more than one action button');
   assert.equal((page.match(/\$\('control-ui-settings'\)/g) || []).length, 1,
     'the page looks up more than one copy of the card');
+});
+
+test('the measured half of this still asks the phone\'s question, on both pages', () => {
+  // The spacing and the alignment are claims about boxes, so the assertions above
+  // are about the SHAPE of the rules and the boxes are measured by
+  // scripts/test-settings-layout.js. Nothing runs that harness automatically: the
+  // suite is plain Node and cannot render a page. So this checks that the harness
+  // is still the guard its report says it is, which is the only thing standing
+  // between a gutted harness and a fault nobody can see in a diff.
+  const harness = read(DESKTOP, 'scripts', 'test-settings-layout.js');
+  const widths = [...harness.matchAll(/width:\s*(\d+)/g)].map((m) => Number(m[1]));
+  assert.ok(widths.some((w) => w <= 601), `the narrow pass is gone: widths ${JSON.stringify(widths)}`);
+  assert.ok(widths.some((w) => w >= 700), `the wide pass is gone: widths ${JSON.stringify(widths)}`);
+  // The pages: settings, plus About, which carries the same borrowed header.
+  assert.match(harness, /file: 'settings\.html'/, 'the harness no longer loads the settings page');
+  assert.match(harness, /file: 'about\.html'/, 'the harness no longer loads the other page with this header');
+  // Both appearances, and the two claims: the blocks separated, the header's text on one edge.
+  assert.match(harness, /\['light', 'dark'\]/, 'the harness no longer captures both appearances');
+  assert.match(harness, /no two blocks of the settings surface are flush/,
+    'the harness no longer asserts that the surface\'s blocks are separated');
+  assert.match(harness, /share one leading edge/, 'the harness no longer asserts the header\'s leading edge');
 });
