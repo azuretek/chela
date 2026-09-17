@@ -66,15 +66,50 @@ final class UpdateCheckTests: XCTestCase {
         XCTAssertTrue(board.unread.isEmpty, "the banner has nothing to draw")
     }
 
-    /// An older feed build is not newer, so again nothing is raised.
+    /// An older RELEASE is not newer, so again nothing is raised.
+    ///
+    /// The tag used to name an older BUILD of the same release
+    /// (`1.0.1-dev.147` against `1.0.1-dev.148`), which the check could only
+    /// refuse by ranking the build and commit tail. That tail's basis changes,
+    /// so ranking it is what froze the updates (see the test below), and the one
+    /// thing the comparison may still refuse is a genuinely older release. This
+    /// case carries that instead, so the "not simply always-on" half of the rule
+    /// is still asserted.
     func testAnOlderFeedRaisesNothing() async throws {
         let board = board()
-        let feed = atom("1.0.1-dev.147.abc1234567")
+        let feed = atom("1.0.0-dev.147.abc1234567")
         let check = UpdateCheck(board: board, currentVersion: "1.0.1-dev.148.abc1234567", fetch: { _ in feed })
 
         await check.run()
 
         XCTAssertNil(board.all.first { $0.id == UpdateCheck.noticeId })
+    }
+
+    /// ★ The reported bug: a build whose number looks HIGHER than the feed's is
+    /// still offered the newest release.
+    ///
+    /// The tail after the release is build and commit information, and its basis
+    /// has changed, so an installed build from the old scheme carries a number
+    /// every later build sits below. Ranking it decided the installed build was
+    /// AHEAD of the feed and offered nothing, which is how builds stopped
+    /// arriving on a phone whose number appeared to go backwards.
+    ///
+    /// The signal that cannot invert is the feed's own ordering, so the newest
+    /// entry on the channel is offered whatever its tail says. This is the
+    /// deliberate change of behaviour, not a widened rule: two builds of one
+    /// release cannot be ordered against each other from the strings, and the
+    /// feed has already said which of them is newer.
+    func testAnOlderLookingTailIsStillOfferedTheNewestBuild() async throws {
+        let board = board()
+        let newest = "1.0.1-dev.12.1758000000"
+        let feed = atom(newest)
+        let check = UpdateCheck(board: board, currentVersion: "1.0.1-dev.195.6387043585", fetch: { _ in feed })
+
+        await check.run()
+
+        let notice = try XCTUnwrap(board.all.first { $0.id == UpdateCheck.noticeId },
+                                   "a published build with a lower tail number is still newer")
+        XCTAssertTrue(notice.message.contains(newest), "and the notice names it")
     }
 
     /// A fetch that throws is a check that could not run, not a fault to show: the
