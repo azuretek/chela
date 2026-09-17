@@ -130,6 +130,23 @@ test('the page says what was cleared and what refused, in the reader\'s terms', 
     'the confirmation replaces the clear report instead of joining it');
 });
 
+test('the result line is inside the control column, where it can be SEEN', () => {
+  // The defect this pins, measured 2026-09-16 in the shipped app: a `.result` per
+  // a row's actions placed AFTER a `width:100%` control is laid out past the
+  // full-width column and clipped by the group's `overflow:hidden`. It reads back
+  // correctly from `textContent` and cannot be seen, which is the same fault as
+  // saying nothing at all. Both rows in this page keep it inside the control.
+  for (const id of ['check-result', 'clear-result']) {
+    const at = html.indexOf(`id="${id}"`);
+    assert.ok(at > 0, `${id} is gone`);
+    const before = html.slice(0, at);
+    const controlOpen = before.lastIndexOf('settings-row__control');
+    const controlClose = before.lastIndexOf('</div>');
+    assert.ok(controlOpen > controlClose,
+      `${id} sits outside the row's control column, so the group's overflow clips it`);
+  }
+});
+
 test('the result line is coloured with the shared classes, not a private scheme', () => {
   assert.match(page, /node\.className = `result\$\{tone \? ` \$\{tone\}` : ''\}`/,
     'the result line does not use the shared .result classes the stylesheet defines');
