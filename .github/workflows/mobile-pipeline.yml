@@ -264,10 +264,27 @@ jobs:
         run: |
           set -eo pipefail
 
+          # ★ Each bundle's version is READ rather than asked of the toolchain.
+          # This loop used to run `xcodebuild -version` against every bundle in
+          # /Applications, and every one of those calls spawns the toolchain:
+          # measured 2026-09-17, the iOS 26 leg printed its chosen version 28 s
+          # into the step, once per bundle the image carries (macos-26 has
+          # 26.0.1 through 26.6). `Contents/version.plist` carries the same
+          # CFBundleShortVersionString that `xcodebuild -version` prints as
+          # "Xcode <version>", and reading it is a file read, not a process. The
+          # chosen bundle is still asked below, so the toolchain is proved to
+          # work, and a bundle whose plist cannot be read falls back to the old
+          # call rather than being skipped.
+          #
+          # The choice is unchanged: the newest bundle wins, and the floor of
+          # Xcode 16 for Swift 6 language mode still refuses anything older.
           chosen_line="$(
             for bundle in /Applications/Xcode*.app; do
               [ -d "$bundle" ] || continue
-              version="$(DEVELOPER_DIR="$bundle/Contents/Developer" xcodebuild -version 2>/dev/null | head -1 | sed 's/^Xcode //' || true)"
+              version="$(plutil -extract CFBundleShortVersionString raw -o - "$bundle/Contents/version.plist" 2>/dev/null || true)"
+              if [ -z "$version" ]; then
+                version="$(DEVELOPER_DIR="$bundle/Contents/Developer" xcodebuild -version 2>/dev/null | head -1 | sed 's/^Xcode //' || true)"
+              fi
               [ -n "$version" ] || continue
               printf '%s %s\n' "$version" "$bundle"
             done | sort -V | tail -1
@@ -322,35 +339,6 @@ jobs:
       # must finish before any other job can start.
       - name: Generate the Xcode project
         run: xcodegen generate
-
-      # Gate 1, compile. Building for the simulator rather than for a device is
-      # what keeps this free of Apple credentials, and the generic destination
-      # compiles every target in the scheme without picking a simulator yet.
-      #
-      # `build-for-testing` rather than `build`, so the test bundle is compiled
-      # by this step too. That is what lets the whole leg compile ONCE: this
-      # produces the app and the test bundle together, and the test step below
-      # runs exactly these products with `test-without-building`. Previously
-      # this gate ran `build` and the test step ran `test`, which compiled the
-      # app twice in the same leg for no extra coverage, and a fault in the test
-      # bundle was only ever found by the second of the two compiles.
-      #
-      # The derived data path is pinned so the two steps share one product tree
-      # instead of each getting a private one, which is what makes the second
-      # step a reuse rather than a rebuild.
-      - name: Build for the simulator
-        run: |
-          set -eo pipefail
-          derived="$RUNNER_TEMP/DerivedData"
-          echo "DERIVED_DATA=$derived" >> "$GITHUB_ENV"
-
-          xcodebuild \
-            -project Claw.xcodeproj \
-            -scheme Claw \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath "$derived" \
-            build-for-testing
 
       # The simulator is resolved from the runner's own list rather than named.
       # The image's simulator set differs from any given development machine's,
@@ -413,6 +401,58 @@ jobs:
           echo "resolved simulator for iOS $IOS_MAJOR:"
           xcrun simctl list devices available | grep -F "$sim" || true
 
+      # ★ The boot is STARTED here and waited on by the test step, because it is
+      # the largest cost in this leg and none of it needs the app to be built:
+      # measured 2026-09-17, `test-without-building` spent 3 m 15 s of its
+      # 3 m 57 s booting the simulator and installing the bundles, against about
+      # 30 s actually running the suite, and every second of that boot ran AFTER
+      # the compile had already finished. `simctl boot` asks the simulator
+      # service to start the device and returns, so the boot runs underneath the
+      # compile below instead of after it.
+      #
+      # Nothing is verified here, and nothing is weakened by it: the test step
+      # waits for the boot it needs with `simctl bootstatus -b`, which boots the
+      # device if this kick did not, so a boot that genuinely fails still fails
+      # there, in the step whose result depends on it. A device that is already
+      # booted is not an error, which is why this does not test the exit code.
+      - name: Start the simulator booting
+        run: |
+          set -eo pipefail
+          if xcrun simctl boot "$SIMULATOR_UDID" 2>/dev/null; then
+            echo "booting $SIMULATOR_UDID while the app compiles"
+          else
+            echo "$SIMULATOR_UDID is already booted or already booting"
+          fi
+
+      # Gate 1, compile. Building for the simulator rather than for a device is
+      # what keeps this free of Apple credentials, and the generic destination
+      # compiles every target in the scheme without picking a simulator yet.
+      #
+      # `build-for-testing` rather than `build`, so the test bundle is compiled
+      # by this step too. That is what lets the whole leg compile ONCE: this
+      # produces the app and the test bundle together, and the test step below
+      # runs exactly these products with `test-without-building`. Previously
+      # this gate ran `build` and the test step ran `test`, which compiled the
+      # app twice in the same leg for no extra coverage, and a fault in the test
+      # bundle was only ever found by the second of the two compiles.
+      #
+      # The derived data path is pinned so the two steps share one product tree
+      # instead of each getting a private one, which is what makes the second
+      # step a reuse rather than a rebuild.
+      - name: Build for the simulator
+        run: |
+          set -eo pipefail
+          derived="$RUNNER_TEMP/DerivedData"
+          echo "DERIVED_DATA=$derived" >> "$GITHUB_ENV"
+
+          xcodebuild \
+            -project Claw.xcodeproj \
+            -scheme Claw \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$derived" \
+            build-for-testing
+
       # Gate 2, the real verification: unit tests plus the parity suites, which
       # are the ones that compare the client's behaviour against core rather
       # than against itself.
@@ -430,6 +470,14 @@ jobs:
       - name: Test on the resolved simulator
         run: |
           set -eo pipefail
+
+          # The boot was started before the compile, so this waits for it rather
+          # than paying for it. `-b` boots the device if it is not already
+          # running, so this is also the fallback for a kick that did not take,
+          # and a boot that genuinely fails is caught here, in the step whose
+          # result depends on it, rather than being left to xcodebuild.
+          xcrun simctl bootstatus "$SIMULATOR_UDID" -b
+
           xcodebuild \
             -project Claw.xcodeproj \
             -scheme Claw \
@@ -500,10 +548,20 @@ jobs:
         run: |
           set -eo pipefail
 
+          # Same selection as the test legs above, including the reason it is a
+          # file read rather than a toolchain call per bundle: measured
+          # 2026-09-17, this step cost 18 s here and 28 s on a test leg, once per
+          # Xcode bundle the image carries. `Contents/version.plist` carries the
+          # version `xcodebuild -version` would print, the chosen bundle is
+          # still asked below so the toolchain is proved, and a bundle whose
+          # plist cannot be read falls back to the old call.
           chosen_line="$(
             for bundle in /Applications/Xcode*.app; do
               [ -d "$bundle" ] || continue
-              version="$(DEVELOPER_DIR="$bundle/Contents/Developer" xcodebuild -version 2>/dev/null | head -1 | sed 's/^Xcode //' || true)"
+              version="$(plutil -extract CFBundleShortVersionString raw -o - "$bundle/Contents/version.plist" 2>/dev/null || true)"
+              if [ -z "$version" ]; then
+                version="$(DEVELOPER_DIR="$bundle/Contents/Developer" xcodebuild -version 2>/dev/null | head -1 | sed 's/^Xcode //' || true)"
+              fi
               [ -n "$version" ] || continue
               printf '%s %s\n' "$version" "$bundle"
             done | sort -V | tail -1
@@ -523,6 +581,7 @@ jobs:
 
           echo "DEVELOPER_DIR=$bundle/Contents/Developer" >> "$GITHUB_ENV"
           echo "using $bundle (Xcode $version)"
+          "$bundle/Contents/Developer/usr/bin/xcodebuild" -version
 
       # The project is generated output, not source, and the checkout has no
       # Claw.xcodeproj in it at all. Regenerating here means a stale copy can
