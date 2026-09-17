@@ -77,6 +77,15 @@ const EXPECT = (arg('expect', MARK) || MARK).toUpperCase();
  * that passed.
  */
 const EXPECT_FIRST = (arg('expect-first', EXPECT) || EXPECT).toUpperCase();
+/**
+ * Serve nothing at all, to measure a launch with the gateway unreachable.
+ *
+ * The port is left unbound rather than answered with an error, because a refused
+ * connection is what an app meets when the gateway is not running, and it fails in
+ * under a millisecond. Same choice as scripts/test-connection-failure.js.
+ */
+const GATEWAY_DOWN = process.argv.includes('--gateway-down');
+
 /** Set to click the menu's Clear cache and reload and check the payload after it. */
 const THEN_CLEAR = process.argv.includes('--then-clear-cache');
 /**
@@ -90,6 +99,25 @@ const THEN_CLEAR = process.argv.includes('--then-clear-cache');
  * that run asserts the stale value BEFORE the clear and the fresh one after it.
  */
 const ALLOW_STALE_STATIC = process.argv.includes('--allow-stale-static-before-clear');
+/**
+ * Drop the gateway after the first successful load, and press the reconnect item.
+ *
+ * The question this answers is the one no amount of source reading settles: when a
+ * load fails over a payload that is ALREADY on screen, does that payload survive,
+ * and does the app leave it up or cover it with its own failure surface.
+ * Chromium's answer matters as much as the app's, because a committed error page
+ * would replace the document and there would be no stale payload on screen to keep.
+ */
+const THEN_DROP_GATEWAY = process.argv.includes('--then-drop-gateway');
+const THEN_RECONNECT = process.argv.includes('--then-reconnect');
+/** Bring the gateway back after the drop, serving a different payload. */
+const THEN_RESTORE_GATEWAY = process.argv.includes('--then-restore-gateway');
+/**
+ * What the gateway serves once it is back. Different from `--phase` by default in
+ * spirit, not in code: a restore that served the same payload could not tell a
+ * refreshed view from a kept one, so a run that cares passes the other letter.
+ */
+const RESTORE_PHASE = (arg('restore-phase', PHASE) || PHASE).toUpperCase();
 const DOC_CACHE = arg('doc-cache', 'no-cache');
 const SETTLE_MS = Number(arg('settle', 6000));
 const PORT = 18845;
@@ -169,6 +197,15 @@ const asset = (kind, mark) => `document.getElementById('${kind}').textContent = 
 window.__marker_${kind} = '${mark}';
 `;
 
+/**
+ * What the gateway is serving right now.
+ *
+ * A variable rather than the phase constant because a run may drop the gateway and
+ * bring it back serving something else, which is the only way to tell a payload
+ * that was KEPT from a payload that was replaced by an identical one.
+ */
+let served = MARK;
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, BASE);
   const send = (type, body, headers = {}) => {
@@ -176,7 +213,7 @@ const server = http.createServer((req, res) => {
     res.end(body);
   };
   if (url.pathname === '/' || url.pathname === '/index.html') {
-    send('text/html; charset=utf-8', document(MARK));
+    send('text/html; charset=utf-8', document(served));
     return;
   }
   if (url.pathname === '/sw.js') {
@@ -191,7 +228,7 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (url.pathname === '/assets/static.js') {
-    send('text/javascript; charset=utf-8', asset('static', MARK), {
+    send('text/javascript; charset=utf-8', asset('static', served), {
       'Cache-Control': 'public, max-age=31536000, immutable',
     });
     return;
@@ -199,6 +236,23 @@ const server = http.createServer((req, res) => {
   res.writeHead(404, { 'Content-Type': 'text/plain' });
   res.end('not found');
 });
+
+/**
+ * Every socket the gateway has, so a drop is a REFUSED connection rather than a
+ * keep-alive socket answering from the server we just closed.
+ */
+const sockets = new Set();
+server.on('connection', (socket) => {
+  sockets.add(socket);
+  socket.on('close', () => sockets.delete(socket));
+});
+
+/** Stop serving, and close what is open, so the next connect is refused. */
+async function dropGateway() {
+  await new Promise((resolve) => server.close(resolve));
+  for (const socket of sockets) socket.destroy();
+  sockets.clear();
+}
 
 /** Where the gateway page lives, once there is one. */
 function pageWc() {
@@ -233,6 +287,46 @@ const READ = `({
 })`;
 
 const CACHE_NAMES = 'caches.keys()';
+
+/**
+ * What the app's OWN surfaces say, since that is what a person reads when no
+ * payload arrives: the loading cover and the notice banner are separate views.
+ *
+ * The cover is the answer here rather than a detail: if a stale payload is what
+ * renders, the cover is down and the failure is reported over a working surface.
+ */
+/**
+ * What the app's OWN surfaces say, because that is what a person reads when no
+ * payload arrives: the loading cover and the notice banner are separate views from
+ * the gateway page.
+ *
+ * The cover matters most: if a stale payload is on screen, the cover is DOWN and
+ * the failure is reported over a working surface, which is a different outcome from
+ * a window that only has a cover and an apology.
+ */
+function appSurfaces() {
+  const read = (fragment) => {
+    const wc = webContents.getAllWebContents().find(
+      (w) => !w.isDestroyed() && w.getURL().includes(fragment),
+    );
+    return wc || null;
+  };
+  return { cover: read('loading.html'), banner: read('banner.html') };
+}
+
+/** The cover and banner text, or nulls when those views are not up. */
+async function appState() {
+  const { cover, banner } = appSurfaces();
+  const text = async (wc) => {
+    if (!wc) return null;
+    try {
+      return (await wc.executeJavaScript('document.body.innerText')).replace(/\s+/g, ' ').trim().slice(0, 200);
+    } catch {
+      return null;
+    }
+  };
+  return { cover: await text(cover), banner: await text(banner) };
+}
 
 /** The rendered markers, or null while there is nothing to read them off. */
 async function look(wc) {
@@ -303,8 +397,30 @@ app.whenReady().then(async () => {
     break;
   }
   if (!first) {
-    console.error('FAIL nothing rendered on the gateway page within 20s');
-    app.exit(1);
+    // With nothing listening there is normally no gateway page to read at all, so
+    // this is the measurement rather than a failure: what a person gets is decided
+    // by the app's own surfaces, and a stale payload showing up here would be one
+    // of the two answers this file exists to tell apart.
+    if (!GATEWAY_DOWN) {
+      console.error('FAIL nothing rendered on the gateway page within 20s');
+      console.log(`APP     ${JSON.stringify(await appState())}`);
+      app.exit(1);
+      return;
+    }
+    await sleep(SETTLE_MS);
+    const surfaces = await appState();
+    console.log('NO-PAYLOAD the gateway page never rendered');
+    console.log(`APP     ${JSON.stringify(surfaces)}`);
+    console.log(`VERDICT gateway=down rendered=none cover=${surfaces.cover ? 'up' : 'gone'} `
+      + `banner=${surfaces.banner ? 'seen' : 'none'}`);
+    server.close();
+    clearInterval(sampler);
+    await sleep(200);
+    if (surfaces.cover) {
+      console.log('NOTE    the loading cover is up, so the window shows the app\'s own failure ');
+      console.log('NOTE    surface and no Control UI at all');
+    }
+    app.exit(0);
     return;
   }
   const wc = pageWc();
@@ -326,6 +442,43 @@ app.whenReady().then(async () => {
   }
   console.log(`SETTLED ${JSON.stringify(settled)}`);
   console.log(`SEQUENCE ${JSON.stringify(sequence)} navigations=${navigations}`);
+  console.log(`APP     ${JSON.stringify(await appState())}`);
+
+  // The payload-on-screen question, which is a different one from the launch
+  // question above and has to be reached the way a person reaches it: the gateway
+  // goes away while the app is showing it, and the app is told to reconnect.
+  let afterReconnect = null;
+  let surfacesAfterReconnect = null;
+  let afterRestore = null;
+  if (THEN_DROP_GATEWAY) {
+    await dropGateway();
+    console.log('DROP    the gateway is no longer listening');
+    if (THEN_RECONNECT) {
+      const item = menuItem('Reconnect to gateway');
+      if (!item) { console.error('FAIL no Reconnect to gateway in the application menu'); app.exit(1); return; }
+      console.log('MENU    clicking Reconnect to gateway');
+      item.click();
+      await sleep(SETTLE_MS);
+      afterReconnect = await look(pageWc());
+      surfacesAfterReconnect = await appState();
+      console.log(`AFTER-RECONNECT ${JSON.stringify(afterReconnect)}`);
+      console.log(`APP     ${JSON.stringify(surfacesAfterReconnect)}`);
+    }
+    if (THEN_RESTORE_GATEWAY) {
+      // Back, serving something else: the only way to tell a payload that was kept
+      // from one that was replaced by an identical copy.
+      served = RESTORE_PHASE;
+      await new Promise((resolve) => server.listen(PORT, '127.0.0.1', resolve));
+      console.log(`RESTORE the gateway is back on ${PORT}, serving payload ${RESTORE_PHASE}`);
+      const item = menuItem('Reconnect to gateway');
+      if (!item) { console.error('FAIL no Reconnect to gateway in the application menu'); app.exit(1); return; }
+      item.click();
+      await sleep(SETTLE_MS);
+      afterRestore = await look(pageWc());
+      console.log(`AFTER-RESTORE ${JSON.stringify(afterRestore)}`);
+      console.log(`APP     ${JSON.stringify(await appState())}`);
+    }
+  }
 
   // Part two of the requirement, measured through the path a person uses: the
   // menu's Clear cache and reload, which drops the worker's caches and the HTTP
@@ -360,7 +513,12 @@ app.whenReady().then(async () => {
     fails.push(`the first paint was ${first.doc}, not doc ${EXPECT_FIRST}`);
   }
   const stale = sequence.filter((s) => s.doc !== `doc ${EXPECT_FIRST}` && s.doc !== `doc ${EXPECT}`);
-  if (stale.length) fails.push(`a third payload was painted: ${JSON.stringify(stale)}`);
+  // Only for a plain launch. A run that drops the gateway and brings it back
+  // paints a second payload on purpose, and that is what the after-restore
+  // assertion below is for, so counting it here would be measuring the harness.
+  if (stale.length && !THEN_DROP_GATEWAY) {
+    fails.push(`a third payload was painted: ${JSON.stringify(stale)}`);
+  }
   if (!settled) fails.push('the page was gone after the settle window');
   else {
     for (const field of ['doc', 'hashed', 'static']) {
@@ -385,6 +543,36 @@ app.whenReady().then(async () => {
     }
   }
 
+  if (THEN_RECONNECT) {
+    // The claim Abi asked for, asserted on the DOM rather than described: no fresh
+    // payload was available, so the stale one is what a person is left looking at.
+    if (!afterReconnect) {
+      fails.push('the payload on screen was GONE after a failed reconnect, so there was nothing stale to fall back to');
+    } else {
+      for (const field of ['doc', 'hashed', 'static']) {
+        if (afterReconnect[field] !== `${field} ${MARK}`) {
+          fails.push(`after the failed reconnect ${field} is ${afterReconnect[field]}, not ${field} ${MARK}: the payload on screen was not preserved`);
+        }
+      }
+    }
+    if (surfacesAfterReconnect && surfacesAfterReconnect.cover) {
+      fails.push('the loading cover is up over a payload that was kept, so the failure surface hides the interface instead of sitting over it');
+    }
+  }
+  if (THEN_RESTORE_GATEWAY) {
+    // And the other direction: freshness still wins the moment it exists, so
+    // keeping the stale payload can never quietly become keeping it forever.
+    if (!afterRestore) {
+      fails.push('nothing rendered after the gateway came back');
+    } else {
+      for (const field of ['doc', 'hashed']) {
+        if (afterRestore[field] !== `${field} ${RESTORE_PHASE}`) {
+          fails.push(`after the gateway came back ${field} is ${afterRestore[field]}, not ${field} ${RESTORE_PHASE}: the fresh payload did not replace the stale one`);
+        }
+      }
+    }
+  }
+
   server.close();
   await sleep(200);
   if (fails.length) {
@@ -398,3 +586,4 @@ app.whenReady().then(async () => {
 });
 
 server.listen(PORT, '127.0.0.1');
+if (GATEWAY_DOWN) server.close();
