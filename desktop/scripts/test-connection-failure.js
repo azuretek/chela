@@ -26,7 +26,12 @@ import http from 'node:http';
 import { app, webContents, nativeTheme } from 'electron';
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-connfail-'));
+// Pinned BOTH ways: main.js decides whether a run is isolated from the
+// '--user-data-dir' SWITCH, not from the path, so a harness that sets only
+// the path runs on the REAL profile. Measured 2026-09-16: this file did, and
+// the app booted against the live gateway while the harness asserted nothing.
 app.setPath('userData', TMP);
+app.commandLine.appendSwitch('user-data-dir', TMP);
 fs.writeFileSync(path.join(TMP, 'config.json'), `${JSON.stringify({
   // Nothing listens here. Chosen over an unresolvable hostname because a
   // refused connection fails immediately and identically on all three

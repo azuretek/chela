@@ -21,7 +21,12 @@ import os from 'node:os';
 import { app, webContents } from 'electron';
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-banner-'));
+// Pinned BOTH ways: main.js decides whether a run is isolated from the
+// '--user-data-dir' SWITCH, not from the path, so a harness that sets only
+// the path runs on the REAL profile. Measured 2026-09-16: this file did, and
+// the app booted against the live gateway while the harness asserted nothing.
 app.setPath('userData', TMP);
+app.commandLine.appendSwitch('user-data-dir', TMP);
 fs.writeFileSync(path.join(TMP, 'config.json'), `${JSON.stringify({
   gateways: [{ id: 'harness', label: 'Nowhere', url: 'http://127.0.0.1:18791/' }],
   activeGatewayId: 'harness',

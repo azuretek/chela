@@ -63,8 +63,52 @@
   --scrollbar-thumb: color-mix(in srgb, var(--muted) 32%, transparent);
   --scrollbar-thumb-hover: color-mix(in srgb, var(--muted) 64%, transparent);
 
+  /* Everything the upstream components further down are written against, and it
+     is the OTHER half of the token layer: the palette above was already here,
+     and these are the ones only a borrowed component needs. Upstream's own
+     values, from the same :root block in ui/src/styles/base.css that --bg comes
+     from.
+
+     Two kinds, and the difference matters. `--card`, `--bg-elevated` and
+     `--muted-strong` are a PALETTE, so a running Control UI overrides them the
+     way it overrides the block above, and what is written here is the fallback
+     for a page with no gateway. The spacing scale, the text scale, the mono
+     stack and the focus ring are not mode-dependent in upstream either: they are
+     what they are, and a component that copied upstream's declaration needs them
+     to resolve or it silently loses the declaration that used them. */
+  --card: #161920;
+  --bg-elevated: #191c24;
+  --muted-strong: #898990;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
   --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --shadow-lg: 0 24px 60px rgba(0, 0, 0, .55);
+
+  /* The interface's text scale, which is what makes upstream's components follow
+     the Control UI's own reading-size setting rather than only our default. A
+     borrowed rule says `calc(21px * var(--control-ui-text-scale))`; without this
+     declared the whole calc is invalid and the declaration is dropped in
+     silence, which is how these components lose their type. */
+  --control-ui-text-scale: 1;
+  --control-ui-text-xs: calc(11px * var(--control-ui-text-scale));
+  --control-ui-text-sm: calc(12px * var(--control-ui-text-scale));
+  --control-ui-text-md: calc(14px * var(--control-ui-text-scale));
+  --control-ui-text-lg: calc(16px * var(--control-ui-text-scale));
+
+  --duration-fast: 100ms;
+  --duration-normal: 180ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --cursor-action: default;
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 3px color-mix(in srgb, var(--ring) 80%, transparent);
 
   /* Ours: the Control UI has no equivalent, so these are never overridden. */
   --ok: #3ddc84;
@@ -91,6 +135,12 @@
     --text: #3d3a33;
     --text-strong: #1f1d1a;
     --muted: #6b655b;
+    /* The same three the dark block declares, in their light values. Upstream's
+       --card and --bg-elevated are both #ffffff in light, which is why a group
+       and a card read as one surface there and as two here. */
+    --card: #ffffff;
+    --bg-elevated: #ffffff;
+    --muted-strong: #56524a;
     --accent: #c62828;
     --accent-hover: #a31d1d;
     --accent-subtle: rgba(198, 40, 40, .10);
@@ -204,45 +254,35 @@ body.as-page .modal { border-color: transparent; box-shadow: none; }
 
 .modal__icon { flex: none; width: 34px; height: 34px; }
 
+/* The header, and it is a COLUMN now rather than a row, which is upstream's own
+   shape for this block: the back control gets a line of its own, which is what
+   makes it a full-width row target with its esc chip at the trailing edge, and
+   the title sits under it. The padding is upstream's too (the
+   .settings-sidebar__header rule in the upstream components section owns it),
+   because that is what puts the control and the title on one leading edge while
+   the card's own inset stays ours. */
 .modal__header {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+}
+/* The icon and the title together. Ours, not upstream's: its settings header has
+   no icon there, and this is where the app's mark sits beside its name. */
+.modal__headline {
   display: flex;
   align-items: flex-start;
   gap: 16px;
-  padding: 18px 22px 14px;
-  border-bottom: 1px solid var(--border);
+  padding-top: 4px;
 }
-.modal__header .stack { flex: 1; min-width: 0; }
-.modal__header h1 { margin: 0; }
 .modal__header .sub { margin: 2px 0 0; }
 
-.modal__close {
-  flex: none;
-  width: 28px; height: 28px; padding: 0;
-  display: grid; place-items: center;
-  font-size: 13px; line-height: 1;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--muted);
-  cursor: pointer;
-}
-.modal__close:hover { background: var(--bg-hover); color: var(--text-strong); }
-
-/* The same control, as a back arrow at the LEADING edge of the header: this is
-   the way back to whatever the surface was drawn over, and both the glyph and
-   the position say so, where a cross on the trailing edge said "dismiss this"
-   and nothing about where you would land. It keeps the 28px height so the
-   header's own row does not move, and it is a little taller optically because an
-   arrow reads as squashed at the size a single character needs. */
-.modal__back {
-  width: 32px;
-  font-size: 15px;
-  line-height: 1;
-  /* The arrow is the first thing in the header, and the header's padding is the
-     card's. Pulling it in by 6px lines the leading edge of the glyph up with the
-     card's other content rather than with the button's own box. */
-  margin-left: -6px;
-}
+/* The back control is `settings-sidebar__back` above, with its icon box and its
+   esc chip: one control, three rules, and it is the same one on both pages. What
+   stood here was `modal__close modal__back`, a single button whose glyph was an
+   arrow CHARACTER, with no focus ring of its own and nothing naming the key that
+   did the same thing. Both are gone rather than kept beside it, because a
+   surface with two owners for its way back has neither. */
 
 /* The only scrolling region on the page, which is what keeps the header and the
    card's rounded corners fixed while the content moves. */
@@ -318,12 +358,191 @@ a  { color: var(--accent); }
    provides the gap a heading's top margin used to. */
 .panel > :first-child { margin-top: 0; }
 
-.card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px 16px;
-  margin-bottom: 10px;
+/* ====================================================== upstream components */
+
+/* The Control UI classes our surfaces use, copied from its own stylesheet so
+   these two pages are the interface's components rather than our own names
+   styled from its tokens.
+
+   WHY A COPY AND NOT AN IMPORT. The Control UI serves its stylesheet as a
+   content-hashed asset under an immutable cache header (see
+   core/spec/tokens.json), so there is no URL to import and hardcoding one would
+   break at the next release. And the palette alone was never enough: it gives a
+   page the interface's COLOURS, not its control shapes, its row layout or its
+   type scale, which is why the surfaces read as close-but-not-the-same through
+   every round of token work.
+
+   WHAT KEEPS THE COPY HONEST. Every rule below is one entry in
+   core/spec/upstream-classes.json, pinned by selector and by declaration, and
+   core/test/upstream-classes.test.js asserts both ends: this stylesheet must
+   still declare exactly what is pinned, and the OpenClaw checkout must still
+   declare it too. A rename upstream therefore fails a test instead of leaving an
+   element unstyled with nothing in the log, which is the whole reason the pin
+   exists. Edit a rule here and the pin test fails; that is the guard working.
+
+   Order matters and it is upstream's: the header and its back control, then the
+   group, then the rows that sit on it. */
+
+/* The header block. Ours is a modal header rather than a sidebar, so the
+   geometry above it is ours, but the block itself is upstream's: the 8px top pad
+   is what puts a 32px control on the same centreline as the interface's own
+   chrome. */
+.settings-sidebar__header {
+  flex-shrink: 0;
+  padding: 8px 12px 6px;
+}
+
+/* The way back, and it is the same control on both pages. A label and an arrow
+   at the leading edge, never an icon-only cross: the arrow says where pressing
+   it goes, and the esc chip at the trailing edge says which key does the same
+   thing without a person having to guess or find out by trying. */
+.settings-sidebar__back {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 9px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: calc(12.5px * var(--control-ui-text-scale));
+  font-weight: 550;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+.settings-sidebar__back:hover {
+  background: color-mix(in srgb, var(--bg-hover) 84%, transparent);
+  color: var(--text);
+}
+.settings-sidebar__back:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.settings-sidebar__back-icon {
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+}
+/* Stroked rather than filled, at 1.7px, which is what makes the arrow the same
+   optical weight as every other icon in the interface. Without these the SVG
+   falls back to a black fill and disappears in the dark theme. */
+.settings-sidebar__back-icon svg {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.7px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.settings-sidebar__esc {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--card) 70%, transparent);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: calc(10px * var(--control-ui-text-scale));
+  font-weight: 550;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.settings-sidebar__title {
+  margin: 14px 0 0;
+  padding: 0 9px;
+  font-size: calc(21px * var(--control-ui-text-scale));
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--text-strong);
+}
+
+/* The one surface a section is drawn on. It replaces our `.card`, and the
+   differences are the whole reason the two read differently: upstream's is
+   --card rather than --panel, its border is 85% rather than solid, and its
+   radius is --radius-lg rather than --radius. */
+.settings-group {
+  background: var(--card);
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* Upstream spaces its groups from the section that holds them; our panels hold
+   them directly, so the gap lives here instead. A rule of our own, because the
+   one above has to stay upstream's. */
+.settings-group + .settings-group { margin-top: var(--space-3); }
+
+/* One settings row: a leading text column against a trailing control column. */
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  min-height: 48px;
+}
+.settings-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  flex: 1 1 0;
+}
+.settings-row__title {
+  font-size: var(--control-ui-text-md);
+  font-weight: 500;
+  color: var(--text-strong);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.settings-row__desc {
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.settings-row__control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 60%;
+}
+/* A row that is a click target, so a checkbox row toggles from anywhere on it.
+   `default` rather than `pointer` is upstream's choice and it is deliberate:
+   the hover fill is what says the row is live. */
+.settings-row--toggle {
+  cursor: var(--cursor-action);
+}
+/* Title and description above a full-width control, which is how a select or a
+   text field is drawn rather than being squeezed beside its label. */
+.settings-row--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+.settings-row--stacked .settings-row__control {
+  max-width: none;
+  justify-content: flex-start;
+}
+/* A trailing cluster of buttons, given the whole row so the buttons wrap as
+   buttons instead of squeezing into the 60% cap above. */
+.settings-row--actions .settings-row__control {
+  width: 100%;
+  max-width: none;
+  flex-wrap: wrap;
+}
+/* The hairline between two rows in one group: 60%, not a full border, which is
+   what keeps a group reading as one surface with rows on it. */
+.settings-row + .settings-row {
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
 }
 
 .row { display: flex; align-items: center; gap: 12px; }
@@ -337,10 +556,13 @@ a  { color: var(--accent); }
 .row__actions { display: flex; align-items: center; gap: 12px; }
 .row + .row { margin-top: 10px; }
 .grow { flex: 1; min-width: 0; }
-.stack { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 
-.name { font-weight: 600; color: var(--text-strong); }
-.url  { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; overflow-wrap: anywhere; }
+.url  { color: var(--muted); font-family: var(--mono); font-size: 11.5px; overflow-wrap: anywhere; }
+/* `.stack` and `.name` used to live here, as the column and the title of every
+   row on the page. Both are upstream's now: `settings-row__text` and
+   `settings-row__title`, declared in the upstream components section, and they
+   are not re-declared here because a borrowed component with a second copy of
+   its own shape is the drift the pin exists to catch. */
 
 .badge {
   font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
@@ -639,12 +861,19 @@ button.primary:hover:not(:disabled) { background: var(--primary-hover); border-c
 button.ghost { background: transparent; }
 button.danger:hover:not(:disabled) { border-color: var(--destructive); color: var(--destructive); }
 
-label.check { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; margin-bottom: 12px; }
-label.check input { margin: 3px 0 0; accent-color: var(--accent); }
-label.check .stack span:last-child { color: var(--muted); font-size: 12px; }
-
-.field { margin-bottom: 12px; }
-.field > span { display: block; margin-bottom: 5px; font-weight: 550; }
+/* The checkbox our toggle rows carry. Upstream's row holds a `<wa-switch>`,
+   which is a component in the Control UI's own bundle that a file:// page with
+   `default-src 'none'` cannot load, so ours is the platform's checkbox in the
+   same place. Only what has to differ from the platform is written here: the
+   accent so the tick follows the theme, the size, and the cursor, which is
+   `default` because the ROW is the target rather than the box. */
+.settings-row--toggle input[type="checkbox"] {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: var(--cursor-action);
+}
 
 .result { font-size: 12px; margin-top: 8px; min-height: 17px; }
 .result.ok   { color: var(--ok); }
@@ -709,7 +938,7 @@ label.check .stack span:last-child { color: var(--muted); font-size: 12px; }
    this width. The layouts above are written for the 720px settings modal, where
    a gateway row's content and its badge and three action buttons all fit on one
    line. On a phone the same page is ~350px wide, and there the four no-wrap
-   controls to the right of the content leave the `.stack.grow` beside them no
+   controls to the right of the content leave the text column beside them no
    room: it collapses toward zero, and `.url`, with `overflow-wrap: anywhere`,
    then wraps its address one character to a line down the screen. Measured on an
    iPhone simulator on 2026-09-16, in both the sheet and the first-run
@@ -721,55 +950,68 @@ label.check .stack span:last-child { color: var(--muted); font-size: 12px; }
    query, so the desktop at its normal size is untouched (its modal is 720px,
    well above this floor) and only a genuinely narrow window, where the row does
    not fit either, gets the same stacking, which is what it should do. 601px
-   rather than 480 so a small phone in landscape is still covered. */
+   rather than 480 so a small phone in landscape is still covered.
+
+   The selectors changed with the markup, not with the intent: a row is a
+   `settings-row` on a `settings-group` now, and the state and the actions live
+   in the row's own control column rather than being its siblings. */
 @media (max-width: 601px) {
-  /* The gateway row wraps: content first at full width, actions beneath it.
+  /* The row wraps: text first at full width, the control column beneath it.
      Scoped to the gateway list (`#gateways`) and the notice history so a
-     `.row` used elsewhere as a deliberate one-line control (the Save/Clear
-     action rows, the tab bar) is left alone. */
-  #gateways > .card > .row,
-  #notice-history > .card > .row {
+     `settings-row` used elsewhere as a deliberate one-line control (the Save
+     action row, the About buttons) is left alone. */
+  #gateways > .settings-group > .settings-row,
+  #notice-history > .settings-group > .settings-row {
     flex-wrap: wrap;
   }
-  /* The content column takes the whole first line, so the URL has the full card
+  /* The text column takes the whole first line, so the URL has the full card
      width to sit on and reads as one line rather than a column of characters. */
-  #gateways > .card > .row > .stack.grow,
-  #notice-history > .card > .row > .stack.grow {
+  #gateways > .settings-group > .settings-row > .settings-row__text,
+  #notice-history > .settings-group > .settings-row > .settings-row__text {
     flex-basis: 100%;
   }
-  /* The connection state then gets a line to itself, and its own box centres the
-     pill on it. A full-basis badge would have been simpler and wrong: the badge
-     is a pill, and one stretched across the card reads as a rule rather than as
-     a state. Centring the GROUP and leaving the badge its own width is what
-     keeps the pill a pill. */
-  #gateways > .card > .row > .row__status {
+  /* The control column takes the line below it, full width and stacked. Without
+     the stacking its own two groups would share one line at a width where
+     neither of them fits. */
+  #gateways > .settings-group > .settings-row > .settings-row__control {
     flex-basis: 100%;
+    max-width: none;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  /* The connection state's own box centres the pill on the line it was given. A
+     full-basis badge would have been simpler and wrong: the badge is a pill, and
+     one stretched across the card reads as a rule rather than as a state.
+     Centring the GROUP and leaving the badge its own width is what keeps the
+     pill a pill. */
+  #gateways > .settings-group > .settings-row > .settings-row__control > .row__status {
     justify-content: center;
   }
   /* And the buttons take the line below it, together, the way they sat at the end
-     of the row before it wrapped. Their own full-basis group is what puts them
-     on a new line rather than beside the state: the state's line is already
-     filled, so the row breaks here whatever room happens to be left. */
-  #gateways > .card > .row > .row__actions {
-    flex-basis: 100%;
+     of the row before it wrapped. */
+  #gateways > .settings-group > .settings-row > .settings-row__control > .row__actions {
+    justify-content: center;
   }
   /* The buttons keep their own size and do not stretch to fill the wrapped
      line, so Connect and Edit stay the width of their labels. */
-  #gateways > .card > .row > .row__actions > button {
+  #gateways > .settings-group > .settings-row > .settings-row__control > .row__actions > button {
     flex: none;
   }
   /* The notice history's rows are a badge and nothing to press, and they are not
      the case this rule is about: there the badge stays a trailing-edge mark on
      the row it belongs to. */
-  #notice-history > .card > .row > .badge {
+  #notice-history > .settings-group > .settings-row > .settings-row__control > .badge {
     margin-left: auto;
   }
 }
 
 .muted-sm { color: var(--muted); font-size: 11.5px; }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+.mono { font-family: var(--mono); overflow-wrap: anywhere; }
 .empty { color: var(--muted); font-style: italic; }
-.actions { display: flex; gap: 8px; margin-top: 14px; }
+/* `.actions` used to be here, as a row of buttons under a card. A row of
+   buttons is `settings-row settings-row--actions` now, which is upstream's own
+   shape for one, so the rule and the `.actions--end` modifier that existed only
+   to reverse it are both gone rather than left as a second way to do it. */
 /* The one action on the "looking for the gateway's settings?" card, spaced from
    the blurb above it. A class rather than a style attribute because this page's
    CSP sets `style-src 'self'`, which applies to style attributes too. */
@@ -829,36 +1071,64 @@ label.check .stack span:last-child { color: var(--muted); font-size: 12px; }
 .about-footer__build:empty { display: none; }
 /* The message dialog renders its buttons reversed so the default lands at the
    trailing edge, which is where all three platforms put it. */
-.actions--end { justify-content: flex-end; margin-top: 18px; }
+/* `.actions--end` was here, one modifier whose whole job was to reverse the
+   button row we no longer draw. Gone with `.actions`: an action row that has to
+   be reversed to put its buttons at the trailing edge is a row that started in
+   the wrong place, and upstream's actions row already ends there. */
 
 /* About: label/value rows. A definition list in spirit, but a grid so the
-   values line up regardless of how long the labels get. */
+   values line up regardless of how long the labels get.
+
+   Ours rather than upstream's: its About page lays the same facts out as a
+   key/value grid of its own (`settings-kv about-build-grid`), which is one column
+   wider and belongs to that page's shape rather than to a component. What is
+   borrowed here is the type: the label is the interface's muted-strong reading
+   size and the value is the interface's smallest text, so the block sits in the
+   page's own scale instead of beside it. */
 .fact {
   display: grid;
   grid-template-columns: 88px 1fr;
   gap: 10px;
   padding: 5px 0;
-  font-size: 12px;
+  font-size: var(--control-ui-text-sm);
 }
 .fact + .fact { border-top: 1px solid var(--border); }
-.fact__label { color: var(--muted); }
-.fact__value { color: var(--text); font-size: 11.5px; }
+.fact__label { color: var(--muted-strong); }
+.fact__value { color: var(--text); font-size: var(--control-ui-text-xs); font-family: var(--mono); }
 hr { border: 0; border-top: 1px solid var(--border); margin: 22px 0 0; }
 
 /* Per-gateway credential editor, revealed by the card's Edit button. */
 .editor { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
 .editor hr { margin: 14px 0; }
 .editor .row > input { flex: 1; min-width: 0; }
-.hint { margin-top: 6px; }
+/* `.hint` was here, a top margin for a hint line under a field. Every hint is a
+   `settings-row__desc` now, which is upstream's own place for one, so there is
+   no separate spacing rule for it to ask for. */
 
 /* --------------------------------------------------------------- dragbar */
 
-/* Keeps the window movable where the app has taken the title bar away. It sits
-   below the modal in the stacking order (which has z-index: 1) so it never eats
-   a click meant for the card, a drag region swallows mouse-down entirely. */
+/* The page's own top band, and it does NOT claim a drag region any more.
+
+   It used to, and that is what made the notice banner unclickable. A drag region
+   is not a drawing: the OS never delivers a mouse-down inside one to any web
+   contents, so a control under one is dead however it is painted. The banner is
+   a view laid over the page's own top, so a band across the page's first 50px
+   covers the banner's first 50px. Measured 2026-09-16 on macOS with a real click
+   at the ✕'s centre: the click was delivered and nothing happened, while the same
+   click below the band dismissed the card. Abi's "almost unclickable other than a
+   very narrow sliver at the bottom" is exactly this, and the sliver is the part
+   of the banner the band did not reach.
+
+   Nothing is lost by dropping the region here, because the window is dragged by
+   the title strip instead: `titlebar.html` declares the drag region across the
+   full width of the window wherever the app draws its own frame, and
+   `createStrip` does not make a strip at all on the one platform that keeps the
+   OS frame. One drag surface, owned by the thing that looks draggable.
+
+   The element stays where it is: pages use it to reserve the strip's height, and
+   the error page still lays out around it. */
 .dragbar {
   position: fixed; top: 0; left: 0; right: 0; height: 50px; z-index: 0;
-  -webkit-app-region: drag; app-region: drag;
 }
 .dragbar ~ * button { -webkit-app-region: no-drag; app-region: no-drag; }
 /* Only reserve space where the frame is actually hidden; Linux keeps its own
