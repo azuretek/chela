@@ -77,7 +77,33 @@ const isColour = (value) => /#|rgba?\(|color-mix\(|\btransparent\b/i.test(value)
 /** The two palette blocks: the dark fallback, and the light one in its media query. */
 const DARK_BLOCK = declaredIn(UI_CSS, ':root {');
 const LIGHT_AT = UI_CSS.indexOf('@media (prefers-color-scheme: light)');
-const LIGHT_BLOCK = LIGHT_AT === -1 ? [] : declaredIn(UI_CSS.slice(LIGHT_AT), ':root {');
+/**
+ * The light block, found by READING the media query's selector rather than by
+ * requiring it to be the literal ':root {'.
+ *
+ * This is the second consumer of that lookup, and the same fault. A selector that
+ * stops being the literal makes this return nothing, and a light run then compares
+ * every name against the DARK block's value while reporting all green, which is the
+ * one failure this file must not have: the values a light run is here to measure are
+ * the light appearance's own. Measured 2026-09-17 with the block guarded at
+ * ':root:not([data-appearance])': 0 declarations read here against 26 once the
+ * selector is read. What this file is for is the VALUES, so which selector carries
+ * them is not its business, and an empty read fails here rather than measuring
+ * nothing. The same fix, for the same reason, as core/test/live-tokens.test.js.
+ */
+const LIGHT_BLOCK = (() => {
+  if (LIGHT_AT === -1) throw new Error('ui.css has no light-mode media query');
+  const body = UI_CSS.slice(UI_CSS.indexOf('{', LIGHT_AT) + 1);
+  const brace = body.indexOf('{');
+  if (brace === -1) throw new Error('the light-mode media query holds no rule');
+  const selector = body.slice(0, brace).replace(/\/\*[\s\S]*?\*\//g, '').trim();
+  if (!selector) throw new Error('the light-mode media query holds a rule with no selector');
+  const block = declaredIn(body, selector);
+  if (block.length < 20) {
+    throw new Error('read ' + block.length + ' declarations from the light block, which cannot be the palette');
+  }
+  return block;
+})();
 
 /**
  * What the Control UI publishes for each name, generated rather than typed.
