@@ -151,3 +151,36 @@ test('the result line is coloured with the shared classes, not a private scheme'
   assert.match(page, /node\.className = `result\$\{tone \? ` \$\{tone\}` : ''\}`/,
     'the result line does not use the shared .result classes the stylesheet defines');
 });
+
+/* ------------------------------------------------------ the capture harness */
+
+test('the About capture harness hosts every command the page asks for', () => {
+  // The harness that renders both shared pages (scripts/capture-pages.js) hands
+  // About a STUB \`clawDesktop\`, and about.js hides the clear-cache section when
+  // the host cannot do it. So a stub that omits the command captures a page with
+  // no clear-cache control while the real app has always shown one: the
+  // screenshot and the app disagree, nothing fails, and the screenshot is the
+  // artifact a reader looks at. Measured 2026-09-17, which is how this test came
+  // to exist: every About capture in the repo's evidence showed the Updates group
+  // and the fact rows, and no clear-cache section at all.
+  const harness = readFileSync(path.join(HERE, '..', 'scripts', 'capture-pages.js'), 'utf8');
+  const host = /exposeInMainWorld\('clawDesktop', \{([\s\S]*?)\n\}\);/.exec(harness);
+  assert.ok(host, 'the capture harness no longer installs a clawDesktop host');
+
+  // Every \`api.<name>(\` the page reaches for. The list is read rather than
+  // written out, so a command added to the page later has to be answered by the
+  // harness too, rather than being remembered by whoever adds it.
+  const reached = [...new Set([...page.matchAll(/api\.(\w+)\(/g)].map((m) => m[1]))];
+  assert.ok(reached.length >= 5, `only ${reached.length} host calls found in about.js`);
+  for (const name of reached) {
+    assert.ok(new RegExp(`\\b${name}:`).test(host[1]),
+      `the capture harness's About host does not implement ${name}, so its captures show a page the app does not`);
+  }
+
+  // And the half that makes it a check rather than a coincidence: the harness has
+  // to assert the control is ON SCREEN. Without that, the captures can go back to
+  // proving nothing while still being produced, which is the state this was
+  // found in.
+  assert.match(harness, /page\.clear/, 'the harness no longer marks the About page as carrying the control');
+  assert.match(harness, /clear-cache/, 'the harness never looks for the clear-cache control');
+});
