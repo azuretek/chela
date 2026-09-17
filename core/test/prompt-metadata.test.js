@@ -316,28 +316,35 @@ test('a fork is boundary-checked the same way, because it restores the same fiel
   assert.strictEqual(JSON.parse(received[0]).result.editorText, typed);
 });
 
-test('an answer we did not ask for is left byte-identical', () => {
+test('the boundary is the FIELD, so a method we never asked about is covered too', () => {
   const block = formatBlock(SAMPLE_FACTS);
   const stored = `${block}\n\nhello`;
   const { socket, received } = listeningSocket({ enabled: true, block });
 
-  // No rewind was sent, so this is somebody else's frame and none of our
-  // business, whatever it happens to contain.
+  // No request of ours precedes this, and the method is not one the hook has
+  // heard of: the rule is keyed to the field the protocol defines as the prompt
+  // to restore, not to a request id, so a method added later cannot arrive dirty.
   socket.deliver(rewindAnswer('someone-elses-1', stored));
-  assert.strictEqual(received[0], rewindAnswer('someone-elses-1', stored));
+  assert.strictEqual(JSON.parse(received[0]).result.editorText, 'hello');
+  assert.deepStrictEqual(JSON.parse(received[0]).result.editorAttachments, []);
 
-  // A rewind we DID send, whose text carries no block, is equally untouched:
+  // A frame whose editor text carries no block is passed through byte for byte:
   // the boundary removes a block, it does not rewrite an answer.
-  socket.send(JSON.stringify({ id: 'rewind-2', method: 'sessions.rewind', params: {} }));
   const clean = rewindAnswer('rewind-2', 'just my words');
   socket.deliver(clean);
   assert.strictEqual(received[1], clean);
 
-  // And an answer that is not JSON at all, or is a frame of another shape, is
-  // passed through rather than dropped.
+  // And text arriving under any OTHER field is not touched, which is what keeps
+  // this from mangling data a person asked to see: a transcript read as a file,
+  // or a tool result, survives the boundary intact.
   socket.deliver('not json');
-  socket.deliver(JSON.stringify({ id: 'rewind-3', event: 'chat.delta' }));
-  assert.deepStrictEqual(received.slice(2), ['not json', JSON.stringify({ id: 'rewind-3', event: 'chat.delta' })]);
+  socket.deliver(JSON.stringify({ id: 'e-1', event: 'chat.delta', text: stored }));
+  socket.deliver(JSON.stringify({ result: { content: stored } }));
+  assert.deepStrictEqual(received.slice(2), [
+    'not json',
+    JSON.stringify({ id: 'e-1', event: 'chat.delta', text: stored }),
+    JSON.stringify({ result: { content: stored } }),
+  ]);
 });
 
 test('with the feature off, a rewind answer is untouched too', () => {
@@ -353,20 +360,49 @@ test('with the feature off, a rewind answer is untouched too', () => {
   assert.strictEqual(received[0], rewindAnswer('rewind-4', stored));
 });
 
-test('a rewind id is consumed once, so a replay cannot be stripped twice', () => {
+test('the strip is idempotent, so a replayed or repeated answer cannot be mangled', () => {
   const block = formatBlock(SAMPLE_FACTS);
   const typed = 'hello';
   const { socket, received } = listeningSocket({ enabled: true, block });
   const stored = `${block}\n\n${typed}`;
 
-  socket.send(JSON.stringify({ id: 'rewind-5', method: 'sessions.rewind', params: {} }));
   socket.deliver(rewindAnswer('rewind-5', stored));
-  // The same id again (a transport replay): the answer is now somebody else's
-  // frame as far as this hook is concerned, which is the conservative reading.
   socket.deliver(rewindAnswer('rewind-5', stored));
 
   assert.strictEqual(JSON.parse(received[0]).result.editorText, typed);
-  assert.strictEqual(received[1], rewindAnswer('rewind-5', stored));
+  assert.strictEqual(JSON.parse(received[1]).result.editorText, typed);
+  // Applying it to text that is already clean changes nothing, which is what
+  // makes it safe at every entry rather than at exactly one.
+  const cleaned = JSON.parse(received[0]).result.editorText;
+  socket.deliver(rewindAnswer('rewind-6', cleaned));
+  assert.strictEqual(received[2], rewindAnswer('rewind-6', cleaned));
+});
+
+test('the block never enters the local record, so no reader can hand it back', () => {
+  // The half of the answer that is a PROPERTY rather than a repair, and the
+  // reason the repair is still needed for the copy this client does not own: the
+  // hook adds the block to the FRAME at send time, after the page has built its
+  // draft, its outbox entry and its transcript entries, and it writes it nowhere
+  // else. Asserted rather than assumed, because "the block exists only on the
+  // wire" is the claim the whole shape rests on.
+  const block = formatBlock(SAMPLE_FACTS);
+  const socket = hookedSocket({ enabled: true, block });
+  const frame = JSON.stringify({ id: 'send-1', method: 'chat.send', params: { message: 'hello' } });
+
+  socket.send(frame);
+
+  assert.ok(JSON.parse(socket.sent).params.message.includes(CONTEXT_MARKER), 'the frame carries it');
+  assert.ok(
+    !JSON.parse(frame).params.message.includes(CONTEXT_MARKER),
+    'the string the page itself holds is untouched, so a local copy cannot be carrying the block',
+  );
+  // And nothing that could outlive the frame is written anywhere: a block in
+  // page storage would be a second local record, and the next boundary would
+  // find it there.
+  const script = clientScript({ enabled: true, block });
+  for (const api of ['localStorage', 'sessionStorage', 'indexedDB', 'document.cookie']) {
+    assert.ok(!script.includes(api), `the hook writes to ${api}, so the block could outlive the frame`);
+  }
 });
 
 /* ------------------------------------------------------------- one interpreter */

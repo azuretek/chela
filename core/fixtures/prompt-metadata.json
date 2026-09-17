@@ -328,15 +328,14 @@
     "name": "the injected hook, one copy, installed unchanged by both clients",
     "owner": "core/spec/prompt-metadata.json",
     "field": "hook",
-    "lines": 95,
+    "lines": 85,
     "contains": [
       "window.__clawPromptMetadata",
       "WebSocket.prototype.send",
       "chat.send",
       "stripContextBlock",
-      "sessions.rewind",
-      "sessions.fork",
-      "editorText"
+      "editorText",
+      "addEventListener"
     ]
   }
 }

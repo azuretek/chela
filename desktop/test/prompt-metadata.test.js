@@ -173,15 +173,16 @@ test('the pure frame transformer follows the same enabled and disabled contract'
 
 /* ------------------------------------------- both directions, one script */
 
-test('the hook rewrites frames in both directions, and only the methods it owns', () => {
+test('the hook rewrites frames in both directions, and the boundary is a field', () => {
   const script = metadata.clientScript({ enabled: true, block: sampleBlock() });
-  // Outbound: the block goes on the frame. Inbound: the editor text a rewind or
-  // a fork hands back arrives without it, because the gateway's display stripper
-  // never sees that field (see core/spec/prompt-metadata.json's `why`).
+  // Outbound: the block goes on the frame, and the frame is the only place it
+  // lives. Inbound: the editor text a roll-back or a fork restores arrives
+  // without it, keyed to the FIELD the protocol defines for that prompt rather
+  // than to a method name, so a method added later cannot arrive dirty.
   assert.match(script, /WebSocket\.prototype\.send/);
   assert.match(script, /WebSocket\.prototype\.addEventListener/);
-  assert.match(script, /sessions\.rewind/);
-  assert.match(script, /sessions\.fork/);
+  assert.match(script, /result\.editorText/);
+  assert.doesNotMatch(script, /sessions\.rewind|sessions\.fork/, 'the boundary must not be keyed to a method');
   // And it is still only a wire transformer: nothing is fetched, and no display
   // text is suppressed for this app's users alone.
   assert.doesNotMatch(script, /\bfetch\b/);
