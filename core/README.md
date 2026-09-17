@@ -39,6 +39,13 @@ whichever host is running it (`window.clawSettings`). The page filters by it, hi
 what its client does not have, and never asks which client it is. That last part is a
 test, not a convention: see `desktop/test/settings-surface.test.js`.
 
+**How these surfaces look and behave when something changes is `ui/CONVENTIONS.md`**,
+and it is the file to read before adding or changing a view, an overlay or a
+transition. It pins the durations, the easing, what animates and what snaps, how the
+direction of motion relates to the direction of the change, and the reduced-motion
+form every rule must have. Its first rule is not about motion at all: a view change
+must never show the reader a view they did not ask for.
+
 ## One source of truth
 
 The data each module needs lives in `spec/*.json`, and the JS reads from it:

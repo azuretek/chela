@@ -116,6 +116,17 @@
   --duration-fast: 100ms;
   --duration-normal: 180ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Motion, ours rather than borrowed: the Control UI publishes one curve and an
+     exit needs the other shape. The two durations above ARE the borrowed ones, so
+     nothing here restates a value the design tokens own. The rules that use these,
+     and the reasoning, are ui/CONVENTIONS.md. */
+  --motion-leave-ease: cubic-bezier(0.4, 0, 1, 1);
+  /* Distances: a surface arrives by rising, leaves by dropping a shorter distance
+     the way it came, and a panel enters from the side the reader moved toward. */
+  --motion-rise: 8px;
+  --motion-drop: 4px;
+  --motion-slide: 12px;
   --cursor-action: default;
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 3px color-mix(in srgb, var(--ring) 80%, transparent);
 
@@ -1258,4 +1269,77 @@ body:not(.frameless) .scrim { padding-top: 24px; }
   /* Text selection inside a drag region is a dead end anyway, and dragging a
      window by its title should not start a selection. */
   user-select: none;
+}
+
+/* ------------------------------------------------------------------- motion */
+
+/* A surface arriving or leaving, and a panel replacing another one inside a
+   surface. The rules, the durations, the direction and what deliberately does NOT
+   animate are ui/CONVENTIONS.md; this is the implementation of them.
+
+   Arrival is an animation rather than a transition, for the reason banner.css
+   already records for the notice card: a transition needs a start state and a
+   second frame to move away from, and a page that has just been created has not
+   painted one. An animation runs from its own keyframes, and with `both` fill it
+   leaves the element at its ordinary resting state if it never runs at all, which
+   is also what makes the reduced-motion form below safe.
+
+   Only opacity and transform, so nothing here can reflow the page or resize the
+   view mid-animation. */
+@keyframes surface-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes surface-card-in {
+  from { opacity: 0; transform: translateY(var(--motion-rise)); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes surface-scrim-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes surface-card-out {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(var(--motion-drop)); }
+}
+
+.scrim { animation: surface-scrim-in var(--duration-normal) var(--ease-out) both; }
+.modal { animation: surface-card-in var(--duration-normal) var(--ease-out) both; }
+
+/* Leaving. `surface--leaving` is set on the body by the page's own leave()
+   (ui/surface.js), which the host calls before it takes the view away, so every
+   departure takes one path whatever asked for it: the Close button, the menu, the
+   handoff to the Control UI, or the loading cover handing the window over. */
+body.surface--leaving .scrim { animation: surface-scrim-out var(--duration-fast) var(--motion-leave-ease) both; }
+body.surface--leaving .modal { animation: surface-card-out var(--duration-fast) var(--motion-leave-ease) both; }
+
+/* A panel replacing another one in the same surface, which is the settings tabs.
+
+   Only the INCOMING panel animates and the outgoing one is hidden at once. Cross
+   fading two panels needs them stacked absolutely, and it puts both on screen for
+   the duration, which is a view the reader did not ask for to look at a view they
+   did. settings.js sets the direction from the tab the reader moved toward, so the
+   motion points the way they went. */
+@keyframes panel-in-from-left {
+  from { opacity: 0; transform: translateX(calc(-1 * var(--motion-slide))); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes panel-in-from-right {
+  from { opacity: 0; transform: translateX(var(--motion-slide)); }
+  to   { opacity: 1; transform: none; }
+}
+.panel--in-from-left { animation: panel-in-from-left var(--duration-fast) var(--ease-out) both; }
+.panel--in-from-right { animation: panel-in-from-right var(--duration-fast) var(--ease-out) both; }
+
+/* Reduced motion, and it is part of the rules rather than an exception to them.
+   Every animation above is off, which leaves each element at its ordinary resting
+   state, and ui/surface.js resolves leave() at once so a host removes the view
+   instead of waiting a duration it is not going to animate.
+
+   What this must NOT change is the sequencing: the destination is still ready
+   before it is revealed and nothing intermediate is still shown. The preference
+   removes MOTION, not correctness. It is read here and in the page rather than
+   passed down from a client, so one page cannot animate while its sibling
+   respects the setting. */
+@media (prefers-reduced-motion: reduce) {
+  .scrim,
+  .modal,
+  body.surface--leaving .scrim,
+  body.surface--leaving .modal,
+  .panel--in-from-left,
+  .panel--in-from-right { animation: none; }
 }

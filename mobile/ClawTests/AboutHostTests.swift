@@ -31,7 +31,10 @@ final class AboutHostTests: XCTestCase {
         // the page's links name against it.
         let directory = AboutSurface.directory
         XCTAssertNotNil(AboutSurface.page, "core/ui/about.html is not in the bundle")
-        for name in ["about.html", "about.js", "ui.css"] {
+        // `surface.js` travels with the page for the same reason the stylesheet
+        // does: about.html loads it as one of its own relative links, so a bundle
+        // without it serves a page with a dead reference.
+        for name in ["about.html", "about.js", "ui.css", "surface.js"] {
             let url = directory?.appendingPathComponent(name)
             XCTAssertNotNil(url)
             XCTAssertTrue(

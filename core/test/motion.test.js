@@ -1,0 +1,287 @@
+// The motion rules, as the thing that makes them hold rather than as a comment.
+//
+// ui/CONVENTIONS.md states the rule and pins the specifics. This is the half that
+// fails when the code stops following it, and there are three ways that happens
+// silently:
+//
+//   1. An animation is added and the reduced-motion form is forgotten, which
+//      produces an app that ignores the reader's preference and reports nothing.
+//      Every animation is therefore asserted to have a `prefers-reduced-motion`
+//      counterpart in the same stylesheet.
+//   2. A duration or a curve is written as a literal in one place and as a token
+//      in another, so the rule's own table and the stylesheets stop agreeing.
+//      The view-change rules are asserted to use the tokens.
+//   3. The document and the code drift apart, so the rule describes motion nobody
+//      implements. The doc is asserted to name what the stylesheets use.
+//
+// Run with: cd core && npm test
+
+import test from 'node:test';
+import assert from 'node:assert';
+import fs from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
+import { fileURLToPath } from 'node:url';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const REPO = path.join(HERE, '..', '..');
+const UI = path.join(REPO, 'core', 'ui');
+const read = (...parts) => fs.readFileSync(path.join(...parts), 'utf8');
+
+const UI_CSS = read(UI, 'ui.css');
+const BANNER_CSS = read(UI, 'banner.css');
+const SURFACE_JS = read(UI, 'surface.js');
+const DOC = read(UI, 'CONVENTIONS.md');
+const CORE_README = read(REPO, 'core', 'README.md');
+
+const SHEETS = [
+  ['ui.css', UI_CSS],
+  ['banner.css', BANNER_CSS],
+];
+
+/**
+ * The same sheets with their comments removed.
+ *
+ * Comments have to go before any brace matching, and not for tidiness: a comment
+ * ABOVE a rule is inside the selector match, so a stray `{` or the word
+ * `animation` in prose becomes a "selector" spanning half a paragraph. Measured
+ * the hard way, on this file's own first run, which reported the motion section's
+ * comments as twenty animated rules with no reduced-motion form.
+ */
+const stripComments = (css) => css.replace(/\/\*[\s\S]*?\*\//g, '');
+const CLEAN = SHEETS.map(([name, css]) => [name, stripComments(css)]);
+
+/** Every block whose header matches, as the text inside its braces. */
+function blocks(source, header) {
+  const found = [];
+  let at = source.indexOf(header);
+  while (at !== -1) {
+    const open = source.indexOf('{', at);
+    if (open === -1) break;
+    let depth = 0;
+    for (let i = open; i < source.length; i += 1) {
+      if (source[i] === '{') depth += 1;
+      else if (source[i] === '}') {
+        depth -= 1;
+        if (depth === 0) { found.push(source.slice(open + 1, i)); at = source.indexOf(header, i); break; }
+      }
+    }
+    if (depth !== 0) break;
+  }
+  return found;
+}
+
+/** The reduce blocks, concatenated, which is what the coverage assertions read. */
+const REDUCED = CLEAN.map(([, css]) => blocks(css, '@media (prefers-reduced-motion: reduce)').join('\n')).join('\n');
+
+/** Every rule outside the reduce blocks, as `[selector, body]`. */
+function animatedRules(source) {
+  const withoutReduced = blocks(source, '@media (prefers-reduced-motion: reduce)')
+    .reduce((text, body) => text.replace(body, ''), source);
+  const withoutKeyframes = withoutReduced.replace(/@keyframes[^{]*\{[\s\S]*?\n\}/g, '');
+  return [...withoutKeyframes.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map(([, selector, body]) => [selector.trim().replace(/\s+/g, ' '), body])
+    .filter(([selector]) => selector && !selector.startsWith('@'))
+    .filter(([, body]) => /(^|[;\s])animation\s*:/.test(body) && !/animation\s*:\s*none/.test(body));
+}
+
+/* -------------------------------------------------- every animation is reducible */
+
+test('every animation in the shared sheets has a reduced-motion counterpart', () => {
+  // The failure this exists for is silent by construction: the animation plays,
+  // nothing errors, and a reader who asked for no motion gets it anyway. So the
+  // check is per selector rather than per file, and it fails naming the selector
+  // that would keep moving.
+  const uncovered = [];
+  for (const [name, css] of CLEAN) {
+    for (const [selector, body] of animatedRules(css)) {
+      for (const one of selector.split(',').map((s) => s.trim())) {
+        const escaped = one.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const covered = new RegExp(`${escaped}\\s*[,{]?[^{}]*\\{[^{}]*animation:\\s*none`).test(REDUCED);
+        if (!covered) uncovered.push(`${name}: ${one} (${body.trim().slice(0, 60)})`);
+      }
+    }
+  }
+  assert.deepStrictEqual(
+    uncovered,
+    [],
+    'these animate and have no `prefers-reduced-motion` form, so a reader who asked for no motion gets motion:\n'
+      + uncovered.map((line) => `  - ${line}`).join('\n'),
+  );
+});
+
+test('the sweep is looking at real animations, not at nothing', () => {
+  // A parser that stopped matching would make the test above pass by finding no
+  // animations at all, which is the way this kind of guard dies.
+  const found = CLEAN.flatMap(([, css]) => animatedRules(css).map(([selector]) => selector));
+  for (const expected of ['.scrim', '.modal', '.banner--enter', '.banner--leave', '.loading']) {
+    assert.ok(found.includes(expected), `${expected} is no longer seen as animated, so the sweep is broken`);
+  }
+  assert.ok(REDUCED.includes('animation: none'), 'no reduce block was parsed at all');
+});
+
+/* --------------------------------------------------------- the pinned specifics */
+
+test('the view-change rules use the timings the conventions pin', () => {
+  // The table in ui/CONVENTIONS.md, asserted against the stylesheets: a surface
+  // arrives over --duration-normal and leaves over the shorter --duration-fast, so
+  // leaving is always quicker than arriving.
+  const expected = [
+    [CLEAN[0][1], '.scrim', '--duration-normal'],
+    [CLEAN[0][1], '.modal', '--duration-normal'],
+    [CLEAN[0][1], 'body.surface--leaving .scrim', '--duration-fast'],
+    [CLEAN[0][1], 'body.surface--leaving .modal', '--duration-fast'],
+    [CLEAN[0][1], '.panel--in-from-left', '--duration-fast'],
+    [CLEAN[0][1], '.panel--in-from-right', '--duration-fast'],
+    [CLEAN[1][1], '.banner--enter', '--duration-normal'],
+    [CLEAN[1][1], '.banner--leave', '--duration-fast'],
+  ];
+  for (const [css, selector, token] of expected) {
+    // The rule that DECLARES the animation, not simply the first rule with this
+    // selector: `.scrim` and `.modal` are laid out by one rule and set moving by
+    // another, and taking the first match would read the layout rule and report
+    // that nothing animates.
+    // Group 2 is the body: `[,, body]`, not `[, body]`, which is group 1 and would
+    // test the SELECTOR against the animation pattern and find nothing. And the
+    // `none` case is excluded, because a selector can carry TWO animation rules:
+    // the one that sets it moving and the reduced-motion one that stops it, which
+    // sits inside a media query this scan does not skip.
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(([, sel]) => sel.trim().replace(/\s+/g, ' ') === selector)
+      .filter(([,, body]) => /(^|[;\s])animation\s*:/.test(body) && !/animation\s*:\s*none/.test(body));
+    assert.ok(rules.length > 0, `${selector} has no rule that animates, so the conventions describe something that is not there`);
+    const animation = /animation\s*:\s*([^;]+)/.exec(rules[rules.length - 1][2]);
+    assert.ok(
+      animation[1].includes(`var(${token})`),
+      `${selector} does not take its duration from ${token}: ${animation[1].trim()}`,
+    );
+  }
+});
+
+test('the exit curve is ours and declared in the stylesheet that uses it', () => {
+  // `--motion-leave-ease` is NOT in spec/tokens.json on purpose: every value in
+  // that spec is checked against the upstream checkout, so a value of ours there
+  // would fail the day upstream has no such name. It lives with the other values
+  // ui.css owns.
+  assert.match(UI_CSS, /--motion-leave-ease:\s*cubic-bezier\(/,
+    'ui.css declares no exit curve, so the leaving rules fall back to no easing');
+  const spec = JSON.parse(read(REPO, 'core', 'spec', 'tokens.json'));
+  const borrowed = new Set([...Object.keys(spec.shape || {})]);
+  assert.ok(!borrowed.has('--motion-leave-ease'),
+    'the exit curve was added to the borrowed token spec, where it is checked against upstream');
+});
+
+test('nothing animates for longer than the longer token', () => {
+  // "An animation the reader can notice the length of is a delay." Read from the
+  // sheets rather than from the doc, because the doc is the half that cannot fail.
+  const offenders = [];
+  for (const [name, css] of CLEAN) {
+    for (const [selector, body] of animatedRules(css)) {
+      // Only our view-change rules: the loading cover's own spinners are loops,
+      // and a loop has no duration to compare.
+      if (!/infinite/.test(body)) {
+        for (const value of body.matchAll(/(\d+(?:\.\d+)?)(ms|s)\b/g)) {
+          const ms = value[2] === 's' ? Number(value[1]) * 1000 : Number(value[1]);
+          // The one pre-existing exception, and it is not a view change: the
+          // cover's fade-in is held a beat so a connect that resolves at once
+          // never flashes the cover up at all.
+          if (ms > 180 && !/loading-in/.test(body)) offenders.push(`${name}: ${selector} (${value[0]})`);
+        }
+      }
+    }
+  }
+  assert.deepStrictEqual(offenders, [], `these animate longer than the pinned maximum: ${offenders.join(', ')}`);
+});
+
+/* --------------------------------------------------- the page-side handshake */
+
+/** Run surface.js against just enough of a page. */
+function runSurface({ reduced = false, fast = '100ms' } = {}) {
+  const classes = new Set();
+  const context = {
+    // `matchMedia` goes ON the window, not beside it: the script asks
+    // `window.matchMedia`, so a context with it only at the top level makes the
+    // page look like one that cannot read the preference at all.
+    window: {
+      matchMedia: (query) => ({ matches: reduced && /prefers-reduced-motion/.test(query) }),
+    },
+    document: {
+      documentElement: {},
+      body: { classList: { add: (name) => classes.add(name) } },
+    },
+    getComputedStyle: () => ({ getPropertyValue: (name) => (name === '--duration-fast' ? fast : '') }),
+    setTimeout,
+    Promise,
+  };
+  vm.runInNewContext(SURFACE_JS, context);
+  return { surface: context.window.clawSurface, classes };
+}
+
+test('a surface leaves by asking the page, and the page says when it is done', async () => {
+  const { surface, classes } = runSurface();
+  assert.strictEqual(typeof surface.leave, 'function', 'the host has nothing to call');
+  const started = Date.now();
+  const animated = await surface.leave();
+  assert.strictEqual(animated, true, 'the departure reported nothing animated');
+  assert.ok(classes.has('surface--leaving'), 'the leaving class never landed, so nothing would move');
+  // Bounded by the token the stylesheet declares, plus the frame of slack: a
+  // surface that answers far later than this would hold a view on screen.
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed >= 100, `the departure resolved after ${elapsed}ms, before its own duration`);
+  assert.ok(elapsed < 400, `the departure took ${elapsed}ms, which is a delay rather than an animation`);
+});
+
+test('reduced motion resolves at once, and the host is told nothing moved', async () => {
+  // The half that makes the preference real rather than decorative: a host that
+  // waited anyway would leave a still surface on screen for a duration nothing is
+  // animating, which reads as the app hanging.
+  const { surface, classes } = runSurface({ reduced: true });
+  assert.strictEqual(surface.reducedMotion(), true, 'the preference was not read');
+  const started = Date.now();
+  const animated = await surface.leave();
+  assert.strictEqual(animated, false, 'a reduced-motion departure claimed to have animated');
+  assert.ok(Date.now() - started < 40, 'reduced motion waited for an animation that will not run');
+  assert.ok(!classes.has('surface--leaving'), 'the leaving class landed with motion turned off');
+});
+
+test('the duration comes from the stylesheet, in both units, with a fallback', () => {
+  assert.strictEqual(runSurface({ fast: '100ms' }).surface.durationMs('--duration-fast'), 100);
+  // `0.1s` is the same time written the other way, and a parse that dropped the
+  // unit would read it as 0.1ms.
+  assert.strictEqual(runSurface({ fast: '0.1s' }).surface.durationMs('--duration-fast'), 100);
+  // No stylesheet, so no token: a departure must be instant rather than a surface
+  // that never lets go.
+  assert.strictEqual(runSurface({ fast: '' }).surface.durationMs('--duration-fast'), 100);
+  assert.strictEqual(runSurface({ fast: 'nonsense' }).surface.durationMs('--duration-fast'), 100);
+});
+
+/* ---------------------------------------------------------- the doc is the rule */
+
+test('the conventions doc names what the stylesheets actually use', () => {
+  // The drift guard. A rule that lives only in the code that implements it is the
+  // thing this file exists to prevent, and a doc that has stopped describing the
+  // code is the same fault with the arrow reversed.
+  for (const token of ['--duration-fast', '--duration-normal', '--ease-out', '--motion-leave-ease']) {
+    assert.ok(DOC.includes(token), `the doc does not name ${token}, which the sheets use`);
+  }
+  assert.ok(DOC.includes('prefers-reduced-motion'), 'the doc does not mention the preference');
+  // The core of the rule, in the doc rather than only in a commit message.
+  assert.match(DOC, /never shows a view the reader did not ask for|never show the reader a view they did not ask for/i,
+    'the doc does not carry the sequencing rule the motion sits under');
+  // Every selector the sheets animate for a view change is described by name, so a
+  // reader can find the rule for the thing they are looking at.
+  for (const name of ['panel', 'scrim', 'card', 'notice card']) {
+    assert.ok(DOC.toLowerCase().includes(name), `the doc does not describe what a ${name} does`);
+  }
+});
+
+test('the doc is reachable from where the shared surface is documented', () => {
+  // A conventions doc nobody links to is a file, not a convention.
+  assert.ok(CORE_README.includes('ui/CONVENTIONS.md'),
+    'core/README.md does not point at the conventions doc');
+  // And the page-side handshake is referenced by the pages that use it, so a page
+  // added later has a worked example to copy.
+  for (const page of ['settings.html', 'about.html', 'pairing.html', 'loading.html']) {
+    assert.ok(read(UI, page).includes('surface.js'), `${page} does not load the shared departure handshake`);
+  }
+});

@@ -478,7 +478,10 @@ function showSettingsAsPage(opts = {}) {
   payloadOnScreen = false;
   if (attemptView && !attemptView.webContents.isDestroyed()) destroyGatewayView(attemptView);
   // A modal of the same page over the top of itself is not an improvement.
-  closeOverlay('settings');
+  // Not animated: this surface is not going away so much as being REPLACED as the
+  // window's own content on the next line, and a fade would be a hundred
+  // milliseconds of nothing in the middle of a page load.
+  closeOverlay('settings', { animate: false });
   page()?.loadFile(path.join(UI_DIR, 'settings.html'), {
     search: overlaySearch({ firstRun: opts.firstRun, page: true }),
   });
@@ -1423,7 +1426,7 @@ function showMainWindow() {
   // window has stopped responding, so this is the right place to sweep up a dead
   // overlay: it makes the instinctive gesture the recovery gesture. Supervision
   // should have caught it already, this is the net under that.
-  for (const name of [...overlayViews.keys()]) if (!overlayAlive(name)) closeOverlay(name);
+  for (const name of [...overlayViews.keys()]) if (!overlayAlive(name)) closeOverlay(name, { animate: false });
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
@@ -1561,7 +1564,9 @@ function openOverlay(name, opts = {}) {
   // it does nothing and reopening has to mean *replace*. Otherwise the one
   // action a wedged user would try, click the menu item again, is the one
   // action guaranteed not to help.
-  if (overlayViews.has(name) && !overlayAlive(name)) closeOverlay(name);
+  // Not animated: this view is the dead one being replaced, so there is no
+  // departure to play and nothing left in it to ask.
+  if (overlayViews.has(name) && !overlayAlive(name)) closeOverlay(name, { animate: false });
   if (overlayViews.has(name)) {
     const existing = overlayViews.get(name);
     existing.webContents.focus();
@@ -1599,11 +1604,66 @@ function openOverlay(name, opts = {}) {
   return view;
 }
 
-function closeOverlay(name) {
+/**
+ * How long the host waits for a page to say its departure is done, before taking
+ * the view away regardless.
+ *
+ * NOT a duration the reader sees. The page owns that number, because its stylesheet
+ * is what declares it. This is the point at which the host stops trusting an answer
+ * that has not arrived, and it is generous on purpose: the page's own bound is one
+ * `--duration-fast` plus a frame, so anything near this ceiling means the page is not
+ * answering at all, and a view the host can no longer take away is a worse fault
+ * than an un-animated dismissal.
+ */
+const SURFACE_LEAVE_CEILING_MS = 500;
+
+/**
+ * Ask a page to play its own departure, and resolve when it has.
+ *
+ * The PAGE owns both halves of the timing: its stylesheet declares the duration and
+ * it reads the reduced-motion preference itself, which is why the host asks rather
+ * than working out how long to sleep. A reader who asked for no motion gets an
+ * immediate answer and the view goes at once, rather than the host holding a surface
+ * for a duration nothing is going to animate.
+ *
+ * Every non-answer means "gone now": no `clawSurface` (a page whose script did not
+ * load), a rejected evaluation (a page being torn down), or no answer inside the
+ * ceiling. That is exactly the behaviour of the day before, so nothing new here can
+ * strand a view on screen.
+ */
+function leaveSurface(view) {
+  const wc = view && view.webContents;
+  if (!wc || wc.isDestroyed()) return Promise.resolve(false);
+  const asked = wc
+    .executeJavaScript('window.clawSurface ? window.clawSurface.leave() : null', true)
+    .then((animated) => animated === true)
+    .catch(() => false);
+  return Promise.race([
+    asked,
+    new Promise((resolve) => setTimeout(() => resolve(false), SURFACE_LEAVE_CEILING_MS)),
+  ]);
+}
+
+/**
+ * Close one of our surfaces, playing its departure first.
+ *
+ * The view leaves the map BEFORE the fade, so the surface is logically gone the
+ * moment it is asked to leave: a second close, or a reopen during those hundred
+ * milliseconds, must not find a half-departed view and act on it. What stays
+ * attached is only the pixels on their way out, and the removal below happens
+ * whatever the page answered.
+ *
+ * `animate: false` is for the paths where there is no transition to make: a view
+ * that is already dead, and the one case where this surface is not going away but
+ * being REPLACED as the window's own content, where a fade would be a hundred
+ * milliseconds of nothing in the middle of a page load.
+ */
+async function closeOverlay(name, { animate = true } = {}) {
   const view = overlayViews.get(name);
   if (!view) return;
   overlayViews.delete(name);
   themeCssKeys.delete(view.webContents.id);
+  if (animate) await leaveSurface(view);
   try {
     mainWindow?.contentView.removeChildView(view);
   } catch { /* window already gone; the view goes with it */ }
@@ -1940,8 +2000,17 @@ function hideLoadingCover() {
   coverStyled = true;
   themeCssKeys.delete(view.webContents.id);
   tokenCssKeys.delete(view.webContents.id);
-  try { mainWindow?.contentView.removeChildView(view); } catch { /* window already gone */ }
-  try { if (!view.webContents.isDestroyed()) view.webContents.close(); } catch { /* already torn down */ }
+  // The cover is the ONE view painted opaque, so it has to be made see-through
+  // BEFORE it is asked to leave. A page fading to transparent over a view whose own
+  // background is still the surface colour would reveal nothing, and the fade would
+  // read as the cover sitting there a moment longer rather than as the app arriving
+  // underneath it.
+  try { view.setBackgroundColor('#00000000'); } catch { /* window already gone */ }
+  void (async () => {
+    await leaveSurface(view);
+    try { mainWindow?.contentView.removeChildView(view); } catch { /* window already gone */ }
+    try { if (!view.webContents.isDestroyed()) view.webContents.close(); } catch { /* already torn down */ }
+  })();
   // The gateway only takes focus if nothing of ours is in front of it. A
   // connect started from Settings finishes with Settings still open, and typing
   // into a page the user cannot see is worse than not moving focus at all.

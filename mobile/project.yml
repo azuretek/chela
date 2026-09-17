@@ -122,6 +122,14 @@ targets:
         buildPhase: resources
       - path: ../core/ui/ui.css
         buildPhase: resources
+      # The departure handshake the shared pages call, and the reason it travels
+      # with them: settings.html and about.html both load it, so a bundle without
+      # it would serve a page whose own relative link resolves nowhere. What it
+      # does here is small (this client's sheets are dismissed by SwiftUI, which
+      # does its own animation) but the page is ONE copy, and a page that loads a
+      # script only some clients ship is how one copy becomes two.
+      - path: ../core/ui/surface.js
+        buildPhase: resources
       - path: ../core/spec/settings.json
         buildPhase: resources
       # The shared About page, bundled rather than mirrored, for the same reason

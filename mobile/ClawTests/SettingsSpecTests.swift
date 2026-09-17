@@ -44,7 +44,11 @@ final class SettingsSpecTests: XCTestCase {
         // name.
         let directory = SettingsSpec.directory
         XCTAssertNotNil(SettingsSpec.page, "core/ui/settings.html is not in the bundle")
-        for name in ["settings.html", "settings.js", "ui.css"] {
+        // `surface.js` is the departure handshake the page calls, added when the
+        // shared pages gained their motion: it is one of the page's own relative
+        // links now, so it belongs in the same list as the stylesheet and the
+        // script rather than being assumed.
+        for name in ["settings.html", "settings.js", "ui.css", "surface.js"] {
             let url = directory?.appendingPathComponent(name)
             XCTAssertNotNil(url)
             XCTAssertTrue(

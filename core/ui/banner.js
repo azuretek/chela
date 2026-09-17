@@ -107,6 +107,38 @@ function actions() {
   ]);
 }
 
+/**
+ * Take a card off the bar, playing its departure.
+ *
+ * The slide belongs to a card leaving the same way it belongs to one arriving, and
+ * the direction is the one it came from: it arrives from above the viewport and
+ * leaves back through it.
+ *
+ * The removal has to wait for the animation, because a node taken out of the tree
+ * on the same tick as the dismissal never paints a frame of its own departure. That
+ * is the same shape as the arrival problem the `.banner--enter` comment records,
+ * and it is why this is a class plus a deferred removal rather than a `remove()`.
+ *
+ * Reduced motion takes it off at once, which is the same sequence without the
+ * movement. The preference and the duration are read through `clawSurface`, the one
+ * page-side owner of both, rather than asked again here.
+ */
+function leaveCard(node) {
+  const surface = window.clawSurface;
+  if (!surface || surface.reducedMotion()) { node.remove(); return; }
+  node.classList.remove('banner--enter');
+  node.classList.add('banner--leave');
+  // The animation's own end is the ideal moment, and the clock is the guarantee:
+  // a card whose animation never runs (a stylesheet that did not load, a
+  // backgrounded view whose animations are throttled) must not sit on the bar
+  // forever as a notice the reader already dismissed.
+  node.addEventListener('animationend', () => node.remove(), { once: true });
+  setTimeout(() => node.remove(), surface.durationMs('--duration-fast') + 120);
+}
+
+/**
+ * Sweep the cards that are gone, and rebuild the ones that changed.
+ */
 async function render() {
   const notices = await api.notices();
   // Rebuild only what changed, keyed by id. Replacing the whole list every time
@@ -115,7 +147,7 @@ async function render() {
   const wanted = new Map(notices.map((n) => [n.id, n]));
 
   for (const node of [...stack.children]) {
-    if (!wanted.has(node.id.slice(2))) node.remove();
+    if (node.id && !wanted.has(node.id.slice(2))) leaveCard(node);
   }
   for (const notice of notices) {
     const existing = document.getElementById(`n-${notice.id}`);
