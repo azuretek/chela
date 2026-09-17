@@ -281,18 +281,22 @@ app.whenReady().then(async () => {
     check('and forward again, back to B\'s theme', onBAgain && onBAgain.bg === lightBg,
       `B painted ${onBAgain && onBAgain.bg} against the light ${lightBg}`);
 
-    // The FIRST of the two events, at last: a theme chosen in the upstream UI.
-    // Two clicks in that UI's own Appearance tab, dark then light, inside a
-    // window of its own on the same gateway, and the app is checked after each.
-    // A choice made anywhere else is not this event, which is why it is driven
-    // through the control rather than through the gateway's configuration.
+    // The FIRST of the two events: a theme chosen in the upstream UI.
+    //
+    // NOT DEMONSTRATED BY THIS HARNESS, and it is left here saying so rather
+    // than as a passing check. The two clicks below are aimed at the upstream
+    // Appearance tab's own theme cards and neither of them has found its card by
+    // name on this build, so the click is recorded as a note and only the claims
+    // that are actually demonstrated are asserted: the app follows whatever mode
+    // the upstream UI is in, and remembers exactly that. A check that passes
+    // whether or not the control was pressed is the decoration this pass is
+    // supposed to be removing, so what the click did is data here, not a claim.
+    // The value both gateways hold was set through the gateway's own preference,
+    // which is the key the Appearance tab writes and renders.
     const uiWindow = await openUpstreamAppearance('19402');
     const chosenDark = uiWindow ? await clickUpstreamCard(uiWindow, 'Console mono') : null;
     const appAfterDark = await settle('19402');
     step('chose a dark theme upstream', { page: chosenDark, app: appAfterDark, stored: readConfig().themeByGateway || null });
-    check('the upstream theme UI answered the click, or said why not',
-      Boolean(chosenDark && (chosenDark.clicked || chosenDark.why || chosenDark.clicked === null)),
-      JSON.stringify(chosenDark));
     report.notes.push({ upstreamClick: chosenDark, upstreamLightClick: null });
     check('the app followed the theme the upstream UI was left in',
       Boolean(chosenDark && appAfterDark && chosenDark.bg === appAfterDark.bg),
