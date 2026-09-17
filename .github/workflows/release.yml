@@ -143,6 +143,15 @@ jobs:
             script: build:linux
             artifact: linux
     runs-on: ${{ matrix.os }}
+    # Where electron and electron-builder keep what they download, pointed at a
+    # directory this job caches rather than left to each runner's default. The
+    # paths below are the cache's, so one step serves all three legs: the default
+    # locations differ per OS (~/Library/Caches on macOS, ~/.cache on Linux,
+    # %LOCALAPPDATA% on Windows) and a cache keyed on a guessed path silently
+    # restores nothing.
+    env:
+      ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
     defaults:
       run:
         working-directory: desktop
@@ -162,6 +171,28 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+
+      # ★ Cached, because a fresh runner starts with both of these empty and
+      # electron-builder refetches its inputs every time: the Electron
+      # distribution per architecture it packages (two here), its icons bundle,
+      # dmgbuild on macOS, and the signing/NSIS tools on Windows. Measured
+      # 2026-09-17 on the macos leg, each Electron fetch is seconds rather than
+      # minutes, so this buys seconds per leg; it is here as much for the other
+      # half, because that fetch is a network dependency that has already cost a
+      # release: the Linux leg that failed run 35264344454 died in an Electron
+      # install, not in a test, and the release job is gated on every leg.
+      #
+      # The key carries the OS and the lockfile, so an Electron upgrade misses it
+      # and a leg never restores another platform's binaries; the restore-key
+      # keeps a lockfile bump from throwing away everything.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.cache/electron
+            ${{ github.workspace }}/.cache/electron-builder
+          key: electron-${{ runner.os }}-${{ hashFiles('desktop/package-lock.json') }}
+          restore-keys: |
+            electron-${{ runner.os }}-
 
       - uses: actions/setup-node@v4
         with:
@@ -353,6 +384,14 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: claw-${{ matrix.artifact }}-${{ needs.version.outputs.version }}
+          # Stored, not compressed. Every payload here is an installer or an
+          # updater archive, meaning the bytes are already compressed, so the
+          # default deflate pass spends CPU on the runner and again in the
+          # release job's download for a file that cannot shrink. Measured
+          # 2026-09-17, this step was 16 to 21 seconds on the macOS leg alone,
+          # the largest single step in the release job's own critical path after
+          # the build itself.
+          compression-level: 0
           # Every build now publishes a Release, so these exist only to carry
           # files from the two build runners to the release job below, the
           # Release is the durable copy. They expire as fast as GitHub allows.
