@@ -2888,10 +2888,42 @@ function onUpdateAvailable(info) {
   // Only the suppressed BACKGROUND check declines: a press is an ask.
   declinedFetch = !fetch.fetch && plan.action === updates.INSTALL;
 
+  // ★ The wording is composed BEFORE the branches below, because two of them tell
+  // the reader the same news and must say it in the same words.
+  //
+  // The sentence the desktop puts in its banner is the one the phone puts in its
+  // own. `checkAnswer` always answers for an available outcome: it gates one
+  // direction only, the background check that found nothing, which is why there is
+  // no fallback here.
+  const { message, detail } = updates.checkAnswer({
+    outcome: updates.AVAILABLE,
+    version: info.version,
+    current: app.getVersion(),
+    action: plan.action,
+    reason: plan.reason,
+  });
+
   if (fetch.fetch) {
     // The answer to any manual check is superseded by this, which is a better
     // answer to the same question.
     clearNotice(UPDATE_ANSWER);
+    // ★ AN AVAILABLE RELEASE IS NEWS, AND A QUIET TRANSFER IS NOT A QUIET
+    // AVAILABILITY. These are two different cards and the background rule below
+    // belongs to only one of them: "say nothing until there is evidence of
+    // MOVEMENT" is about the progress card, whose whole content is how far a
+    // transfer has got, and a card at zero percent is a claim with nothing behind
+    // it. That a release EXISTS needs no evidence at all -- the check just read it
+    // off the feed -- and it is the one thing a reader can act on. Suppressing it
+    // with the transfer is how the app ends up telling nobody about an update
+    // until they ask, which is worse than the card this rule was written for.
+    //
+    // The card carries no bar and no action, because the transfer is already
+    // under way: it names the version and stops. The first progress event replaces
+    // it with the progress card (one id, one card), and a transfer that produces
+    // nothing leaves this sentence standing rather than a bar that never moved.
+    if (fetch.quiet) {
+      setNotice('update-available', { tone: noticeStore.INFO, message, detail });
+    }
     // A quiet attempt draws ITSELF the moment it has something true to say; see
     // beginUpdateDownload and onDownloadProgress.
     beginUpdateDownload(info.version, { quiet: fetch.quiet });
@@ -2903,18 +2935,6 @@ function onUpdateAvailable(info) {
   // dismissal undone by a relaunch -- and About's status line is where the state
   // is written down rather than re-announced (see statusLine).
   if (!fetch.offer) return;
-
-  // The wording comes from the shared composition, so the sentence the desktop
-  // puts in its banner is the one the phone puts in its own. `checkAnswer`
-  // always answers for an available outcome: it gates one direction only, the
-  // background check that found nothing, which is why there is no fallback here.
-  const { message, detail } = updates.checkAnswer({
-    outcome: updates.AVAILABLE,
-    version: info.version,
-    current: app.getVersion(),
-    action: plan.action,
-    reason: plan.reason,
-  });
 
   // The offer comes from the same decision, because which of the two is TRUE
   // depends on the policy action: a build that can install offers to fetch, while
