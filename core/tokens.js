@@ -35,6 +35,19 @@ export const CARD = { ...spec.card };
 export const TONE = Object.fromEntries(TONES.map((t) => [t, { ...spec.tone[t] }]));
 
 /**
+ * The tokens a client may take from a RUNNING Control UI, as [name, kind] pairs.
+ *
+ * One owner for both clients: the desktop reads these names out of the gateway
+ * page and inserts them into our pages (desktop/src/chrome.js re-exports this as
+ * THEME_TOKENS), and the phone reads the same names out of the same page and
+ * applies them to the settings and About surfaces. Before this lived here, the
+ * list was the desktop's alone, and the phone had no list at all, which is why
+ * its surfaces were the only ones not wearing the interface's own type and
+ * palette.
+ */
+export const LIVE_TOKENS = spec.live.tokens.map(([name, kind]) => [name, kind]);
+
+/**
  * Every colour as a name/value pair for one mode, shape included.
  *
  * Shape and colour are separate objects in the spec because they came from

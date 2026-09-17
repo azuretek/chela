@@ -23,6 +23,41 @@ final class GatewayPage: ObservableObject {
     /// Set by `WebView.makeUIView`, which is the only thing that creates one.
     weak var webView: WKWebView?
 
+    /// Ask the Control UI for its live design tokens.
+    ///
+    /// The settings and About surfaces are our own pages, and until this existed
+    /// they were the only surfaces in the app not wearing the interface's type and
+    /// palette: the desktop hands the same two pages the tokens it reads from this
+    /// same page (main.js applyThemeCss), and this client had no such leg at all.
+    /// `ThemeTokens` holds the shared list of names and the two scripts; this is
+    /// the read half.
+    ///
+    /// Every non-answer is empty rather than an error: no page, a page that
+    /// throws, or a page that publishes none of these names all mean the surface
+    /// keeps ui.css's fallback palette, which is styled, just not matched.
+    func liveTokens(_ done: @escaping ([String: String]) -> Void) {
+        guard let webView else {
+            NSLog("[claw] no gateway page to read the live theme tokens from")
+            done([:])
+            return
+        }
+        webView.evaluateJavaScript(ThemeTokens.probeScript) { result, error in
+            if let error {
+                NSLog("[claw] could not read the live theme tokens: %@", String(describing: error))
+                done([:])
+                return
+            }
+            guard let json = result as? String,
+                  let data = json.data(using: .utf8),
+                  let map = (try? JSONSerialization.jsonObject(with: data)) as? [String: String]
+            else {
+                done([:])
+                return
+            }
+            done(map)
+        }
+    }
+
     /// Ask the Control UI to open its own settings.
     ///
     /// Every non-answer is logged rather than swallowed: no page at all, a script

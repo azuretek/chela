@@ -153,6 +153,16 @@ struct TokensSpec: Decodable {
     let cardProvenance: [String: String]
     let tone: [String: Tone]
 
+    /// The tokens a client may take from a running Control UI, as [name, kind]
+    /// pairs. Read by the desktop as THEME_TOKENS and mirrored by the phone in
+    /// `ThemeTokens`, which is what `ThemeTokensParityTests` asserts against.
+    let live: Live
+
+    struct Live: Decodable {
+        let description: String
+        let tokens: [[String]]
+    }
+
     struct TypeScale: Decodable {
         let font: [String: String]
         let size: [String: String]
