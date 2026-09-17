@@ -51,6 +51,12 @@ What the gate reads, and what it deliberately does not:
   a failure. A leg that was skipped is not evidence either: if every verdict job
   was skipped the gate reads the other run's own conclusion, so a version job
   that failed (which skips its matrix and fails its run) still refuses.
+- **A run's job list lags the run itself.** A run object appears within seconds
+  of its push while its jobs register seconds to tens of seconds later, so the
+  gate waits for a matching job to appear rather than reading an empty list as a
+  rename, and refuses on an empty match only once the other run has concluded
+  without ever listing one. Reading the empty list as a verdict is what refused a
+  release whose counterpart was green on 2026-09-17.
 - **Not the other pipeline's publish job.** Each release job needs its own
   pipeline's gate, and each gate waits on the other pipeline's verdict, so
   waiting on its publish as well would deadlock both runs. The upload is not a
