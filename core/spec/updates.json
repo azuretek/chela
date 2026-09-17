@@ -9,6 +9,9 @@
     "stableMs": 21600000,
     "prereleaseMs": 300000
   },
+  "download": {
+    "stallMs": 45000
+  },
   "outcomes": {
     "available": "available",
     "current": "current",

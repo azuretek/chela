@@ -21,6 +21,7 @@ import {
   checkIntervalMs, ago, INSTALL, MANUAL, NOTIFY, NONE, MAC_SIGNED,
   AVAILABLE, CURRENT, UNAVAILABLE, FAILED,
   STABLE_INTERVAL_MS, PRERELEASE_INTERVAL_MS,
+  STALL_MS, stallRemaining, offeredStanding, offeredCaveat, downloadingMessage, stalledMessage,
 } from '../../core/updates.js';
 // ★ The desktop's answer to "is the feed's newest build newer than this one"
 // comes from the same owner the phone calls, not from a comparison written
@@ -38,6 +39,11 @@ export {
   AVAILABLE, CURRENT, UNAVAILABLE, FAILED,
   STABLE_INTERVAL_MS, PRERELEASE_INTERVAL_MS,
   newerVersion, isNewerBuild,
+  // The download phase: how long a transfer may say nothing before the card stops
+  // calling it progress, the re-arm rule, and the wording for both phases. Shared
+  // core, re-exported here so src/main.js and test/updates.test.js keep reading one
+  // module, the same shape the whole policy moved in.
+  STALL_MS, stallRemaining, offeredStanding, offeredCaveat, downloadingMessage, stalledMessage,
 };
 
 /**
@@ -132,4 +138,5 @@ export default {
   checkIntervalMs, ago, statusLine, downloadProgress, transferDetail, newerVersion, isNewerBuild,
   INSTALL, MANUAL, NOTIFY, NONE, MAC_SIGNED, STABLE_INTERVAL_MS, PRERELEASE_INTERVAL_MS,
   AVAILABLE, CURRENT, UNAVAILABLE, FAILED,
+  STALL_MS, stallRemaining, offeredStanding, offeredCaveat, downloadingMessage, stalledMessage,
 };

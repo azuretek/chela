@@ -2461,6 +2461,11 @@ const UPDATE_FIRST_CHECK_MS = 60 * 1000;
 let updater = null; // the electron-updater AppUpdater, or null where we do not check
 let updateReady = null; // version string once downloaded and installable
 let updateTimer = null;
+// ★ The library's only handle on a transfer in flight. `checkForUpdates()` returns
+// the CancellationToken it gave the download it starts on its own, and
+// `downloadUpdate()` accepts one, so holding it is the difference between clearing
+// a card and giving up the download behind it. See abandonUpdateDownload.
+let downloadCancelToken = null;
 // The last check to actually finish, for About to report. Updating is otherwise
 // invisible, see updates.statusLine() for why that is worth a line.
 let lastCheck = { at: null, result: null };
@@ -2523,11 +2528,28 @@ function initUpdates() {
   updater.on('update-available', (info) => onUpdateAvailable(info));
   updater.on('download-progress', (info) => onDownloadProgress(info));
   updater.on('update-downloaded', (info) => onUpdateDownloaded(info));
+  // The other half of a cancel, and the reason it is not an error: the library
+  // emits `update-cancelled` and deliberately does NOT dispatch `error` for a
+  // CancellationError, so the two ends of a deliberate clear agree that nothing
+  // went wrong. Nothing is raised here; the state is only tidied.
+  updater.on('update-cancelled', () => {
+    stopStallWatch();
+    downloadCancelToken = null;
+    downloadCardRaised = false;
+    downloadVersion = null;
+  });
   updater.on('error', (err) => {
     // Never unprompted. A machine that is offline, or behind a proxy, or hitting
     // a rate limit must not interrupt whatever the user was doing to say so.
     console.error(`[claw-desktop] update check failed: ${err && err.message}`);
     setLastCheck('check failed');
+    // ★ Settled for EVERY trigger, before the manual-check gate below. A download
+    // that dies has a card of its own on the bar already, so leaving it there at
+    // whatever percent it reached is not the silence this handler is for -- it is
+    // the app going quiet in the middle of a sentence it started. The gate below is
+    // about a CHECK nobody asked about, which says nothing because a card was never
+    // raised; this one only ever acts on a card that was.
+    settleFailedDownload(err);
     if (!pendingManualCheck) return;
     pendingManualCheck = false;
     // The one exception to the line above, and the point of the shared
@@ -2689,7 +2711,17 @@ async function checkForUpdates(trigger = 'manual') {
   }
   pendingManualCheck = updates.shouldReportNoUpdate(trigger);
   try {
-    await updater.checkForUpdates();
+    const result = await updater.checkForUpdates();
+    // The download a check starts on its own carries the token `checkForUpdates`
+    // just handed back, so this is the cancel handle for it. Kept rather than
+    // discarded so that clearing the card can give up the transfer too.
+    if (result && result.cancellationToken) downloadCancelToken = result.cancellationToken;
+    // ★ And the promise it returns is attached to here rather than left dangling.
+    // It is the download itself, and until now nothing in this app awaited it: a
+    // failed auto-download rejected into the void, which Electron reports as an
+    // unhandled rejection. `error` is already handled above with the message a
+    // person can read, so this catch only stops the second, uglier report.
+    if (result && result.downloadPromise) result.downloadPromise.catch(() => {});
   } catch {
     // Deliberately silent. electron-updater emits 'error' *and* rejects for the
     // same failure, so logging here too prints every update failure twice, which
@@ -2800,14 +2832,19 @@ async function downloadOfferedUpdate() {
   beginUpdateDownload(version);
   setLastCheck(`downloading ${version}`);
   try {
-    await updater.downloadUpdate();
+    // The token if we hold one, so this transfer is cancellable too. The library
+    // defaults to a fresh one otherwise, which is the case where an abandoned
+    // download really is only abandoned in the UI.
+    await updater.downloadUpdate(downloadCancelToken || undefined);
   } catch (err) {
-    setLastCheck('download failed');
-    setNotice('update-available', {
-      tone: noticeStore.WARN,
-      message: `Could not download ${chrome.APP_NAME} ${version}.`,
-      detail: `${noticeStore.sentence((err && err.message) || err)} It will try again at the next check.`,
-    });
+    // A cancel is not a failure. If the reader cleared this attempt, the transfer
+    // rejecting is the intended end of it and a failure card here would be exactly
+    // the resurrected card the clear was for.
+    if (downloadAttempt === clearedAttempt) return;
+    // The 'error' event above has already settled the card with the same news, so
+    // this only covers the rejections that arrive without one.
+    if (downloadCardRaised) settleFailedDownload(err);
+    else setLastCheck('download failed');
   }
 }
 
@@ -2820,19 +2857,63 @@ async function downloadOfferedUpdate() {
  * arriving either way and the only question the notice answers is how far it
  * has got.
  *
- * Not dismissible, and that is a property of the PHASE rather than of the
- * notice: the ready notice replaces this one within seconds, and a progress bar
- * that reappeared because the next whole percent is not news the reader has
- * already been told would be worse than one with no X at all. The ready notice
- * is dismissible, because that is the phase with something to lose.
+ * ★ Dismissible, and its X CLEARS rather than reads (`dismissClears`). It used to
+ * refuse the X, on the reasoning that the ready notice replaces it within seconds
+ * so a bar that reappeared on the next whole percent would be worse than one with
+ * no control at all. That reasoning was right about the reappearing and wrong
+ * about the remedy, and the remedy is what Abi hit on 2026-09-17: a download that
+ * dies or never moves during a background check leaves this card on screen at 0%
+ * with no X, excluded from "Mark all read" as well, and there is then NOTHING on
+ * the bar that can take it away. A card with no way out is the one people learn to
+ * ignore, so the control is here and the reappearing is fixed where it belongs:
+ * the raise is dropped for an attempt the reader has cleared (see
+ * `abandonUpdateDownload`).
+ *
+ * The wording comes from shared core (`downloadingMessage`), which also decides
+ * whether the offered number is above the one running: a build numbered below the
+ * running one is not an upgrade for being half downloaded either.
  */
 function downloadingNotice(version, info) {
+  const { message, detail } = updates.downloadingMessage({
+    version,
+    current: app.getVersion(),
+    transfer: updates.transferDetail(info),
+  });
   return {
     tone: noticeStore.INFO,
-    message: `Downloading ${chrome.APP_NAME} ${version}.`,
-    detail: updates.transferDetail(info) || 'Starting the download.',
-    dismissible: false,
+    message,
+    detail,
+    // The X is offered, and it means "stop reporting this" rather than "I have
+    // seen this", which is what makes it leave the store rather than go read.
+    dismissible: true,
+    dismissClears: true,
     progress: updates.downloadProgress(info),
+  };
+}
+
+/** The notice shown when a download has produced nothing for the stall window. */
+function stalledNotice(version) {
+  const { message, detail } = updates.stalledMessage({
+    version,
+    current: app.getVersion(),
+    stallMs: updates.STALL_MS,
+  });
+  return {
+    tone: noticeStore.WARN,
+    message,
+    detail,
+    // No progress bar. The bar is the thing that was lying: it drew a position for
+    // a transfer that has not moved, and leaving it on screen at whatever percent
+    // it stopped at is the same fault one state over.
+    dismissible: true,
+    dismissClears: true,
+    // The one action a notice may offer, and the honest one: nothing here can
+    // restart a transfer this app did not start, and the release page is always
+    // reachable. Retry is deliberately NOT offered as a second control, because the
+    // library's own download is the only handle this build has on one (see
+    // abandonUpdateDownload) and a button that quietly did nothing would be this
+    // same bug in a new place.
+    action: { label: 'Open release page', command: 'update-release-page' },
   };
 }
 
@@ -2840,10 +2921,169 @@ function downloadingNotice(version, info) {
 // first event of a download is the one that has to be allowed through.
 let lastProgressPercent = 0;
 
+/*
+ * The download phase, as state.
+ *
+ * ★ `downloadAttempt` is what makes an abandoned card stay abandoned. Every event
+ * the updater emits belongs to the attempt that was current when it was emitted,
+ * and an attempt the reader has cleared is one this app has stopped reporting on:
+ * the transfer may genuinely still be running (see abandonUpdateDownload), and the
+ * one thing that must not happen is the next chunk sliding the card back onto the
+ * bar as though the reader had never touched it.
+ *
+ * A NEW attempt is a new generation, so an offer raised by a later check -- or by
+ * the reader taking up a later offer -- comes back normally. That is the whole
+ * "must not immediately re-offer itself" rule: not this attempt, again, now.
+ */
+let downloadAttempt = 0;
+let clearedAttempt = -1;
+let downloadVersion = null;
+let downloadStartedAt = 0;
+// The last evidence of MOVEMENT: the attempt starting, or any progress event. The
+// stall window is measured from here rather than from downloadStartedAt, which is
+// what lets a slow download run as long as it likes without being cut off.
+let downloadMovedAt = 0;
+let downloadWatchdog = null;
+// Whether a card for an arriving update is on the bar, so a late failure can tell
+// "settle the card I already raised" from "report something nobody asked about".
+let downloadCardRaised = false;
+
+/** Stop the stall watchdog, if one is armed. */
+function stopStallWatch() {
+  if (!downloadWatchdog) return;
+  clearTimeout(downloadWatchdog);
+  downloadWatchdog = null;
+}
+
+/**
+ * Arm (or re-arm) the stall watchdog.
+ *
+ * Re-armed on every progress event, so what it measures is silence rather than
+ * elapsed time, and `updates.stallRemaining` decides how much of the window is
+ * left so a late timer re-arms for the remainder instead of restarting it.
+ */
+function armStallWatch() {
+  stopStallWatch();
+  const remaining = updates.stallRemaining(Date.now() - downloadMovedAt);
+  downloadWatchdog = setTimeout(onDownloadStall, Math.max(1000, remaining));
+  // Never a reason to hold the process open: quitting with a download in flight
+  // must not wait on a timer whose only job is to change a card.
+  if (typeof downloadWatchdog.unref === 'function') downloadWatchdog.unref();
+}
+
+/**
+ * The transfer has said nothing for the window: say so, and stop calling it progress.
+ *
+ * This is the fix for the bar that sat at 0%. It cancels NOTHING, which is the
+ * point: a download that is merely slow is indistinguishable from a dead one until
+ * something arrives, so the state it moves to says what is known ("nothing has
+ * arrived for 45 seconds, it has not been cancelled") and offers what is actually
+ * actionable, rather than cutting off a transfer that was going to finish.
+ */
+function onDownloadStall() {
+  downloadWatchdog = null;
+  if (downloadAttempt === clearedAttempt) return;
+  if (!downloadCardRaised) return;
+  const percent = lastProgressPercent;
+  console.warn(`[claw-desktop] update download stalled at ${percent}% after ${Math.round(updates.STALL_MS / 1000)}s with no progress event`);
+  showUpdateNotice(stalledNotice(downloadVersion || 'the update'));
+}
+
+/**
+ * Raise the update card, unless the reader has cleared the attempt it belongs to.
+ *
+ * Every raise of this id goes through here for that reason: one raise that skipped
+ * the gate would put the abandoned card back for the next chunk of a transfer the
+ * reader already told the app to stop reporting on.
+ */
+function showUpdateNotice(notice) {
+  if (downloadAttempt === clearedAttempt) {
+    downloadCardRaised = false;
+    return;
+  }
+  downloadCardRaised = true;
+  setNotice('update-available', notice);
+}
+
 /** Start a download's notice at zero, and let the next percent through. */
 function beginUpdateDownload(version) {
+  downloadAttempt += 1;
+  downloadVersion = version;
+  downloadStartedAt = Date.now();
+  downloadMovedAt = downloadStartedAt;
   lastProgressPercent = 0;
-  setNotice('update-available', downloadingNotice(version, { percent: 0 }));
+  showUpdateNotice(downloadingNotice(version, { percent: 0 }));
+  armStallWatch();
+}
+
+/**
+ * The reader cleared the card: give up the transfer as well as the card.
+ *
+ * ★ WHETHER A DOWNLOAD CAN REALLY BE CANCELLED, answered plainly because the
+ * question decides what this function is allowed to claim.
+ *
+ * electron-updater has no `cancel()`. The only handle it exposes is the
+ * `CancellationToken` that `checkForUpdates()` returns, which is the token the
+ * download it starts on its own was given (`doCheckForUpdates` passes it straight
+ * to `downloadUpdate`), and which `downloadUpdate()` also accepts as an argument.
+ * So: a transfer this app started, or a check that started one, CAN be cancelled,
+ * and is -- the transport behind it observes the token and aborts. What cannot be
+ * cancelled is the library's native hand-off on macOS, where Squirrel.Mac is asked
+ * to fetch the already-downloaded zip from a loopback proxy; that step has no token
+ * and no cancel, and there it really is abandonment in the UI only.
+ *
+ * Either way the UI half is identical, and it is the half this function has to get
+ * right: the attempt is marked cleared BEFORE the token is cancelled, because a
+ * cancel makes the library emit back into these very handlers, and the promise it
+ * settles with must land on an attempt nobody is reporting rather than raising a
+ * failure card for something the reader deliberately ended.
+ */
+function abandonUpdateDownload() {
+  stopStallWatch();
+  clearedAttempt = downloadAttempt;
+  downloadCardRaised = false;
+  downloadVersion = null;
+  downloadMovedAt = 0;
+
+  const token = downloadCancelToken;
+  downloadCancelToken = null;
+  if (!token) return;
+  try {
+    token.cancel();
+    console.log('[claw-desktop] update download cancelled at the reader\'s request');
+  } catch (err) {
+    // Already settled, which is the ordinary case for a download that finished
+    // between the card being drawn and the X being pressed.
+    console.warn(`[claw-desktop] could not cancel the update download: ${err && err.message}`);
+  }
+}
+
+/**
+ * Give up on a download the library itself reported as failed.
+ *
+ * Called from the updater's `error` handler for EVERY trigger, which is the other
+ * half of the stuck card. A check failure is still silent when nobody pressed
+ * anything -- that rule is unchanged and is about not interrupting someone to
+ * report a flaky network -- but a download that dies is a different thing
+ * entirely: the app has ALREADY put a card on the screen saying it is fetching
+ * this build, so leaving that card up at its last percent is not silence, it is a
+ * report that has stopped being true. Settling it is the app finishing the
+ * sentence it started, not a new interruption.
+ */
+function settleFailedDownload(err) {
+  stopStallWatch();
+  downloadCancelToken = null;
+  if (!downloadCardRaised) return;
+  if (downloadAttempt === clearedAttempt) return;
+  const version = downloadVersion || (offeredUpdate && offeredUpdate.version) || 'the update';
+  downloadCardRaised = false;
+  downloadVersion = null;
+  setNotice('update-available', {
+    tone: noticeStore.WARN,
+    message: `Could not download ${chrome.APP_NAME} ${version}.`,
+    detail: `${noticeStore.sentence((err && err.message) || err)} The next check will try again.`,
+    action: { label: 'Open release page', command: 'update-release-page' },
+  });
 }
 
 /**
@@ -2856,20 +3096,48 @@ function beginUpdateDownload(version) {
  * renders to say one thing.
  */
 function onDownloadProgress(info) {
+  // An abandoned attempt is not reported on. The transfer may still be running
+  // (abandonUpdateDownload says which half can be cancelled), and the one thing
+  // that must not happen is this card sliding back onto the bar for a chunk the
+  // reader asked not to watch.
+  if (downloadAttempt === clearedAttempt) return;
+
+  // ★ Movement is recorded BEFORE the whole-percent throttle, and that ordering is
+  // the whole "stalled versus slow" answer. electron-updater reports a float
+  // percent per chunk, so a slow transfer can spend a long time between two whole
+  // percents while moving perfectly well; counting only the throttled raises would
+  // call that a stall. Every event is evidence, and the watchdog is re-armed on
+  // every one of them, so the window measures silence rather than elapsed time.
+  downloadMovedAt = Date.now();
+  armStallWatch();
+
   const percent = Math.round(Number(info && info.percent) || 0);
   if (percent === lastProgressPercent) return;
   lastProgressPercent = percent;
-  const version = (offeredUpdate && offeredUpdate.version) || 'the update';
-  setNotice('update-available', downloadingNotice(version, info));
+  const version = downloadVersion || (offeredUpdate && offeredUpdate.version) || 'the update';
+  // A late event puts the card back to progress, because that is what it is: the
+  // stall card says nothing arrived for the window, and something just did.
+  showUpdateNotice(downloadingNotice(version, info));
 }
 
 function onUpdateDownloaded(info) {
+  stopStallWatch();
+  downloadCancelToken = null;
+  downloadCardRaised = false;
+  downloadVersion = null;
   updateReady = info.version;
   offeredUpdate = info;
   lastProgressPercent = 0;
   clearNotice(UPDATE_ANSWER);
   setLastCheck(`${info.version} downloaded, install to apply`);
   buildTray(); // so "Install update" appears in the tray as well
+  // ★ The clear does NOT survive a completion, and that is deliberate rather than
+  // an oversight. Clearing a card says "stop reporting THIS transfer", and a
+  // finished download is a different condition with a different offer behind it
+  // (there is now something on disk worth restarting into). What is never restored
+  // is a progress card for a transfer the reader stopped watching -- the phase they
+  // actually dismissed.
+  clearedAttempt = -1;
   // Dismissible, by Abi's call on 2026-09-15. It used to refuse the X, on the
   // reasoning that it was the only route to a restart that had already been
   // paid for. It is not the only route: the tray and the menu bar both carry
@@ -3725,15 +3993,29 @@ function registerIpc() {
     bannerHeight = next;
     layoutViews();
   });
-  // Reads rather than clears. The X on a card means "I have seen this", not
-  // "this is fixed", and the two used to be the same button: waving away a
-  // refused shortcut deleted the app's own knowledge that it was refused.
+  // ★ The store decides what the X MEANS, and this is the only place a surface's
+  // dismissal arrives, so it is the only place that decision has to be right. Most
+  // cards are read: "I have seen this", not "this is fixed", and the two used to be
+  // the same button, which is how waving away a refused shortcut deleted the app's
+  // own knowledge that it was refused. A card that says `dismissClears` means the
+  // other thing -- the reader is ending the condition rather than acknowledging it
+  // -- and the download card is the one that does.
   ipcMain.handle('app:dismiss-notice', (_e, id) => {
-    if (notices.markRead(String(id))) refreshBanner();
+    const key = String(id);
+    const notice = notices.get(key);
+    // ★ Giving up the transfer happens BEFORE the store is touched, so that the
+    // library's own reaction to a cancel (an 'update-cancelled' event, and a
+    // rejected download promise) arrives at an attempt the app has already stopped
+    // reporting on. The other order races: the cancel can emit inside this tick,
+    // and a raise from it would land on a store that still thinks the card is live.
+    if (notice && notice.dismissClears) abandonUpdateDownload();
+    if (notices.dismiss(key)) refreshBanner();
   });
   // Closing the bar is the same act aimed at everything on it. Anything not
-  // dismissible is left alone, which today means a download in flight: it is
-  // replaced within seconds, so a sweep cannot lose it.
+  // dismissible is left alone, and so is anything whose dismissal means clearing:
+  // a sweep is not a decision about a transfer, and the download card's own X is
+  // one deliberate act rather than a side effect of emptying the bar. The store
+  // owns both rules (see markAllRead in core/notices.js).
   ipcMain.handle('app:mark-notices-read', () => {
     if (notices.markAllRead()) refreshBanner();
   });

@@ -55,6 +55,37 @@ enum UpdateAnswer {
         trigger == .manual
     }
 
+    /// The sentence that keeps an offer honest, or an empty string for an upgrade.
+    ///
+    /// Ported from `offeredCaveat` in `core/updates.js`, and it exists for the
+    /// same fault on this client: the feed is read newest-first by PUBLISH TIME, so
+    /// the release it hands over can carry a number below the one running once the
+    /// version tail's basis has moved. A banner that says "is available" about such
+    /// a build is presenting it as an upgrade it is not, and this client has no
+    /// version-numbering fix of its own to lean on.
+    ///
+    /// ★ `Version.compare` (semver precedence, tail and all) rather than
+    /// `compareRelease`, which is deliberately the opposite of what an update
+    /// DECISION uses. The decision must never rank the tail, because its basis
+    /// changes; what a banner PRESENTS is answered about the whole string, because
+    /// the whole string is what the reader can see.
+    ///
+    /// Empty rather than a reassurance on the ordinary path: a caveat on every offer
+    /// is a caveat nobody reads by the second one. An unparseable version is also
+    /// empty rather than a caveat, which is the same non-answer `offeredStanding`
+    /// gives: a version this build cannot read is a fault where it happened, not
+    /// something to invent a sentence about here.
+    static func offeredCaveat(offered: String?, current: String) -> String {
+        guard let offered, let standing = try? Version.compare(offered, current) else { return "" }
+        if standing < 0 {
+            return "It is numbered below the build you are running, so it is not an upgrade; it is the newest release by publish time."
+        }
+        if standing == 0 {
+            return "It carries the same number as the build you are running, so it is the same version released again rather than a newer one."
+        }
+        return ""
+    }
+
     /// The answer for one outcome, or nil where nothing is owed.
     ///
     /// - Parameters:
@@ -93,21 +124,26 @@ enum UpdateAnswer {
         switch outcome {
         case .available:
             let headline = "\(Naming.product) \(version ?? "") is available."
+            // The caveat rides on every branch, including the pointer's: a pointer
+            // says where the build is, never whether it is above what you have, and
+            // this client's pointer is a bare "Open TestFlight to update."
+            let caveat = offeredCaveat(offered: version, current: current)
+            let from = "You are on \(current).\(caveat.isEmpty ? "" : " \(caveat)")"
             if let pointer {
-                return Answer(tone: NoticeTone.info, message: headline, detail: "You are on \(current). \(pointer)")
+                return Answer(tone: NoticeTone.info, message: headline, detail: "\(from) \(pointer)")
             }
             switch action {
             case .install:
                 return Answer(
                     tone: NoticeTone.info,
                     message: headline,
-                    detail: "You are on \(current). It will download in the background, and you can restart to apply it."
+                    detail: "\(from) It will download in the background, and you can restart to apply it."
                 )
             case .manual:
                 return Answer(
                     tone: NoticeTone.info,
                     message: headline,
-                    detail: "You are on \(current). Automatic updates are off, so nothing has been downloaded yet, "
+                    detail: "\(from) Automatic updates are off, so nothing has been downloaded yet, "
                         + "install it now, or turn them back on in Settings."
                 )
             default:
@@ -115,7 +151,7 @@ enum UpdateAnswer {
                 return Answer(
                     tone: NoticeTone.info,
                     message: headline,
-                    detail: "You are on \(current). This build cannot update itself\(because), "
+                    detail: "\(from) This build cannot update itself\(because), "
                         + "download the new version and replace the app to upgrade."
                 )
             }

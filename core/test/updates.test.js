@@ -16,6 +16,7 @@ import path from 'node:path';
 import {
   capability, policy, checkAnswer, INSTALL, NOTIFY, NONE, MANUAL,
   AVAILABLE, CURRENT, UNAVAILABLE, FAILED,
+  STALL_MS, stallRemaining, offeredStanding, offeredCaveat, downloadingMessage, stalledMessage,
 } from '../updates.js';
 // The tones the answers are drawn in, imported from the notice model rather than
 // written as literals: what a tone IS belongs to that module, and a test naming
@@ -194,4 +195,98 @@ test('the outcome names come from the spec, like the action names', () => {
     [AVAILABLE, CURRENT, UNAVAILABLE, FAILED],
     [spec.outcomes.available, spec.outcomes.current, spec.outcomes.unavailable, spec.outcomes.error],
   );
+});
+
+/*
+ * ★ The download that sat at 0% with no way out.
+ *
+ * Abi, 2026-09-17: a banner reading "Downloading Claw Control UI <version>.
+ * Starting the download." with the bar at zero and no control that would take it
+ * away. Two faults, and both are covered here or in the desktop's own tests: a
+ * surface reporting progress that was not happening, and a card with no way out.
+ *
+ * The RULE these pin is one sentence: a transfer that has produced nothing for a
+ * named window is not progress, and the app must say something true about it
+ * rather than leave a bar where it stopped. What it must NOT do is claim the
+ * download failed or cut it off, because neither is known.
+ */
+
+test('the stall window is a named value, from the spec both clients read', () => {
+  const spec = load('../spec/updates.json');
+  assert.equal(STALL_MS, spec.download.stallMs, 'the window comes from the spec, not from a literal at the timer');
+  // A window has to outlast the transport flapping underneath it and still be
+  // short enough that nobody watches a frozen bar through it. The bounds are loose
+  // on purpose: what they catch is a typo'd unit, not a taste.
+  assert.ok(STALL_MS >= 15000, `${STALL_MS}ms is short enough to cut off a working download`);
+  assert.ok(STALL_MS <= 120000, `${STALL_MS}ms is long enough to read as the bar being stuck`);
+});
+
+test('the window is measured from the last movement, so a slow download is never cut off', () => {
+  // ★ This is the whole stalled-versus-slow answer, as arithmetic.
+  //
+  // A transfer that keeps arriving re-arms the window on every chunk, so what is
+  // left of it is what matters: 40 seconds of quiet is 5 seconds of window, and a
+  // download that has been trickling along for an hour still has the full window
+  // ahead of it. A rate threshold is the check that would cut a working download
+  // off, and there is deliberately none.
+  assert.equal(stallRemaining(0), STALL_MS, 'a fresh transfer has the whole window');
+  assert.equal(stallRemaining(40000), STALL_MS - 40000, 'movement spends the window from the last event');
+  assert.equal(stallRemaining(STALL_MS), 0, 'the window is spent exactly at the named value');
+  assert.equal(stallRemaining(STALL_MS * 3), 0, 'a very late timer cannot report a negative window');
+  // A clock that went backwards, or a caller that passed nothing, is "no quiet
+  // time observed" rather than a negative or NaN delay a timer would fire at once.
+  assert.equal(stallRemaining(-5000), STALL_MS);
+  assert.equal(stallRemaining(undefined), STALL_MS);
+  assert.equal(stallRemaining(NaN), STALL_MS);
+});
+
+test('the stalled card says what is known, and does not claim the download failed', () => {
+  const { message, detail } = stalledMessage({ version: '1.0.2', current: '1.0.1' });
+  assert.match(message, /1\.0\.2/, 'it still names the version it is about');
+  assert.match(message, /stopped making progress/i);
+  assert.match(detail, /45 seconds/, 'the window is named, so "why now" has an answer');
+  assert.match(detail, /not been cancelled/i, 'nothing was cancelled, so nothing may say it was');
+  assert.match(detail, /may still finish/i, 'and the transfer really may still land');
+  // What it must never say. A card that reported a failure here would be the same
+  // fault one state over: describing a state the app is not in.
+  assert.doesNotMatch(`${message} ${detail}`, /fail|error|could not/i);
+});
+
+test('a download names the version and says how far it has got, or that it is starting', () => {
+  const starting = downloadingMessage({ version: '1.0.2', current: '1.0.1' });
+  assert.equal(starting.message, 'Downloading Claw Control UI 1.0.2.');
+  assert.equal(starting.detail, 'Starting the download.');
+  const moving = downloadingMessage({ version: '1.0.2', current: '1.0.1', transfer: '12 MB of 130 MB, 900 kB/s' });
+  assert.equal(moving.detail, "12 MB of 130 MB, 900 kB/s", "the client's own arrival line is used as it stands");
+});
+
+test('★ a build numbered below the one running is not presented as an upgrade', () => {
+  // The case the numbering basis moved under us to create: the feed hands over the
+  // newest release by PUBLISH TIME, so the number it carries can be below the
+  // installed one. Whether to update is decided elsewhere and is not changed here.
+  const lower = '1.0.1-dev.38.a1b2c3d4e5';
+  const running = '1.0.1-dev.42.b2c3d4e5f6';
+  assert.equal(offeredStanding(lower, running), 'lower');
+  assert.match(offeredCaveat(lower, running), /numbered below the build you are running/);
+
+  const offered = downloadingMessage({ version: lower, current: running, transfer: '4 MB of 130 MB' });
+  assert.match(offered.detail, /not an upgrade/, 'a lower number is named as not an upgrade, even mid-download');
+  assert.match(offered.detail, /4 MB of 130 MB/, 'and the arrival line survives the caveat');
+
+  // And the ordinary path stays quiet. A caveat on every offer is a caveat nobody
+  // reads by the second one.
+  assert.equal(offeredStanding('1.0.1-dev.150.abc1234567', '1.0.1-dev.148.abc1234567'), 'newer');
+  assert.equal(offeredCaveat('1.0.2', '1.0.1'), '');
+  assert.equal(downloadingMessage({ version: '1.0.2', current: '1.0.1' }).detail, 'Starting the download.');
+
+  // The comparison is by semver PRECEDENCE, not by release: what the reader is
+  // shown is the whole string, which is the opposite of the rule an update
+  // DECISION uses. Same release, lower tail, reads as lower.
+  assert.equal(offeredStanding('1.0.1-dev.38.a1b2c3d4e5', '1.0.1-dev.42.b2c3d4e5f6'), 'lower');
+  // Same string twice is a re-release rather than a newer version.
+  assert.equal(offeredStanding('1.0.2', '1.0.2'), 'same-build');
+  assert.match(offeredCaveat('1.0.2', '1.0.2'), /same number/);
+  // A version this build cannot parse is a non-answer, not a caveat to invent.
+  assert.equal(offeredStanding('not-a-version', '1.0.1'), null);
+  assert.equal(offeredCaveat('not-a-version', '1.0.1'), '');
 });

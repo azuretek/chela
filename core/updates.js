@@ -55,6 +55,12 @@
 
 import spec from './spec/updates.json' with { type: 'json' };
 import { product } from './naming.js';
+// The version comparator, imported rather than reimplemented, and the semver
+// PRECEDENCE one specifically: `offeredCaveat` below asks what a reader can see on
+// screen, which is the whole version string. That is deliberately not the
+// comparison an update decision uses -- see compareRelease in version.js, and why
+// this file needs the other one beside offeredStanding.
+import { compare } from './version.js';
 // The tones a check's answer is drawn in. Imported rather than spelled here,
 // because the notice model owns what a tone IS and a second copy of the four
 // names is the drift this module exists to avoid. It is a value import and not a
@@ -250,21 +256,147 @@ export function policy({ autoUpdate = true, ...opts }) {
  */
 export function availableMessage({ action, version, current, reason = null }) {
   const headline = `${product} ${version} is available.`;
+  const caveat = offeredCaveat(version, current);
+  const from = `You are on ${current}.${caveat ? ` ${caveat}` : ''}`;
   if (action === INSTALL) {
-    return { message: headline, detail: `You are on ${current}. It will download in the background, and you can restart to apply it.` };
+    return { message: headline, detail: `${from} It will download in the background, and you can restart to apply it.` };
   }
   if (action === MANUAL) {
     return {
       message: headline,
-      detail: `You are on ${current}. Automatic updates are off, so nothing has been downloaded yet, `
+      detail: `${from} Automatic updates are off, so nothing has been downloaded yet, `
         + 'install it now, or turn them back on in Settings.',
     };
   }
   const because = reason ? `, because ${reason}` : '';
   return {
     message: headline,
-    detail: `You are on ${current}. This build cannot update itself${because}, `
+    // The caveat rides in the one place that composes an offer, so no client can
+    // put a lower number on screen without it.
+    detail: `${from} This build cannot update itself${because}, `
       + 'download the new version and replace the app to upgrade.',
+  };
+}
+
+/**
+ * How the number on an offer relates to the number on the running build.
+ *
+ * ★ This decides NOTHING about whether to update. It answers the reader's
+ * question, which is "is the thing I am being offered above what I have?", and it
+ * answers it from the version strings themselves so the two clients cannot say
+ * different things about one offer.
+ *
+ *   'newer'      the offered number is above the running one
+ *   'same-build' equal by semver precedence, so the same number
+ *   'lower'      below it
+ *   null         one of them is not a version this build parses
+ *
+ * ★ Why `compare` (semver precedence, tail and all) rather than `compareRelease`.
+ * They answer different questions, and using the wrong one here is the fault this
+ * function exists for. An update DECISION must never rank the tail, because its
+ * basis changes and ranking it inverts the check (see compareRelease). What a
+ * banner PRESENTS is the opposite case: the reader is shown the whole string, so
+ * "is what I am offered newer than what I have" has to be answered about the
+ * whole string. A dev build can be legitimately newer by publish order and still
+ * carry a lower number, and a banner that offers `1.0.1-dev.38.a1b2c3d4e5` to a
+ * build on `1.0.1-dev.42.b2c3d4e5f6` as though it were an upgrade is reporting a
+ * state the app is not in.
+ *
+ * The non-answer is deliberate and is not a `newer`: an unparseable version is a
+ * fault to surface where it happened rather than a caveat to invent here.
+ *
+ * @param {string} offered  the version a feed or an updater offered
+ * @param {string} current  the version this build is running
+ * @returns {'newer'|'same-build'|'lower'|null}
+ */
+export function offeredStanding(offered, current) {
+  let result;
+  try {
+    result = compare(offered, current);
+  } catch {
+    return null;
+  }
+  if (result > 0) return 'newer';
+  if (result < 0) return 'lower';
+  return 'same-build';
+}
+
+/**
+ * The sentence that keeps an offer honest, or an empty string for an upgrade.
+ *
+ * Empty rather than a reassurance on the ordinary path, so the wording a reader
+ * sees when everything is normal is exactly what it was: a caveat on every offer
+ * is a caveat nobody reads by the second one.
+ *
+ * This is the answer to the version-numbering inversion that is being looked at
+ * separately. The numbering is not fixed here and must not be: what is fixed is
+ * that a banner says which build it is offering and whether that build's number
+ * is above the one running, instead of presenting a lower number as newer.
+ *
+ * @param {string} offered
+ * @param {string} current
+ * @returns {string} '' for an upgrade, a sentence otherwise
+ */
+export function offeredCaveat(offered, current) {
+  switch (offeredStanding(offered, current)) {
+    case 'lower':
+      return 'It is numbered below the build you are running, so it is not an upgrade; it is the newest release by publish time.';
+    case 'same-build':
+      return 'It carries the same number as the build you are running, so it is the same version released again rather than a newer one.';
+    default:
+      return '';
+  }
+}
+
+/**
+ * The card shown while an update is arriving.
+ *
+ * Composed here rather than in the desktop because the two clients must not be
+ * able to describe one transfer differently, and because the caveat above has to
+ * ride on this card as well as on the offer that started it: a build whose number
+ * is below the one running is no more an upgrade for being half downloaded.
+ *
+ * `transfer` is the client's own "how far, how fast" line, which core cannot
+ * compose: this module is clock-free and cannot know a byte count from a chunk.
+ * An absent one is a fact rather than a gap -- the library reports progress before
+ * it has a total to divide by -- so it says what is true at that moment instead of
+ * "0% of 0 MB".
+ *
+ * @param {object} opts
+ * @param {string} opts.version
+ * @param {string} opts.current
+ * @param {string|null} [opts.transfer]  the client's own arrival line, or null
+ */
+export function downloadingMessage({ version, current, transfer = null }) {
+  const caveat = offeredCaveat(version, current);
+  const line = transfer || 'Starting the download.';
+  return {
+    message: `Downloading ${product} ${version}.`,
+    detail: caveat ? `You are on ${current}. ${caveat} ${line}` : line,
+  };
+}
+
+/**
+ * The card shown when a download has produced nothing for the stall window.
+ *
+ * ★ The sentence that matters is the one that keeps the app honest about what it
+ * is still doing. Nothing is cancelled when this state is reached, so a card that
+ * said "the download failed" would be a second lie in the place the first one was:
+ * what is true is that no data has arrived for a named time, that the transfer has
+ * not been stopped, and that it may still finish on its own. The reader gets the
+ * two things they can do about it (clear it, or go and get the release by hand)
+ * rather than a bar that never moves.
+ *
+ * @param {object} opts
+ * @param {string} opts.version
+ * @param {string} opts.current
+ * @param {number} [opts.stallMs]
+ */
+export function stalledMessage({ version, current, stallMs = STALL_MS }) {
+  const seconds = Math.max(1, Math.round(stallMs / 1000));
+  return {
+    message: `Downloading ${product} ${version} has stopped making progress.`,
+    detail: `Nothing has arrived for ${seconds} seconds. It has not been cancelled, so it may still finish on its own.`,
   };
 }
 
@@ -331,13 +463,21 @@ export function checkAnswer({
 
   if (outcome === AVAILABLE) {
     const { message, detail } = availableMessage({ action, version, current, reason });
+    const caveat = offeredCaveat(version, current);
     return {
       tone: INFO,
       message,
       // The version is in the headline either way, which is the half that must
       // never be lost: "an update exists" without naming it is the report that
       // sent us here.
-      detail: pointer ? `You are on ${current}. ${pointer}` : detail,
+      //
+      // `pointer` replaces the offer's own sentence with the client's ("Open
+      // TestFlight", "install it from the release page"), because the shared
+      // composition may not name a distribution channel. It does NOT replace the
+      // caveat, which says what the offered number IS: a pointer says where to get
+      // something, never whether it is above what you have, and the phone's own
+      // pointer is a bare "Open TestFlight to update."
+      detail: pointer ? `You are on ${current}.${caveat ? ` ${caveat}` : ''} ${pointer}` : detail,
     };
   }
 
@@ -412,6 +552,51 @@ export function allowPrerelease(version) {
 /** How long a running app waits between scheduled checks. */
 export const STABLE_INTERVAL_MS = spec.intervals.stableMs;
 export const PRERELEASE_INTERVAL_MS = spec.intervals.prereleaseMs;
+
+/**
+ * ★ How long a download may produce NOTHING before the UI stops calling it
+ * progress, in milliseconds.
+ *
+ * A named value in the spec rather than a number at the timer, because it is the
+ * boundary between two states a reader is told apart by, and because the number is
+ * the whole answer to "why did it give up so early" the next time it fires.
+ *
+ * 45 seconds, and the reasoning is about what "no progress" MEANS rather than
+ * about patience. electron-updater emits `download-progress` per received chunk,
+ * so a transfer that is working emits events continuously however slowly it is
+ * moving, and one that is not moving emits none at all. The window is therefore
+ * measured from the last evidence of movement, never from the start: a slow
+ * download re-arms it on every chunk and so is never cut off, while a stalled one
+ * goes quiet and crosses it. Both failure shapes leave the same signature -- no
+ * events -- and the only thing that could tell a "slow" transfer from a "dead" one
+ * without waiting is a rate threshold, which is exactly the check that kills a
+ * working download on a bad link.
+ *
+ * 45 is chosen against the transport's own timeouts rather than against taste: it
+ * is far longer than the socket and TCP retransmission behaviour underneath (a
+ * connection that is truly gone surfaces as an error well inside this), and short
+ * enough that nobody watches a bar that is not moving for a minute. Nothing is
+ * cancelled when it fires, so a slow download that crosses it loses nothing but the
+ * word "progress": the card changes state, the transfer carries on, and a late
+ * event puts the card back.
+ */
+export const STALL_MS = spec.download.stallMs;
+
+/**
+ * How much of the stall window is left, given how long a transfer has been silent.
+ *
+ * The re-arm rule lives here so that "the window is measured from the last
+ * movement, not from the start" is a thing that is checked rather than a comment
+ * beside a timer. A quiet period longer than the window reports the window
+ * already spent, which is what a stray or late timer must see.
+ *
+ * @param {number} quietForMs  how long the transfer has produced nothing
+ * @param {number} [stallMs]
+ */
+export function stallRemaining(quietForMs, stallMs = STALL_MS) {
+  const quiet = Number.isFinite(quietForMs) && quietForMs > 0 ? quietForMs : 0;
+  return Math.max(0, stallMs - quiet);
+}
 
 /**
  * How often this build should look for a new release.

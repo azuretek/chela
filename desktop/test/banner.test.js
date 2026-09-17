@@ -143,10 +143,36 @@ function mount() {
 }
 
 const failure = { id: 'connection', tone: 'error', message: 'Cannot connect', detail: 'Refused.', dismissible: true };
-// A download in flight, the one notice that refuses to be dismissed. It is
-// replaced within seconds by the notice carrying the install offer, and a bar
-// that reappeared on the next whole percent would be worse than one with no X.
+// A notice that refuses the X, which the page still has to draw without a control.
+// The real download card used to be this, and is not any more: it refused the X
+// because a progress bar that reappeared on the next whole percent would be worse
+// than one with no control at all. That reasoning was right about the reappearing
+// and wrong about the remedy, and the card Abi could not clear on 2026-09-17 was
+// the result. The reappearing is fixed where it belongs now (main drops the raise
+// for an attempt the reader cleared), so the control is back.
 const pinned = { id: 'update-available', tone: 'info', message: 'Downloading', progress: 0.4, dismissible: false };
+// A download in flight, as it actually reaches this page: dismissible, and with a
+// dismissal that MEANS stop rather than "I have seen this".
+const downloading = {
+  id: 'update-available',
+  tone: 'info',
+  message: 'Downloading Claw Control UI 1.0.2.',
+  detail: 'Starting the download.',
+  progress: 0.4,
+  dismissible: true,
+  dismissClears: true,
+};
+// The same download after it produced nothing for the stall window: no bar, a way
+// out, and the one action that is honest about being able to do anything.
+const stalled = {
+  id: 'update-available',
+  tone: 'warn',
+  message: 'Downloading Claw Control UI 1.0.2 has stopped making progress.',
+  detail: 'Nothing has arrived for 45 seconds. It has not been cancelled, so it may still finish on its own.',
+  dismissible: true,
+  dismissClears: true,
+  action: { label: 'Open release page', command: 'update-release-page' },
+};
 
 test('a dismissible notice gets a way to close the whole bar', () => {
   const b = mount();
@@ -214,6 +240,50 @@ test('a notice that cannot be dismissed is drawn without an X', async () => {
   await b.render();
   const card = b.node('n-update-available');
   assert.ok(!card.kids.some((k) => k.className === 'banner__close'));
+});
+
+test('★ a download in flight can be cleared, which is the card that could not be', async () => {
+  // The regression. This card used to be drawn with no X at all, so the bar Abi
+  // was looking at had no control on it, and "Mark all read" skipped it too (see
+  // background() below and core/notices.js). Nothing could take it away.
+  const b = mount();
+  b.set([downloading]);
+  await b.render();
+  const card = b.node('n-update-available');
+  const close = card.kids.find((k) => k.className === 'banner__close');
+  assert.ok(close, 'the download card must offer the reader a way out');
+
+  await close.onclick();
+  assert.deepEqual(b.calls.dismissed, ['update-available'], 'and that way out reaches main as a dismissal');
+
+  // ★ The tooltip has to be true. This page cannot know what main does with the
+  // dismissal, so it reads it off the notice: a dismissClears card is not "Mark
+  // read", and promising it stays listed under Settings would be wrong twice over.
+  assert.match(close.title, /Clear this/);
+  assert.doesNotMatch(close.title, /stays listed/);
+  // And the ordinary card keeps the ordinary meaning, so the two cannot be
+  // switched by accident.
+  const other = mount();
+  other.set([failure]);
+  await other.render();
+  const plain = other.node('n-connection').kids.find((k) => k.className === 'banner__close');
+  assert.match(plain.title, /Mark read/);
+});
+
+test('★ a stalled download draws no bar, and offers the one thing it can do', async () => {
+  // The bar is what was lying: it drew a position for a transfer that had not
+  // moved. The stalled phase drops it, keeps the way out, and offers the release.
+  const b = mount();
+  b.set([stalled]);
+  await b.render();
+  const card = b.node('n-update-available');
+  assert.ok(!byClass(card, 'banner__progress'), 'a stalled download must not draw a progress bar');
+  assert.ok(card.kids.find((k) => k.className === 'banner__close'), 'and it must still be clearable');
+  const action = card.kids.find((k) => k.className === 'banner__action');
+  assert.ok(action, 'and it must offer something that can actually be done');
+  assert.equal(action.textContent, 'Open release page');
+  await action.onclick();
+  assert.deepEqual(b.calls.actions, ['update-release-page']);
 });
 
 test('a download in flight draws a bar and its percentage', async () => {

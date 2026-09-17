@@ -448,3 +448,175 @@ test('the About page still shows the full version, tail and all', () => {
   assert.match(main, /version: app\.getVersion\(\),/, 'About reports the version of the build it is running');
   assert.doesNotMatch(main, /version: updates\.release\(/, 'the release-only form is never what is displayed');
 });
+
+/* ---------------------------------------------- the download that sat at 0% */
+
+/*
+ * Abi, 2026-09-17: "Downloading Claw Control UI <version>. Starting the download."
+ * with the bar at 0% and no way to clear it.
+ *
+ * Three things had to be true for that card to be unkillable, and each one is
+ * asserted here because each one on its own would have been recoverable:
+ *
+ *   it refused the X             so the card had no control of its own
+ *   "Mark all read" skipped it   so the bulk control could not take it either
+ *   a failure never settled it   so nothing else could, and the card outlived the
+ *                                download it described
+ *
+ * The behavioural proof is scripts/test-update-stall.js, which drives the real app
+ * against a feed that never answers and measures the frames it passes through.
+ * These read the file, the way the rest of this section does: main.js needs
+ * Electron, and the alternative is not testing the wiring at all.
+ */
+
+test('★ the download card can be dismissed, and its dismissal means stop', () => {
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+  const card = /function downloadingNotice\(version, info\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(card, 'the download card was not found');
+  assert.match(card[0], /dismissible: true/, 'the card that could not be dismissed must offer its X');
+  assert.match(card[0], /dismissClears: true/, 'and that X must mean stop rather than "I have seen this"');
+  // The wording, and the honesty about what is being offered, come from shared core
+  // rather than from a sentence written here.
+  assert.match(card[0], /updates\.downloadingMessage\(/);
+
+  // The IPC handler is where a surface's dismissal lands, so it is where the
+  // meaning has to be honoured: the store decides, and the transfer is given up
+  // BEFORE the store is touched so the library's own reaction lands on an attempt
+  // the app has already stopped reporting on.
+  const dismiss = /ipcMain\.handle\('app:dismiss-notice'[\s\S]*?\n  \}\);/.exec(main);
+  assert.ok(dismiss, 'the dismiss handler was not found');
+  assert.match(dismiss[0], /notices\.dismiss\(/, 'the store owns what a dismissal means');
+  assert.match(dismiss[0], /abandonUpdateDownload\(\)/, 'and a cleared transfer is given up');
+  assert.ok(dismiss[0].indexOf('abandonUpdateDownload()') < dismiss[0].indexOf('notices.dismiss('),
+    'giving up the transfer happens before the store, so a cancel cannot resurrect the card');
+});
+
+test('★ a cleared attempt does not come straight back', () => {
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+
+  // One gate for every raise of the update card. A raise that skipped it would put
+  // the abandoned card back on the next chunk of a transfer the reader already
+  // asked to stop hearing about, which is the "must not reappear" half of the bug.
+  const gate = /function showUpdateNotice\(notice\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(gate, 'the raise gate was not found');
+  assert.match(gate[0], /downloadAttempt === clearedAttempt/, 'the gate compares the attempt');
+
+  // Every phase of the download goes through it: the start, each whole percent, and
+  // the stalled state. Progress is the one that would otherwise fight the reader.
+  const progress = /function onDownloadProgress\(info\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(progress, 'the progress handler was not found');
+  assert.match(progress[0], /showUpdateNotice\(downloadingNotice/, 'progress raises through the gate');
+  assert.match(progress[0], /if \(downloadAttempt === clearedAttempt\) return;/,
+    'and returns before doing any work for an abandoned attempt');
+
+  // A new attempt is a new generation, which is how a later offer is still able to
+  // appear: "not this attempt, again, now" rather than a version hidden forever.
+  const begin = /function beginUpdateDownload\(version\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(begin, 'beginUpdateDownload was not found');
+  assert.match(begin[0], /downloadAttempt \+= 1/, 'each attempt is its own generation');
+});
+
+test('★ a download that says nothing reaches a clear, honest state on a named window', () => {
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+
+  // The window is a named value from the shared spec, never a number at the timer.
+  assert.equal(typeof updates.STALL_MS, 'number', 'the desktop can read the named window');
+  assert.equal(typeof updates.stallRemaining, 'function', 'and the re-arm rule');
+
+  const arm = /function armStallWatch\(\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(arm, 'the stall watchdog was not found');
+  assert.match(arm[0], /updates\.stallRemaining\(Date\.now\(\) - downloadMovedAt\)/,
+    'what it arms for is the window measured from the last movement, not from the start');
+  assert.match(arm[0], /onDownloadStall/, 'and it moves the card to the stalled state');
+
+  const stall = /function onDownloadStall\(\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(stall, 'the stall handler was not found');
+  assert.match(stall[0], /stalledNotice\(/, 'it raises the stalled card');
+
+  // The card it raises has a way out and something to press, and it says what is
+  // known rather than claiming the download failed.
+  const card = /function stalledNotice\(version\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(card, 'the stalled card was not found');
+  assert.match(card[0], /updates\.stalledMessage\(/, 'its wording comes from shared core');
+  assert.match(card[0], /dismissible: true/, 'it can be cleared');
+  assert.match(card[0], /dismissClears: true/, 'and clearing it means stop');
+  assert.match(card[0], /'update-release-page'/, 'and it offers the one honest action');
+  assert.equal(updates.stalledMessage({ version: '1.0.2', current: '1.0.1' }).detail.includes('cancelled'), true,
+    'and it says plainly that nothing was cancelled');
+});
+
+test('★ a slow but working download is never called stalled', () => {
+  // The distinction is MOVEMENT, and the order of two statements is what delivers
+  // it: every progress event records movement and re-arms the window before the
+  // whole-percent throttle can return early. Counting only the throttled raises
+  // would call a slow transfer dead, which is the check that cuts a working
+  // download off.
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+  const progress = /function onDownloadProgress\(info\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(progress, 'the progress handler was not found');
+  const recorded = progress[0].indexOf('downloadMovedAt = Date.now();');
+  const reArmed = progress[0].indexOf('armStallWatch();');
+  const throttled = progress[0].indexOf('if (percent === lastProgressPercent) return;');
+  assert.ok(recorded !== -1 && reArmed !== -1 && throttled !== -1, 'the progress handler lost a step');
+  assert.ok(recorded < throttled, 'movement is recorded before the whole-percent throttle');
+  assert.ok(reArmed < throttled, 'and the window is re-armed there too');
+
+  // No rate threshold anywhere: a bytes-per-second cutoff is what would kill a
+  // working download on a bad link, and there is deliberately none.
+  assert.doesNotMatch(progress[0], /bytesPerSecond\s*[<>]/, 'the stall rule is not a rate threshold');
+});
+
+test('★ a download that fails settles the card it raised, whatever started it', () => {
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+  const handler = /updater\.on\('error', \(err\) => \{[\s\S]*?\n  \}\);/.exec(main);
+  assert.ok(handler, 'the updater error handler was not found');
+
+  assert.match(handler[0], /settleFailedDownload\(err\)/, 'a failure settles the download card');
+  // BEFORE the manual-check gate. That gate is about a CHECK nobody asked about,
+  // which says nothing because no card was ever raised; a download that dies has a
+  // card on the bar already, and leaving it there is the app going quiet mid
+  // sentence rather than being tactfully silent.
+  assert.ok(handler[0].indexOf('settleFailedDownload(err)') < handler[0].indexOf('if (!pendingManualCheck) return;'),
+    'the card is settled before the silence for a background check');
+  assert.match(handler[0], /pendingManualCheck/, 'and the background-silence rule itself is unchanged');
+
+  // Settling only ever acts on a card that was raised, and never on an attempt the
+  // reader cleared: a cancel is not a failure.
+  const settle = /function settleFailedDownload\(err\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(settle, 'settleFailedDownload was not found');
+  assert.match(settle[0], /if \(!downloadCardRaised\) return;/, 'nothing is reported that nobody was told about');
+  assert.match(settle[0], /downloadAttempt === clearedAttempt/, 'and an abandoned attempt stays abandoned');
+  assert.match(settle[0], /tone: noticeStore\.WARN/, 'what replaces the progress card is a warning, not a bar at 0%');
+});
+
+test('★ clearing the card gives up the transfer where the library allows it, and says which', () => {
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+  // The handle is the CancellationToken the check returns, which is the token the
+  // download it starts on its own was given. Kept rather than discarded, because
+  // holding it is the difference between clearing a card and stopping a download.
+  assert.match(main, /if \(result && result\.cancellationToken\) downloadCancelToken = result\.cancellationToken;/,
+    'the cancel handle a check hands back is kept');
+  const abandon = /function abandonUpdateDownload\(\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(abandon, 'abandonUpdateDownload was not found');
+  assert.match(abandon[0], /token\.cancel\(\)/, 'and used');
+  assert.match(abandon[0], /clearedAttempt = downloadAttempt;/, 'the UI half never depends on the token existing');
+  assert.ok(abandon[0].indexOf('clearedAttempt = downloadAttempt;') < abandon[0].indexOf('token.cancel()'),
+    'the attempt is marked cleared BEFORE the cancel, because a cancel emits straight back into these handlers');
+  // A cancelled download is not a failure, and the library agrees: it emits
+  // update-cancelled rather than error for a CancellationError.
+  assert.match(main, /updater\.on\('update-cancelled'/, 'the library has an event for it, and it is handled');
+});
+
+test('★ a download that completes is reported even for an attempt the reader cleared', () => {
+  // Deliberate, and worth pinning so it does not read as an oversight later. What
+  // the reader cleared is a PROGRESS card for one transfer; a finished download is
+  // a different condition with a different offer behind it, and the tray carries it
+  // either way. What is never restored is the bar they dismissed.
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+  const downloaded = /function onUpdateDownloaded\(info\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(downloaded, 'onUpdateDownloaded was not found');
+  assert.match(downloaded[0], /clearedAttempt = -1;/, 'a completion clears the abandoned-attempt mark');
+  assert.match(downloaded[0], /stopStallWatch\(\)/, 'and stops the watchdog');
+  assert.match(downloaded[0], /setNotice\('update-available'/, 'and raises the ready card');
+});
+
