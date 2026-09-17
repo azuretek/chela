@@ -496,6 +496,13 @@ final class PairingParityTests: XCTestCase {
         XCTAssertTrue(Pairing.observerScript.contains("messageHandlers.\(Pairing.messageName)"))
         XCTAssertTrue(Pairing.observerScript.contains("addEventListener('close'"))
         XCTAssertTrue(Pairing.observerScript.contains("addEventListener('open'"))
+        // And the guard that decides WHICH socket may become the session, because
+        // the phone hosts the same Control UI page and its browser panel streams
+        // over a WebSocket of its own: without it, closing a panel on the phone
+        // raises the failure surface exactly as it did on the desktop, and a panel
+        // refresh re-runs the client's load path.
+        XCTAssertTrue(Pairing.observerScript.contains("sessionEndpoint"),
+                      "the installed script no longer gates which socket may be adopted")
     }
 
     func testThePolicyCloseCodeMatchesTheGateway() throws {

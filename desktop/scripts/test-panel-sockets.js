@@ -21,6 +21,14 @@
 //
 //   npx electron scripts/test-panel-sockets.js [--shots DIR]
 //
+// ★ AND THE GATEWAY HAS TO BE ABLE TO CLOSE A SOCKET. Measured 2026-09-17, after the
+// first fix: this server wrote the handshake and never answered a close frame, so
+// Chromium held every client socket in CLOSING, the page's `close` event never fired,
+// and NOTHING in the run could be reported. The panel checks passed with the faulty
+// hook installed (there was no close to report) and the run's own control failed, so
+// the file was red and blind at the same time. The echo is one line; without it this
+// harness cannot tell the fix from the fault.
+//
 // Run with: cd desktop && npx electron scripts/test-panel-sockets.js
 
 import path from 'node:path';
@@ -97,6 +105,19 @@ server.on('upgrade', (req, socket) => {
   sockets[which].add(socket);
   jsonSockets.add(socket);
   socket.on('close', () => { sockets[which].delete(socket); jsonSockets.delete(socket); });
+  // ★ ANSWER THE CLOSE FRAME, which this server did not do and a real gateway does.
+  // Measured 2026-09-17: without the echo Chromium leaves the client socket in
+  // CLOSING (readyState 2) and the page's `close` event NEVER fires, so no report
+  // can be posted and nothing in this run can happen. The committed version of this
+  // file passed the panel checks against the FAULTY hook for that reason (there was
+  // nothing to report), while its own control failed, so it could not witness the
+  // bug it was written for. A close frame is opcode 0x8; the echo is the same frame
+  // stripped to its header, which is what a server that has nothing to say sends.
+  socket.on('data', (buf) => {
+    if ((buf[0] & 0x0f) !== 0x8) return;
+    try { socket.write(Buffer.from([0x88, 0x00])); } catch { /* already gone */ }
+    setTimeout(() => socket.destroy(), 10);
+  });
   socket.on('error', () => { /* the client went away */ });
 });
 const port = await new Promise((resolve, reject) => {
@@ -305,6 +326,12 @@ app.whenReady().then(async () => {
   // ★ And the instrument's own control: a REAL drop must still be seen, or the
   // fix would be an app that cannot notice anything. The session socket is the
   // one the report is about, so closing it must raise the failure surface.
+  //
+  // And the close has to be WATCHED, because a control that cannot fire is not a
+  // control. The page records its own `close` event here so the run can say whether
+  // the drop it is about to ask for was even delivered, rather than reading a cover
+  // that never appeared and calling it a pass or a mystery.
+  await ask(p, 'window.__closedSeen = false; window.__session.addEventListener("close", function () { window.__closedSeen = true; }); true');
   const said = await ask(p, 'window.__panel("closeSession")', 3000, 'the close-session command');
   note('the page said', String(said));
   let noticed = false;
@@ -324,7 +351,25 @@ app.whenReady().then(async () => {
   }
   check('★ the session socket closing is still reported, so the app can still see a real drop', noticed,
     `closing the page\'s session socket raised nothing: ${seen}`);
+  check('the page saw its own session socket close', await ask(p, 'window.__closedSeen === true', 1500, 'the close event'),
+    'the close event never fired, so this run cannot exercise a real drop at all');
   await shot('after-the-real-drop');
+
+  // ★ And a drop is where a PANEL socket is likeliest to be mistaken for the session:
+  // the page behind the cover is still alive, and a reader who thinks the gateway is
+  // gone may open or refresh a panel. Adopting that socket posts `authenticated`, the
+  // report that re-runs this app's own load path, so the main view reloads a second
+  // time off a panel action. The socket's endpoint is what tells it from the session.
+  const bootAfterDrop = await read(p, 'window.__boot', 'the page boot id after the drop');
+  await ask(p, 'window.__panel("open")', 3000, 'the post-drop panel open');
+  let reloadedByPanel = false;
+  for (let i = 0; i < 12 && !reloadedByPanel; i += 1) {
+    await delay(500);
+    const boot = await read(p, 'window.__boot', 'the page boot id after the post-drop panel open');
+    if (boot && boot !== bootAfterDrop) reloadedByPanel = true;
+  }
+  check('★ a panel socket opening after a drop does not re-run the app load path', !reloadedByPanel,
+    'the main view reloaded because a PANEL socket opened');
 
   record(`note the app is showing`, noticed ? 'its failure surface, as it should for a real drop' : 'nothing');
   console.log(failed ? 'FAILED' : 'ALL OK');
