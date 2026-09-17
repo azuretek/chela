@@ -27,6 +27,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { app, BrowserWindow, nativeTheme } from 'electron';
 
+// The notice token layer, injected exactly as the app injects it (applyTokenCss in
+// src/main.js): our pages name tokens, and this is the sheet that defines them.
+// Without it the banner draws no card background at all, because every colour it
+// names resolves to nothing -- which is how the first run of this harness looked
+// like a broken layout rather than a harness that had skipped a step.
+import { stylesheet as tokenStylesheet } from '../src/tokens.js';
+
 // A throwaway profile, pinned BOTH ways: main.js is not loaded here, but
 // Chromium still writes a profile, and a harness must never write into the real
 // one. See dump-overlays.js for the switch-versus-path reason.
@@ -101,6 +108,30 @@ const ABOUT_STATE = {
   ],
 };
 
+/**
+ * Two notices for the banner, one of each shape it draws: a card with an action,
+ * and one carrying a download's progress.
+ */
+const BANNER_STATE = {
+  notices: [
+    {
+      id: 'n-connection',
+      tone: 'warn',
+      message: 'Cannot connect to gateway.example.ts.net',
+      detail: 'The gateway is not answering on its address. Retrying every few seconds.',
+      dismissible: true,
+      action: { label: 'Open settings', command: 'openSettings' },
+    },
+    {
+      id: 'n-update',
+      tone: 'info',
+      message: 'A newer build is available',
+      detail: 'Version 1.1.0 is ready to install.',
+      progress: 0.42,
+    },
+  ],
+};
+
 /** The stub host, installed before the page's own script runs. */
 const PRELOAD = path.join(PROFILE, 'stub-preload.cjs');
 fs.writeFileSync(PRELOAD, `
@@ -123,10 +154,23 @@ contextBridge.exposeInMainWorld('clawDesktop', {
   openReleases: () => {},
   closeOverlay: () => {},
   onAboutChanged: () => {},
+  // The banner's own host, so the same stub serves all three pages. It reports a
+  // height rather than sizing anything: the view is sized to exactly what the
+  // page reports, and this harness has no view to size.
+  notices: async () => state.notices || [],
+  onNoticesChanged: () => {},
+  bannerHeight: () => {},
+  dismissNotice: () => {},
+  noticeAction: () => {},
+  markNoticesRead: () => {},
 });
 `);
 
 let failed = false;
+// The token layer currently inserted into the window, so the next capture can
+// take it back out before it puts its own in. One window serves every capture,
+// and two layers at once would leave the earlier one's values on top.
+let applied = null;
 function check(name, ok, detail = '') {
   if (ok) console.log(`OK   ${name}`);
   else { console.error(`FAIL ${name}: ${detail}`); failed = true; }
@@ -139,6 +183,8 @@ const PROBE = `(() => {
   const body = getComputedStyle(document.body).backgroundColor;
   const back = document.getElementById('close');
   const box = back ? back.getBoundingClientRect() : null;
+  const cards = [...document.querySelectorAll('.banner')];
+  const cardStyle = cards.length ? getComputedStyle(cards[0]) : null;
   return {
     colorScheme: computed.colorScheme.trim(),
     tokenBackground: computed.getPropertyValue('--bg').trim(),
@@ -152,12 +198,26 @@ const PROBE = `(() => {
     esc: Boolean(document.querySelector('.settings-sidebar__esc')),
     backIcon: Boolean(document.querySelector('.settings-sidebar__back-icon svg')),
     title: document.querySelector('.settings-sidebar__title') ? document.querySelector('.settings-sidebar__title').textContent.trim() : null,
+    // The banner's half. The notice surface token is emitted as a reference to a
+    // palette token, and a custom property computes to the value it refers to, so
+    // these three read as concrete colours and can be compared with each other.
+    // No backticks in this comment, and none anywhere below: this whole probe is
+    // one template literal, so a backtick in a comment ends the string early and
+    // the rest parses as code.
+    cards: cards.length,
+    cardSurface: cardStyle ? cardStyle.getPropertyValue('--notice-surface').trim() : null,
+    cardGap: cardStyle ? cardStyle.getPropertyValue('--notice-gap').trim() : null,
+    panel: computed.getPropertyValue('--panel').trim(),
+    bgElevated: computed.getPropertyValue('--bg-elevated').trim(),
   };
 })()`;
 
+// `back` is which pages carry the way back, `title` is their heading, and
+// `cards` is the notice banner's half: one page, no back control, notices instead.
 const PAGES = [
-  { name: 'settings', file: 'settings.html', state: SMALL_STATE, title: 'Settings' },
-  { name: 'about', file: 'about.html', state: ABOUT_STATE, title: 'Claw Control UI' },
+  { name: 'settings', file: 'settings.html', state: SMALL_STATE, title: 'Settings', back: true },
+  { name: 'about', file: 'about.html', state: ABOUT_STATE, title: 'Claw Control UI', back: true },
+  { name: 'banner', file: 'banner.html', state: BANNER_STATE, title: null, back: false, cards: true },
 ];
 
 async function capture(page, mode, win) {
@@ -184,8 +244,12 @@ async function capture(page, mode, win) {
     }
   }
 
-  // The pages render after their host answers the first state call, and their
-  // own stylesheet is what settles the palette.
+  // The pages render after their host answers the first state call, and this is
+  // also the sheet that gives the banner its colours, so it goes in before the
+  // probe reads them. Same order the app uses: the token layer, then the live
+  // theme on top of it (there is no live theme here, so the layer is the answer).
+  if (applied) await win.webContents.removeInsertedCSS(applied);
+  applied = await win.webContents.insertCSS(tokenStylesheet());
   await new Promise((r) => setTimeout(r, 1200));
 
   const probe = await win.webContents.executeJavaScript(PROBE);
@@ -228,12 +292,35 @@ app.whenReady().then(async () => {
       // one of the two, which is why the assertion is per mode.
       check(`${page.name}.html resolves ${mode}`,
         probe.colorScheme === mode, `color-scheme is "${probe.colorScheme}"`);
-      check(`${page.name}.html shows the back control, on screen, with its glyph and its esc chip`,
-        probe.backVisible && probe.back && probe.back.includes('settings-sidebar__back')
-          && probe.esc && probe.backIcon,
-        JSON.stringify({ back: probe.back, visible: probe.backVisible, esc: probe.esc, icon: probe.backIcon }));
-      check(`${page.name}.html names its surface`,
-        probe.title === page.title, `the heading reads "${probe.title}"`);
+
+      if (page.back) {
+        check(`${page.name}.html shows the back control, on screen, with its glyph and its esc chip`,
+          probe.backVisible && probe.back && probe.back.includes('settings-sidebar__back')
+            && probe.esc && probe.backIcon,
+          JSON.stringify({ back: probe.back, visible: probe.backVisible, esc: probe.esc, icon: probe.backIcon }));
+        check(`${page.name}.html names its surface`,
+          probe.title === page.title, `the heading reads "${probe.title}"`);
+      }
+
+      if (page.cards) {
+        // The card is drawn at all, and drawn with the surface the SPEC records
+        // for it. That second half is here because it is what had drifted: the
+        // banner borrows the floating attention card by value, and its recorded
+        // surface was `--bg-elevated`, the PANEL variant's surface, where the
+        // floating chrome mixes `--panel`. Both are colours a page can paint, so
+        // nothing objected, and the two differ in both appearances.
+        check(`${page.name}.html draws the seeded notices`,
+          probe.cards === BANNER_STATE.notices.length,
+          `${probe.cards} card(s) for ${BANNER_STATE.notices.length} notice(s)`);
+        check(`${page.name}.html draws its card on the surface the spec records`,
+          Boolean(probe.cardSurface) && probe.cardSurface === probe.panel,
+          JSON.stringify({ cardSurface: probe.cardSurface, panel: probe.panel, bgElevated: probe.bgElevated }));
+        check(`${page.name}.html does not draw it on the panel variant's surface`,
+          probe.cardSurface !== probe.bgElevated,
+          JSON.stringify({ cardSurface: probe.cardSurface, bgElevated: probe.bgElevated }));
+        check(`${page.name}.html uses the row gap the spec records`,
+          probe.cardGap === '8px', `the gap resolved to "${probe.cardGap}"`);
+      }
     }
     check(`${page.name}.html paints a different background in each appearance`,
       seen.light.tokenBackground !== seen.dark.tokenBackground
