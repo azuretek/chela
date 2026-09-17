@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 
 @testable import Claw
@@ -266,24 +267,36 @@ final class PairingParityTests: XCTestCase {
     @MainActor
     func testAnApprovedOpenClearsTheScreenAfterTheSettleWindow() {
         // Auto-recovery: an open that STAYS open (no pairing close cancels it)
-        // clears the screen once the settle window elapses. Driven through the
-        // real timer rather than a fake, so what passes is the real recovery.
-        let state = PairingState()
+        // clears the screen once the settle window elapses.
+        //
+        // Driven through the INJECTED clock, which is the seam this state did not
+        // have until 2026-09-17 and the desktop's has had since `createState` was
+        // written. It is not a convenience. This rule is about a DURATION, so
+        // proving it against the real clock proves the machine: with the main
+        // thread starved, a 0.9s main-queue block and a 0.6s run-loop timer are
+        // two unsynchronised deliveries to one thread, the block can be serviced
+        // first, and the assertion then reads a screen the settle window has not
+        // been given the chance to clear. That is exactly what all three iOS 27
+        // failures were, and it is why this is a fake clock now.
+        let clock = TestClock()
+        let state = PairingState(clock: clock.clock())
         state.closed(Pairing.Refusal(reason: "not-paired", requestId: "req-7f3a2b"))
         state.connecting()
         state.opened()
-        // The open is held until it settles: still pairing right after.
+        // The open is held until it settles: still pairing right after, and the
+        // only thing armed for the screen is the settle window itself.
         XCTAssertTrue(state.isPairing, "an open is unconfirmed until the settle window elapses")
+        XCTAssertTrue(
+            clock.delays.contains(PairingState.confirmInterval),
+            "the settle window must be armed when an unconfirmed open arrives"
+        )
 
-        // Let the settle timer fire (no closed() cancels it): the screen clears.
-        let cleared = expectation(description: "pairing screen clears after settle")
-        DispatchQueue.main.asyncAfter(deadline: .now() + PairingState.confirmInterval + 0.3) {
-            XCTAssertFalse(state.isPairing, "an approved open must clear the screen after settling")
-            XCTAssertEqual(state.phase, .authenticated)
-            XCTAssertNil(state.refusal)
-            cleared.fulfill()
-        }
-        wait(for: [cleared], timeout: PairingState.confirmInterval + 2)
+        // Let the settle window elapse (no closed() cancels it): the screen clears.
+        clock.tick()
+        XCTAssertFalse(state.isPairing, "an approved open must clear the screen after settling")
+        XCTAssertEqual(state.phase, .authenticated)
+        XCTAssertNil(state.refusal)
+        XCTAssertEqual(clock.armed, 0, "no cadence is left running once the screen is down")
     }
 
     @MainActor
@@ -292,19 +305,91 @@ final class PairingParityTests: XCTestCase {
         // an unconfirmed open must cancel the settle, so a confirm cannot race in
         // and clear a screen that should stay up. After the close, the settle
         // window passes and the screen is still up.
-        let state = PairingState()
+        //
+        // On the injected clock for the reason above, and this is the test the
+        // iOS 27 leg failed the other way round on 2026-09-17: its expectation was
+        // never fulfilled inside its own timeout, because the block that fulfilled
+        // it was starved of the main thread for longer than the whole wait.
+        let clock = TestClock()
+        let state = PairingState(clock: clock.clock())
         state.closed(Pairing.Refusal(reason: "not-paired", requestId: "req-7f3a2b"))
         state.connecting()
-        state.opened()                 // arms the settle timer
+        state.opened()                 // arms the settle window
         state.closed(Pairing.Refusal(reason: "not-paired", requestId: "req-7f3a2b")) // cancels it
+        XCTAssertFalse(
+            clock.delays.contains(PairingState.confirmInterval),
+            "a refusal after the open must take the settle window away, not leave it to fire"
+        )
 
-        let held = expectation(description: "pairing screen stays up past the settle window")
-        DispatchQueue.main.asyncAfter(deadline: .now() + PairingState.confirmInterval + 0.3) {
-            XCTAssertTrue(state.isPairing, "a refusal after the open must keep the screen up")
-            XCTAssertEqual(state.phase, .pairingRequired)
-            held.fulfill()
+        // And the window passing changes nothing: only the retry cadence is left.
+        clock.tick()
+        XCTAssertTrue(state.isPairing, "a refusal after the open must keep the screen up")
+        XCTAssertEqual(state.phase, .pairingRequired)
+    }
+
+    /// The cadence is the shared spec's, not a number kept in this client.
+    ///
+    /// The Swift half of the assertion `core/test/pairing.test.js` makes about
+    /// `RETRY_SECONDS` and `CONFIRM_SECONDS`, and it is here because the port used
+    /// to keep its own `3` and `0.6` while the spec said otherwise in the same
+    /// breath: a tune of `confirmSeconds` would have reached the desktop and left
+    /// the phone on the old window, which is a divergence with no symptom until
+    /// somebody reports one client flickering.
+    func testTheCadenceIsTheSpecsNotThisClients() throws {
+        struct PairingSpec: Decodable {
+            struct Timing: Decodable {
+                let retrySeconds: Double
+                let confirmSeconds: Double
+            }
+            let timing: Timing
         }
-        wait(for: [held], timeout: PairingState.confirmInterval + 2)
+        let spec: PairingSpec = try Fixtures.loadSpec("pairing")
+
+        XCTAssertEqual(Pairing.retrySeconds, spec.timing.retrySeconds, "the retry cadence comes from the spec")
+        XCTAssertEqual(Pairing.confirmSeconds, spec.timing.confirmSeconds, "and so does the settle window")
+        XCTAssertEqual(PairingState.retryInterval, spec.timing.retrySeconds)
+        XCTAssertEqual(PairingState.confirmInterval, spec.timing.confirmSeconds)
+
+        // The two invariants the spec names for the pair, asserted here so a spec
+        // edit that broke one would fail on both clients rather than only where
+        // the relationship is written down.
+        XCTAssertGreaterThan(PairingState.confirmInterval, 0, "a window of zero would clear the screen on the open itself")
+        XCTAssertLessThan(
+            PairingState.confirmInterval,
+            PairingState.retryInterval,
+            "confirm must sit inside retry, or an approval waits for the next beat"
+        )
+    }
+
+    /// The real clock is still wired.
+    ///
+    /// The rules above are proven on an injected clock, so something has to prove
+    /// the production half actually delivers its callbacks; otherwise the seam
+    /// would be a way of never testing the live path at all. Deliberately one
+    /// assertion about the END state and none about the screen before the window
+    /// elapses: "still pairing at 0.6s" is precisely the claim that needs a clock
+    /// nobody in this process controls, and it belongs on the fake above.
+    ///
+    /// The expectation is fulfilled by the state itself rather than by a deadline
+    /// of its own, which is what removes the race rather than narrowing it: a
+    /// second competing deadline is the whole fault this arrangement fixes.
+    @MainActor
+    func testTheLiveClockDeliversTheSettleWindow() {
+        let state = PairingState()
+        state.closed(Pairing.Refusal(reason: "not-paired", requestId: "req-live-1"))
+        state.connecting()
+        state.opened()
+        XCTAssertTrue(state.isPairing, "an open is unconfirmed until the settle window elapses")
+
+        let cleared = expectation(description: "the live clock clears the screen")
+        let observer = state.$phase.sink { phase in
+            if phase == .authenticated { cleared.fulfill() }
+        }
+        wait(for: [cleared], timeout: PairingState.confirmInterval + 30)
+        withExtendedLifetime(observer) {}
+
+        XCTAssertFalse(state.isPairing, "an approved open must clear the screen on the live clock too")
+        XCTAssertNil(state.refusal)
     }
 
     @MainActor
@@ -419,5 +504,53 @@ final class PairingParityTests: XCTestCase {
         // stopping pairing being detected.
         XCTAssertEqual(Pairing.policyCloseCode, 1008)
         XCTAssertEqual(Pairing.policyCloseCode, try fixture().policyCloseCode)
+    }
+}
+
+/// A clock with no time in it: pending callbacks, fired on demand.
+///
+/// The mirror of `fakeClock()` in `desktop/test/pairing.test.js`, injected
+/// through the same `PairingClock` seam and with the same shape, so the two
+/// clients' suites drive one state machine the same way: schedule, cancel, fire
+/// everything shortest first so a beat can re-arm one. `delays` is what lets a
+/// test assert WHICH window was armed rather than only that something was, which
+/// is the assertion the JS side makes about `CONFIRM_SECONDS`.
+@MainActor
+private final class TestClock {
+    private struct Pending {
+        let id: Int
+        let delay: TimeInterval
+        let body: @MainActor () -> Void
+    }
+
+    private var pending: [Pending] = []
+    private var sequence = 0
+
+    /// The seam, bound to this clock.
+    func clock() -> PairingClock {
+        PairingClock(
+            schedule: { seconds, body in
+                self.sequence += 1
+                let id = self.sequence
+                self.pending.append(Pending(id: id, delay: seconds, body: body))
+                return PairingClock.Handle { self.pending.removeAll { $0.id == id } }
+            },
+            cancel: { handle in handle.cancel() }
+        )
+    }
+
+    /// Every delay currently armed.
+    var delays: [TimeInterval] { pending.map(\.delay) }
+
+    /// How many callbacks are still armed. Zero is "no cadence is left running".
+    var armed: Int { pending.count }
+
+    /// Fire everything pending, shortest delay first, so a beat can re-arm one.
+    func tick() {
+        for entry in pending.sorted(by: { $0.delay < $1.delay }) {
+            guard let index = pending.firstIndex(where: { $0.id == entry.id }) else { continue }
+            let timer = pending.remove(at: index)
+            timer.body()
+        }
     }
 }
