@@ -36,6 +36,65 @@ surface the reader is on and reveal on a bounded deadline. A waiter that can onl
 succeed is a surface that never lets go, which is a worse fault than the one being
 avoided.
 
+## ★ The second rule: a disconnected or failing client never presents a gateway view
+
+**A gateway's page on screen is a claim about the reader's state.** It says "you are
+connected to this gateway, authenticated, and this is it". So it may be shown only
+while both halves of that claim hold: **the document belongs to the gateway this
+client is pointed at**, and **the connection it belongs to has not failed or ended**.
+Either half false and the client shows ONE OF ITS OWN surfaces instead: the loading
+cover in its stopped state, the pairing screen, or settings.
+
+This is worse than a missing screen, which is why it is a rule rather than a
+preference: a blank window or a failure notice tells the reader nothing, and a
+previous gateway's working interface tells them something untrue, in the one place
+they would go to find out whether they are connected. "Eventually" is not the claim
+either. The hold must end when the connection does, because a hold that outlives
+its connection has no bound of its own.
+
+The rule is one function, `mayPresentGatewayView` in `core/connection.js`, so every
+client reads the same answer rather than deciding case by case:
+
+| On screen, and the client is... | May the gateway view be shown? |
+|---|---|
+| the ACTIVE gateway's document, connected or connecting | Yes. The reader's place, or the place being fetched. |
+| the ACTIVE gateway's document, awaiting device approval (`pending`) | Yes. Our pairing screen is drawn OVER it; the gateway did answer. |
+| a DIFFERENT gateway's document | Never. The reader asked to go somewhere else. |
+| any document, connection `failed` | Never. Nothing is connected. |
+| any document, no gateway configured (`idle`) | Never. |
+| one of our own pages, or nothing | n/a, there is no gateway view to show. |
+
+The two failures the rule was written from, both measured with
+`desktop/scripts/test-held-gateway-view.js` rather than reasoned about, and both
+screens that looked authenticated and working:
+
+- **Connect to a gateway that fails, from a gateway that was working.** The attempt
+to the second gateway was made *beside* the first gateway's document, and the
+failure ended nothing: the reader was left looking at the gateway they were last
+connected to, with only a notice over it, for as long as they kept looking.
+- **A gateway that dropped.** Nothing on this side could see it: the page holds the
+only socket either side has, so a close with no pairing reason reached no surface
+this client owns and its Control UI stood there for as long as the window was open.
+
+Both halves are therefore part of the rule, not implementation detail: an attempt
+to a different gateway raises the cover BEFORE it is made, and a failed attempt, a
+dead renderer, or a socket the gateway closed all END the hold. A failure is
+reported over the app's own surface, never over a document that was being kept.
+
+What this does NOT change, and the reason the two rules sit together: a fresh copy
+of the destination may be fetched WITHOUT disturbing what is on screen (the attempt
+happens off-screen and is promoted only once it has loaded), and a successful
+attempt lands on the new document with nothing shown in between. The hold is
+bounded, not the sequencing. `desktop/scripts/test-held-gateway-view.js --case
+normal` is the measurement that the sequencing still holds.
+
+Implemented by `mayPresentGatewayView` (`core/connection.js`), the hold itself and
+the failure and drop handlers in `desktop/src/main.js` (search `payloadGateway`),
+and the observer's `socketClosed` report in `core/spec/pairing.json`. Guarded by
+`desktop/test/connection.test.js` (the truth table),
+`desktop/test/payload-freshness.test.js` (the host's half) and
+`desktop/scripts/test-held-gateway-view.js` (the frames).
+
 ## Durations and easing
 
 Two durations, from the shared token layer, and nothing animates for longer:

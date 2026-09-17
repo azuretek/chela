@@ -148,14 +148,46 @@ let mainWindow = null;
 let pageView = null;
 
 /**
- * Whether the view on screen is holding a Control UI payload.
+ * Which gateway's document the page view is holding, or null when the view is
+ * holding one of our own pages (or nothing at all).
  *
- * The one fact that decides how a load is made: a fresh payload replaces this one,
- * and a fresh payload that does not exist must leave it exactly as it is. Set when
- * a gateway document is on screen and accepted, cleared when the view is given one
- * of our own pages instead or when a load into it fails.
+ * A gateway id rather than a boolean, and the identity is the point: `true` used
+ * to mean "there is a payload" without saying whose, so a connect to a DIFFERENT
+ * gateway held the previous gateway's document on screen for as long as the
+ * attempt took to fail and left it there afterwards, which is a client showing an
+ * authenticated interface while nothing is connected. What may be PRESENTED is
+ * this value read against the connection, and that rule is
+ * `connectionState.mayPresentGatewayView` rather than a second copy of it here.
+ *
+ * Set when a gateway document has loaded and been accepted, cleared whenever the
+ * connection it belongs to ends: a failed load, a socket the gateway closed, or
+ * one of our own pages taking the window. A cleared value does not mean the view
+ * is gone, only that nothing may be shown out of it.
  */
-let payloadOnScreen = false;
+let payloadGateway = null;
+
+/**
+ * True from the moment this app asks the page view to load or reload until that
+ * load finishes.
+ *
+ * A document being replaced closes the socket it had, and the observer cannot tell
+ * that from a gateway going away: both are a close with no pairing reason. So this
+ * is what separates them, and it is set only where WE cause the navigation. The
+ * connect path does not need it (its phase is already `connecting`, which the drop
+ * handler refuses), but the menu's Reload keeps the connection's phase and needs
+ * exactly this.
+ */
+let pageReloading = false;
+
+/**
+ * Set while the app is showing its own failure surface because the page's socket
+ * went away, as opposed to because a load failed.
+ *
+ * The two want different recoveries: a failed load is recovered by a retry, while a
+ * dropped socket is already recovering on its own inside the page, so the socket
+ * opening again IS the gateway being back.
+ */
+let socketDropped = false;
 
 /**
  * The load attempt in flight, when it is being made beside the payload on screen.
@@ -475,7 +507,7 @@ function showSettingsAsPage(opts = {}) {
   settingsIsPage = true;
   // Our own page is what this view holds from here, so there is no payload to fall
   // back to until a gateway answers again.
-  payloadOnScreen = false;
+  payloadGateway = null;
   if (attemptView && !attemptView.webContents.isDestroyed()) destroyGatewayView(attemptView);
   // A modal of the same page over the top of itself is not an improvement.
   // Not animated: this surface is not going away so much as being REPLACED as the
@@ -499,8 +531,21 @@ function showSettingsAsPage(opts = {}) {
  * the gateway answers or the reader dismisses it, and offers the one link worth
  * offering. The window keeps showing the loading cover it was already showing
  * while the connect was in flight, now in its stopped state.
+ *
+ * THE COVER GOES UP HERE, always, and that is the rule rather than a detail: a
+ * failure means this client has no connection, and a client with no connection
+ * may not present a gateway view. It used to have a way to be told not to, for the
+ * case where an attempt failed beside a document that was already on screen -- the
+ * document was left there and only the notice was shown. That left the reader
+ * looking at the gateway they were last connected to while nothing was connected,
+ * which is a worse fault than the one it avoided: the screen said authenticated
+ * and working, and neither was true. A failed attempt now ends the hold too; see
+ * the failure handler in createGatewayView.
+ *
+ * The cover is already up from the connect attempt in the common case, so this
+ * usually re-asserts it and moves it to its stopped state.
  */
-function showConnectionFailure(detail, { cover = true } = {}) {
+function showConnectionFailure(detail) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const gw = config.activeGateway();
   const label = gw ? gw.label || gw.url : null;
@@ -517,14 +562,9 @@ function showConnectionFailure(detail, { cover = true } = {}) {
   pairingState.failed();
   setNotice('connection', connectionState.failureNotice({ label, error: connection.error }));
   // Already up from the connect attempt; this re-asserts it for the case where
-  // the very first load failed before anything covered the window.
-  //
-  // Not when an attempt failed BESIDE a payload on screen: no cover was raised for
-  // it (there was nothing to cover), and putting one up now would hide a working
-  // interface in order to report that a fresh copy of it is not available, which is
-  // the opposite of what is wanted. The banner still says what happened.
-  if (cover) showLoadingCover();
-  else hideLoadingCover();
+  // the very first load failed before anything covered the window, and for an
+  // attempt that failed beside a document, where no cover was raised for it.
+  showLoadingCover();
   // One last push so the bar lands on the stage the load genuinely reached, then
   // stop: nothing is progressing, and a line of jokes still cycling under a dead
   // connection reads as an app that has not noticed.
@@ -586,12 +626,29 @@ function loadActiveGateway() {
   // cover the gap: a `loadURL` to an unreachable host leaves the previous
   // document, or a blank view, on screen for as long as it takes to fail.
   //
-  // Unless a payload is already on screen, which is the same sentence read the
-  // other way: there is nothing there to cover but a working interface, and the
-  // attempt is made beside it instead (see createGatewayView). A cover raised on
-  // every retry would also blink the window the whole time a gateway is restarting.
-  const hasPayload = payloadOnScreen && pageView && !pageView.webContents.isDestroyed();
-  if (!hasPayload) showLoadingCover();
+  // Unless a document may still be shown, which is the same sentence read the
+  // other way: there is nothing there to cover but the reader's current place, and
+  // the attempt is made beside it instead (see createGatewayView). A cover raised
+  // on every retry would also blink the window the whole time a gateway is
+  // restarting.
+  //
+  // WHAT MAY BE SHOWN IS ONE RULE, not a decision taken here: the document must
+  // belong to the gateway being connected and the connection it belongs to must
+  // not have failed. `mayPresentGatewayView` owns it, and the two cases it refuses
+  // are both measured faults -- a document from ANOTHER gateway held through the
+  // attempt, and a document belonging to a connection that has already failed.
+  const hasPayload = connectionState.mayPresentGatewayView({
+    gatewayId: gw.id,
+    heldGatewayId: payloadGateway,
+    phase: connection.phase,
+  }) && pageView && !pageView.webContents.isDestroyed();
+  if (!hasPayload) {
+    // From here nothing on screen may be presented, so the view's own record of
+    // what it holds goes with it: whatever it has is covered now, and only a load
+    // that finishes puts a document back in its place.
+    payloadGateway = null;
+    showLoadingCover();
+  }
   const creds = secrets.load(gw.id);
   const supplied = [creds.token && 'token', creds.password && 'password', creds.headers.length && `${creds.headers.length} header(s)`]
     .filter(Boolean).join(', ');
@@ -605,7 +662,9 @@ function loadActiveGateway() {
     startGatewayAttempt(gw, url);
     return;
   }
-  payloadOnScreen = false;
+  // The page view takes the load itself: an error document with no attempt beside
+  // it, and the cover above it either way.
+  pageReloading = true;
   page()?.loadURL(url, FRESH_DOCUMENT);
 }
 
@@ -1022,6 +1081,41 @@ function retryPairingConnect() {
 }
 
 /**
+ * The page's own socket closed, and the gateway did not refuse it.
+ *
+ * This app holds no socket of its own: the Control UI opens one inside the page,
+ * so the only signal that a working session has ended is the page's own socket
+ * closing, reported by the observer (see core/spec/pairing.json's `socketClosed`).
+ * Before this, nothing on this side could see it, and the app went on presenting
+ * the gateway's Control UI -- authenticated, complete, and connected to nothing --
+ * for as long as the reader looked at it. Measured: nine seconds of a dropped
+ * gateway with the payload untouched on screen, and no notice either.
+ *
+ * So the hold ends and the app's own surface takes the screen, which is the same
+ * outcome as a failed load and the same rule: a client with no connection does
+ * not present a gateway view.
+ *
+ * GUARDED ON THE PHASE, and both halves of that guard are load-bearing:
+ *
+ *   - `connected` only. Every other phase is either an attempt in flight or a
+ *     surface of ours already up, and a close arriving there is not news.
+ *   - not while this app is itself replacing the document (see `pageReloading`),
+ *     because a reload tears the old document's socket down and that close is our
+ *     own doing rather than the connection ending.
+ */
+function handleSocketDropped() {
+  if (connection.phase !== connectionState.CONNECTED) return;
+  if (pageReloading) return;
+  console.warn('[claw-desktop] the gateway closed the connection; showing the failure surface');
+  payloadGateway = null;
+  // Recorded so the OTHER half of this can happen: a socket that opens again on
+  // its own means the gateway is back, and this app has no business sitting on its
+  // failure screen while the page behind it is connected again.
+  socketDropped = true;
+  showConnectionFailure({ errorCode: null, errorDescription: 'The gateway closed the connection.' });
+}
+
+/**
  * A report from the page's observer, or nothing.
  *
  * The sender is checked against the live gateway page, so only the page this
@@ -1035,8 +1129,25 @@ function handlePairingReport(event, payload) {
   const report = pairing.parseReport(payload);
   if (!report) return;
 
+  if (report.kind === 'dropped') {
+    handleSocketDropped();
+    return;
+  }
+
   if (report.kind === 'open') {
     pairingState.opened();
+    // The recovery leg of a drop: the page's socket is open again, so the gateway
+    // is reachable and the failure surface is no longer true. Reconnected through
+    // the app's own connect path rather than by uncovering the document that was
+    // already there, and that is deliberate: only a load that FINISHED proves the
+    // document on screen is the gateway's -- Chromium commits an error document for
+    // the same URL -- and the page may have been replaced or reloaded while the
+    // cover was up. A load that fails leaves the failure surface exactly as it was.
+    if (socketDropped) {
+      socketDropped = false;
+      console.log('[claw-desktop] the gateway socket is open again; reconnecting');
+      loadActiveGateway();
+    }
   } else {
     pairingState.closed(report.refusal);
     console.warn(`[claw-desktop] gateway refused this device: ${report.refusal.reason}` +
@@ -1219,6 +1330,12 @@ function createGatewayView({ attempt = false } = {}) {
   });
 
   wc.on('did-finish-load', () => {
+    // The load this app asked for has finished, so a socket closing from here is
+    // the gateway's doing again rather than ours. See `pageReloading`.
+    pageReloading = false;
+    // A load that finished means this app is looking at the gateway's document
+    // again, which is the other end of a drop whatever put it there.
+    socketDropped = false;
     wc.setZoomLevel(config.get().zoomLevel || 0);
     // Our own pages (settings as the window's content) want the Control UI's
     // design tokens. The gateway's page gets nothing injected at all.
@@ -1235,7 +1352,11 @@ function createGatewayView({ attempt = false } = {}) {
       // to load one, which is what keeps a failed attempt from having already
       // destroyed the payload it was replacing.
       if (attempt) promoteGatewayView(view);
-      payloadOnScreen = true;
+      // The document on screen is this gateway's from here, and it stays
+      // presentable while this connection does. The phase move below is the other
+      // half of that: `connectionState.mayPresentGatewayView` reads the two
+      // together, and the failure handlers read the phase and clear this.
+      payloadGateway = config.get().activeGatewayId;
       // Through the reducer, and the pending case is why: a page that loaded is
       // NOT the same as a gateway that accepted this device. An unapproved device
       // is served the page and then has its socket closed 1008, so this holds
@@ -1260,29 +1381,29 @@ function createGatewayView({ attempt = false } = {}) {
 
   wc.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!connectionState.isRealFailure({ code: errorCode, isMainFrame })) return;
+    pageReloading = false;
+    // The connection this app was showing is over, whichever view failed, so the
+    // hold ends: a failed attempt must not leave the document it was going to
+    // replace on screen, and the visible view's failure must not either. Without
+    // this the reader keeps the previous gateway in front of them while nothing is
+    // connected, which is the one screen worse than no screen. The cover goes up
+    // from showConnectionFailure, over whatever the view still holds.
+    payloadGateway = null;
     if (attempt) {
-      // No fresh payload, so the one on screen is the payload. Throw the attempt
-      // away, leave the view on screen untouched, and report the failure over it
-      // without the cover: a cover here would hide a working interface to announce
-      // that a copy of it could not be fetched.
+      // Throw the attempt away now rather than at its own failure handler below,
+      // so nothing can promote a document that failed to load.
       destroyGatewayView(view);
-      showConnectionFailure({ errorCode, errorDescription, url: validatedURL }, { cover: false });
-      return;
     }
-    payloadOnScreen = false;
     showConnectionFailure({ errorCode, errorDescription, url: validatedURL });
   });
 
   wc.on('render-process-gone', (_e, details) => {
-    if (attempt) {
-      destroyGatewayView(view);
-      showConnectionFailure(
-        { errorCode: details.reason, errorDescription: `The window stopped responding (${details.reason}).` },
-        { cover: false },
-      );
-      return;
-    }
-    showConnectionFailure({ errorCode: details.reason, errorDescription: `The window stopped responding (${details.reason}).` });
+    payloadGateway = null;
+    if (attempt) destroyGatewayView(view);
+    showConnectionFailure({
+      errorCode: details.reason,
+      errorDescription: `The window stopped responding (${details.reason}).`,
+    });
   });
 
   return view;
@@ -1328,7 +1449,7 @@ function startGatewayAttempt(gw, url) {
   if (attemptView && !attemptView.webContents.isDestroyed()) destroyGatewayView(attemptView);
   const view = createGatewayView({ attempt: true });
   attemptView = view;
-  console.log(`[claw-desktop] loading ${gw.label || gw.url} beside the payload on screen; a failure leaves that payload alone`);
+  console.log(`[claw-desktop] loading ${gw.label || gw.url} beside the payload on screen; a failure ends that payload's stay rather than leaving it up`);
   view.webContents.loadURL(url, FRESH_DOCUMENT);
 }
 
@@ -1386,7 +1507,7 @@ function createMainWindow() {
     // The attempt view and the payload flag go with it: a recreated window is a
     // new window, with nothing on screen and nothing to preserve.
     attemptView = null;
-    payloadOnScreen = false;
+    payloadGateway = null;
     stripView = null;
     bannerView = null;
     bannerHeight = 0;
@@ -2737,7 +2858,17 @@ function menuCommands() {
     checkUpdates: { label: 'Check for updates…', click: () => { void checkForUpdates('manual'); } },
     releaseNotes: { label: 'Release notes', click: () => { void shell.openExternal(RELEASES_URL); } },
     settings: { label: 'Settings…', click: () => openSettings() },
-    reload: { label: 'Reload', click: () => (settingsIsPage ? loadActiveGateway() : page()?.reload()) },
+    reload: {
+      label: 'Reload',
+      click: () => {
+        // Marked before the reload so the socket the outgoing document closes is
+        // read as this app's own doing rather than as the gateway going away; see
+        // `pageReloading` and the drop handler.
+        pageReloading = true;
+        if (settingsIsPage) loadActiveGateway();
+        else page()?.reload();
+      },
+    },
     // Browsers pass `ignoreCache` here and this deliberately does not, because the
     // payload is not what Reload is for. Reload is the browser's own command and
     // keeps its meaning; the two ways the Control UI is brought current are the

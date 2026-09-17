@@ -4,5 +4,6 @@
 // nothing in desktop has to know where it moved.
 export {
   hint, reason, failureNotice, status, isRealFailure, shouldMarkConnected, nextPhase,
+  mayPresentGatewayView,
   HINTS, ERR_ABORTED, IDLE, CONNECTING, CONNECTED, FAILED, PENDING, PENDING_COPY,
 } from '../../core/connection.js';

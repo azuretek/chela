@@ -35,6 +35,17 @@ export const FAILED = spec.phases.failed;
 export const POLICY_CLOSE_CODE = spec.policyCloseCode;
 
 /**
+ * The report kind for a socket that had opened and has now closed, unrefused.
+ *
+ * The session ending, as distinct from a pairing refusal: the client is not
+ * connected any more and must stop presenting the gateway's view. Read from the
+ * spec so the script that posts it and the clients that act on it cannot disagree
+ * about the string; desktop/src/pairing.js narrows to it and the desktop's host
+ * ends the hold on it.
+ */
+export const SOCKET_CLOSED = spec.socketClosed;
+
+/**
  * How long a client waits between reconnect attempts while pairing, in seconds.
  *
  * Read from the spec rather than written down per client, because it is a
