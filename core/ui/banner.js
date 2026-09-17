@@ -36,9 +36,9 @@ function report() {
   void api.bannerHeight(height);
 }
 
-// The one node in the stack that is not a notice. It is rebuilt outright on
-// every render rather than kept, which is the opposite of how the cards are
-// handled and fine here: there is no slide to replay and nothing to preserve.
+// The one node in the bar that is not a notice. It is rebuilt outright on every
+// render rather than kept, which is the opposite of how the cards are handled
+// and fine here: there is no slide to replay and nothing to preserve.
 const ACTIONS_ID = 'banner-actions';
 
 function card(notice) {
@@ -165,11 +165,31 @@ async function render() {
     }
   }
 
-  // Rebuilt last every time, so it stays at the bottom as cards come and go,
-  // and absent when the only thing left is a notice it would not act on.
+  // Rebuilt last every time, so it lands on whichever card is last as cards come
+  // and go, and absent when the only thing left is a notice it would not act on.
+  //
+  // It hangs INSIDE that card rather than under the stack, which is a hit-testing
+  // fact rather than a layout preference. The bar is drawn in a view sized to the
+  // stack, and a view claims every mouse event inside its own rectangle whatever
+  // the page draws there, so a row of its own would be a full-width strip that
+  // the reader can see the page through and cannot click. That is exactly the
+  // strip Abi reported, measured 2026-09-17: a click under the cards was
+  // delivered into the banner's own document at a pixel with nothing drawn on it
+  // and reached neither the bar nor the page. Inside a card it costs no pixel of
+  // its own, because the card it joins is drawn there anyway.
+  //
+  // The host is the last card that is staying, not the last node in the stack: a
+  // card on its way out is still a child while it plays its departure, and the
+  // way out of the bar must not disappear with it.
   const previous = document.getElementById(ACTIONS_ID);
   if (previous) previous.remove();
-  if (notices.some((n) => n.dismissible !== false)) stack.append(actions());
+  const staying = [...stack.children].filter((node) => node.id && wanted.has(node.id.slice(2)));
+  const host = staying[staying.length - 1];
+  if (host && notices.some((n) => n.dismissible !== false)) {
+    const row = actions();
+    const dismiss = typeof host.querySelector === 'function' ? host.querySelector('.banner__close') : null;
+    if (dismiss) host.insertBefore(row, dismiss); else host.append(row);
+  }
 
   report();
 }

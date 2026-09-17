@@ -12,7 +12,7 @@
  * for: the stack's own gaps, and the progress bar's height, which is an element
  * the Control UI does not have at all.
  *
- * Two things about the page this styles:
+ * Three things about the page this styles:
  *
  * - It lives in a view sized to exactly its own height (see refreshBanner in
  *   src/main.js), so the body must add nothing of its own. A stray margin here
@@ -20,6 +20,24 @@
  * - It runs under `style-src 'self'`, so no style attribute may be written
  *   through the DOM. Everything an element needs is a class or a property set
  *   from a stylesheet.
+ * - ONLY ITS CONTROLS ARE HIT-TESTABLE. Every container here is
+ *   `pointer-events: none` and the controls are the only elements put back to
+ *   `auto`. That is the whole rule, and it is a rule rather than a fix for one
+ *   row: this page is drawn over a page it does not own, so every pixel of it
+ *   that is not a control is furniture the reader is looking THROUGH, and a
+ *   pixel you can see through must belong to what you can see. Anything visible
+ *   and not interactive here is a dead zone, and a dead zone over live content
+ *   reads as the app being broken.
+ *
+ *   The fault it answers, and the third of its kind in this one area: the page's
+ *   grab band over the banner, then the banner itself, and then this, the stack's
+ *   own transparent furniture. The strip reported was the row carrying Mark all
+ *   read, which spans the whole width while its control sits at the trailing
+ *   edge, so the empty part of that row looked exactly like the page underneath
+ *   and ate every click that landed on it. The stack's padding and the gaps
+ *   between cards did the same. Measured 2026-09-17 by clicking at a real screen
+ *   point in that row: the click was delivered into this document and reached
+ *   nothing, while the page beneath saw nothing at all.
  */
 
 /* The view is not a window-drag surface. Kept as the declared intent, and NOT
@@ -52,29 +70,53 @@
 
    Nothing here may paint a surface: every pixel this page draws is a pixel of
    the Control UI that nobody can see. */
+/* Nothing this page draws is hit-testable by default, and `pointer-events` is
+   INHERITED, so one declaration on the root is what makes the whole page
+   transparent to the mouse. The containers below repeat it at each level they
+   own, which is deliberate: the value a container carries is then readable where
+   the container is defined rather than inferred from an ancestor, and a future
+   container cannot be hit-testable by being new. */
 html {
   background: transparent;
+  pointer-events: none;
 }
 
 body.banner-body {
   background: transparent;
   overflow: hidden;
+  pointer-events: none;
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
 
-/* The shape the Electron documentation specifies for a control inside a drag
-   region: it is clickable only if it opts out itself. Belt and braces for a
-   region declared in THIS document, which the banner does not have. */
+/* The controls, and the ONLY elements this page puts back into hit testing.
+   Which is also the list a new control must join: an interactive element added
+   here without a match in this selector is drawn and cannot be pressed, and
+   desktop/test/drag-regions.test.js fails on exactly that.
+
+   The first two declarations are the shape the Electron documentation specifies
+   for a control inside a drag region: it is clickable only if it opts out
+   itself. Belt and braces for a region declared in THIS document, which the
+   banner does not have. */
 .banner-body button,
 .banner-body a,
 .banner-body input,
 .banner-body [role="button"] {
   -webkit-app-region: no-drag;
   app-region: no-drag;
+  pointer-events: auto;
 }
 
-.banner-stack { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
+/* The stack is a CONTAINER: its padding and the gaps between its cards are
+   pixels of the page underneath. Its controls, one level down, turn hit testing
+   back on for themselves. */
+.banner-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  pointer-events: none;
+}
 
 /* The card. Surface, hairline, radius, shadow and blur are the Control UI's
    floating attention card, taken from sidebar-issues.css and
@@ -93,6 +135,11 @@ body.banner-body {
   display: flex;
   align-items: flex-start;
   gap: var(--notice-gap);
+  /* The card is furniture too. It states a condition and offers controls; the
+     card itself does nothing when it is clicked, so it must not be the reason a
+     click on the page beneath is lost. Its buttons carry their own
+     `pointer-events: auto`, so the offer and the X still work. */
+  pointer-events: none;
   padding: var(--notice-padding);
   border: 1px solid color-mix(in srgb, var(--notice-border) var(--notice-border-alpha), transparent);
   border-left: var(--notice-edge-width) solid var(--notice-tone-edge, var(--muted));
@@ -254,7 +301,24 @@ body.banner-body {
 
 /* Closing the whole bar. Right-aligned under the cards and deliberately quiet:
    it is the way out, not the point, and the notices above it are. */
-.banner-actions { display: flex; justify-content: flex-end; }
+/* The sweep's own row, which lives INSIDE the last card (see the render in
+   banner.js) and is drawn at the card's trailing end, before its X.
+
+   It is not a row of the stack, and that is the whole of this fault's fix: a row
+   of its own was full width with its control at the far edge, so its leading half
+   was a strip the reader saw the page through and could not click. Inside a card
+   it costs no pixel of its own, because the card it joins is drawn there anyway,
+   and the strip under the cards is the page again.
+
+   The pair below is the general shape: a container is `none`, the control in it
+   is the only thing put back into hit testing. */
+.banner-actions {
+  flex: none;
+  align-self: center;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
 .banner__readall {
   min-height: var(--notice-action-min-height);
   padding: var(--notice-action-padding);
