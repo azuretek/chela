@@ -381,7 +381,12 @@ test('both directions of a manual check are answered through the shared composit
   // The available direction, which the banner draws either as a download or as
   // an offer, and which must name the version. It goes through the same
   // composition so the two clients cannot word one case differently.
-  const available = /if \(plan\.action === updates\.INSTALL\) \{[\s\S]*?const \{ message, detail \} = updates\.checkAnswer\(\{[\s\S]*?outcome: updates\.AVAILABLE,[\s\S]*?version: info\.version,/.exec(main);
+  // The structure below this moved when the fetch decision became shared
+  // (updates.fetchPlan): the INSTALL branch now either starts a quiet or a loud
+  // fetch, and it is the OFFER path that composes the sentence. The rule being
+  // asserted is unchanged, which is that an available release is worded by the
+  // shared composition and names the version.
+  const available = /const \{ message, detail \} = updates\.checkAnswer\(\{[\s\S]*?outcome: updates\.AVAILABLE,[\s\S]*?version: info\.version,/.exec(main);
   assert.ok(available, 'the update-available wording must come from the shared answer');
 });
 
@@ -511,7 +516,7 @@ test('★ a cleared attempt does not come straight back', () => {
 
   // A new attempt is a new generation, which is how a later offer is still able to
   // appear: "not this attempt, again, now" rather than a version hidden forever.
-  const begin = /function beginUpdateDownload\(version\) \{[\s\S]*?\n\}/.exec(main);
+  const begin = /function beginUpdateDownload\(version, \{ quiet = false \} = \{\}\) \{[\s\S]*?\n\}/.exec(main);
   assert.ok(begin, 'beginUpdateDownload was not found');
   assert.match(begin[0], /downloadAttempt \+= 1/, 'each attempt is its own generation');
 });

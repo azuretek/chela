@@ -3,159 +3,434 @@
   "cases": [
     {
       "name": "not packaged",
-      "input": { "platform": "darwin", "packaged": false, "macSigned": true },
-      "output": { "action": "none", "check": false, "autoDownload": false, "canInstall": false }
+      "input": {
+        "platform": "darwin",
+        "packaged": false,
+        "macSigned": true
+      },
+      "output": {
+        "action": "none",
+        "check": false,
+        "autoDownload": false,
+        "canInstall": false
+      }
     },
     {
       "name": "win32, unsigned, still installs",
-      "input": { "platform": "win32", "packaged": true },
-      "output": { "action": "install", "check": true, "autoDownload": true, "canInstall": true }
+      "input": {
+        "platform": "win32",
+        "packaged": true
+      },
+      "output": {
+        "action": "install",
+        "check": true,
+        "autoDownload": true,
+        "canInstall": true
+      }
     },
     {
       "name": "darwin signed with a Developer ID",
-      "input": { "platform": "darwin", "packaged": true, "macSigned": true },
-      "output": { "action": "install", "check": true, "autoDownload": true, "canInstall": true }
+      "input": {
+        "platform": "darwin",
+        "packaged": true,
+        "macSigned": true
+      },
+      "output": {
+        "action": "install",
+        "check": true,
+        "autoDownload": true,
+        "canInstall": true
+      }
     },
     {
       "name": "darwin unsigned: notifies, does not download what it cannot install",
-      "input": { "platform": "darwin", "packaged": true, "macSigned": false },
-      "output": { "action": "notify", "check": true, "autoDownload": false, "canInstall": false }
+      "input": {
+        "platform": "darwin",
+        "packaged": true,
+        "macSigned": false
+      },
+      "output": {
+        "action": "notify",
+        "check": true,
+        "autoDownload": false,
+        "canInstall": false
+      }
     },
     {
       "name": "linux running as an AppImage",
-      "input": { "platform": "linux", "packaged": true, "appImage": true },
-      "output": { "action": "install", "check": true, "autoDownload": true, "canInstall": true }
+      "input": {
+        "platform": "linux",
+        "packaged": true,
+        "appImage": true
+      },
+      "output": {
+        "action": "install",
+        "check": true,
+        "autoDownload": true,
+        "canInstall": true
+      }
     },
     {
       "name": "linux not running as an AppImage: does not even check",
-      "input": { "platform": "linux", "packaged": true, "appImage": false },
-      "output": { "action": "notify", "check": false, "autoDownload": false, "canInstall": false }
+      "input": {
+        "platform": "linux",
+        "packaged": true,
+        "appImage": false
+      },
+      "output": {
+        "action": "notify",
+        "check": false,
+        "autoDownload": false,
+        "canInstall": false
+      }
     },
     {
       "name": "an unknown platform falls through to notify",
-      "input": { "platform": "freebsd", "packaged": true },
-      "output": { "action": "notify", "check": true, "autoDownload": false, "canInstall": false }
+      "input": {
+        "platform": "freebsd",
+        "packaged": true
+      },
+      "output": {
+        "action": "notify",
+        "check": true,
+        "autoDownload": false,
+        "canInstall": false
+      }
     },
     {
       "name": "ios cannot install its own update, so it announces and hands off",
-      "input": { "platform": "ios", "packaged": true },
-      "output": { "action": "notify", "check": true, "autoDownload": false, "canInstall": false }
+      "input": {
+        "platform": "ios",
+        "packaged": true
+      },
+      "output": {
+        "action": "notify",
+        "check": true,
+        "autoDownload": false,
+        "canInstall": false
+      }
     },
     {
       "name": "ios from source does not check at all",
-      "input": { "platform": "ios", "packaged": false },
-      "output": { "action": "none", "check": false, "autoDownload": false, "canInstall": false }
+      "input": {
+        "platform": "ios",
+        "packaged": false
+      },
+      "output": {
+        "action": "none",
+        "check": false,
+        "autoDownload": false,
+        "canInstall": false
+      }
     },
     {
       "name": "win32 with automatic updates turned off narrows install to manual",
-      "input": { "platform": "win32", "packaged": true, "autoUpdate": false },
-      "output": { "action": "manual", "check": true, "autoDownload": false, "canInstall": true }
+      "input": {
+        "platform": "win32",
+        "packaged": true,
+        "autoUpdate": false
+      },
+      "output": {
+        "action": "manual",
+        "check": true,
+        "autoDownload": false,
+        "canInstall": true
+      }
     },
     {
       "name": "darwin signed with automatic updates turned off narrows install to manual",
-      "input": { "platform": "darwin", "packaged": true, "macSigned": true, "autoUpdate": false },
-      "output": { "action": "manual", "check": true, "autoDownload": false, "canInstall": true }
+      "input": {
+        "platform": "darwin",
+        "packaged": true,
+        "macSigned": true,
+        "autoUpdate": false
+      },
+      "output": {
+        "action": "manual",
+        "check": true,
+        "autoDownload": false,
+        "canInstall": true
+      }
     },
     {
       "name": "an AppImage with automatic updates turned off narrows install to manual",
-      "input": { "platform": "linux", "packaged": true, "appImage": true, "autoUpdate": false },
-      "output": { "action": "manual", "check": true, "autoDownload": false, "canInstall": true }
+      "input": {
+        "platform": "linux",
+        "packaged": true,
+        "appImage": true,
+        "autoUpdate": false
+      },
+      "output": {
+        "action": "manual",
+        "check": true,
+        "autoDownload": false,
+        "canInstall": true
+      }
     },
     {
       "name": "darwin unsigned with automatic updates turned off is unchanged: it could never install",
-      "input": { "platform": "darwin", "packaged": true, "macSigned": false, "autoUpdate": false },
-      "output": { "action": "notify", "check": true, "autoDownload": false, "canInstall": false }
+      "input": {
+        "platform": "darwin",
+        "packaged": true,
+        "macSigned": false,
+        "autoUpdate": false
+      },
+      "output": {
+        "action": "notify",
+        "check": true,
+        "autoDownload": false,
+        "canInstall": false
+      }
     },
     {
       "name": "linux outside an AppImage with automatic updates turned off is unchanged",
-      "input": { "platform": "linux", "packaged": true, "appImage": false, "autoUpdate": false },
-      "output": { "action": "notify", "check": false, "autoDownload": false, "canInstall": false }
+      "input": {
+        "platform": "linux",
+        "packaged": true,
+        "appImage": false,
+        "autoUpdate": false
+      },
+      "output": {
+        "action": "notify",
+        "check": false,
+        "autoDownload": false,
+        "canInstall": false
+      }
     },
     {
       "name": "ios with automatic updates turned off is unchanged, and never becomes manual",
-      "input": { "platform": "ios", "packaged": true, "autoUpdate": false },
-      "output": { "action": "notify", "check": true, "autoDownload": false, "canInstall": false }
+      "input": {
+        "platform": "ios",
+        "packaged": true,
+        "autoUpdate": false
+      },
+      "output": {
+        "action": "notify",
+        "check": true,
+        "autoDownload": false,
+        "canInstall": false
+      }
     },
     {
       "name": "a source run stays none even with automatic updates turned off",
-      "input": { "platform": "win32", "packaged": false, "autoUpdate": false },
-      "output": { "action": "none", "check": false, "autoDownload": false, "canInstall": false }
+      "input": {
+        "platform": "win32",
+        "packaged": false,
+        "autoUpdate": false
+      },
+      "output": {
+        "action": "none",
+        "check": false,
+        "autoDownload": false,
+        "canInstall": false
+      }
     }
   ],
   "answers": [
     {
       "name": "a newer build on a build that installs its own updates",
-      "input": { "outcome": "available", "trigger": "manual", "version": "1.0.2", "current": "1.0.1", "action": "install" },
-      "output": { "tone": "info", "message": "Claw Control UI 1.0.2 is available.", "detail": "You are on 1.0.1. It will download in the background, and you can restart to apply it." }
+      "input": {
+        "outcome": "available",
+        "trigger": "manual",
+        "version": "1.0.2",
+        "current": "1.0.1",
+        "action": "install"
+      },
+      "output": {
+        "tone": "info",
+        "message": "Claw Control UI 1.0.2 is available.",
+        "detail": "You are on 1.0.1. It will download in the background, and you can restart to apply it."
+      }
     },
     {
       "name": "a newer build on a build that can only announce it",
-      "input": { "outcome": "available", "trigger": "manual", "version": "1.0.2", "current": "1.0.1", "action": "notify", "reason": "unsigned: Squirrel.Mac cannot install an update over an unsigned bundle" },
-      "output": { "tone": "info", "message": "Claw Control UI 1.0.2 is available.", "detail": "You are on 1.0.1. This build cannot update itself, because unsigned: Squirrel.Mac cannot install an update over an unsigned bundle, download the new version and replace the app to upgrade." }
+      "input": {
+        "outcome": "available",
+        "trigger": "manual",
+        "version": "1.0.2",
+        "current": "1.0.1",
+        "action": "notify",
+        "reason": "unsigned: Squirrel.Mac cannot install an update over an unsigned bundle"
+      },
+      "output": {
+        "tone": "info",
+        "message": "Claw Control UI 1.0.2 is available.",
+        "detail": "You are on 1.0.1. This build cannot update itself, because unsigned: Squirrel.Mac cannot install an update over an unsigned bundle, download the new version and replace the app to upgrade."
+      }
     },
     {
       "name": "a newer build on a build whose automatic updates are off",
-      "input": { "outcome": "available", "trigger": "manual", "version": "1.0.2", "current": "1.0.1", "action": "manual", "reason": "automatic updates are turned off in Settings" },
-      "output": { "tone": "info", "message": "Claw Control UI 1.0.2 is available.", "detail": "You are on 1.0.1. Automatic updates are off, so nothing has been downloaded yet, install it now, or turn them back on in Settings." }
+      "input": {
+        "outcome": "available",
+        "trigger": "manual",
+        "version": "1.0.2",
+        "current": "1.0.1",
+        "action": "manual",
+        "reason": "automatic updates are turned off in Settings"
+      },
+      "output": {
+        "tone": "info",
+        "message": "Claw Control UI 1.0.2 is available.",
+        "detail": "You are on 1.0.1. Automatic updates are off, so nothing has been downloaded yet, install it now, or turn them back on in Settings."
+      }
     },
     {
       "name": "a newer build on the phone, which points at where the build is",
-      "input": { "outcome": "available", "trigger": "manual", "version": "1.0.1-dev.150.abc1234567", "current": "1.0.1-dev.148.abc1234567", "action": "notify", "reason": "iOS does not let an app install its own update, so it can only say a release exists and offer an install link", "pointer": "Open TestFlight to update." },
-      "output": { "tone": "info", "message": "Claw Control UI 1.0.1-dev.150.abc1234567 is available.", "detail": "You are on 1.0.1-dev.148.abc1234567. Open TestFlight to update." }
+      "input": {
+        "outcome": "available",
+        "trigger": "manual",
+        "version": "1.0.1-dev.150.abc1234567",
+        "current": "1.0.1-dev.148.abc1234567",
+        "action": "notify",
+        "reason": "iOS does not let an app install its own update, so it can only say a release exists and offer an install link",
+        "pointer": "Open TestFlight to update."
+      },
+      "output": {
+        "tone": "info",
+        "message": "Claw Control UI 1.0.1-dev.150.abc1234567 is available.",
+        "detail": "You are on 1.0.1-dev.148.abc1234567. Open TestFlight to update."
+      }
     },
     {
       "name": "an offered build numbered below the running one is not presented as an upgrade",
-      "input": { "outcome": "available", "trigger": "manual", "version": "1.0.1-dev.38.a1b2c3d4e5", "current": "1.0.1-dev.42.b2c3d4e5f6", "action": "notify", "reason": "unsigned: Squirrel.Mac cannot install an update over an unsigned bundle" },
-      "output": { "tone": "info", "message": "Claw Control UI 1.0.1-dev.38.a1b2c3d4e5 is available.", "detail": "You are on 1.0.1-dev.42.b2c3d4e5f6. It is numbered below the build you are running, so it is not an upgrade; it is the newest release by publish time. This build cannot update itself, because unsigned: Squirrel.Mac cannot install an update over an unsigned bundle, download the new version and replace the app to upgrade." }
+      "input": {
+        "outcome": "available",
+        "trigger": "manual",
+        "version": "1.0.1-dev.38.a1b2c3d4e5",
+        "current": "1.0.1-dev.42.b2c3d4e5f6",
+        "action": "notify",
+        "reason": "unsigned: Squirrel.Mac cannot install an update over an unsigned bundle"
+      },
+      "output": {
+        "tone": "info",
+        "message": "Claw Control UI 1.0.1-dev.38.a1b2c3d4e5 is available.",
+        "detail": "You are on 1.0.1-dev.42.b2c3d4e5f6. It is numbered below the build you are running, so it is not an upgrade; it is the newest release by publish time. This build cannot update itself, because unsigned: Squirrel.Mac cannot install an update over an unsigned bundle, download the new version and replace the app to upgrade."
+      }
     },
     {
       "name": "a phone pointed at where the build is still says the number is not above the one running",
-      "input": { "outcome": "available", "trigger": "manual", "version": "1.0.1-dev.38.a1b2c3d4e5", "current": "1.0.1-dev.42.b2c3d4e5f6", "action": "notify", "pointer": "Open TestFlight to update." },
-      "output": { "tone": "info", "message": "Claw Control UI 1.0.1-dev.38.a1b2c3d4e5 is available.", "detail": "You are on 1.0.1-dev.42.b2c3d4e5f6. It is numbered below the build you are running, so it is not an upgrade; it is the newest release by publish time. Open TestFlight to update." }
+      "input": {
+        "outcome": "available",
+        "trigger": "manual",
+        "version": "1.0.1-dev.38.a1b2c3d4e5",
+        "current": "1.0.1-dev.42.b2c3d4e5f6",
+        "action": "notify",
+        "pointer": "Open TestFlight to update."
+      },
+      "output": {
+        "tone": "info",
+        "message": "Claw Control UI 1.0.1-dev.38.a1b2c3d4e5 is available.",
+        "detail": "You are on 1.0.1-dev.42.b2c3d4e5f6. It is numbered below the build you are running, so it is not an upgrade; it is the newest release by publish time. Open TestFlight to update."
+      }
     },
     {
       "name": "the same number again is the same version, not a newer one",
-      "input": { "outcome": "available", "trigger": "manual", "version": "1.0.2", "current": "1.0.2", "action": "notify" },
-      "output": { "tone": "info", "message": "Claw Control UI 1.0.2 is available.", "detail": "You are on 1.0.2. It carries the same number as the build you are running, so it is the same version released again rather than a newer one. This build cannot update itself, download the new version and replace the app to upgrade." }
+      "input": {
+        "outcome": "available",
+        "trigger": "manual",
+        "version": "1.0.2",
+        "current": "1.0.2",
+        "action": "notify"
+      },
+      "output": {
+        "tone": "info",
+        "message": "Claw Control UI 1.0.2 is available.",
+        "detail": "You are on 1.0.2. It carries the same number as the build you are running, so it is the same version released again rather than a newer one. This build cannot update itself, download the new version and replace the app to upgrade."
+      }
     },
     {
       "name": "a genuine upgrade carries no caveat at all",
-      "input": { "outcome": "available", "trigger": "manual", "version": "1.0.1-dev.150.abc1234567", "current": "1.0.1-dev.148.abc1234567", "action": "notify", "pointer": "Open TestFlight to update." },
-      "output": { "tone": "info", "message": "Claw Control UI 1.0.1-dev.150.abc1234567 is available.", "detail": "You are on 1.0.1-dev.148.abc1234567. Open TestFlight to update." }
+      "input": {
+        "outcome": "available",
+        "trigger": "manual",
+        "version": "1.0.1-dev.150.abc1234567",
+        "current": "1.0.1-dev.148.abc1234567",
+        "action": "notify",
+        "pointer": "Open TestFlight to update."
+      },
+      "output": {
+        "tone": "info",
+        "message": "Claw Control UI 1.0.1-dev.150.abc1234567 is available.",
+        "detail": "You are on 1.0.1-dev.148.abc1234567. Open TestFlight to update."
+      }
     },
     {
       "name": "nothing newer, and someone pressed the button",
-      "input": { "outcome": "current", "trigger": "manual", "current": "1.0.1" },
-      "output": { "tone": "ok", "message": "Claw Control UI is up to date.", "detail": "You are on 1.0.1." }
+      "input": {
+        "outcome": "current",
+        "trigger": "manual",
+        "current": "1.0.1"
+      },
+      "output": {
+        "tone": "ok",
+        "message": "Claw Control UI is up to date.",
+        "detail": "You are on 1.0.1."
+      }
     },
     {
       "name": "nothing newer from a scheduled check: silence",
-      "input": { "outcome": "current", "trigger": "scheduled", "current": "1.0.1" },
+      "input": {
+        "outcome": "current",
+        "trigger": "scheduled",
+        "current": "1.0.1"
+      },
       "output": null
     },
     {
       "name": "nothing newer from the startup check: silence",
-      "input": { "outcome": "current", "trigger": "startup", "current": "1.0.1" },
+      "input": {
+        "outcome": "current",
+        "trigger": "startup",
+        "current": "1.0.1"
+      },
       "output": null
     },
     {
       "name": "a build with no way to ask at all, after a press",
-      "input": { "outcome": "unavailable", "trigger": "manual", "current": "1.0.1", "reason": "running from source" },
-      "output": { "tone": "info", "message": "Updates are not available in this build.", "detail": "Running from source." }
+      "input": {
+        "outcome": "unavailable",
+        "trigger": "manual",
+        "current": "1.0.1",
+        "reason": "running from source"
+      },
+      "output": {
+        "tone": "info",
+        "message": "Updates are not available in this build.",
+        "detail": "Running from source."
+      }
     },
     {
       "name": "a build with no way to ask, from a background check: silence",
-      "input": { "outcome": "unavailable", "trigger": "startup", "current": "1.0.1", "reason": "not running as an AppImage, so there is no file an update could replace" },
+      "input": {
+        "outcome": "unavailable",
+        "trigger": "startup",
+        "current": "1.0.1",
+        "reason": "not running as an AppImage, so there is no file an update could replace"
+      },
       "output": null
     },
     {
       "name": "a check that ran and could not finish",
-      "input": { "outcome": "error", "trigger": "manual", "current": "1.0.1", "error": "net::ERR_INTERNET_DISCONNECTED" },
-      "output": { "tone": "warn", "message": "Could not check for updates.", "detail": "Net::ERR_INTERNET_DISCONNECTED." }
+      "input": {
+        "outcome": "error",
+        "trigger": "manual",
+        "current": "1.0.1",
+        "error": "net::ERR_INTERNET_DISCONNECTED"
+      },
+      "output": {
+        "tone": "warn",
+        "message": "Could not check for updates.",
+        "detail": "Net::ERR_INTERNET_DISCONNECTED."
+      }
     },
     {
       "name": "a check that failed from a background check: silence",
-      "input": { "outcome": "error", "trigger": "startup", "current": "1.0.1", "error": "The Internet connection appears to be offline." },
+      "input": {
+        "outcome": "error",
+        "trigger": "startup",
+        "current": "1.0.1",
+        "error": "The Internet connection appears to be offline."
+      },
       "output": null
     }
   ],
@@ -214,7 +489,7 @@
       }
     },
     {
-      "name": "and that same version is still offered, with the button, to someone who asks",
+      "name": "but a person who presses Check is asking, so that version is fetched then, loudly",
       "input": {
         "action": "install",
         "version": "1.0.2",
@@ -222,9 +497,9 @@
         "trigger": "manual"
       },
       "output": {
-        "fetch": false,
+        "fetch": true,
         "quiet": false,
-        "offer": "install"
+        "offer": null
       }
     },
     {
