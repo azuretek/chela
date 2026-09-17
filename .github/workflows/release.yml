@@ -595,6 +595,15 @@ jobs:
           # Replaced rather than skipped, so a rerun repairs an asset instead of
           # keeping a first attempt that may be incomplete.
           overwrite_files: true
+        # ★ Bounded, because this uploader has no timeout anywhere and a stalled
+        # large asset holds the step, and the verification behind it, open
+        # indefinitely: measured 2026-09-17, a release job sat here for over 20
+        # minutes having attached 14 of 16 assets, with no further progress, and
+        # the two that were stuck were the largest. Thirty minutes is far more
+        # than the ~25 seconds this step takes when the upload path is healthy,
+        # so the bound only ever fires on a stall, and a stall is what the
+        # completeness check below exists to convert into an answer.
+        timeout-minutes: 30
         # ★ Deliberately tolerated, and it weakens nothing: the run's verdict is
         # the completeness check below, which is stricter than this step's exit
         # code ever was. Before this change the step both uploaded and PUBLISHED,
@@ -621,10 +630,10 @@ jobs:
       # this check the day it is added, exactly as the artifact gate above does.
       - name: Attach and verify every asset
         id: attach
-        # A cap on the whole step, so a pathological refill loop cannot sit here
-        # until the job's own limit. The verification is what the release's fate
-        # depends on, and it has to be reachable.
-        timeout-minutes: 20
+        # A cap on the whole step, set so the verification at its end is always
+        # reachable: three passes over a handful of stragglers, each refill
+        # bounded, fits well inside it even when the upload path is crawling.
+        timeout-minutes: 25
         env:
           GH_TOKEN: ${{ github.token }}
           ARTIFACTS: artifacts
