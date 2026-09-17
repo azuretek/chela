@@ -53,6 +53,37 @@ final class UpdateFeedParityTests: XCTestCase {
         }
     }
 
+    /// ★ The rule the whole check turns on, in both directions.
+    ///
+    /// The reported bug was an installed build carrying an OLD-SCHEME tail whose
+    /// number looks HIGHER than every build published since, so a check that
+    /// ranked the tail decided the installed build was ahead and offered nothing.
+    /// The signal that cannot invert is the feed's own ordering, which is why
+    /// `newerVersion` takes the newest entry on the channel and asks
+    /// `isNewerBuild` about it.
+    func testTheReleaseOnlyRuleHoldsInBothDirections() throws {
+        // 1. An old-scheme tail that looks higher is still offered the newest.
+        XCTAssertTrue(try UpdateFeed.isNewerBuild("1.0.1-dev.12.1758000000", than: "1.0.1-dev.195.6387043585"))
+        // ...and the comparison that shipped says the opposite, which is the bug.
+        XCTAssertFalse(try Version.compare("1.0.1-dev.12.1758000000", "1.0.1-dev.195.6387043585") > 0)
+
+        // 2. Tails running backwards: the newest by feed order still wins.
+        let backwards = UpdateFeed.Document(entries: [
+            UpdateFeed.Entry(id: ".../releases/v1.0.1-dev.3.1759000000", title: nil),
+            UpdateFeed.Entry(id: ".../releases/v1.0.1-dev.2.1758000000", title: nil),
+        ])
+        XCTAssertEqual(
+            try UpdateFeed.newerVersion(in: backwards, current: "1.0.1-dev.20.1758500000"),
+            "1.0.1-dev.3.1759000000"
+        )
+
+        // 3. A genuinely older release is still refused, so this has not simply
+        //    become an always-update.
+        XCTAssertFalse(try UpdateFeed.isNewerBuild("1.0.0-dev.900.1700000000", than: "1.0.1-dev.195.6387043585"))
+        // 4. And the build we are running is never offered back to us.
+        XCTAssertFalse(try UpdateFeed.isNewerBuild("1.0.1-dev.12.1758000000", than: "1.0.1-dev.12.1758000000"))
+    }
+
     /// The Release notes link, against the same cases the JS asserts.
     ///
     /// This is the one that shipped wrong: the phone's Release notes button

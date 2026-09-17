@@ -125,26 +125,65 @@ enum UpdateFeed {
         return nil
     }
 
-    /// The newest release on this build's channel if it is strictly newer than
-    /// this build, otherwise nil.
+    /// Whether the build a feed named is newer than the build we are running.
+    ///
+    /// ★ THE SIGNAL IS THE FEED'S OWN ORDERING, NOT THE VERSION STRINGS.
+    ///
+    /// "Always pick the latest" has to be anchored in something that cannot
+    /// invert, and the version strings can: the tail after the release is build
+    /// and commit information whose basis has changed, so a build published this
+    /// morning can carry a LOWER number than one published last week
+    /// (`1.0.1-dev.195.6387043585` then `1.0.1-dev.12.1758000000`). Ranking that
+    /// tail is what froze the updates: the check decided the installed build was
+    /// AHEAD of the feed and offered nothing. The full statement of the rule is
+    /// beside `compareRelease` in `Version.swift`.
+    ///
+    /// So the ordering signal is the FEED ITSELF: `newestOnChannel` returns the
+    /// first entry belonging to this build's channel, and GitHub emits
+    /// releases.atom newest-first by publish time, so that entry IS the newest
+    /// published build on the channel, whatever its tail says. All this function
+    /// then asks is whether that candidate is one the check should NOT offer, and
+    /// there is exactly one such case: the feed's newest is a LOWER release than
+    /// ours, which is a step backwards.
+    ///
+    /// Same release with a different tail IS offered, which is the reported bug
+    /// rather than a widening of the rule: an installed build carrying an
+    /// old-scheme tail looks numerically higher than every build published after
+    /// it, and the feed has already said which one is newer.
+    ///
+    /// The exact build we are running is the one case where the tail still counts,
+    /// for what it literally is: an identity, compared for equality. Mirrors
+    /// `isNewerBuild` in `core/feed.js`.
+    static func isNewerBuild(_ candidate: String, than current: String) throws -> Bool {
+        guard Version.parse(current) != nil else { throw Version.Failure.notAVersion(current) }
+        guard Version.parse(candidate) != nil else { throw Version.Failure.notAVersion(candidate) }
+
+        // The feed's newest IS this build: nothing to announce.
+        if candidate == current { return false }
+
+        return try Version.compareRelease(candidate, current) >= 0
+    }
+
+    /// The newest release on this build's channel if it is newer than this build,
+    /// otherwise nil.
     ///
     /// The whole question the update check asks, in one place so the client is a
     /// fetch and a branch rather than a second copy of the comparison. `nil` means
     /// "nothing to say", which covers both a document with no release on this
-    /// channel and one whose newest is this build or older: the two cases the
-    /// banner must stay absent for.
+    /// channel and one whose newest is not newer than this build: the two cases
+    /// the banner must stay absent for.
     ///
-    /// The comparison is `Version.isNewer`, the same one the desktop reaches
-    /// through semver, so a build the desktop would offer an update to is one the
-    /// phone offers one to as well. The channel is the build's own, so a dev build
-    /// is only ever compared against dev releases. Mirrors `newerVersion` in
-    /// `core/feed.js`.
+    /// The candidate is the feed's newest on this build's channel and the decision
+    /// is `isNewerBuild`, the same one the desktop's updater path re-decides with,
+    /// so a build the desktop offers an update to is one the phone offers one to
+    /// as well. The channel is the build's own, so a dev build is only ever
+    /// compared against dev releases. Mirrors `newerVersion` in `core/feed.js`.
     static func newerVersion(in document: Document, current: String) throws -> String? {
         // A current version this build cannot even parse is our own bug, not the
         // feed's, and it must not silently suppress an update: let it throw.
         guard Version.parse(current) != nil else { throw Version.Failure.notAVersion(current) }
         guard let advertised = newestOnChannel(in: document, channel: channel(for: current)) else { return nil }
-        return try Version.isNewer(advertised, than: current) ? advertised : nil
+        return try isNewerBuild(advertised, than: current) ? advertised : nil
     }
 
     /// One release, as the two fields the channel decision needs from an Atom

@@ -27,7 +27,7 @@
 // call is exactly the part that is not portable and not pure.
 
 import spec from './spec/feed.json' with { type: 'json' };
-import { isNewer, parse } from './version.js';
+import { compareRelease, parse } from './version.js';
 import { channelOf } from './updates.js';
 // The releases LIST, which naming.js already owns because the desktop's menu
 // links to it: the no-version case below is that same page, not a second one.
@@ -149,20 +149,67 @@ export function newestOnChannel(document, channel) {
 }
 
 /**
- * The newest release on a build's channel if it is strictly newer than the
- * build, otherwise null.
+ * Whether the build a feed named is newer than the build we are running.
+ *
+ * ★ THE SIGNAL IS THE FEED'S OWN ORDERING, NOT THE VERSION STRINGS.
+ *
+ * "Always pick the latest" has to be anchored in something that cannot invert,
+ * and the version strings can: the tail after the release is build and commit
+ * information whose basis has changed, so a build published this morning can
+ * carry a LOWER number than one published last week
+ * (`1.0.1-dev.195.6387043585` then `1.0.1-dev.12.1758000000`). Ranking that
+ * tail is what froze the updates: the check decided the installed build was
+ * AHEAD of the feed and offered nothing, while the number on About appeared to
+ * go backwards. The full statement of the rule is beside `compareRelease` in
+ * version.js.
+ *
+ * So the ordering signal is the FEED ITSELF. `newestOnChannel` returns the
+ * first entry belonging to this build's channel, and GitHub emits
+ * releases.atom newest-first by publish time, so the entry it returns IS the
+ * newest published build on the channel, whatever its tail says. This function
+ * is then only asked whether that candidate is one we should NOT offer, and
+ * there is exactly one such case: the feed's newest is a LOWER release than
+ * ours (`1.0.0` while we run `1.0.1`), which is a step backwards.
+ *
+ * Same release with a different tail IS offered, and that is the reported bug
+ * rather than a widening of the rule: an installed build carrying an old-scheme
+ * tail looks numerically higher than every build published after it, and the
+ * feed has already said which one is newer.
+ *
+ * The exact build we are running is the one case where the tail still counts,
+ * and it counts for what it literally is: an identity, compared for equality. It
+ * has to, or a check that cannot tell the feed's newest from the build in front
+ * of it would offer the same build forever.
+ *
+ * Both versions must parse; an unreadable one throws rather than sorting
+ * arbitrarily, the same contract `compare` has.
+ */
+export function isNewerBuild(candidate, current) {
+  const from = parse(current);
+  if (!from) throw new Error(`not a version: ${current}`);
+  if (!parse(candidate)) throw new Error(`not a version: ${candidate}`);
+
+  // The feed's newest IS this build: nothing to announce.
+  if (candidate === current) return false;
+
+  return compareRelease(candidate, current) >= 0;
+}
+
+/**
+ * The newest release on a build's channel if it is newer than the build,
+ * otherwise null.
  *
  * This is the whole question the update check asks, in one place so the client
  * is a fetch and a branch rather than a second copy of the comparison. `null`
  * means "nothing to say", which covers both a document with no release on this
- * channel and one whose newest is this build or older, the two cases the banner
- * must stay absent for.
+ * channel and one whose newest is not newer than this build, the two cases the
+ * banner must stay absent for.
  *
- * The comparison is `isNewer` from version.js, the same one the desktop's
- * updater reaches through semver and the same one Version.swift ports, so a
- * build the desktop would offer an update to is one the phone offers one to as
- * well. The channel is the build's own (`channelFor`), so a dev build is only
- * ever compared against dev releases and a stable build against stable ones.
+ * The candidate is the feed's newest on this build's channel and the decision is
+ * `isNewerBuild`, so both clients reach the same answer from the same rule and
+ * Version.swift ports the pair rather than a second comparator. The channel is
+ * the build's own (`channelFor`), so a dev build is only ever compared against
+ * dev releases and a stable build against stable ones.
  *
  * @param {unknown} document  the parsed releases document
  * @param {string} current    this build's own version
@@ -174,7 +221,7 @@ export function newerVersion(document, current) {
   if (!parse(current)) throw new Error(`not a version: ${current}`);
   const advertised = newestOnChannel(document, channelFor(current));
   if (advertised === null) return null;
-  return isNewer(advertised, current) ? advertised : null;
+  return isNewerBuild(advertised, current) ? advertised : null;
 }
 
 /**
