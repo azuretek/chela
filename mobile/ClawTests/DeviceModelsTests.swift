@@ -43,7 +43,7 @@ final class DeviceModelsTests: XCTestCase {
             XCTAssertEqual(parts.count, 2, identifier)
             XCTAssertNotNil(Int(parts[1]), identifier)
             XCTAssertFalse(name.isEmpty, identifier)
-            XCTAssertFalse(name.contains("iPhone"), "a name repeats its own identifier: " + identifier)
+            XCTAssertNotEqual(name, identifier, "the row names no model, so the fallback reads as a name")
         }
     }
 }
