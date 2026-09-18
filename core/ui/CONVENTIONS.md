@@ -252,6 +252,27 @@ Where a client paints something the page cannot reach, meaning the phone's statu
 bar and the strips above and below the web view, it takes the same two answers in
 that order and does not add a third.
 
+## ★ The seventh rule: the colour flows into the strips, from ONE source
+
+**The strips the safe area leaves above and below a page belong to the app, and they
+are painted from ONE background, so the top of the screen and the bottom are the same
+colour by construction.** Reported 2026-09-18: "the color on the top and bottom of my
+screen being different, it should always flow".
+
+- **The page is laid out INSIDE the safe area** (see `mobile/Claw/ContentView.swift`),
+  so neither strip is the page's to draw: it cannot paint a band the reader sees above
+  or below itself, and whatever appears there is the app's paint.
+- **One painter, at the root, outside the safe area.** A `background` rather than an
+  overlay, because a background takes no part in layout: the page's own frame must not
+  move for a colour. It went on the web view first, where it was clipped to the web
+  view's own inset frame, and that is the arrangement in which one end can disagree
+  with the other.
+- **The colour is the page's own reported background**, through the theme relay
+  (`WebView.themeScript`): the value the interface is actually painted with, not a
+  token of ours and not the window's colour.
+- **A band that disagrees is a bug in the wrapper, not a style.** Same shape as the
+  sixth rule: the reader must never see our chrome and the interface disagree.
+
 ## ★ What counts as a transition
 
 **A transition is any change the reader can SEE, and it does not have to change the
