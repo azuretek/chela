@@ -1,7 +1,7 @@
 import Foundation
 
 /// The number under the loading cover's progress bar, ported from
-/// `core/progress.js`.
+/// `core/progress.js` and reading `core/spec/progress.json` at runtime.
 ///
 /// A gateway load reports no percentage. WebKit will tell you a navigation
 /// started, that the document parsed, and that the load finished, and nothing at
@@ -15,35 +15,55 @@ import Foundation
 /// that matters. It can be behind, it can crawl, but it cannot claim a stage the
 /// app has not reached, and 100 is reserved for a load that finished.
 ///
-/// The constants below mirror `core/spec/progress.json`, and
-/// `ProgressParityTests` proves this port reproduces the golden fixtures in
-/// `core/fixtures/progress.json` that `core/test/fixtures.test.js` asserts on
-/// the JS side. That test is the contract: change the spec, regenerate the
-/// fixtures, and this file is what has to move with it. The Swift does not read
-/// the spec at runtime, because a shipped app cannot read a file that lives in
-/// the repo, and a bundled copy of the data would be a third thing to keep in
-/// step.
+/// The values come from the bundled spec rather than from constants here, which is
+/// the one pattern for every spec the app shares. `ProgressParityTests` proves
+/// this port reproduces the golden fixtures in `core/fixtures/progress.json`
+/// that `core/test/fixtures.test.js` asserts on the JS side, and
+/// `BundledSpecTests` asserts the client decodes every key the file carries.
 enum Progress {
-    /// Milestones, in the order a load reaches them.
-    static let order = ["start", "navigated", "dom", "done"]
+    /// `core/spec/progress.json`, in the shape the file already has.
+    private struct Spec: Decodable {
+        let order: [String]
+        let floor: [String: Int]
+        let tauMs: Double
+        let creep: Double
+    }
 
-    /// The stage a load begins at, and the one that means it is over.
-    static let start = "start"
-    static let done = "done"
+    /// The top-level keys this decodes, asserted against the file by
+    /// `BundledSpecTests`.
+    static let decodedKeys: Set<String> = ["order", "floor", "tauMs", "creep"]
+
+    private static let spec: Spec = loadSpec()
+
+    private static func loadSpec() -> Spec {
+        let empty = Spec(order: [], floor: [:], tauMs: 0, creep: 0)
+        guard let spec = try? BundledSpec.load("progress", as: Spec.self), !spec.order.isEmpty else {
+            return empty
+        }
+        return spec
+    }
+
+    /// Milestones, in the order a load reaches them.
+    static var order: [String] { spec.order }
+
+    /// The stage a load begins at, and the one that means it is over. Derived
+    /// from the order rather than named twice, which is what the JS does too.
+    static var start: String { spec.order.first ?? "start" }
+    static var done: String { spec.order.last ?? "done" }
 
     /// Where each milestone puts the bar the instant it lands. Weighted by how
     /// long each stage typically takes rather than evenly: the wait for a host
     /// to answer is the long one, so it gets the widest band and the most room
     /// to move.
-    static let floor: [String: Int] = ["start": 2, "navigated": 42, "dom": 78, "done": 100]
+    static var floor: [String: Int] { spec.floor }
 
     /// How fast the creep inside a stage decays, in ms. One time constant covers
     /// about 63% of the remaining band, two about 86%.
-    static let tauMs = 2200.0
+    static var tauMs: Double { spec.tauMs }
 
     /// How much of the band to the next milestone the creep may take. Short of
     /// 1, so there is always a visible step when the real event lands.
-    static let creep = 0.75
+    static var creep: Double { spec.creep }
 
     /// The percentage to show, as an integer.
     ///
