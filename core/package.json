@@ -26,6 +26,7 @@
     "./reconnect-resume-shim.js": "./reconnect-resume-shim.js"
   },
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "lint": "eslint ."
   }
 }
