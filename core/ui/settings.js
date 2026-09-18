@@ -1479,51 +1479,108 @@ if (gatewayFilter) {
   }
 }
 
-$('save').addEventListener('click', async () => {
-  // Only what this client has. A key written from a client that does not show it
-  // would be a preference changed by a control nobody touched, and a key left out
-  // on a client that does show it would be a preference that silently never
-  // saves.
-  const patch = {};
-  if (hasSetting('appearance')) patch.appearance = $('appearance').value;
-  if (hasSetting('closeToTray')) patch.closeToTray = $('closeToTray').checked;
-  if (hasSetting('launchAtLogin')) patch.launchAtLogin = $('launchAtLogin').checked;
-  if (hasSetting('startHidden')) patch.startHidden = $('startHidden').checked;
-  if (hasSetting('promptMetadata')) patch.promptMetadata = $('promptMetadata').checked;
-  // Never write false just because the checkbox is disabled: a Linux user who
-  // once ran the unpacked binary would come back to their AppImage with the
-  // preference silently turned off.
-  if (hasSetting('autoUpdate') && !$('autoUpdate').disabled) patch.autoUpdate = $('autoUpdate').checked;
-  if (hasSetting('globalShortcut')) patch.globalShortcut = $('globalShortcut').value.trim();
+/* ------------------------------------------------- one commit per row */
 
-  const res = await call('saveSettings', patch);
-  state = res;
+// No Save button, and it is a rule rather than a preference: the fifth rule in
+// ui/CONVENTIONS.md. A value commits on the reader's OWN gesture, which for a
+// switch is the flip and for a field is Enter or leaving it. A row says what
+// happened only where the control cannot say it itself: a field looks exactly the
+// same after it commits, so its row reports, and a FAILURE is reported in the row
+// that failed, because on screen nothing else changed.
+//
+// What this replaced: one button at the foot of the tab that wrote every
+// preference at once. That made the screen's state and the stored state two things
+// that could disagree for as long as the reader stayed on the page, and it put
+// "have I saved this?" under every control. Reported 2026-09-17.
 
-  // The two things a save can fail at are desktop's, because the settings they
-  // belong to are. A client without them gets neither field back, so both are
-  // read as absent rather than assumed.
-  const problems = [
+/** A row's own answer line, created on first use rather than drawn empty. */
+function rowResult(id) {
+  const row = document.querySelector(`[data-setting="${id}"]`);
+  if (!row) return null;
+  let line = row.querySelector('.result');
+  if (!line) {
+    line = el('div', { className: 'result' });
+    (row.querySelector('.settings-row__text') || row).append(line);
+  }
+  return line;
+}
+
+/**
+ * What a write can fail at, in the reader's own terms.
+ *
+ * Both belong to the desktop, which is why they are read as ABSENT on a client
+ * that has no such setting rather than assumed to have passed: a phone sends
+ * neither field back.
+ */
+function writeProblems(res) {
+  return [
     !res.shortcut || res.shortcut.ok ? null : `the shortcut was rejected (${res.shortcut.error})`,
     !res.login || res.login.ok ? null : `"open at login" could not be set (${res.login.error})`,
   ].filter(Boolean);
+}
 
-  setResult(
-    $('save-result'),
-    problems.length ? `Saved, but ${problems.join(', and ')}.` : 'Saved.',
-    problems.length ? 'warn' : 'ok',
-  );
+/**
+ * Commit ONE preference, from the control the reader changed.
+ *
+ * One key per call. A patch carrying every row would write preferences nobody
+ * touched, and it would report a failure against rows that did not fail, which is
+ * the coupling the button had and the reason this is a function of one key.
+ */
+async function commitSetting(id, value, done = '') {
+  const out = rowResult(id);
+  const res = await call('saveSettings', { [id]: value });
+  state = res;
+  const problems = writeProblems(res);
+  if (problems.length) setResult(out, `Not saved: ${problems.join(', and ')}.`, 'warn');
+  else setResult(out, done, 'ok');
   render();
-});
+}
+
+// The switches. Their own state is the confirmation, so they carry a line only
+// when something refused: a flip that looks flipped after the write is the answer,
+// and a "Saved." under every one of them would be five lines saying nothing.
+for (const id of ['closeToTray', 'launchAtLogin', 'startHidden', 'promptMetadata', 'autoUpdate']) {
+  const box = $(id);
+  // hasSetting because a client without the row must not be wired to it, and the
+  // element check because renderPrefs owns autoUpdate's disabled state: a build
+  // that cannot install its own updates has nothing to switch on.
+  if (!box || !hasSetting(id)) continue;
+  box.addEventListener('change', () => {
+    if (box.disabled) return;
+    void commitSetting(id, box.checked);
+  });
+}
+
+// The shortcut is the one preference on this tab with nothing to show for itself:
+// a switch that is on looks on, and a field looks the same whether or not it was
+// sent. So its row reports the commit, and the commit is the reader's own gesture:
+// Enter, or leaving the field having changed it. Leaving counts because that is
+// the phone platforms' own answer for the same job, and Enter is what someone on
+// a keyboard reaches for.
+const shortcut = $('globalShortcut');
+if (shortcut && hasSetting('globalShortcut')) {
+  let atFocus = shortcut.value;
+  shortcut.addEventListener('focus', () => { atFocus = shortcut.value; });
+  shortcut.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    shortcut.blur();
+  });
+  shortcut.addEventListener('blur', () => {
+    if (shortcut.value === atFocus) return;
+    atFocus = shortcut.value;
+    void commitSetting('globalShortcut', shortcut.value.trim(), 'Saved.');
+  });
+}
 
 /* ------------------------------------------------------------------ appearance */
 
-// Applied on the spot rather than at Save, unlike every other row on this tab.
-// The others are preferences whose effect is somewhere else and later; this one
-// repaints the app the moment it is chosen, so sending it with a button press
-// nobody has made yet would leave the screen showing the old colours and the
-// control describing new ones. The host answers with the state it produced, so
-// the select is written from what the client actually did rather than from what
-// was asked for.
+// Applied on the spot, like every other row on this tab now. The others are
+// preferences whose effect is somewhere else and later; this one repaints the app
+// the moment it is chosen, so holding it for a button press would leave the screen
+// showing the old colours and the control describing new ones. The host answers
+// with the state it produced, so the select is written from what the client
+// actually did rather than from what was asked for.
 const appearance = $('appearance');
 if (appearance) {
   appearance.addEventListener('change', async () => {
