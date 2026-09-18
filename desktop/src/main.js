@@ -2769,6 +2769,52 @@ function bootReady() {
   if (config.get().bootMarker) config.update({ bootMarker: null });
 }
 
+const BROKEN_BUILD = 'broken-build';
+
+/**
+ * Whether this install can roll the running build back to an earlier one.
+ *
+ * Two things have to hold: the platform's updater can downgrade at all (macOS
+ * cannot without a Developer ID, iOS never), and there is a last-known-good to
+ * roll back TO. The pinned-good record is the automatic rollback's own state; a
+ * banner raised before that half exists reads canRollback as false and tells the
+ * reader to reinstall instead, which is the honest answer until the pin is there.
+ */
+function canRollBack() {
+  const record = config.get().lastKnownGood;
+  if (!record || typeof record.version !== 'string') return false;
+  // A downgrade rides the same install path electron-updater uses to upgrade, so
+  // where a platform can install (Windows NSIS, Linux AppImage) it can roll back;
+  // macOS without a Developer ID and iOS cannot, and there canInstall is false.
+  return updatePolicy().canInstall === true;
+}
+
+/**
+ * The running build kept failing to come up: say so on the notice surface, and
+ * offer the rollback where one is possible. The verdict was read at launch
+ * (bootHealth), before this launch's own attempt was written, so this is about
+ * the build we are running rather than about this launch.
+ *
+ * Raised after the window exists so there is a surface to raise it on. It is not
+ * dismiss-clearing: the condition is true until a good build comes up, so a
+ * dismissed banner should come back next launch rather than being marked handled.
+ */
+function raiseBrokenBuildBanner() {
+  const banner = bootstrapHealth.brokenBuildBanner(bootHealth(), { canRollback: canRollBack() });
+  if (!banner) {
+    clearNotice(BROKEN_BUILD);
+    return;
+  }
+  setNotice(BROKEN_BUILD, {
+    tone: noticeStore.ERROR,
+    message: banner.message,
+    detail: noticeStore.sentence(banner.detail),
+    // The action is the release page for now; the automatic-rollback half wires a
+    // rollback command onto this same banner.
+    action: { label: 'Open release page', command: 'update-release-page' },
+  });
+}
+
 /**
  * Record that this version's transfer ended without arriving, so that no check
  * starts it again by itself.
@@ -4632,6 +4678,10 @@ if (!app.requestSingleInstanceLock()) {
 
     reachBootStage('window-create');
     createMainWindow();
+
+    // The window exists, so there is a surface for it: if the build we are
+    // running kept failing to come up, say so.
+    raiseBrokenBuildBanner();
 
     app.on('activate', showMainWindow);
   });
