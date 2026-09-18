@@ -64,6 +64,7 @@ enum GatewayIdentity {
         struct Messages: Decodable {
             let notOpenClaw: String
             let notOpenClawNoDocument: String
+            let unreachableNoDocument: String
             let reached: String
             let reachedCorroborated: String
             let unreachable: String
@@ -211,12 +212,16 @@ enum GatewayIdentity {
         }
 
         guard observed.document != nil, let status else {
-            let reason = observed.error.map { fill(spec.messages.unreachable, ["reason": $0]) } ?? "It did not answer."
+            // Two different sentences, mirroring the shared spec: an address that
+            // errored or never answered is not narrated as having answered, and
+            // the no-error case does not claim a reply it did not get.
+            let message = observed.error.map { fill(spec.messages.unreachableNoDocument, ["reason": $0]) }
+                ?? spec.messages.notOpenClawNoDocument
             return Verdict(
                 ok: false,
                 strength: nil,
                 status: nil,
-                message: fill(spec.messages.notOpenClawNoDocument, ["reason": reason]),
+                message: message,
                 evidence: evidence
             )
         }
