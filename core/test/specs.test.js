@@ -50,6 +50,7 @@ const BUNDLED = {
   'native-control-auth.json': 'read at runtime for the global name, the client mode and the operator scopes',
   'pairing.json': 'holds the one injected script that observes the page gateway socket for a pairing close',
   'prompt-metadata.json': 'holds the injected script that puts the client-context block on every prompt',
+  'reconnect-resume-shim.json': 'holds the one injected script that strips the Control UI reconnect-resume marker from a chat.send frame before it leaves the page',
   'settings.json': 'travels with the shared settings page, which cannot read it at runtime itself',
   'upstream-reference.json': 'read at runtime by the reference page host',
 };
