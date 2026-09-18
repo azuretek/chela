@@ -86,3 +86,23 @@ export function assess(marker, { version = null, threshold = DEFAULT_THRESHOLD }
     bad: attempts >= limit,
   };
 }
+
+/**
+ * The broken-build banner's words, from a verdict.
+ *
+ * Pure and copy-only: it composes what the reader sees and never raises the
+ * notice, which keeps the store and the notice surface with the client that owns
+ * them (the same split as core/updates.js checkAnswer). Returns null when the
+ * verdict is not bad, so the caller has one thing to check. The stage is named
+ * when it is known, because "it kept failing to start" is more actionable with
+ * WHERE it failed, and left out rather than guessed when it is not.
+ */
+export function brokenBuildBanner(verdict, { canRollback = false } = {}) {
+  if (!verdict || !verdict.bad) return null;
+  const where = verdict.stage ? ` while it was still coming up (${verdict.stage})` : '';
+  const message = 'This version keeps failing to start.';
+  const detail = canRollback
+    ? `It failed to finish starting ${verdict.attempts} times in a row${where}, so it can be rolled back to the last version that worked.`
+    : `It failed to finish starting ${verdict.attempts} times in a row${where}. There is no earlier version to roll back to on this install, so reinstall from the release page.`;
+  return { message, detail, attempts: verdict.attempts, stage: verdict.stage };
+}
