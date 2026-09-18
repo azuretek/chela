@@ -330,6 +330,49 @@ test('★ the bar paints the whole rectangle its view is sized to', () => {
     + 'the window, so its corners are the window\'s');
 });
 
+test('★ the sweep is a plain button, not a full-width row, so it adds no dead zone', () => {
+  // Abi, 2026-09-18: the Mark all read control had become a full-width banner row
+  // that ate clicks on the Control UI where the button itself was not. The bar's
+  // view is full width and claims every mouse event in its rectangle whatever is
+  // painted there, so a row carrying one right-aligned button is a dead zone
+  // across its empty part however it is coloured. The fix is to stop it being a
+  // row: it is a plain button appended to the last card's own line.
+  //
+  // Two halves, both asserted against source rather than described:
+  //   1. banner.js builds it as a <button> and appends it to a card, not to the
+  //      stack, and the old row container is gone;
+  //   2. banner.css has no rule that lays it out as a spanning row.
+  const script = read(path.join(UI, 'banner.js'));
+
+  // It is a button. The one el(...) call that carries banner__readall is a button.
+  const build = /el\('(\w+)',\s*\{[^}]*className:\s*'banner__readall'/.exec(script);
+  assert.ok(build, 'banner.js no longer builds a banner__readall control');
+  assert.equal(build[1], 'button', 'the sweep must be a plain button element');
+
+  // It is appended to the last CARD, not to the stack, and there is no container
+  // row wrapping it. The old shape appended a 'banner-actions' div to the stack;
+  // its absence is what proves the row is gone.
+  assert.doesNotMatch(script, /className:\s*'banner-actions'/,
+    'banner.js still builds a banner-actions container row, which is the shape that ate clicks');
+  assert.doesNotMatch(script, /stack\.append\(\s*sweepButton|stack\.append\(\s*actions/,
+    'the sweep must be appended to the last card, not to the stack as a full-width row');
+  assert.match(script, /last\.append\(sweepButton\(\)\)/,
+    'the sweep must be hung on the last card so it occupies only its own pixels');
+
+  // The stylesheet lays it out as an inline control on a flex row, never as a row
+  // of its own: no rule may make it or a wrapper span the width.
+  const banner = pageStylesheets(pages.filter((p) => p.name === 'banner.html'));
+  assert.ok(!banner.some((rule) => rule.selector.split(',').map((s) => s.trim()).includes('.banner-actions')),
+    'banner.css still styles a .banner-actions row; the sweep is a plain button now, so the rule is dead');
+  const readall = banner.find((rule) => rule.selector.split(',').map((s) => s.trim()).includes('.banner__readall'));
+  assert.ok(readall, 'banner.css has no .banner__readall rule');
+  // A plain inline button does not stretch: it must not be display:flex/block with
+  // full width, and flex:none keeps it at its content width inside the card row.
+  assert.notEqual(readall.decls.get('width'), '100%', 'the sweep button must not span the bar width');
+  assert.notEqual(readall.decls.get('display'), 'block', 'the sweep button must sit inline on the card line');
+  assert.equal(readall.decls.get('flex'), 'none', 'the sweep button must not grow to fill the card row');
+});
+
 test('the pages that cover the strip are the ones that may move the window', () => {
   // The other side of the same rule, so the guard cannot be satisfied by simply
   // deleting every band: while an overlay covers the strip the band is the only
