@@ -433,12 +433,21 @@ def wait():
     output("build-id", build["id"])
     output("processing-state", build["state"] or "")
 
+    # The gate is VALID, not merely arrival. A release is published only when
+    # every build on it is installable (Abi's rule): the desktop binaries are
+    # downloadable the moment they attach, and TestFlight is the one artifact
+    # that is uploaded-but-not-yet-installable, so the release must wait here for
+    # Apple to finish processing. Publishing on arrival is what let the in-app
+    # "upgrade available" banner point at a build still in Processing. Bounded by
+    # WAIT_SECONDS: if Apple never flips it, the run fails clearly rather than
+    # hanging or publishing something no one can install.
     if build["state"] != "VALID":
-        # Arrival is what this job promised; a build still processing is a
-        # later, ordinary wait. Saying so beats reporting a failure it is not.
-        print(
-            f"note: still {build['state']}, so it is not installable yet. Nothing is wrong; "
-            "processing usually finishes within half an hour and TestFlight will notify."
+        fail(
+            f"build {build['build_number']} reached App Store Connect but is still "
+            f"{build['state']} after {int(os.environ.get('WAIT_SECONDS', '900')) // 60} minutes, so it "
+            "is not installable yet and the release must not publish. Processing usually finishes "
+            "within half an hour; re-run this job once TestFlight shows the build ready, and the "
+            "release will publish then."
         )
 
     assign(auth, app_id, build, deadline)
