@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;">
+  <title>Claw Control UI notices</title>
+  <!-- ui.css for the page's own reset; banner.css for the sweep control itself, so
+       its material is the notice system's and comes from one file that names tokens
+       and no colours. -->
+  <link rel="stylesheet" href="ui.css">
+  <link rel="stylesheet" href="banner.css">
+</head>
+<body class="banner-body sweep-body">
+  <!-- The sweep, in a view of its own BELOW the bar.
+
+       ★ It is not a row of the bar, and it must not be. A view claims every mouse
+       event inside its own rectangle whatever the page draws there, so a control
+       sharing the bar's view shares the bar's rectangle: a band of the bar holding
+       one right-aligned button would be a dead zone across the rest of that band,
+       over the Control UI. This page is loaded into a view sized to exactly the
+       button (see refreshSweep in src/main.js), so the only pixels the sweep claims
+       are the pixels it draws.
+
+       Its one job to the host is that size, reported on load. Nothing here paints
+       beyond the button: a pixel this page drew outside the control would be a
+       pixel of the Control UI nobody could click. -->
+  <button class="banner__readall" id="sweep" type="button"
+          title="Mark everything read and close the bar. Anything still true stays listed under Settings, Problems.">Mark all read</button>
+  <script src="sweep.js"></script>
+</body>
+</html>

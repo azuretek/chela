@@ -153,6 +153,13 @@ setTimeout(() => { console.error('FAIL harness: still running after 90s'); app.e
 const bannerContents = () => webContents.getAllWebContents()
   .find((wc) => !wc.isDestroyed() && wc.getURL().includes('banner.html'));
 
+// The sweep, which is a page and a view of its own (core/ui/sweep.html, sized to
+// the control). Aiming at it is a question about ITS rectangle rather than the
+// bar's, so the bar's page cannot answer it. Found by URL for the same reason the
+// bar is, and the string is specific enough not to match banner.html.
+const sweepContents = () => webContents.getAllWebContents()
+  .find((wc) => !wc.isDestroyed() && wc.getURL().includes('sweep.html'));
+
 /** Every page of ours, by the tail of its URL, for an "what changed" comparison. */
 const pageSet = () => new Set(webContents.getAllWebContents()
   .filter((wc) => !wc.isDestroyed())
@@ -315,6 +322,24 @@ app.whenReady().then(async () => {
     };
   })()`, 6000);
 
+  // The sweep, waited for rather than assumed: main raises it beside the bar, and a
+  // run that measured the bar alone would report a missing sweep when its view was
+  // merely a frame behind. Its rectangle comes from the window's own child views,
+  // because a control in a view of its own maps to the screen through that view's
+  // origin and not through the bar's inset.
+  let sc = null;
+  for (let i = 0; i < 40 && !sc; i += 1) {
+    sc = sweepContents() || null;
+    if (!sc) await delay(250);
+  }
+  const sweepBounds = () => {
+    for (const view of window.contentView.children || []) {
+      try { if (sc && view.webContents && view.webContents.id === sc.id) return view.getBounds(); } catch { /* not a web contents view */ }
+    }
+    return null;
+  };
+  note('sweep view', sc ? JSON.stringify(sweepBounds()) : 'no sweep view');
+
   const inset = contentInset().top;
   const contentBounds = window.getContentBounds();
   note('window content bounds on screen', `${contentBounds.x},${contentBounds.y} ${contentBounds.width}x${contentBounds.height}`);
@@ -411,7 +436,10 @@ app.whenReady().then(async () => {
 
   // `edge` aims at a PIXEL rather than at a control, so it has no entry here:
   // its own block below makes the verdict and ends the run.
-  const target = { close: targets.close, action: targets.action, readall: targets.readall }[TARGET];
+  // The sweep is a view of its own, so its geometry is asked of the SWEEP page and
+  // its position of the sweep view. The bar's page can answer for neither.
+  const readallTarget = sc ? await ask(sc, "(() => { const n = document.querySelector('.banner__readall'); if (!n) return null; const r = n.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), cx: r.x + r.width / 2, cy: r.y + r.height / 2, label: (n.textContent || '').trim().slice(0, 24) }; })()", 3000) : null;
+  const target = { close: targets.close, action: targets.action, readall: readallTarget }[TARGET];
   if (TARGET !== 'edge') {
     check(`the banner has the ${TARGET} control to aim at`, Boolean(target), `the ${TARGET} control is not in the banner`);
     if (!target) { app.exit(1); return; }
@@ -434,6 +462,11 @@ app.whenReady().then(async () => {
       return true;
     })()`);
   check('the banner page is instrumented', armedBanner === true, 'the banner would not take a listener');
+  // And the sweep's page, which is a page of its own now: a click on that control
+  // lands THERE, so the bar's own listener cannot see it, and a run without this
+  // could not tell a click that arrived from one that never left the bar.
+  const armedSweep = sc ? await ask(sc, "(() => { window.__clawSweepClicks = 0; document.addEventListener('mousedown', () => { window.__clawSweepClicks += 1; }, true); return true; })()", 2000) : null;
+  note('the sweep page is instrumented', String(armedSweep === true));
 
   // The control for the instrument itself: a click over the page BENEATH the
   // banner, which no drag band covers, reported back by the page's own listener.
@@ -587,8 +620,12 @@ app.whenReady().then(async () => {
     return;
   }
 
-  const screenX = contentBounds.x + target.cx;
-  const screenY = contentBounds.y + inset + target.cy;
+  // The bar's controls sit at the bar view's origin, which is the content inset;
+  // the sweep's sit at its own view's origin, under the bar and inset from the
+  // window's trailing edge.
+  const sweepView = TARGET === 'readall' ? sweepBounds() : null;
+  const screenX = contentBounds.x + (sweepView ? sweepView.x : 0) + target.cx;
+  const screenY = contentBounds.y + (sweepView ? sweepView.y : inset) + target.cy;
   console.log(`note aiming at: ${TARGET} "${target.label}" centre = screen ${Math.round(screenX)},${Math.round(screenY)}`);  const before = pageSet();
   await shot('before-click');
 
@@ -604,6 +641,7 @@ app.whenReady().then(async () => {
   const moved = endBounds.x !== contentBounds.x || endBounds.y !== contentBounds.y;
   console.log(`note window: ${moved ? `MOVED from ${contentBounds.x},${contentBounds.y} to ${endBounds.x},${endBounds.y} (a drag was started by that click)` : 'stayed put'}`);
   const hits = await ask(bc, 'JSON.stringify(window.__clawBannerHits || [])', 2000);
+  console.log('note what the sweep page saw: ' + (sc ? await ask(sc, 'window.__clawSweepClicks', 2000) : 'no sweep view'));
   console.log(`note what the click landed on: ${hits}`);
 
   const gone = !bannerContents();
