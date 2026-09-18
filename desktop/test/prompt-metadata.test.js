@@ -267,12 +267,22 @@ test('the settings toggle is wired from the page through main to the gateway pag
 
 /* ------------------------------------------------- what OS version we report */
 
-test('macOS reports the version macOS reports, not the Darwin kernel', () => {
+// The version macOS reports for itself lives in a plist that exists only on macOS,
+// so this is the one test in the suite that cannot run everywhere — and reading it
+// unconditionally is what turned the Linux and Windows legs red on 2026-09-18.
+//
+// That reached far beyond this file: the desktop release is what the mobile
+// pipeline's cross-platform gate waits on, so one non-macOS read stopped every dev
+// build from publishing, and with them the phone's update banner.
+const macOSVersionPlist = '/System/Library/CoreServices/SystemVersion.plist';
+const hasMacOSVersion = process.platform === 'darwin' && fs.existsSync(macOSVersionPlist);
+
+test('macOS reports the version macOS reports, not the Darwin kernel', { skip: !hasMacOSVersion }, () => {
   // Measured 2026-09-17 on macOS 26.6.2: os.release() answered "25.6.0", the
   // KERNEL version, so the client-context block told every agent this desktop ran
   // an OS that does not exist. Nothing caught it because the fixture's macOS
   // example was written by hand.
-  const plist = fs.readFileSync('/System/Library/CoreServices/SystemVersion.plist', 'utf8');
+  const plist = fs.readFileSync(macOSVersionPlist, 'utf8');
   const product = /<key>ProductVersion<\/key>\s*<string>([^<]+)<\/string>/.exec(plist)[1].trim();
   assert.strictEqual(metadata.osRelease('darwin'), product,
     'the macOS version we send is not the one macOS reports for itself');
