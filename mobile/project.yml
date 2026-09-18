@@ -49,8 +49,8 @@ targets:
       #
       # Nine of the specs this app shares with the desktop are mirrored as Swift
       # constants and proven against the spec by a parity test, which works for a
-      # name or a number: two copies of a value can be compared. The EIGHT below
-      # are bundled instead, because each holds something a mirror cannot serve: a
+      # name or a number: two copies of a value can be compared. The specs that
+      # are bundled instead are the ones a mirror cannot serve: a
       # program, or the values a client reads for a shape it cannot restate.
       # `core/test/specs.test.js` asserts this list, so a spec cannot arrive
       # unclassified, and it is the inventory to read rather than this comment.
@@ -147,6 +147,15 @@ targets:
       - path: ../core/ui/surface.js
         buildPhase: resources
       - path: ../core/spec/settings.json
+        buildPhase: resources
+      # Naming and progress, bundled for the same reason and read through the one
+      # loader, `BundledSpec`. Nothing about either file needs a Swift copy: the
+      # app can carry the one owner, so it does, and the values cannot drift
+      # because there is only one of them. `core/test/specs.test.js` is the
+      # inventory of which specs are read this way.
+      - path: ../core/spec/naming.json
+        buildPhase: resources
+      - path: ../core/spec/progress.json
         buildPhase: resources
       # The shared About page, bundled rather than mirrored, for the same reason
       # the settings page is: it is the desktop's own About page (core/ui), so

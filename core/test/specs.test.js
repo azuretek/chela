@@ -32,9 +32,7 @@ const PROJECT = path.join(HERE, '..', '..', 'mobile', 'project.yml');
 const MIRRORED = {
   'connection.json': 'connection state and its wording, proven against the fixtures',
   'feed.json': 'the releases-feed reader, read by UpdateFeed.swift and the desktop',
-  'naming.json': 'names and identifiers, mirrored by Naming.swift',
   'notices.json': 'notice tones and wording, mirrored by Notices.swift',
-  'progress.json': 'the loading curve, mirrored by Progress.swift',
   'quips.json': 'the rotating lines, mirrored by Quips',
   'release.json': 'the release package names; the iOS client mirrors the OTA names it builds an install URL from, which lands with the OTA work',
   'tokens.json': 'notice colours and timings, mirrored by NoticeTokens.swift',
@@ -45,6 +43,8 @@ const MIRRORED = {
 // second copy of something rather than a comparable value.
 const BUNDLED = {
   'app-settings-affordance.json': 'holds the one injected script that adds the footer control',
+  'naming.json': 'read at runtime for the product name, the repo slug and each client shorthand',
+  'progress.json': 'read at runtime for the milestone order, the floors and the easing constants',
   'device-identity.json': 'holds two injected scripts, the device keypair seed and the capture',
   'gateway-identity.json': 'holds the signals a payload is recognised by, so "is this an OpenClaw gateway" is one answer rather than one per platform',
   'native-control-auth.json': 'read at runtime for the global name, the client mode and the operator scopes',
