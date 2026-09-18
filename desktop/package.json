@@ -45,6 +45,7 @@
     "url": "https://github.com/azuretek/claw-control-ui/issues"
   },
   "dependencies": {
+    "claw-core": "workspace:*",
     "electron-updater": "^6.8.9"
   }
 }
