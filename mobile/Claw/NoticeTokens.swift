@@ -18,122 +18,147 @@ import Foundation
 /// colour. A value here is the Control UI's own, with the file it came from
 /// recorded in the spec beside it, so a drift is findable rather than invisible.
 enum NoticeTokens {
+    /// `core/spec/tokens.json`, in the shape the file already has. The sections
+    /// read here are optional so the empty case is one constructor rather than
+    /// thirty empty strings, and a missing section fails the parity tests loudly
+    /// instead of drawing a transparent card.
+    private struct Spec: Decodable {
+        struct Typography: Decodable {
+            let size: [String: String]
+            let weight: [String: Int]
+            let leading: [String: Double]
+        }
+
+        struct Card: Decodable {
+            struct Dismiss: Decodable {
+                let size: String
+                let radius: String
+                let glyph: String
+                let colour: String
+                let hoverSurface: String
+                let hoverColour: String
+            }
+
+            struct Action: Decodable {
+                let minHeight: String
+                let padding: String
+                let radius: String
+                let border: String
+                let surface: String
+                let colour: String
+                let hoverSurface: String
+                let hoverColour: String
+            }
+
+            let radius: String
+            let border: String
+            let borderAlpha: String
+            let surface: String
+            let surfaceAlpha: String
+            let shadow: String
+            let blur: String
+            let padding: String
+            let gap: String
+            let edgeWidth: String
+            let iconSize: String
+            let iconRadius: String
+            let glyphSize: String
+            let dismiss: Dismiss
+            let action: Action
+        }
+
+        struct ToneSpec: Decodable {
+            let edge: String
+            let tint: String
+            let glyph: String
+        }
+
+        let css: [String: [String: String]]?
+        let shape: [String: String]?
+        let type: Typography?
+        let card: Card?
+        let tone: [String: ToneSpec]?
+    }
+
+    /// What the clients read: everything here, plus `live`, which `ThemeTokens`
+    /// consumes. The rest of the file is provenance, kept beside the values it
+    /// describes, and `BundledSpecTests` requires every key to be either decoded
+    /// or named here.
+    static let decodedKeys: Set<String> = ["css", "shape", "type", "card", "tone", "live"]
+    static let ignoredKeys: Set<String> = [
+        "source", "provenance", "shapeProvenance", "typeProvenance", "cardProvenance", "toneNote",
+    ]
+
+    private static let spec: Spec = loadSpec()
+
+    private static func loadSpec() -> Spec {
+        let empty = Spec(css: nil, shape: nil, type: nil, card: nil, tone: nil)
+        guard let spec = try? BundledSpec.load("tokens", as: Spec.self), spec.css?["dark"] != nil else {
+            return empty
+        }
+        return spec
+    }
+
     /// The two colour modes, named as the spec names them.
-    static let modes = ["dark", "light"]
+    static var modes: [String] { (spec.css ?? [:]).keys.sorted() }
 
     /// The four tones, worst first. The names come from
     /// `core/spec/notices.json`, and the tone to colour mapping below comes from
     /// `core/spec/tokens.json`.
-    static let toneNames = [NoticeTone.error, NoticeTone.warn, NoticeTone.info, NoticeTone.ok]
+    static var toneNames: [String] { [NoticeTone.error, NoticeTone.warn, NoticeTone.info, NoticeTone.ok] }
 
-    static let dark: [String: String] = [
-        "--bg": "#0e1015",
-        "--bg-elevated": "#191c24",
-        "--bg-hover": "#1f2330",
-        "--panel": "#0e1015",
-        "--panel-strong": "#191c24",
-        "--card": "#161920",
-        "--text": "#bcbcc0",
-        "--text-strong": "#f4f4f5",
-        "--muted": "#8b8b94",
-        "--border": "#1e2028",
-        "--border-strong": "#2e3040",
-        "--accent": "#ff5c5c",
-        "--accent-hover": "#ff7070",
-        "--accent-subtle": "rgba(255, 92, 92, 0.1)",
-        "--accent-foreground": "#fafafa",
-        "--ring": "#ff5c5c",
-        "--ok": "#22c55e",
-        "--ok-subtle": "rgba(34, 197, 94, 0.08)",
-        "--warn": "#f59e0b",
-        "--warn-subtle": "rgba(245, 158, 11, 0.08)",
-        "--danger": "#f87171",
-        "--danger-subtle": "rgba(248, 113, 113, 0.08)",
-        "--info": "#60a5fa",
-        "--info-subtle": "rgba(96, 165, 250, 0.08)",
-    ]
+    static var dark: [String: String] { spec.css?["dark"] ?? [:] }
 
-    static let light: [String: String] = [
-        "--bg": "#faf9f7",
-        "--bg-elevated": "#ffffff",
-        "--bg-hover": "#efebe4",
-        "--panel": "#faf9f7",
-        "--panel-strong": "#f4f1ec",
-        "--card": "#ffffff",
-        "--text": "#403c35",
-        "--text-strong": "#211e1a",
-        "--muted": "#6e6960",
-        "--border": "#e8e4dc",
-        "--border-strong": "#d6d0c5",
-        "--accent": "#bd4531",
-        "--accent-hover": "#a83c29",
-        "--accent-subtle": "rgba(189, 69, 49, 0.08)",
-        "--accent-foreground": "#ffffff",
-        "--ring": "#bd4531",
-        "--ok": "#166534",
-        "--ok-subtle": "rgba(22, 101, 52, 0.08)",
-        "--warn": "#92400e",
-        "--warn-subtle": "rgba(146, 64, 14, 0.08)",
-        "--danger": "#b91c1c",
-        "--danger-subtle": "rgba(185, 28, 28, 0.08)",
-        "--info": "#1d4ed8",
-        "--info-subtle": "rgba(29, 78, 216, 0.08)",
-    ]
+    static var light: [String: String] { spec.css?["light"] ?? [:] }
 
     /// Radius, depth and motion. Mode-independent, because the Control UI keeps
     /// one geometry contract across its palettes.
-    static let shape: [String: String] = [
-        "--radius-sm": "6px",
-        "--radius-md": "10px",
-        "--radius-lg": "14px",
-        "--radius-xl": "20px",
-        "--radius-full": "9999px",
-        "--shadow-sm": "0 1px 2px rgba(0, 0, 0, 0.25)",
-        "--shadow-lg": "0 12px 32px rgba(0, 0, 0, 0.4)",
-        "--ease-out": "cubic-bezier(0.16, 1, 0.3, 1)",
-        "--duration-fast": "100ms",
-        "--duration-normal": "180ms",
-    ]
+    static var shape: [String: String] { spec.shape ?? [:] }
 
     /// The type scale, at the Control UI's default text scale of 1.
-    static let sizes: [String: String] = ["xs": "11px", "sm": "12px", "md": "14px", "lg": "16px"]
+    static var sizes: [String: String] { spec.type?.size ?? [:] }
 
-    static let weights: [String: Int] = ["headline": 650, "subject": 400, "action": 600]
+    static var weights: [String: Int] { spec.type?.weight ?? [:] }
 
-    static let leadings: [String: Double] = ["body": 1.55, "card": 1.35]
+    static var leadings: [String: Double] { spec.type?.leading ?? [:] }
 
     /// The card, flattened to the names the spec's `card` object uses, one level
     /// deep. A value that names a token stays a name here and is resolved before
     /// it is drawn, so the spec keeps one owner of the colour.
-    static let card: [String: String] = [
-        "radius": "--radius-lg",
-        "border": "--border",
-        "borderAlpha": "88%",
-        "surface": "--panel",
-        "surfaceAlpha": "92%",
-        "shadow": "--shadow-sm",
-        "blur": "10px",
-        "padding": "11px 14px",
-        "gap": "8px",
-        "edgeWidth": "3px",
-        "iconSize": "28px",
-        "iconRadius": "--radius-sm",
-        "glyphSize": "16px",
-        "dismiss.size": "24px",
-        "dismiss.radius": "--radius-sm",
-        "dismiss.glyph": "14px",
-        "dismiss.colour": "--muted",
-        "dismiss.hoverSurface": "--bg-hover",
-        "dismiss.hoverColour": "--text-strong",
-        "action.minHeight": "28px",
-        "action.padding": "4px 8px",
-        "action.radius": "--radius-md",
-        "action.border": "--border",
-        "action.surface": "--bg-elevated",
-        "action.colour": "--muted",
-        "action.hoverSurface": "--bg-hover",
-        "action.hoverColour": "--text",
-    ]
+    static var card: [String: String] {
+        guard let card = spec.card else { return [:] }
+        var out: [String: String] = [
+            "radius": card.radius,
+            "border": card.border,
+            "borderAlpha": card.borderAlpha,
+            "surface": card.surface,
+            "surfaceAlpha": card.surfaceAlpha,
+            "shadow": card.shadow,
+            "blur": card.blur,
+            "padding": card.padding,
+            "gap": card.gap,
+            "edgeWidth": card.edgeWidth,
+            "iconSize": card.iconSize,
+            "iconRadius": card.iconRadius,
+            "glyphSize": card.glyphSize,
+            "dismiss.size": card.dismiss.size,
+            "dismiss.radius": card.dismiss.radius,
+            "dismiss.glyph": card.dismiss.glyph,
+            "dismiss.colour": card.dismiss.colour,
+            "dismiss.hoverSurface": card.dismiss.hoverSurface,
+            "dismiss.hoverColour": card.dismiss.hoverColour,
+            "action.minHeight": card.action.minHeight,
+            "action.padding": card.action.padding,
+            "action.radius": card.action.radius,
+            "action.border": card.action.border,
+            "action.surface": card.action.surface,
+            "action.colour": card.action.colour,
+            "action.hoverSurface": card.action.hoverSurface,
+            "action.hoverColour": card.action.hoverColour,
+        ]
+        out["unused"] = nil
+        return out
+    }
 
     /// Which token each tone draws with, and the glyph that carries it.
     ///
@@ -146,12 +171,13 @@ enum NoticeTokens {
         let glyph: String
     }
 
-    static let tones: [String: Tone] = [
-        NoticeTone.error: Tone(edge: "--danger", tint: "--danger-subtle", glyph: "exclamationmark.octagon.fill"),
-        NoticeTone.warn: Tone(edge: "--warn", tint: "--warn-subtle", glyph: "exclamationmark.triangle.fill"),
-        NoticeTone.info: Tone(edge: "--info", tint: "--info-subtle", glyph: "info.circle.fill"),
-        NoticeTone.ok: Tone(edge: "--ok", tint: "--ok-subtle", glyph: "checkmark.circle.fill"),
-    ]
+    static var tones: [String: Tone] {
+        var out: [String: Tone] = [:]
+        for (name, tone) in spec.tone ?? [:] {
+            out[name] = Tone(edge: tone.edge, tint: tone.tint, glyph: tone.glyph)
+        }
+        return out
+    }
 
     /// Every colour as a name/value pair for one mode, shape included, matching
     /// how the desktop merges the two halves before emitting a stylesheet.
