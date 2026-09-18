@@ -170,10 +170,14 @@ export function hookSource() {
  * and the hook returns early, which is what lets a settings change take effect
  * without stacking a second send hook.
  *
- * Outbound only, deliberately. An earlier revision also rewrote INCOMING frames
- * to hide the block, which is the gateway's job now that the block carries the
- * marker. Rewriting inbound frames here would put a second owner on that
- * behaviour and would hide the block from one app's users alone.
+ * The hook covers both directions. Outbound it ADDS the block, and that half
+ * depends on the Client context setting (config.enabled). Inbound it is a
+ * BOUNDARY, not a display suppression: it applies the gateway's own strip rule
+ * to the one field the gateway's stripper never reaches (editorText on a
+ * rewind/fork result), so it must run whether or not the setting is on. A
+ * block stored from an earlier turn has to come back out of the composer even
+ * after the setting is switched off, which is why only the outbound half is
+ * gated. The spec's `why` array is the fuller argument for that split.
  */
 export function clientScript({ enabled = false, block = '', client = DEFAULT_CLIENT } = {}) {
   const config = {
