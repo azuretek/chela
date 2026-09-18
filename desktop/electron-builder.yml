@@ -15,16 +15,25 @@ files:
   - src/**/*
   - package.json
   - "!**/*.map"
-  # The shared core lives one level up, at <repo>/core, and desktop imports it as
-  # `../../core/<mod>.js` from src/*.js. In a source checkout that resolves to
-  # <repo>/core. In the packed app the target depends on which side of the archive
-  # boundary the runtime resolves against, and the two do not agree: the shipped
-  # build's own ERR_MODULE_NOT_FOUND looked in `Contents/Resources/core`, while
-  # Electron's ESM resolver, asked from `app.asar/src/`, clamps the climb at the
-  # archive root and lands on `app.asar/core`. Because they disagree, core ships
-  # in BOTH places. It is ~50 KB of plain JS, and a boot that works is worth far
-  # more than the duplicate. `npm run smoke:packed` is what keeps this honest.
-  - from: ../core
+  # The shared core is a workspace dependency, "claw-core": "workspace:*" in
+  # package.json, which pnpm resolves as node_modules/claw-core -> ../../core (a
+  # symlink into the sibling package). Sourcing it from node_modules rather than
+  # reaching up and out to ../core is the de-vendor: desktop consumes core the way
+  # it consumes any dependency, through resolution, not by the packer copying a
+  # sibling tree it happens to know the path of. electron-builder dereferences the
+  # symlink, so the same files are packaged.
+  #
+  # It still ships to core/ (not node_modules/claw-core/) because desktop's src/*.js
+  # imports it by RELATIVE path (`../../core/<mod>.js`), not by the bare specifier,
+  # and the packed layout must satisfy that. In the packed app the target depends on
+  # which side of the archive boundary the runtime resolves against, and the two do
+  # not agree: the shipped build's own ERR_MODULE_NOT_FOUND looked in
+  # `Contents/Resources/core`, while Electron's ESM resolver, asked from
+  # `app.asar/src/`, clamps the climb at the archive root and lands on
+  # `app.asar/core`. Because they disagree, core ships in BOTH places. It is ~50 KB
+  # of plain JS, and a boot that works is worth far more than the duplicate.
+  # `npm run smoke:packed` and scripts/check-package.js are what keep this honest.
+  - from: node_modules/claw-core
     to: core
     filter:
       - "**/*.js"
@@ -41,10 +50,11 @@ files:
       - "!test/**"
       - "!node_modules/**"
 
-# The same core, at the path an unpacked app resolves `../../core` to. The same
-# filters, for the same reason: one tree, and it has to arrive complete.
+# The same core, from the same workspace-resolved node_modules/claw-core, at the
+# path an unpacked app resolves `../../core` to. The same filters, for the same
+# reason: one tree, and it has to arrive complete.
 extraResources:
-  - from: ../core
+  - from: node_modules/claw-core
     to: core
     filter:
       - "**/*.js"
