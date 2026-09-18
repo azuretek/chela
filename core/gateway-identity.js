@@ -172,13 +172,17 @@ export function identify(observed = {}) {
   }
 
   if (!sawDocument) {
+    // Two different things, worded as two different sentences: an address that
+    // errored or never answered must not be narrated as having answered, and
+    // the no-error case must not claim a reply it did not get.
+    const message = observed.error
+      ? fill(spec.messages.unreachableNoDocument, { reason: observed.error })
+      : spec.messages.notOpenClawNoDocument;
     return {
       ok: false,
       strength: null,
       status: null,
-      message: fill(spec.messages.notOpenClawNoDocument, {
-        reason: observed.error ? fill(spec.messages.unreachable, { reason: observed.error }) : 'It did not answer.',
-      }),
+      message,
       evidence,
     };
   }
