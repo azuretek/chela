@@ -15,7 +15,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 
 import {
-  DEFAULT_THRESHOLD, STAGES, beginAttempt, reachedStage, assess, brokenBuildBanner,
+  DEFAULT_THRESHOLD, STAGES, beginAttempt, reachedStage, assess, brokenBuildBanner, rollbackPlan,
 } from '../bootstrap-health.js';
 
 const V = '1.0.1-dev.139.7d21fe49cd';
@@ -139,4 +139,62 @@ test('the banner omits the stage rather than guessing when it is unknown', () =>
   const banner = brokenBuildBanner(verdict, { canRollback: true });
   assert.doesNotMatch(banner.detail, /coming up \(/, 'a stage parenthetical appeared with no stage');
   assert.match(banner.detail, /3 times in a row/);
+});
+
+/* --------------------------------------------------------- the rollback plan */
+
+const BAD = { bad: true, attempts: 3, stage: 'gateway-connect' };
+const GOOD_PIN = { version: OTHER, at: 1 };
+
+test('a crash-looping build with a pinned good on an installable platform rolls back', () => {
+  const plan = rollbackPlan({ version: V, verdict: BAD, lastKnownGood: GOOD_PIN, canInstall: true, suppression: null });
+  assert.strictEqual(plan.rollBack, true);
+  assert.strictEqual(plan.from, V, 'the build being rolled back from is wrong');
+  assert.strictEqual(plan.to, OTHER, 'the target is not the pinned good version');
+});
+
+test('a healthy build never rolls back', () => {
+  const plan = rollbackPlan({ version: V, verdict: assess(null, { version: V }), lastKnownGood: GOOD_PIN, canInstall: true });
+  assert.strictEqual(plan.rollBack, false);
+  assert.strictEqual(plan.skip, 'not-bad');
+});
+
+test('a platform that cannot install never rolls back, whatever the verdict', () => {
+  // macOS unsigned and iOS: canInstall is false, and a download it cannot apply
+  // is worse than none.
+  const plan = rollbackPlan({ version: V, verdict: BAD, lastKnownGood: GOOD_PIN, canInstall: false });
+  assert.strictEqual(plan.rollBack, false);
+  assert.strictEqual(plan.skip, 'cannot-install');
+});
+
+test('with nothing pinned there is nothing to roll back to', () => {
+  assert.strictEqual(rollbackPlan({ version: V, verdict: BAD, lastKnownGood: null, canInstall: true }).skip, 'no-good');
+  assert.strictEqual(rollbackPlan({ version: V, verdict: BAD, lastKnownGood: {}, canInstall: true }).skip, 'no-good');
+});
+
+test('a build is never rolled back to itself, which would loop', () => {
+  const plan = rollbackPlan({ version: V, verdict: BAD, lastKnownGood: { version: V }, canInstall: true });
+  assert.strictEqual(plan.rollBack, false);
+  assert.strictEqual(plan.skip, 'good-is-current');
+});
+
+test('the automatic path does not retry a build it already suppressed broken', () => {
+  const suppression = { version: V, reason: 'broken', at: 1 };
+  const auto = rollbackPlan({ version: V, verdict: BAD, lastKnownGood: GOOD_PIN, canInstall: true, suppression, auto: true });
+  assert.strictEqual(auto.rollBack, false, 'the automatic attempt repeated for a build already tried');
+  assert.strictEqual(auto.skip, 'already-tried');
+
+  // But a reader pressing the button (auto=false) may retry.
+  const manual = rollbackPlan({ version: V, verdict: BAD, lastKnownGood: GOOD_PIN, canInstall: true, suppression, auto: false });
+  assert.strictEqual(manual.rollBack, true, 'the manual retry was blocked');
+  assert.strictEqual(manual.to, OTHER);
+});
+
+test('a suppression for a DIFFERENT reason or version does not block the rollback', () => {
+  // A 'stalled' suppression, or one for another version, is not the broken-build
+  // marker, so it must not stop the automatic attempt.
+  const stalled = { version: V, reason: 'stalled', at: 1 };
+  assert.strictEqual(rollbackPlan({ version: V, verdict: BAD, lastKnownGood: GOOD_PIN, canInstall: true, suppression: stalled }).rollBack, true);
+  const otherVersion = { version: OTHER, reason: 'broken', at: 1 };
+  assert.strictEqual(rollbackPlan({ version: V, verdict: BAD, lastKnownGood: GOOD_PIN, canInstall: true, suppression: otherVersion }).rollBack, true);
 });
