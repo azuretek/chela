@@ -31,19 +31,38 @@ import Foundation
 /// names) are asserted against the spec by `UpdateFeedParityTests`, the same
 /// discipline `Naming` uses for a value that has to match a file it cannot import.
 enum UpdateFeed {
+    /// `core/spec/feed.json`, read from the app's own copy at runtime, which is
+    /// the one pattern for every spec this app shares.
+    private struct Spec: Decodable {
+        let releasesPath: String
+        let releaseNotesPath: String
+        let channels: [String: String]
+    }
+
+    /// The keys this decodes, and the ones it deliberately does not.
+    /// `BundledSpecTests` requires every key in the file to be one or the other.
+    static let decodedKeys: Set<String> = ["releasesPath", "releaseNotesPath", "channels"]
+    static let ignoredKeys: Set<String> = []
+
+    private static let spec: Spec = loadSpec()
+
+    private static func loadSpec() -> Spec {
+        let empty = Spec(releasesPath: "", releaseNotesPath: "", channels: [:])
+        guard let spec = try? BundledSpec.load("feed", as: Spec.self), !spec.releasesPath.isEmpty else {
+            return empty
+        }
+        return spec
+    }
+
     /// The channel a build reads, as its spec name. `dev` today; `latest` later.
-    /// Mirrored from `spec/feed.json`.
-    static let devChannel = "dev"
-    static let stableChannel = "latest"
+    static var devChannel: String { spec.channels["dev"] ?? "" }
+    static var stableChannel: String { spec.channels["stable"] ?? "" }
 
-    /// The path GitHub serves the releases Atom feed at, mirrored from
-    /// `spec/feed.json`'s `releasesPath`. The one string this and the spec share.
-    static let releasesPath = "releases.atom"
+    /// The path GitHub serves the releases Atom feed at.
+    static var releasesPath: String { spec.releasesPath }
 
-    /// The path a release's own notes live at, mirrored from `spec/feed.json`'s
-    /// `releaseNotesPath` and asserted against it by `UpdateFeedParityTests`. The
-    /// version is appended to it.
-    static let releaseNotesPath = "releases/tag/v"
+    /// The path a release's own notes live at. The version is appended to it.
+    static var releaseNotesPath: String { spec.releaseNotesPath }
 
     /// The public URL the phone reads for the repository's releases.
     ///

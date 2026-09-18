@@ -33,6 +33,10 @@ enum Progress {
     /// `BundledSpecTests`.
     static let decodedKeys: Set<String> = ["order", "floor", "tauMs", "creep"]
 
+    /// Nothing in this spec is left unread, and saying so is the point:
+    /// `BundledSpecTests` requires every key to be either decoded or named here.
+    static let ignoredKeys: Set<String> = []
+
     private static let spec: Spec = loadSpec()
 
     private static func loadSpec() -> Spec {
