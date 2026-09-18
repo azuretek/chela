@@ -4,6 +4,26 @@ Claw Control UI is one project with a shared core and one interface per form
 factor. The trees are parts of one product, and the test for whether something
 belongs where it is: if two interfaces need it, it is core's.
 
+## The repo root is first-class
+
+The root is a real workspace root, not a directory the desktop package happens to
+sit in. `package.json` at the root declares the JS workspace (`core` and
+`desktop` are its pnpm members), `pnpm-lock.yaml` is the one lockfile, and the
+root scripts fan out to every platform:
+
+| Command | Runs |
+|---|---|
+| `pnpm install` | the workspace install, at the root. `core` is linked into `desktop` as a dependency (`node_modules/claw-core`), not copied. |
+| `pnpm run lint` | ESLint over core + desktop (in parallel) and SwiftLint over mobile. |
+| `pnpm run test` | every platform's tests: core and desktop through pnpm, mobile through its own toolchain. |
+| `pnpm run build` | each platform's build: the desktop package and the iOS app. |
+
+`mobile/` is deliberately NOT a JS workspace member. It is Swift, and it keeps its
+own tooling (`xcodegen`, `xcodebuild`, SwiftLint); the root reaches it through
+`scripts/mobile.mjs`, so it runs in parallel with the JS platforms rather than
+being shoehorned into pnpm. That is what makes the three peers: no platform's
+tooling is bolted onto another's, and no platform's directory is the root.
+
 | Tree | What it is | Consumes |
 |---|---|---|
 | `core/` | The platform-agnostic rules, the specs that name things, the fixtures that pin behaviour, and the app's own pages. No Electron, no SwiftUI. | nothing |

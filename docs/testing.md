@@ -5,11 +5,18 @@ covers.
 
 | Where | Command | Covers |
 |---|---|---|
-| `core/` | `npm test` | The shared rules and every parity fixture, by `node --test`. |
-| `desktop/` | `npm test`, `npm run measure`, `npm run check:imports`, `npm run smoke`, `npm run check:package` | The Electron interface, the pages and the forms as RENDERED, the static import audit, a real GUI boot, and the packaged artifact. |
-| `mobile/` | The CI legs, one per iOS version | Compile and unit tests on a simulator, plus the Swift parity tests. |
+| the root | `pnpm run lint` | ESLint over core + desktop and SwiftLint over mobile, run in parallel, each platform with its own tool. |
+| the root | `pnpm run test` | Every platform's tests through the root fan-out (core and desktop via pnpm, mobile via its own toolchain). |
+| `core/` | `pnpm --filter claw-core test` | The shared rules and every parity fixture, by `node --test`. |
+| `desktop/` | `pnpm --filter claw-desktop test`, `run measure`, `run check:imports`, `run smoke`, `run check:package` | The Electron interface, the pages and the forms as RENDERED, the static import audit, a real GUI boot, and the packaged artifact. |
+| `mobile/` | `node scripts/mobile.mjs lint` (SwiftLint), and the CI legs, one per iOS version | Style, and compile and unit tests on a simulator plus the Swift parity tests. |
 | `scripts/release/` | `node scripts/release/release.mjs check --version <v>` | Whether a release carries every package it must. |
-| Both | `.github/workflows/` | The same suites headless, on every push and pull request. |
+| all three | `.github/workflows/` | The same suites headless, on every push and pull request. |
+
+The root scripts are the entry point, and each reaches a platform through that
+platform's own tooling: the JS lint and tests through pnpm's workspace, mobile
+through `scripts/mobile.mjs`. No platform's directory is the root, and neither is
+the desktop package's.
 
 ## The local gate, and why it is a hook
 

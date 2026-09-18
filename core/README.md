@@ -112,7 +112,8 @@ not import the JS at all; it mirrors the rules in Swift and proves them against
 ## Tests
 
 ```
-cd core && npm test
+cd core && pnpm test
 ```
 
-Runs the fixture parity tests with `node --test`. No dependencies.
+Or from the repo root, `pnpm --filter claw-core test`. Runs the fixture parity
+tests with `node --test`. No dependencies.

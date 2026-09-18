@@ -46,6 +46,11 @@ Regenerate after anything that changes the project's shape, meaning
 cd mobile && xcodegen generate
 ```
 
+From the repo root the same step, and the lint that goes with it, are
+`node scripts/mobile.mjs build` (which generates the project first) and
+`node scripts/mobile.mjs lint` (SwiftLint). `pnpm run lint` at the root runs
+SwiftLint alongside the JS lint.
+
 Then, from `mobile/`:
 
 ```
@@ -134,7 +139,7 @@ rasterised from, and `desktop/scripts/make-icons.mjs` emits every platform's
 icon from it with one command, from the repo root:
 
 ```
-npm --prefix desktop run icons
+pnpm --filter claw-desktop run icons
 ```
 
 That writes `Claw/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png`, which is

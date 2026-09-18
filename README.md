@@ -15,6 +15,24 @@ in how they present things and in what the platform makes possible, and
 everything else has one owner: it lives in core, or in a spec that both sides
 import or mirror, or in a shared script both workflows call.
 
+## Working on it
+
+The repo root is a real workspace root: `core` and `desktop` are its pnpm
+workspace members, `pnpm-lock.yaml` is the one lockfile, and the root scripts fan
+out to every platform. `mobile` is Swift and keeps its own tooling, reached
+through `scripts/mobile.mjs`, so no platform's directory is the root.
+
+```sh
+pnpm install     # the workspace install, at the root, once
+pnpm run lint    # ESLint over core + desktop, SwiftLint over mobile
+pnpm run test    # every platform's tests, through the root fan-out
+pnpm run build   # each platform's build
+```
+
+The local git hooks (`.githooks`) run root scripts too: a commit measures the
+rendered pages, a push runs the desktop suite and boots the app. Install them with
+`npm run hooks:install`; CI is still the gate that cannot be skipped.
+
 ## Start here
 
 - **Using or building the desktop app:** [`desktop/README.md`](desktop/README.md).
