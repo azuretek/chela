@@ -23,7 +23,7 @@
     "test:js": "pnpm run --recursive --if-present test",
     "test:mobile": "node scripts/mobile.mjs test",
     "lint": "pnpm run --parallel --recursive --if-present --aggregate-output lint && pnpm run lint:mobile",
-    "lint:js": "pnpm run --recursive --if-present lint",
+    "lint:js": "eslint core desktop",
     "lint:mobile": "node scripts/mobile.mjs lint",
     "build": "pnpm run build:desktop && pnpm run build:mobile",
     "build:desktop": "pnpm --filter claw-desktop run pack",
@@ -32,5 +32,10 @@
     "check:package": "pnpm --filter claw-desktop run check:package",
     "smoke": "pnpm --filter claw-desktop run smoke",
     "hooks:install": "git config core.hooksPath \"$(git rev-parse --show-toplevel)/.githooks\" && echo \"hooks installed: core.hooksPath -> .githooks\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "eslint-plugin-import": "^2.32.0"
   }
 }
