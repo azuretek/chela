@@ -32,12 +32,3 @@ carries the same three things is a good commit body.
   reads as coverage.
 - **The measurement that settled a choice**, when there was a choice. The number
   is what makes the decision checkable later.
-
-## House rules for anything public
-
-- The author is Abi Renhart. No co-author trailers and no "generated with" lines,
-  anywhere: a pull request, an issue, a commit, a review comment.
-- **No em dashes**, in any of it.
-- Names and identifiers come from their one owner in `core/spec/`, and the
-  inventory in `core/test/specs.test.js` is what fails when a spec is neither
-  classified nor shipped.
