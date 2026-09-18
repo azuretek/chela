@@ -1,0 +1,26 @@
+# The JS workspace. core and desktop are the two npm packages; mobile is Swift and
+# is NOT a JS workspace member, it is driven by scripts/mobile.mjs from the root
+# scripts so it runs its own tooling (xcodegen, xcodebuild, SwiftLint) in parallel
+# with the JS lint/test/build rather than being shoehorned into pnpm.
+#
+# core and desktop are peers. desktop depends on core via workspace:* (see
+# desktop/package.json), which pnpm resolves as a symlink into node_modules
+# instead of copying core in at build time.
+packages:
+  - core
+  - desktop
+
+# pnpm blocks dependency install/postinstall scripts by default: under the
+# default strictDepBuilds an install FAILS with ERR_PNPM_IGNORED_BUILDS (exit 1)
+# the moment it reaches a build nobody has ruled on. allowBuilds is the explicit
+# per-package ruling, and in pnpm 12 it lives here in pnpm-workspace.yaml, not in
+# package.json's "pnpm" field (which pnpm 12 no longer reads). This is the
+# deterministic, committed form of `pnpm approve-builds`, so a --frozen-lockfile
+# CI install does not need an interactive prompt.
+#
+# electron-winstaller runs an install script to fetch the NSIS/Squirrel bits for
+# the Windows installer (only reached on the win build leg). electron 44 itself
+# has NO install script: it downloads its binary lazily on first require, which
+# the release workflow's "Ensure Electron is usable" step already accounts for.
+allowBuilds:
+  electron-winstaller: true
