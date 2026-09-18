@@ -176,10 +176,36 @@ final class GatewayStore: ObservableObject {
         return Config(
             gateways: [gateway],
             activeGatewayId: gateway.id,
-            trustedCerts: [:],
+            trustedCerts: screenshotTrust(for: gateway),
             promptMetadata: false,
             autoUpdate: true
         )
+    }
+
+    /// The certificate a screenshot run was launched with, or nothing.
+    ///
+    /// A simulator reaches a gateway on the host's loopback, where the gateway's
+    /// certificate is self-signed, and the trust flow that accepts one is a TAP on
+    /// the phone ("Open Settings" in the connection notice). A script cannot tap, so
+    /// without this no local run gets past the certificate notice and the page a
+    /// screenshot is meant to show never loads: measured 2026-09-18, where the app
+    /// sat on its own "The certificate for this server is invalid" notice in a
+    /// simulator, which is the app behaving correctly and the run going nowhere.
+    ///
+    /// Read from the process ENVIRONMENT rather than a launch argument, for the same
+    /// reason the token beside it is: it is credential-shaped, and the argv a process
+    /// listing shows is the wrong place for it. Compiled out of a release build
+    /// entirely, so no shipped app can be told to trust anything this way.
+    ///
+    /// Paired with `-claw-gateway-url`: the host it pins is that gateway's, which is
+    /// the only host the seeded run will load, so a screenshot run cannot widen the
+    /// trust of anything else.
+    private static func screenshotTrust(for gateway: Gateway) -> [String: String] {
+        guard let host = gateway.url.host,
+              let fingerprint = ProcessInfo.processInfo.environment["OPENCLAW_SEED_TRUST"],
+              !fingerprint.isEmpty
+        else { return [:] }
+        return [host: fingerprint]
     }
 
     /// Store the gateway token a debug run was launched with into the Keychain,
