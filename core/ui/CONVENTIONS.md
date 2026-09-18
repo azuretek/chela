@@ -210,6 +210,12 @@ Both halves of that are the reason rather than a side effect:
   one press.** Empty means keep, per field: emptying a field writes nothing to
   it, and the control that REMOVES a stored value stays the only way to clear
   one.
+  - **A section's fields commit on their own gestures, and leaving the section
+    commits whatever was filled in it.** That second half is what keeps a value
+    from being typed, left and silently dropped when the reader's own gesture was
+    not the one the page expected. **A move WITHIN the section is never a commit**,
+    because the re-render that follows a commit takes the field a reader who is
+    still filling the form in was moving to.
 
 **A control that cannot answer instantly is answered in place, and its RESULT goes
 to the banner**, in that order:
