@@ -596,6 +596,24 @@ a  { color: var(--accent); }
   min-width: 0;
   max-width: 60%;
 }
+/* A gateway row's URL stays on one line and truncates with an ellipsis rather
+   than wrapping. Its text column shares the wide row with a state badge and three
+   buttons capped at 60% of the width, so a real tailnet address (the kind this
+   app connects to, e.g. host.tailnet.ts.net:18789) was always wider than the
+   column it was left, and the url's overflow-wrap: anywhere then broke it one
+   character to a line. That was worse in the failed state, where the badge reads
+   "Cannot connect" and is wider still, which is the "word-wraps to the left" flap
+   reported on 2026-09-18 as the row changed to that state. Truncating keeps it one
+   line at every width the row does not stack; below the 601px query the row stacks
+   and the URL gets the full card width, where nothing is clipped and the whole
+   address reads. Scoped to the gateway list so the loading cover and the
+   certificate panel, which want the whole address on screen, are untouched.
+   Measured and guarded by desktop/scripts/test-settings-as-page-escape.js. */
+#gateways .settings-row__text .url {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* A row that is a click target, so a checkbox row toggles from anywhere on it.
    `default` rather than `pointer` is upstream's choice and it is deliberate:
    the hover fill is what says the row is live. */
