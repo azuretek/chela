@@ -6,7 +6,7 @@ covers.
 | Where | Command | Covers |
 |---|---|---|
 | `core/` | `npm test` | The shared rules and every parity fixture, by `node --test`. |
-| `desktop/` | `npm test`, `npm run check:imports`, `npm run smoke`, `npm run check:package` | The Electron interface, the static import audit, a real GUI boot, and the packaged artifact. |
+| `desktop/` | `npm test`, `npm run measure`, `npm run check:imports`, `npm run smoke`, `npm run check:package` | The Electron interface, the pages and the forms as RENDERED, the static import audit, a real GUI boot, and the packaged artifact. |
 | `mobile/` | The CI legs, one per iOS version | Compile and unit tests on a simulator, plus the Swift parity tests. |
 | `scripts/release/` | `node scripts/release/release.mjs check --version <v>` | Whether a release carries every package it must. |
 | Both | `.github/workflows/` | The same suites headless, on every push and pull request. |
@@ -24,6 +24,29 @@ So the smoke is a **push gate**, in `.githooks/pre-push`, which runs
 `git push --no-verify` skips it, and a fresh clone has no hook until
 `core.hooksPath` points at it. **A green hook is the fast local signal, never
 the only one**; the unskippable gate is the CI run on the commit that was pushed.
+
+## The commit gate: the measured half
+
+The unit suites read source. What they cannot see is the RENDERED page, and that is
+where this project's repeated faults have lived: a rule that applies to nobody
+because a later one overrides it, a strip that paints where the design says the page
+shows through, a control that is present in the DOM and dead on screen.
+`desktop/scripts/capture-pages.js` and `capture-gateway-form.js` load the real pages
+from `core/ui` in Electron with a stub host, in both appearances, and assert over
+what was DRAWN.
+
+So they are a **commit gate**, in `.githooks/pre-commit`, which runs `npm run
+measure`. It is advisory in the same two ways the push gate is, and it SKIPS by name
+rather than passing quietly on a host with no Electron: a silent pass is a green line
+for work nobody did.
+
+The reason it is worth its minute, measured rather than argued: two assertions in
+`capture-pages.js` had been failing on `main` for a day and nothing could report
+them. CI cannot run the harnesses, no unit test reads them, and the last run was a
+person's memory of having run one by hand. Both were corrected on 2026-09-18, when
+this gate was added: they asserted the strip was UNPAINTED, which was the design the
+banner had already reversed, because a pixel of its view that the page does not paint
+is a dead zone over the Control UI.
 
 ## Parity is proven, not asserted
 

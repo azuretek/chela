@@ -654,33 +654,41 @@ app.whenReady().then(async () => {
         check(`${page.name}.html uses the row gap the spec records`,
           probe.cardGap === '8px', `the gap resolved to "${probe.cardGap}"`);
 
-        // ---- the strip covers the page, and only with its own card --------
-        // A banner is a view laid over someone else's page, sized to exactly the
-        // height it reports, so every pixel it paints is a pixel of that page
-        // nobody can see. Blanket that with the canvas and the strip is an opaque
-        // band across the app, which reads as "the block covers everything under
-        // it" everywhere the card is not.
+        // ---- the bar paints its whole rectangle -----------------------------
+        // This assertion is where the reversal is recorded. What stood here
+        // required the ROOT, the BODY and the STACK to be transparent, so the strip
+        // was an unpainted band the page underneath showed through. That was the
+        // first answer to the click-swallowing fault and it READ WRONG: the reader
+        // saw a strip of the app under a floating bar, and those unpainted pixels
+        // were dead zones over the Control UI anyway, which is the fault it was
+        // meant to fix. See the note at the top of core/ui/banner.css: the bar
+        // paints its whole rectangle, because a view claims every mouse event
+        // inside its rectangle whatever is drawn there.
         //
-        // Asserted on the ROOT's background by name, because that is the one that
-        // paints the canvas: with a transparent body the root's background is
-        // still propagated to the whole viewport, so a transparent body alone
-        // leaves the strip opaque.
+        // So the STACK paints, and the two above it must still add NOTHING: the
+        // root's background is propagated to the whole viewport, and a margin on
+        // the body would sit inside the view and outside the bar.
         const clear = (value) => /rgba?\([^)]*,\s*0\)$|^transparent$/.test(String(value || '').trim());
-        check(`${page.name}.html paints no canvas behind its cards`,
-          clear(probe.htmlBackground) && clear(probe.body) && clear(probe.stackBackground),
-          JSON.stringify({ html: probe.htmlBackground, body: probe.body, stack: probe.stackBackground }));
+        check(`${page.name}.html adds no canvas above the bar`,
+          clear(probe.htmlBackground) && clear(probe.body),
+          JSON.stringify({ html: probe.htmlBackground, body: probe.body }));
+        check(`${page.name}.html paints the whole bar, so no pixel of it is a dead zone`,
+          Boolean(probe.stackBackground) && !clear(probe.stackBackground),
+          `the stack resolved to ${JSON.stringify(probe.stackBackground)}`);
         check(`${page.name}.html leaves the sweep row unpainted`,
           Boolean(probe.actions) && clear(probe.actions.background),
           JSON.stringify(probe.actions));
         // And the same claim off the composited pixels, which is the half a person
-        // sees: a point in the sweep row, and one in the strip's own padding, both
-        // fully transparent. The colour is reported beside it so a strip painted
-        // in a colour with an alpha of its own cannot pass this by looking clear.
+        // sees: the sweep row's own leading and trailing edges, and the strip's
+        // padding above the card, all painted with the bar's own surface rather
+        // than left to the page underneath. The colour is reported beside it so a
+        // strip painted with a fully transparent colour cannot pass by looking
+        // painted.
         if (probe.pixels) {
           const alpha = (value) => Number(String(value).split(' a').pop());
-          check(`${page.name}.html's strip is transparent where it draws no card`,
+          check(`${page.name}.html's strip is painted where it draws no card`,
             [probe.pixels.actionsLeadingEdge, probe.pixels.actionsTrailingEdge, probe.pixels.aboveTheCard]
-              .every((pixel) => alpha(pixel) === 0),
+              .every((pixel) => alpha(pixel) > 0),
             JSON.stringify(probe.pixels));
         }
 

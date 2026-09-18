@@ -274,14 +274,18 @@ app.whenReady().then(async () => {
         && probe.addButtons.some((b) => /^Add /.test(b)),
       JSON.stringify(probe.addButtons));
 
-    // ONE save, in both forms, and the per-field pair gone from both. The count is
-    // the assertion rather than "there is a Save": four buttons each labelled Save
-    // also contains a Save, and the number is what the reader had to tell apart.
-    check(`${mode}: creating a gateway offers ONE save`,
+    // NO save button, in either form, which is the shape the interface has now: a
+    // value commits on the reader's own gesture (the fifth rule in
+    // ui/CONVENTIONS.md), so the editor has no button of its own and the add form
+    // has only the one that creates the gateway. Reversed on 2026-09-18 from "ONE
+    // save" in both forms, which was itself a reversal of four buttons labelled
+    // Save: the count is the assertion rather than "there is no Save", because the
+    // number is what a reader had to tell apart.
+    check(`${mode}: creating a gateway offers no save of its own, and one add`,
       countOf(probe.addButtons, 'Save') === 0 && countOf(probe.addButtons, 'Add gateway') === 1,
       JSON.stringify(probe.addButtons));
-    check(`${mode}: editing a gateway offers ONE save, and no per-field Clear`,
-      countOf(probe.editorButtons, 'Save') === 1 && countOf(probe.editorButtons, 'Clear') === 0
+    check(`${mode}: editing a gateway offers no save, and no per-field Clear`,
+      countOf(probe.editorButtons, 'Save') === 0 && countOf(probe.editorButtons, 'Clear') === 0
         && countOf(probe.addButtons, 'Clear') === 0,
       JSON.stringify(probe.editorButtons));
 
@@ -309,7 +313,7 @@ app.whenReady().then(async () => {
       `the add form offers [${probe.addFields}] and the stored editor [${storedProbe.editorFields}]`);
     check(`${mode}: a stored credential can be removed, by a control that names it`,
       countOf(storedProbe.editorButtons, 'Remove saved token') === 1
-        && countOf(storedProbe.editorButtons, 'Save') === 1,
+        && countOf(storedProbe.editorButtons, 'Save') === 0,
       JSON.stringify(storedProbe.editorButtons));
     check(`${mode}: a stored credential says so beside its field`,
       await win.webContents.executeJavaScript(`document.querySelector('.editor input[type=password]').placeholder`)
