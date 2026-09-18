@@ -1,105 +1,38 @@
 import SwiftUI
 
-/// Which appearance this client is in, and where the choice is kept.
+/// The appearance vocabulary this client's views carry, and where the answer comes
+/// from. There is one answer, and that is the rule: the sixth in
+/// core/ui/CONVENTIONS.md.
 ///
-/// The phone has a native half the page cannot paint: the status bar, the strips
-/// the safe area leaves above and below the web view, and the settings sheet. It
-/// also owns the web view's own trait collection, which is what a page's
-/// `prefers-color-scheme` resolves against. So "light", "dark" or "follow the
-/// device" has to be decided somewhere the native half can read it, and this is
-/// that place.
+/// The DEVICE's appearance flows down, and the Control UI's resolved theme flows
+/// up. `ThemeTokens.pageTrait` is the whole of it: our shared pages are given the
+/// appearance the Control UI resolved for its own palette, read off the page, and
+/// the device is the answer for a page that resolved none. Every view here carries
+/// `system`, which is `.unspecified` and therefore leaves its trait collection
+/// driven by the device, so a live system change reaches the app and the page.
 ///
-/// Deliberately NOT in the shared config model, and the difference is the same one
-/// that keeps window bounds and a global shortcut off this client: those are the
-/// desktop's, this is a display preference of this device's, and a field carried
-/// by a client that cannot use it is a field with two meanings. The desktop has
-/// no equivalent to share: its appearance IS the Control UI's theme, chosen in
-/// the Control UI, which the app then follows. The reasoning is recorded as this
-/// setting's `absent` entry in core/spec/settings.json.
+/// What stood in this file: three modes, a `UserDefaults`-backed store, a selector
+/// for them on the shared settings page, and a `saveSettings` field to carry the
+/// choice back. It was a second control for a choice the Control UI already owns,
+/// and it did not work right, because the palette we inject is the Control UI's
+/// while the trait was ours: in one of the two combinations the page painted one
+/// mode and the platform drew the other. Reported 2026-09-17. The row, the store
+/// and the command went together, so there is no path left by which a mode is
+/// chosen or persisted.
 ///
-/// The value the shared settings page reads is `state.appearance.mode`, which
-/// `SettingsHost` builds from the store below. That is deliberately the only place
-/// it is read from, so the row on the page and the appearance the app is actually
-/// wearing cannot come apart.
-enum AppearanceMode: String, CaseIterable {
+/// One case rather than no type, deliberately: the views and the trait layer carry
+/// an `AppearanceMode`, so reducing it here removes every value a reader could have
+/// produced while leaving that threading alone. `named` went with the row that
+/// used to send one.
+enum AppearanceMode: String {
     /// Follow the device, and keep following it while the app is open.
     case system
-    case light
-    case dark
 
     /// What UIKit is asked for. `unspecified` is not a fallback here: it is the
-    /// answer for `system`, and it is what makes a live device change reach the
-    /// app, because the trait collection then goes on being driven by the device
-    /// rather than pinned by us.
-    var userInterfaceStyle: UIUserInterfaceStyle {
-        switch self {
-        case .system: return .unspecified
-        case .light: return .light
-        case .dark: return .dark
-        }
-    }
+    /// answer, and it is what leaves the trait collection driven by the device.
+    var userInterfaceStyle: UIUserInterfaceStyle { .unspecified }
 
-    /// The same answer as a SwiftUI scheme, or nil to follow the device.
-    ///
-    /// Applied at the top of the app so the native chrome agrees with the page:
-    /// the status bar, the safe-area strips and the sheet's own background are all
-    /// resolved from the appearance in force, and pinning them here is what keeps
-    /// them from disagreeing with a page the same choice was passed down to.
-    var colorScheme: ColorScheme? {
-        switch self {
-        case .system: return nil
-        case .light: return .light
-        case .dark: return .dark
-        }
-    }
-
-    /// One of these from what the page sent, or nil for anything else.
-    ///
-    /// An unknown string is refused rather than defaulted: the page sends what the
-    /// page offers, so a value this client does not have is a bug on one side of
-    /// the contract, and quietly reading it as "system" would hide it behind a
-    /// change nobody asked for.
-    static func named(_ raw: Any?) -> AppearanceMode? {
-        guard let text = raw as? String else { return nil }
-        return AppearanceMode(rawValue: text)
-    }
+    /// The same answer as a SwiftUI scheme, and it is nil for the same reason.
+    var colorScheme: ColorScheme? { nil }
 }
 
-/// The appearance this device is set to, persisted between launches.
-///
-/// `UserDefaults` rather than the Keychain, because this is a preference and not a
-/// credential, which is the same split `GatewayStore` makes for the gateway list.
-/// One key, one value, and no default of its own beyond the one the setting's own
-/// name describes: an install that has never been asked follows the device.
-@MainActor
-final class AppearanceStore: ObservableObject {
-    /// Where the choice is kept. Its own key rather than a field of the gateway
-    /// config, and the note at the top of this file says why.
-    static let storageKey = "clawAppearanceMode"
-
-    @Published private(set) var mode: AppearanceMode
-
-    private let defaults: UserDefaults
-    private let key: String
-
-    init(defaults: UserDefaults = .standard, key: String = AppearanceStore.storageKey) {
-        self.defaults = defaults
-        self.key = key
-        // A stored string that is not one of the three modes reads as `system`
-        // rather than as a crash or a silent nil: the value can only have come from
-        // an older build of this app or from a hand-edited defaults file, and
-        // following the device is the honest answer for both.
-        self.mode = AppearanceMode(rawValue: defaults.string(forKey: key) ?? "") ?? .system
-    }
-
-    /// Chooses an appearance and stores it, so the next launch opens in it.
-    func choose(_ next: AppearanceMode) {
-        mode = next
-        defaults.set(next.rawValue, forKey: key)
-    }
-
-    /// What the shared settings page reads, as one key of the state it renders
-    /// from. A dictionary rather than a string so the page reads a field of an
-    /// object, the same shape the desktop's state uses for the settings it has.
-    var state: [String: Any] { ["mode": mode.rawValue] }
-}
