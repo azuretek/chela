@@ -67,6 +67,16 @@ carry the asset list, so a client cannot see what a release holds. Publishing on
 complete releases is what makes "a newer release exists" a truthful sentence for
 every interface, and it is why no client-side platform filter is needed.
 
+## Release notes
+
+GitHub's own grouping of merged pull requests, asked for by the release step
+rather than written by us. It is the one part of a release that depends on
+changes landing as pull requests, which they do: the notes name the change
+someone reviewed instead of the commits it arrived as. The generator starts its
+range at the previous release and dev builds are releases, so a stable release
+would cover only the last dev build; nothing builds a stable release yet, and a
+start tag is the fix when one does.
+
 ## How each interface distributes
 
 **Desktop** is the release page plus the updater metadata. `electron-updater`
