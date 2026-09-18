@@ -1,6 +1,14 @@
 #!/bin/sh
 # pre-commit: the measured half, at the commit.
 #
+# Where this lives now. The hook is at the REPO ROOT (core.hooksPath -> .githooks)
+# and it runs a ROOT script, not a script inside desktop/. It used to cd into
+# desktop/ and call that package's npm scripts directly, which was one more way
+# the desktop package acted as the root. The page measurement is still the
+# desktop's work (it renders core/ui in Electron), but it is reached through the
+# root, the same way the root scripts reach every platform. No platform is the
+# root.
+#
 # The split, and why this is a second hook rather than more of pre-push.
 #
 # CI covers the headless half: the unit tests, the static import audit, the
@@ -10,21 +18,15 @@
 # boot smoke (pre-push, `npm run verify`) and the PAGE-level measurements, which is
 # what this hook runs.
 #
-# ★ A page measurement is the only witness for a claim about what was DRAWN. No
+# A page measurement is the only witness for a claim about what was DRAWN. No
 # unit test and no assertion over source can tell a rule that applies from one that
 # is overridden, a strip that paints from one the page shows through, or a control
 # that is present from one that is dead. `npm run measure` loads the real pages
 # from core/ui with a stub host and measures the rendered result.
 #
-# ★ Which is why it is worth its cost, measured rather than assumed: the two
-# failures it found on 2026-09-18 had been red on main for a day and nothing could
-# report them. CI cannot run it, no test read it, and the previous run was a
-# person's memory of having run the harness by hand once.
-#
-# It is PER HOST rather than per platform, and the difference matters: whoever has
-# a checkout and a session runs it, on macOS today and on Windows where the repo is
-# checked out there, because the harnesses are Electron and Electron is the same
-# program on both. A host with no Electron SKIPS with a named reason rather than
+# It is PER HOST rather than per platform: whoever has a checkout and a session
+# runs it, because the harnesses are Electron and Electron is the same program
+# everywhere. A host with no Electron SKIPS with a named reason rather than
 # passing quietly: a silent pass is a green line for work nobody did.
 #
 # It is ADVISORY, like the push gate: `git commit --no-verify` skips it, and a
@@ -33,21 +35,21 @@
 set -e
 
 root="$(git rev-parse --show-toplevel)"
-cd "$root/desktop"
+cd "$root"
 
 # The package DIRECTORY rather than a binary name, so this reads the same on every
 # platform: a Windows checkout has node_modules/electron and electron.cmd rather
 # than a file called `electron`. A present-but-broken install is not skipped:
 # `npm run measure` then fails with Electron's own error, which is the honest
 # answer for an install that cannot start.
-if [ ! -d "node_modules/electron" ]; then
+if [ ! -d "desktop/node_modules/electron" ]; then
   cat >&2 <<'EOF'
 
 pre-commit: SKIPPED, and the reason is named rather than assumed.
 
   There is no Electron in desktop/node_modules, so no page can be rendered here
-  and the measured half cannot run. Install it with `npm install` in desktop/, or
-  run the harnesses on a host that has it.
+  and the measured half cannot run. Install it with a workspace install at the
+  repo root (`pnpm install`), or run the harnesses on a host that has it.
 
   This is a SKIP, not a pass: the pages were not measured.
 EOF
@@ -72,4 +74,3 @@ EOF
 fi
 
 echo "pre-commit: the measured half passed."
-

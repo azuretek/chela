@@ -41,8 +41,8 @@ kept current on a machine you already develop on:
 ```sh
 git clone https://github.com/azuretek/claw-control-ui.git
 cd claw-control-ui
-npm ci
-npm run build:mac        # or build:win / build:linux
+pnpm install             # the workspace install, at the repo root
+pnpm --filter claw-desktop run build:mac   # or build:win / build:linux
 ```
 
 The installer lands in `dist/`. Build on the platform you are targeting. Windows
@@ -443,16 +443,23 @@ still builds.
 
 # Contributing
 
+The desktop is a package in the workspace, so every command is either a root
+script or a `pnpm --filter claw-desktop run` of this package's script. Install
+once at the repo root, then:
+
 ```sh
-npm install
-npm test                 # unit tests, no Electron needed
-npm start                # run from source
-npm run pack             # unpacked build into dist/, no installer
-npm run build:mac        # dmg + zip (arm64, x64)
-npm run build:win        # nsis installer (x64, arm64)
-npm run icons            # regenerate every platform's icon from src/assets/claw*.svg
-npm run release          # bump, tag, push; CI publishes (see .release-it.cjs)
+pnpm install                                # at the repo root, once
+pnpm --filter claw-desktop run test          # unit tests, no Electron needed
+pnpm --filter claw-desktop run start         # run from source
+pnpm --filter claw-desktop run pack          # unpacked build into dist/, no installer
+pnpm --filter claw-desktop run build:mac     # dmg + zip (arm64, x64)
+pnpm --filter claw-desktop run build:win     # nsis installer (x64, arm64)
+pnpm --filter claw-desktop run icons         # regenerate every platform's icon from src/assets/claw*.svg
+pnpm --filter claw-desktop run release       # bump, tag, push; CI publishes (see .release-it.cjs)
 ```
+
+From the root, `pnpm run lint`, `pnpm run test` and `pnpm run build` fan out to
+every platform; the prefixed forms above are the desktop-only equivalents.
 
 Icons are committed so a clean clone builds without `sharp`; re-run `npm run
 icons` only when the artwork changes. That one command emits every platform's
