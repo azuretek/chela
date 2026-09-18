@@ -31,6 +31,10 @@
     "check:imports": "pnpm --filter claw-desktop run check:imports",
     "check:package": "pnpm --filter claw-desktop run check:package",
     "smoke": "pnpm --filter claw-desktop run smoke",
+    "smoke:packed": "pnpm --filter claw-desktop run smoke:packed",
+    "//gates": "The two .githooks run these instead of cd-ing into desktop/ and reaching for its scripts directly. The GUI boot smoke and the page measurements need a real desktop session, so they stay desktop-specific work, but they are reached through a ROOT script now: the hook lives at the repo root and calls the root, which is what makes no platform the root.",
+    "measure": "pnpm --filter claw-desktop run measure",
+    "verify": "pnpm --filter claw-desktop run verify",
     "hooks:install": "git config core.hooksPath \"$(git rev-parse --show-toplevel)/.githooks\" && echo \"hooks installed: core.hooksPath -> .githooks\""
   },
   "devDependencies": {
