@@ -115,7 +115,7 @@ const css = pageStylesheets(pages);
 test('every page of ours is read, so a new one cannot hide', () => {
   // The list is the directory, and the assertion is that it holds the pages the
   // app loads. A page added tomorrow is in this list the moment it exists.
-  for (const expected of ['titlebar.html', 'loading.html', 'settings.html', 'about.html', 'pairing.html', 'banner.html']) {
+  for (const expected of ['titlebar.html', 'loading.html', 'settings.html', 'about.html', 'pairing.html', 'banner.html', 'sweep.html']) {
     assert.ok(pageFiles.includes(expected), `${expected} is missing from ${UI}`);
   }
 });
@@ -136,6 +136,20 @@ test('the app hosts a page either at the window top or below the strip', () => {
   assert.equal(bounds('pageView'), 'top', 'the gateway page must begin below the strip');
   assert.equal(bounds('loadingView'), 'top', 'the loading cover must begin below the strip');
   assert.equal(bounds('bannerView'), 'top', 'the notice banner must begin below the strip');
+  // ★ The sweep is a view of its own, and BOTH halves of that are the rule: it is
+  // sized to the control rather than to the window, and it is placed below the
+  // bar. A view claims every mouse event inside its rectangle whatever the page
+  // draws there, so a sweep sized like the bar would put an inert strip of the
+  // Control UI under it, which is the fault Abi reported twice.
+  const sweepAt = layout[0].indexOf('if (sweepView) {');
+  assert.ok(sweepAt !== -1, 'the sweep is never laid out, so nothing sizes it to the control');
+  const sweepBlock = layout[0].slice(sweepAt, layout[0].indexOf('setBounds', sweepAt) + 120);
+  assert.ok(sweepBlock.includes('width: w'),
+    'the sweep view must be sized to the control it draws, not to the window');
+  assert.ok(sweepBlock.includes('top + bannerHeight'),
+    'the sweep must be placed below the bar, which is where Abi asked for it');
+  assert.ok(!sweepBlock.includes('width, height'),
+    'the sweep view is taking the window shape, which would make it a full-width strip');
   // Every overlay is full-window, which is why a band inside one is the title
   // bar's own rectangle rather than something 36px lower.
   const overlays = /for \(const view of overlayViews\.values\(\)\) view\.setBounds\(\{ x: 0, y: ([^,]+),/.exec(layout[0]);
@@ -274,7 +288,15 @@ test('the overlay that is not a control gives the click up', () => {
   const script = read(path.join(UI, 'banner.js'));
   const controls = [...script.matchAll(/el\('(\w+)',\s*\{[^}]*className:\s*'([\w-]+)'[^}]*onclick/g)]
     .map((m) => ({ tag: m[1], className: m[2] }));
-  assert.ok(controls.length >= 3, `only ${controls.length} controls were read out of banner.js`);
+  assert.ok(controls.length >= 2, 'only ' + controls.length + ' controls were read out of banner.js');
+  // The sweep is a control of ours in a view of ours, so it obeys the same rule
+  // even though it is not on the bar: its page draws one button, and buttons are
+  // the elements banner.css puts back into hit testing.
+  const sweepPage = pages.find((p) => p.name === 'sweep.html');
+  assert.ok(sweepPage, 'core/ui/sweep.html is missing');
+  assert.ok(sweepPage.text.includes('class="banner__readall"'), 'sweep.html draws no control');
+  assert.ok(on.some((rule) => rule.selector.includes('button')),
+    'banner.css leaves buttons out of hit testing, so the sweep page control could not be pressed');
   for (const control of controls) {
     const kept = on.some((rule) => rule.selector.split(',').some((part) => part.trim().includes(`.${control.className}`)
       || new RegExp(`(^|\\s|>)${control.tag}(\\b|\\s|:|,|$)`).test(part.trim())));
@@ -330,47 +352,44 @@ test('★ the bar paints the whole rectangle its view is sized to', () => {
     + 'the window, so its corners are the window\'s');
 });
 
-test('★ the sweep is a plain button, not a full-width row, so it adds no dead zone', () => {
-  // Abi, 2026-09-18: the Mark all read control had become a full-width banner row
-  // that ate clicks on the Control UI where the button itself was not. The bar's
-  // view is full width and claims every mouse event in its rectangle whatever is
-  // painted there, so a row carrying one right-aligned button is a dead zone
-  // across its empty part however it is coloured. The fix is to stop it being a
-  // row: it is a plain button appended to the last card's own line.
+test('★ the sweep is a plain button in a view of its own, so it adds no dead zone', () => {
+  // Abi, 2026-09-18: the Mark all read control had become a full-width row of the
+  // bar that ate clicks on the Control UI where the button itself was not, and the
+  // line it was moved onto did the same for the rest of that line; Abi then asked
+  // for it below the card. The bar's view claims every mouse event in its
+  // rectangle whatever is painted there, so ANY control sharing that view shares
+  // its rectangle, and a row carrying one right-aligned button is a dead zone
+  // across its empty part however it is coloured.
   //
-  // Two halves, both asserted against source rather than described:
-  //   1. banner.js builds it as a <button> and appends it to a card, not to the
-  //      stack, and the old row container is gone;
-  //   2. banner.css has no rule that lays it out as a spanning row.
-  const script = read(path.join(UI, 'banner.js'));
+  // ★ So the sweep is a view of its own, sized to the button: core/ui/sweep.html,
+  // raised by refreshSweep in src/main.js. Three things keep it that way, and each
+  // is read out of source rather than described:
+  //   1. the bar's page builds no sweep at all;
+  //   2. sweep.html builds exactly one control, as a <button>;
+  //   3. nothing sizes it to anything but its own label.
+  const bar = read(path.join(UI, 'banner.js'));
+  assert.doesNotMatch(bar, /banner__readall/,
+    'banner.js draws the sweep again: anything on the bar shares the bar\'s rectangle, so a control '
+    + 'there makes the rest of its line a dead zone over the Control UI');
+  assert.doesNotMatch(bar, /banner-actions/,
+    'banner.js still builds a banner-actions row, which is the shape that ate clicks');
 
-  // It is a button. The one el(...) call that carries banner__readall is a button.
-  const build = /el\('(\w+)',\s*\{[^}]*className:\s*'banner__readall'/.exec(script);
-  assert.ok(build, 'banner.js no longer builds a banner__readall control');
-  assert.equal(build[1], 'button', 'the sweep must be a plain button element');
+  const sweepPage = pages.find((p) => p.name === 'sweep.html');
+  assert.ok(sweepPage, 'core/ui/sweep.html is missing');
+  const buttonTags = sweepPage.text.split('<button').length - 1;
+  assert.equal(buttonTags, 1, 'the sweep page must draw exactly one control');
+  assert.ok(sweepPage.text.includes('class="banner__readall"'),
+    'the sweep page draws a control, and it is not the sweep');
 
-  // It is appended to the last CARD, not to the stack, and there is no container
-  // row wrapping it. The old shape appended a 'banner-actions' div to the stack;
-  // its absence is what proves the row is gone.
-  assert.doesNotMatch(script, /className:\s*'banner-actions'/,
-    'banner.js still builds a banner-actions container row, which is the shape that ate clicks');
-  assert.doesNotMatch(script, /stack\.append\(\s*sweepButton|stack\.append\(\s*actions/,
-    'the sweep must be appended to the last card, not to the stack as a full-width row');
-  assert.match(script, /last\.append\(sweepButton\(\)\)/,
-    'the sweep must be hung on the last card so it occupies only its own pixels');
-
-  // The stylesheet lays it out as an inline control on a flex row, never as a row
-  // of its own: no rule may make it or a wrapper span the width.
-  const banner = pageStylesheets(pages.filter((p) => p.name === 'banner.html'));
-  assert.ok(!banner.some((rule) => rule.selector.split(',').map((s) => s.trim()).includes('.banner-actions')),
-    'banner.css still styles a .banner-actions row; the sweep is a plain button now, so the rule is dead');
-  const readall = banner.find((rule) => rule.selector.split(',').map((s) => s.trim()).includes('.banner__readall'));
+  const sheets = pageStylesheets([sweepPage]);
+  const readall = sheets.find((rule) => rule.selector.split(',').map((s) => s.trim()).includes('.banner__readall'));
   assert.ok(readall, 'banner.css has no .banner__readall rule');
-  // A plain inline button does not stretch: it must not be display:flex/block with
-  // full width, and flex:none keeps it at its content width inside the card row.
-  assert.notEqual(readall.decls.get('width'), '100%', 'the sweep button must not span the bar width');
-  assert.notEqual(readall.decls.get('display'), 'block', 'the sweep button must sit inline on the card line');
-  assert.equal(readall.decls.get('flex'), 'none', 'the sweep button must not grow to fill the card row');
+  // Sized to the label, because the view main raises is the button's own box: a
+  // button stretched to its view would make the two chase each other.
+  assert.equal(readall.decls.get('width'), 'max-content',
+    'the sweep button must be sized to its label, and the view sized to the button');
+  assert.notEqual(readall.decls.get('width'), '100%', 'the sweep button must not span the window width');
+  assert.notEqual(readall.decls.get('flex'), '1', 'the sweep button must not grow to fill anything');
 });
 
 test('the pages that cover the strip are the ones that may move the window', () => {
