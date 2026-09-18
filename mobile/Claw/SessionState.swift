@@ -65,13 +65,33 @@ final class ConnectionState: ObservableObject {
     /// Which gateway the phase is about. Nil once nothing has been attempted.
     @Published private(set) var gatewayId: String?
 
-    /// The two sentences a pending row shows, mirrored from
-    /// `core/spec/connection.json` and asserted against it by
-    /// `ConnectionStateTests`. The row's copy comes from the spec for the same
-    /// reason the phases do: both clients must word an unapproved device the same
-    /// way, and only one of them can read the file at runtime.
-    static let pendingLabel = "Needs approval"
-    static let pendingDetail = "Approve this device on the gateway host, then it reconnects on its own."
+    /// `core/spec/connection.json`, read from the app's own copy at runtime.
+    private struct Spec: Decodable {
+        let pendingLabel: String
+        let pendingDetail: String
+    }
+
+    /// The keys this decodes, and the ones it does not. The phase names are Swift
+    /// enum raw values, which the language makes compile-time, and the error-code
+    /// hints are the desktop's certificate and reachability wording rather than
+    /// anything a phone row draws.
+    static let decodedKeys: Set<String> = ["pendingLabel", "pendingDetail"]
+    static let ignoredKeys: Set<String> = ["phases", "errAborted", "hints"]
+
+    private static let spec: Spec = loadSpec()
+
+    private static func loadSpec() -> Spec {
+        let empty = Spec(pendingLabel: "", pendingDetail: "")
+        guard let spec = try? BundledSpec.load("connection", as: Spec.self), !spec.pendingLabel.isEmpty else {
+            return empty
+        }
+        return spec
+    }
+
+    /// The two sentences a pending row shows, from the spec for the same reason
+    /// the phases are: both clients must word an unapproved device the same way.
+    static var pendingLabel: String { spec.pendingLabel }
+    static var pendingDetail: String { spec.pendingDetail }
 
     /// The next phase, given the phase now and what just happened.
     ///
