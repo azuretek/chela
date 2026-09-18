@@ -122,8 +122,38 @@ jobs:
       platform: claw-mobile pipeline
       verdict: '^iOS '
 
+  # ★ The JS import lint, once, at the repo root. This is the off-the-shelf guard
+  # for the boot-fatal class that shipped a green-tested build to a fatal dialog:
+  # a DEFAULT import of a module that has only NAMED exports (issue-reporter.js
+  # importing core/issue-report.js, fixed by hand in b9b5112). eslint-plugin-import's
+  # import/default, import/named and import/no-unresolved check the imported
+  # BINDING statically across core and desktop, which no unit test and no source
+  # audit did. It runs once here rather than in the per-platform build matrix
+  # because linting is platform-independent, and it installs with pnpm because the
+  # eslint config and its dependencies live at the workspace root. Mobile is Swift
+  # and linted by SwiftLint in the mobile pipeline, not here.
+  #
+  # It runs on every trigger of this workflow (no build gate), because a lint
+  # failure should be visible on a change that does not itself publish; the build
+  # job below gates publication on it via needs.
+  lint:
+    name: js import lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint:js
+
   build:
-    needs: version
+    needs: [version, lint]
     if: needs.version.outputs.build == 'true'
     strategy:
       fail-fast: false
@@ -190,17 +220,28 @@ jobs:
           path: |
             ${{ github.workspace }}/.cache/electron
             ${{ github.workspace }}/.cache/electron-builder
-          key: electron-${{ runner.os }}-${{ hashFiles('desktop/package-lock.json') }}
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             electron-${{ runner.os }}-
+
+      - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
-      - run: npm ci
+      # The workspace install, at the repo root rather than in desktop/. desktop
+      # depends on core as "claw-core": "workspace:*", which pnpm resolves as a
+      # symlink and npm ci cannot resolve at all (it failed every build leg with
+      # `Unsupported URL Type "workspace:"`). --frozen-lockfile pins to the
+      # committed pnpm-lock.yaml, the CI equivalent of npm ci. working-directory
+      # is overridden to the root for this one step; the build steps below stay in
+      # desktop/.
+      - name: Install the workspace
+        working-directory: ${{ github.workspace }}
+        run: pnpm install --frozen-lockfile
 
       # Electron's postinstall has intermittently left its dist/ incomplete: on
       # Windows ("failed to create directory ...\dist\locales: ... os error 183")
@@ -232,9 +273,15 @@ jobs:
             node -e "const fs=require('fs'),p=require('electron');if(!fs.existsSync(p))throw new Error('electron binary missing at '+p)"
           }
           if ! electron_usable 2>/dev/null; then
-            echo "electron install incomplete; rebuilding"
-            rm -rf node_modules/electron/dist
-            npm rebuild electron
+            echo "electron install incomplete; fetching"
+            # electron 44 has no install script: it downloads its binary lazily on
+            # first require, and `node -e "require('electron')"` is what triggers
+            # that. Under pnpm the package lives in the virtual store, so a
+            # `rm -rf node_modules/electron/dist` + rebuild is the wrong tree to
+            # touch; forcing the download through the install entrypoint is the
+            # portable repair. If it still cannot resolve afterwards, the check
+            # below fails the leg rather than letting a broken install reach Test.
+            node node_modules/electron/install.js || true
           fi
           electron_usable >/dev/null && echo "electron loads"
 
