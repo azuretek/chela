@@ -1,0 +1,75 @@
+#!/bin/sh
+# pre-commit: the measured half, at the commit.
+#
+# The split, and why this is a second hook rather than more of pre-push.
+#
+# CI covers the headless half: the unit tests, the static import audit, the
+# packaged-artifact audit and the iOS legs. What CI cannot run is anything needing
+# a real GUI session, because GitHub's macOS runners have no session to launch
+# Electron into. That leaves two kinds of check to the local host: the app-level
+# boot smoke (pre-push, `npm run verify`) and the PAGE-level measurements, which is
+# what this hook runs.
+#
+# ★ A page measurement is the only witness for a claim about what was DRAWN. No
+# unit test and no assertion over source can tell a rule that applies from one that
+# is overridden, a strip that paints from one the page shows through, or a control
+# that is present from one that is dead. `npm run measure` loads the real pages
+# from core/ui with a stub host and measures the rendered result.
+#
+# ★ Which is why it is worth its cost, measured rather than assumed: the two
+# failures it found on 2026-09-18 had been red on main for a day and nothing could
+# report them. CI cannot run it, no test read it, and the previous run was a
+# person's memory of having run the harness by hand once.
+#
+# It is PER HOST rather than per platform, and the difference matters: whoever has
+# a checkout and a session runs it, on macOS today and on Windows where the repo is
+# checked out there, because the harnesses are Electron and Electron is the same
+# program on both. A host with no Electron SKIPS with a named reason rather than
+# passing quietly: a silent pass is a green line for work nobody did.
+#
+# It is ADVISORY, like the push gate: `git commit --no-verify` skips it, and a
+# fresh clone has no hook until `npm run hooks:install` points core.hooksPath here.
+
+set -e
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root/desktop"
+
+# The package DIRECTORY rather than a binary name, so this reads the same on every
+# platform: a Windows checkout has node_modules/electron and electron.cmd rather
+# than a file called `electron`. A present-but-broken install is not skipped:
+# `npm run measure` then fails with Electron's own error, which is the honest
+# answer for an install that cannot start.
+if [ ! -d "node_modules/electron" ]; then
+  cat >&2 <<'EOF'
+
+pre-commit: SKIPPED, and the reason is named rather than assumed.
+
+  There is no Electron in desktop/node_modules, so no page can be rendered here
+  and the measured half cannot run. Install it with `npm install` in desktop/, or
+  run the harnesses on a host that has it.
+
+  This is a SKIP, not a pass: the pages were not measured.
+EOF
+  exit 0
+fi
+
+echo "pre-commit: the measured half (the pages and the forms, as rendered)"
+if ! npm run measure; then
+  cat >&2 <<'EOF'
+
+pre-commit: the measured harnesses failed.
+
+  These load the real pages from core/ui in Electron and measure what was DRAWN:
+  the strip's own pixels, the card's surface, and the two gateway forms' fields
+  lining up, in both appearances. Read the failing line above, and look at the
+  screenshots the harness just wrote.
+
+  A deliberate skip is `git commit --no-verify`. It should be rare: this is the
+  only check that sees the rendered page.
+EOF
+  exit 1
+fi
+
+echo "pre-commit: the measured half passed."
+
