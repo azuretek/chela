@@ -61,6 +61,7 @@ const BUNDLED = {
 const NOT_READ_HERE = {
   'quips.json': 'the loading quips belong to the desktop loading cover; no iOS surface draws them',
   'bootstrap-health.json': 'the crash-loop rollback is a desktop bootstrap concern (iOS cannot self-update); the desktop imports it directly as ESM, so no iOS surface ships it',
+  'issue-report.json': 'the opt-out issue reporter is desktop-only (there is no iOS reporter); the desktop imports it directly as ESM, so no iOS surface ships it',
 };
 
 function specNames() {
