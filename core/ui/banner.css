@@ -246,6 +246,32 @@ body.banner-body {
   .banner--leave { animation: none; }
 }
 
+/* ★ The card's body: the headline, the subject line under it and the progress bar
+   are blocks, one under the other.
+
+   The class this replaces is the whole of the fault it answers. The body carried
+   `class="stack grow"`, and `.stack` was a flex COLUMN declared in the
+   stylesheet this page shared with the settings surface. That surface was
+   refactored onto upstream's own components (be24f71) and the shared column went
+   with it: ui.css says in as many words that `.stack` is not re-declared there
+   because upstream's `settings-row__text` is the column now. This page went on
+   asking for it, so the body fell back to a plain block, its three children are
+   inline spans, and they laid out as ONE paragraph that wrapped through all of
+   them. Abi, 2026-09-18: "the banner has improper spacing between words", which
+   is what a sentence interleaved with another sentence's line breaks reads as.
+   Measured off the rendered page the same day: the headline and the detail shared
+   a line, and the progress bar sat on the message's own line.
+
+   So the shape is declared HERE, by the page that needs it, under a name this file
+   owns. A borrowed class is only borrowed for as long as the file that owns it
+   keeps it, and this is the third time in this area that one of our pages has been
+   left asking for a rule somebody else retired. */
+.banner__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 /* The headline, on the Control UI's card heading: --text-strong at the weight
    sidebar-issues.css gives .sidebar-issues-panel__heading. */
 .banner__message {
