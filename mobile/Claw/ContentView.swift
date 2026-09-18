@@ -107,6 +107,12 @@ struct ContentView: View {
     /// back rather than left to a sleep that was frozen with the process.
     @Environment(\.scenePhase) private var scenePhase
 
+    /// The device's own appearance, which is what this client follows. Passed to the
+    /// token refresh so the interface's palette is re-read when the SYSTEM changes,
+    /// which is the only appearance change this client has now that it keeps no mode
+    /// of its own. See the sixth rule in core/ui/CONVENTIONS.md.
+    @Environment(\.colorScheme) private var deviceScheme
+
 
     /// Whether the settings sheet is up over a gateway. Ignored while there is no
     /// gateway, where the surface is shown without a sheet: see the note above.
@@ -166,7 +172,7 @@ struct ContentView: View {
     /// solver will take in one piece.
     @ViewBuilder
     private func settingsSheetContent(_ host: SettingsHost) -> some View {
-        SettingsSurface(host: host, tokens: liveTokens, appearance: appearance.mode)
+        SettingsSurface(host: host, tokens: liveTokens, appearance: AppearanceMode.system)
             // About is presented from the settings surface, so the second sheet
             // stacks over the first the way the desktop's About-over-Settings
             // overlay does, and lands back on settings when dismissed.
@@ -183,7 +189,7 @@ struct ContentView: View {
     /// surface, with About riding it and the notice stack over both.
     @ViewBuilder
     private func SettingsAsApp(host: SettingsHost) -> some View {
-        SettingsSurface(host: host, tokens: liveTokens, appearance: appearance.mode)
+        SettingsSurface(host: host, tokens: liveTokens, appearance: AppearanceMode.system)
             .ignoresSafeArea()
             .aboutSheet(
                 isPresented: $showingAbout,
@@ -289,7 +295,7 @@ struct ContentView: View {
         // layer arrived ("unable to type-check this expression in reasonable
         // time", measured 2026-09-16).
         .modifier(LiveTokenRefresh(
-            appearance: AppearanceMode.system,
+            scheme: deviceScheme,
             showingSettings: $showingSettings,
             showingAbout: $showingAbout,
             refresh: refreshLiveTokens
@@ -347,7 +353,6 @@ struct ContentView: View {
                 store: gateways,
                 connection: connection,
                 notices: notices,
-                appearance: appearance,
                 // Closing is only ever a way back to a gateway, so it is refused
                 // while there is none: with an empty list the surface is the app.
                 onClose: { if gateways.hasGateway { showingSettings = false } },
@@ -605,7 +610,10 @@ struct ContentView: View {
 /// is about to be used, but four more `onChange` links on that expression is more
 /// than the solver will take.
 private struct LiveTokenRefresh: ViewModifier {
-    let appearance: AppearanceMode
+    /// The DEVICE's appearance. The interface's palette moves with it, so a map read
+    /// in one mode is the wrong map in the other. It was this app's own stored mode,
+    /// which no longer exists.
+    let scheme: ColorScheme
     @Binding var showingSettings: Bool
     @Binding var showingAbout: Bool
     let refresh: () -> Void
@@ -613,7 +621,7 @@ private struct LiveTokenRefresh: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onAppear(perform: refresh)
-            .onChange(of: appearance) { _, _ in refresh() }
+            .onChange(of: scheme) { _, _ in refresh() }
             .onChange(of: showingSettings) { _, isOpen in if isOpen { refresh() } }
             .onChange(of: showingAbout) { _, isOpen in if isOpen { refresh() } }
     }

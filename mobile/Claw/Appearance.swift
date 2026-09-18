@@ -24,7 +24,7 @@ import SwiftUI
 /// an `AppearanceMode`, so reducing it here removes every value a reader could have
 /// produced while leaving that threading alone. `named` went with the row that
 /// used to send one.
-enum AppearanceMode: String {
+enum AppearanceMode: String, CaseIterable {
     /// Follow the device, and keep following it while the app is open.
     case system
 
