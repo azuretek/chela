@@ -106,3 +106,38 @@ export function brokenBuildBanner(verdict, { canRollback = false } = {}) {
     : `It failed to finish starting ${verdict.attempts} times in a row${where}. There is no earlier version to roll back to on this install, so reinstall from the release page.`;
   return { message, detail, attempts: verdict.attempts, stage: verdict.stage };
 }
+
+/**
+ * The pure rollback decision: given the running build, the verdict, the pinned
+ * last-known-good, whether the platform can install, and the current update
+ * suppression, should this launch roll back and to what?
+ *
+ * Electron-free so the whole decision is testable from one run; the client owns
+ * the electron-updater wiring that acts on it. Every reason to NOT roll back is a
+ * distinct \`skip\`, so a test can pin each one:
+ *   - not-bad          the build is not in a crash loop
+ *   - cannot-install   the platform has no install path (macOS unsigned, iOS)
+ *   - no-good          nothing is pinned to roll back TO
+ *   - good-is-current  the pinned good IS the running build, so a rollback is a
+ *                      no-op (and would loop): never roll a build back to itself
+ *   - already-tried    the running build is already suppressed 'broken', so the
+ *                      automatic attempt already ran and should not repeat
+ *
+ * \`already-tried\` is only a skip for the AUTOMATIC path; a reader pressing the
+ * button passes auto=false and may retry. That split is the caller's to make by
+ * passing \`auto\`.
+ */
+export function rollbackPlan({
+  version = null, verdict = null, lastKnownGood = null, canInstall = false,
+  suppression = null, auto = true,
+} = {}) {
+  if (!verdict || !verdict.bad) return { rollBack: false, skip: 'not-bad' };
+  if (!canInstall) return { rollBack: false, skip: 'cannot-install' };
+  const good = lastKnownGood && typeof lastKnownGood.version === 'string' ? lastKnownGood.version : null;
+  if (!good) return { rollBack: false, skip: 'no-good' };
+  if (good === version) return { rollBack: false, skip: 'good-is-current' };
+  if (auto && suppression && suppression.reason === 'broken' && suppression.version === version) {
+    return { rollBack: false, skip: 'already-tried' };
+  }
+  return { rollBack: true, from: version, to: good };
+}
