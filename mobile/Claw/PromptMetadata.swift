@@ -181,7 +181,12 @@ enum PromptMetadata {
     ) -> [String: String] {
         [
             "host": clean(device.name),
-            "os": clean("\(device.systemName) \(device.systemVersion) (\(machine))"),
+            // The model name as well as the identifier, and the name is the point:
+            // "iPhone17,2" identifies a model to Apple and to nobody else, which is
+            // what this line is for. One lookup, in DeviceModels, shared with the
+            // About sheet, so the name a reader is shown and the name an agent is
+            // sent cannot drift. Reported 2026-09-17.
+            "os": clean("\(device.systemName) \(device.systemVersion) on \(DeviceModels.describe(machine: machine))"),
             "locale": clean(locale.identifier.replacingOccurrences(of: "_", with: "-")),
             "timezone": clean(timezone.identifier),
             "client": clean(clientIdentity(label: Naming.clientLabel, version: appVersion)),

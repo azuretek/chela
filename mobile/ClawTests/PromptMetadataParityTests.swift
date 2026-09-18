@@ -154,7 +154,11 @@ final class PromptMetadataParityTests: XCTestCase {
         XCTAssertNil(facts["user"])
         XCTAssertNil(facts["home"])
         XCTAssertTrue(facts["os"]!.hasPrefix("iOS "), facts["os"]!)
-        XCTAssertTrue(facts["os"]!.hasSuffix("(iPhone99,9)"), facts["os"]!)
+        // The identifier, ONCE, because this table has no name for it: a fallback
+        // that printed the name and the identifier would say the same thing twice on
+        // exactly the phones nobody has checked.
+        XCTAssertTrue(facts["os"]!.hasSuffix("on iPhone99,9"), facts["os"]!)
+        XCTAssertFalse(facts["os"]!.contains("iPhone99,9, iPhone99,9"), facts["os"]!)
         XCTAssertEqual(facts["locale"], "en-US", "the separator matches the desktop's locale tag")
         XCTAssertEqual(facts["timezone"], "Europe/London")
         XCTAssertEqual(facts["client"], "\(Naming.clientLabel) 9.9.9")

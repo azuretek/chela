@@ -1,4 +1,5 @@
 import os from 'node:os';
+import { readFileSync } from 'node:fs';
 
 import { clientLabel } from '../../core/naming.js';
 import {
@@ -19,7 +20,35 @@ export {
 /** The header this client writes, for the places that need the line itself. */
 export const CONTEXT_HEADER = contextHeader('desktop');
 
-export function formatOs({ platform = process.platform, release = os.release(), arch = os.arch() } = {}) {
+/**
+ * The version this machine's own OS reports for itself.
+ *
+ * \`os.release()\` is NOT it on macOS, and that is the whole reason this function
+ * exists: measured 2026-09-17 on macOS 26.6.2, where it answered \`25.6.0\`, the
+ * Darwin KERNEL version, so the client-context block told every agent this desktop
+ * ran an OS that does not exist. The fixture never caught it because its macOS
+ * example was written by hand rather than gathered.
+ *
+ * \`SystemVersion.plist\` is where the version a person reads is kept. Where it
+ * cannot be read the kernel version is still a true fact, so it is reported rather
+ * than guessed at. Linux and Windows report \`os.release()\`, which is their honest
+ * kernel and build number, and this is the one place that difference lives: the
+ * About sheet reads it too, so the version a reader sees and the version an agent
+ * is sent cannot disagree.
+ */
+export function osRelease(platform = process.platform) {
+  if (platform !== 'darwin') return os.release();
+  try {
+    const plist = readFileSync('/System/Library/CoreServices/SystemVersion.plist', 'utf8');
+    const found = /<key>ProductVersion<\/key>\s*<string>([^<]+)<\/string>/.exec(plist);
+    if (found) return found[1].trim();
+  } catch {
+    // A sandbox with no access to it falls through to the kernel version.
+  }
+  return os.release();
+}
+
+export function formatOs({ platform = process.platform, release = osRelease(platform), arch = os.arch() } = {}) {
   const names = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
   return `${names[platform] || clean(platform)} ${clean(release)} (${clean(arch)})`;
 }

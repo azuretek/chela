@@ -328,11 +328,17 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
         let version = Naming.buildVersion
         let channel = UpdateFeed.channel(for: version)
         let device = UIDevice.current
+        let machine = PromptMetadata.machineIdentifier()
         return [
             ["label": "Version", "value": version],
             ["label": "Channel", "value": channel],
             ["label": "System", "value": "\(device.systemName) \(device.systemVersion)"],
-            ["label": "Device", "value": PromptMetadata.machineIdentifier()],
+            // The name a person recognises, then the identifier a bug report is
+            // matched on. It was the identifier alone, which names a model to Apple
+            // and to nobody else: reported 2026-09-17 against the iOS Settings sheet,
+            // where this same phone reads "iPhone 16 Pro Max". No other client has an
+            // iPhone identifier to name, so the lookup is this client's own.
+            ["label": "Device", "value": DeviceModels.describe(machine: machine)],
         ]
     }
 
