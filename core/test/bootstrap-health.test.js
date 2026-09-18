@@ -15,7 +15,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 
 import {
-  DEFAULT_THRESHOLD, STAGES, beginAttempt, reachedStage, assess,
+  DEFAULT_THRESHOLD, STAGES, beginAttempt, reachedStage, assess, brokenBuildBanner,
 } from '../bootstrap-health.js';
 
 const V = '1.0.1-dev.139.7d21fe49cd';
@@ -108,4 +108,35 @@ test('the module does not write or clear: begin returns a new record and leaves 
   const next = beginAttempt(previous, V);
   assert.strictEqual(JSON.stringify(previous), snapshot, 'beginAttempt mutated the record it was given');
   assert.notStrictEqual(next, previous, 'beginAttempt returned the same object rather than a new one');
+});
+
+test('the banner is null for a healthy build, so the caller has one thing to check', () => {
+  assert.strictEqual(brokenBuildBanner(assess(null, { version: V })), null);
+  assert.strictEqual(brokenBuildBanner(null), null);
+  assert.strictEqual(brokenBuildBanner({ bad: false }), null);
+});
+
+test('the banner names the count and, when rollback is possible, offers it', () => {
+  let marker = beginAttempt(null, V);
+  marker = beginAttempt(marker, V);
+  marker = beginAttempt(marker, V);
+  marker = reachedStage(marker, 'gateway-connect');
+  const verdict = assess(marker, { version: V });
+  const withRollback = brokenBuildBanner(verdict, { canRollback: true });
+  assert.match(withRollback.message, /keeps failing to start/i);
+  assert.match(withRollback.detail, /3 times in a row/, 'the count the reader can act on is missing');
+  assert.match(withRollback.detail, /gateway-connect/, 'the stage is not surfaced when known');
+  assert.match(withRollback.detail, /rolled back/i, 'the rollback offer is missing when it is possible');
+
+  const noRollback = brokenBuildBanner(verdict, { canRollback: false });
+  assert.match(noRollback.detail, /reinstall from the release page/i, 'the no-rollback path does not tell the reader what to do');
+  assert.doesNotMatch(noRollback.detail, /can be rolled back/i, 'a rollback was offered where none is possible');
+});
+
+test('the banner omits the stage rather than guessing when it is unknown', () => {
+  // A marker with a count but a null stage: the count still fires the verdict.
+  const verdict = { bad: true, attempts: 3, stage: null };
+  const banner = brokenBuildBanner(verdict, { canRollback: true });
+  assert.doesNotMatch(banner.detail, /coming up \(/, 'a stage parenthetical appeared with no stage');
+  assert.match(banner.detail, /3 times in a row/);
 });
