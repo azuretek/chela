@@ -72,13 +72,35 @@ enum UpdatePolicy {
     /// install its own update.
     static let macSigned = true
 
+    /// `core/spec/updates.json`, read from the app's own copy at runtime.
+    private struct Spec: Decodable {
+        struct Intervals: Decodable {
+            let stableMs: Int
+            let prereleaseMs: Int
+        }
+
+        let intervals: Intervals
+    }
+
+    /// What this decodes, and what it does not. The action and outcome names are
+    /// Swift enum raw values, and a raw value is compile-time by the language's
+    /// own rule, so they are pinned by the fixtures instead of read here.
+    static let decodedKeys: Set<String> = ["intervals"]
+    static let ignoredKeys: Set<String> = ["actions", "download", "outcomes"]
+
+    private static let spec: Spec = loadSpec()
+
+    private static func loadSpec() -> Spec {
+        let empty = Spec(intervals: Spec.Intervals(stableMs: 0, prereleaseMs: 0))
+        guard let spec = try? BundledSpec.load("updates", as: Spec.self), spec.intervals.stableMs > 0 else {
+            return empty
+        }
+        return spec
+    }
+
     /// How long a running app waits between scheduled checks.
-    ///
-    /// Nothing reads these yet, and the banner that will is the next phase. They
-    /// are mirrored now so the spec has both clients on it from the start rather
-    /// than acquiring a second copy later.
-    static let stableIntervalMs = 21_600_000
-    static let prereleaseIntervalMs = 300_000
+    static var stableIntervalMs: Int { spec.intervals.stableMs }
+    static var prereleaseIntervalMs: Int { spec.intervals.prereleaseMs }
 
     /// What the platform allows, ignoring what the user has asked for.
     ///

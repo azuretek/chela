@@ -26,28 +26,41 @@ import Foundation
 /// web view, no clock. What draws it is `NoticeBanner`, and what owns the live
 /// instance is `NoticeBoard`.
 enum NoticeTone {
+    /// `core/spec/notices.json`, read from the app's own copy at runtime.
+    private struct Spec: Decodable {
+        let tones: [String: String]
+        let rank: [String: Int]
+    }
+
+    static let decodedKeys: Set<String> = ["tones", "rank"]
+    static let ignoredKeys: Set<String> = []
+
+    private static let spec: Spec = loadSpec()
+
+    private static func loadSpec() -> Spec {
+        let empty = Spec(tones: [:], rank: [:])
+        guard let spec = try? BundledSpec.load("notices", as: Spec.self), !spec.tones.isEmpty else {
+            return empty
+        }
+        return spec
+    }
+
     /// Severities, worst first. The banner is sorted by these.
-    static let error = "error"
-    static let warn = "warn"
-    static let info = "info"
+    static var error: String { spec.tones["error"] ?? "" }
+    static var warn: String { spec.tones["warn"] ?? "" }
+    static var info: String { spec.tones["info"] ?? "" }
     /// Good news: connected, or an update finished downloading. A separate tone
     /// rather than `info` because this app's accent colour is red, so an
     /// informational notice is already indistinguishable from a failure at a
     /// glance, and these are the ones where reading "connected" as an alarm is
     /// worst.
-    static let ok = "ok"
+    static var ok: String { spec.tones["ok"] ?? "" }
 
-    /// The rank a tone sorts by, worst first, mirroring `rank` in
-    /// `core/spec/notices.json`. A tone missing from here sorts last rather than
-    /// crashing, matching how the JS reads its own rank map.
+    /// The rank a tone sorts by, worst first, read from the spec's own `rank`
+    /// map. A tone missing from it sorts last rather than crashing, matching how
+    /// the JS reads the same map.
     static func rank(_ tone: String) -> Int {
-        switch tone {
-        case error: return 0
-        case warn: return 1
-        case info: return 2
-        case ok: return 3
-        default: return Int.max
-        }
+        spec.rank[tone] ?? Int.max
     }
 }
 

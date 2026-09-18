@@ -157,6 +157,22 @@ targets:
         buildPhase: resources
       - path: ../core/spec/progress.json
         buildPhase: resources
+      # Everything else the app needed as a value is bundled here too, one loader
+      # for all of them: the feed paths and channel names, the notice tones and
+      # their rank, the update intervals, the two sentences a pending row shows,
+      # and the release asset names an OTA install URL is built from.
+      # `core/test/specs.test.js` is the inventory of which specs are read this
+      # way, and `BundledSpecTests` asserts no key a client needs is dropped.
+      - path: ../core/spec/feed.json
+        buildPhase: resources
+      - path: ../core/spec/notices.json
+        buildPhase: resources
+      - path: ../core/spec/updates.json
+        buildPhase: resources
+      - path: ../core/spec/connection.json
+        buildPhase: resources
+      - path: ../core/spec/release.json
+        buildPhase: resources
       # The shared About page, bundled rather than mirrored, for the same reason
       # the settings page is: it is the desktop's own About page (core/ui), so
       # this client renders it instead of a native screen. About was reachable
