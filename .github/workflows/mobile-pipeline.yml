@@ -352,6 +352,14 @@ jobs:
       # app twice in the same leg for no extra coverage, and a fault in the test
       # bundle was only ever found by the second of the two compiles.
       #
+      # The release gate lives in Python (scripts/asc.py), so its guard runs here
+      # in the credential-free test half rather than only in the release job. It
+      # proves that a build which never reaches VALID fails the wait rather than
+      # letting the release publish something still in Processing. No Apple round
+      # trip: the test stubs the API.
+      - name: Test the release gate (asc)
+        run: python3 scripts/asc_test.py
+
       # The derived data path is pinned so the two steps share one product tree
       # instead of each getting a private one, which is what makes the second
       # step a reuse rather than a rebuild.
@@ -1020,11 +1028,19 @@ jobs:
           done
           [ "$found" = 1 ] || echo "no distribution log was written, so the failure was not in the export"
 
-      # The only proof that the build reached TestFlight. The upload command's
-      # exit code says Apple's delivery service took the bytes; this asks the
-      # API for the build record, prints each processing state it moves through,
-      # and fails if it never appears or arrives as INVALID.
-      - name: Confirm the build arrived
+      # The gate that holds the release until the build is INSTALLABLE, not just
+      # uploaded. The upload command's exit code says Apple's delivery service
+      # took the bytes; this asks the API for the build record, prints each
+      # processing state it moves through, and fails unless the build reaches
+      # VALID. That is the point: a GitHub Release (which the in-app update feed
+      # reads) publishes only once every artifact on it can be downloaded, and
+      # TestFlight's Processing gate is the one artifact that is uploaded but not
+      # yet installable. Publishing on mere arrival is what let the "upgrade
+      # available" banner point users at a build still in Processing. Bounded by
+      # WAIT_SECONDS, so a stuck build fails the run clearly rather than hanging
+      # or publishing something no one can install; raised from 15 to 45 minutes
+      # because Apple's processing routinely runs past 15.
+      - name: Wait until the build is installable
         if: steps.preflight.outputs.already-uploaded != 'true'
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
@@ -1032,7 +1048,7 @@ jobs:
           APP_ID: ${{ steps.preflight.outputs.app-id }}
           MARKETING_VERSION: ${{ needs.version.outputs.marketing }}
           BUILD_NUMBER: ${{ needs.version.outputs.build-number }}
-          WAIT_SECONDS: "900"
+          WAIT_SECONDS: "2700"
         run: python3 scripts/asc.py wait
 
       # What happened when this commit was built before, which is not a failure:
