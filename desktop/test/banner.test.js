@@ -4,15 +4,19 @@
 // DOM rather than required. That is worth the shim for one reason: the stack is
 // rebuilt key by key so a banner that has been sitting there for an hour does
 // not replay its slide every time an unrelated one appears, and the Mark all
-// read row is the one row in it that is not a notice. A rebuild that treats it
-// like a card either duplicates it or prunes it as a condition that passed, and
-// neither shows up in a screenshot of a working banner.
+// read button is the one node in the tree that is not a notice. A rebuild that
+// treats it like a card either duplicates it or prunes it as a condition that
+// passed, and neither shows up in a screenshot of a working banner.
 //
-// The row is the BOTTOM ROW OF THE BAR, and it has been in two wrong places
-// before this one, so the tests below say what the right place is and why it is
-// safe. It sits in the stack, last, and the stack paints its whole rectangle
-// (asserted against the stylesheet in drag-regions.test.js), which is that
-// safety: a row of the bar is a strip the bar draws behind.
+// The sweep is a PLAIN BUTTON hanging on the last card's own line, not a row of
+// the stack, and it has been in three wrong places before this one, so the tests
+// below say what the right place is and why it is safe. It is not a row because
+// the bar's view is full width and claims every mouse event in its rectangle, so
+// a footer row carrying one right-aligned button left its empty part eating
+// clicks on the Control UI beneath (Abi's report, 2026-09-18). A button on a
+// line that already exists adds no strip of its own. The stack still paints the
+// whole rectangle its cards sit in (asserted against the stylesheet in
+// drag-regions.test.js), which is what keeps the cards themselves safe.
 //
 // Run with: npm test
 
@@ -180,17 +184,25 @@ const stalled = {
   action: { label: 'Open release page', command: 'update-release-page' },
 };
 
-test('★ a dismissible notice gets a way to close the whole bar, at the BOTTOM of it', () => {
+test('★ a dismissible notice gets a way to close the whole bar, as a plain button on the last card', () => {
   const b = mount();
   b.set([failure]);
   return b.render().then(() => {
-    // Abi, 2026-09-17: "mark all read button should be at the bottom still,
-    // inline doesnt make sense". It is a row of the bar, after every card.
-    assert.deepEqual(b.rows(), ['n-connection', 'banner-actions']);
-    const row = b.node('banner-actions');
-    assert.ok(row, 'no way to close the whole bar was drawn');
-    assert.equal(row.parent, b.root(), 'the sweep must be a row of the bar');
-    assert.equal(b.root().kids[b.root().kids.length - 1], row, 'and it must be the LAST row of the bar');
+    // Abi, 2026-09-18: "make it a normal button ... no full-width banner and no
+    // dead-zone", which supersedes the 2026-09-17 bottom-row shape. The stack
+    // holds only cards now: the sweep is a button hanging on the last card's own
+    // line, not a row of its own, so its full-width row can no longer eat clicks
+    // on the Control UI underneath (a view claims every event in its rectangle).
+    assert.deepEqual(b.rows(), ['n-connection']);
+    const button = b.node('banner-actions');
+    assert.ok(button, 'no way to close the whole bar was drawn');
+    assert.equal(button.tag, 'button', 'the sweep must be a plain button, not a container row');
+    assert.equal(button.className, 'banner__readall', 'the sweep button lost its class');
+    const card = b.node('n-connection');
+    assert.equal(button.parent, card, 'the sweep must hang on the last card, not be a row of the bar');
+    // And it is the LAST card, which is the bottom of the bar: with one card, that
+    // card; the "come and go" test below covers more than one.
+    assert.equal(b.root().kids[b.root().kids.length - 1], card, 'the sweep must be on the bottom card');
   });
 });
 
@@ -202,32 +214,39 @@ test('nothing offers to mark all read when nothing can be', async () => {
   assert.deepEqual(b.rows(), ['n-update-available']);
 });
 
-test('the close-the-bar row stays at the bottom as cards come and go', async () => {
+test('the sweep hangs on the bottom card as cards come and go', async () => {
   const b = mount();
   b.set([pinned, failure]);
   await b.render();
-  assert.deepEqual(b.rows(), ['n-update-available', 'n-connection', 'banner-actions']);
-  const row = b.node('banner-actions');
-  assert.ok(row, 'the sweep row is gone');
-  assert.equal(row.parent, b.root(), 'the sweep is a row of the bar, not of a card');
-  assert.equal(b.root().kids[b.root().kids.length - 1], row, 'and it is still the bottom row');
-  // And it is not inside a card: that was the design that read wrong.
-  for (const card of b.root().kids.filter((n) => /(^|\s)banner(\s|$)/.test(String(n.className)))) {
-    assert.ok(!card.kids.some((k) => k.id === 'banner-actions'), 'the sweep is inside a card again');
-  }
+  // The stack is cards only; the sweep is a button on the LAST one, which is the
+  // bottom of the bar. It follows the bottom card rather than sitting on a fixed
+  // one: a card leaving would otherwise take the sweep with it.
+  assert.deepEqual(b.rows(), ['n-update-available', 'n-connection']);
+  const button = b.node('banner-actions');
+  assert.ok(button, 'the sweep button is gone');
+  const bottom = b.root().kids[b.root().kids.length - 1];
+  assert.equal(button.parent, bottom, 'the sweep must hang on the bottom card');
+  assert.equal(bottom.id, 'n-connection', 'the bottom card is not the one it should be');
+  // And it is not a row of the stack: that full-width row was the dead zone.
+  assert.ok(!b.root().kids.some((n) => n.id === 'banner-actions'),
+    'the sweep is a row of the bar again, which is the shape that ate clicks');
 });
 
-test('a re-render leaves exactly one close-the-bar row', async () => {
-  // The stack is rebuilt by id and this row has no notice behind it, so it is
-  // the one node that could stack up unnoticed: three renders, three rows, and
-  // a banner that grows every time anything else changes.
+test('a re-render leaves exactly one sweep button', async () => {
+  // The stack is rebuilt by id and the sweep has no notice behind it, so it is
+  // the one node that could stack up unnoticed: three renders, three buttons, on
+  // a card that itself is rebuilt each time. render() removes the previous one by
+  // id before hanging a fresh one on the current bottom card.
   const b = mount();
   b.set([failure]);
   await b.render();
   await b.render();
   await b.render();
-  assert.equal(b.count('banner-actions'), 1, 'a re-render left more than one sweep row');
-  assert.ok(b.node('n-connection'), 'and the card it sits under survives too');
+  assert.equal(b.count('banner-actions'), 1, 'a re-render left more than one sweep button');
+  const button = b.node('banner-actions');
+  assert.equal(button.tag, 'button', 'the sweep is not a plain button');
+  assert.ok(b.node('n-connection'), 'and the card it hangs on survives too');
+  assert.equal(button.parent, b.node('n-connection'), 'and it is back on the current card, not a stale one');
 });
 
 test('pressing it marks everything read, and the card X marks only its own', async () => {
@@ -235,7 +254,8 @@ test('pressing it marks everything read, and the card X marks only its own', asy
   b.set([failure]);
   await b.render();
 
-  await b.node('banner-actions').kids[0].onclick();
+  // banner-actions IS the button now, not a container row wrapping it.
+  await b.node('banner-actions').onclick();
   assert.equal(b.calls.markAll, 1);
 
   const card = b.node('n-connection');
@@ -336,39 +356,43 @@ test('the slide is for a card arriving, not for one changing', async () => {
   assert.ok(!b.node('n-update-available').classList.contains('banner--enter'), 'an updated card slid again');
 });
 
-test('★ the bar is its cards and its sweep row, and the sweep is the bottom row', async () => {
-  // ★ The fourth version of one fault in this area, and the reason it is a guard
+test('★ the stack holds only cards, and the sweep is a button on the last one', async () => {
+  // ★ The fifth version of one fault in this area, and the reason it is a guard
   // rather than a comment: the bar is drawn in a view sized to the stack, and a
   // view claims every mouse event inside its own rectangle whatever the page
-  // draws there. So a child of the stack has to sit on a pixel the bar paints,
-  // or it is a full-width strip of the overlay's rectangle that the reader sees
-  // the page through and cannot click.
+  // draws there. A CHILD OF THE STACK THAT IS NOT A CARD is a full-width strip of
+  // the overlay's rectangle that carries no notice, and its empty part swallows
+  // clicks meant for the Control UI beneath it.
   //
-  // The history, because the invariant moved rather than the fault: measured
-  // 2026-09-17, the sweep's row was a child of the stack with NOTHING painted
-  // behind it, and a click on its empty leading half was delivered into the
-  // banner's document at the root element and reached neither the control nor the
-  // page. The fix moved the row inside the last card, which removed the strip and
-  // read wrong ("inline doesnt make sense"). The fix now is to paint the BAR, so
-  // a row of its own is safe again wherever it sits, and the row is back at the
-  // bottom where it belongs.
+  // The history, because the invariant moved rather than the fault: 2026-09-17,
+  // the sweep's own row was a stack child with nothing painted behind it, so a
+  // click on its empty leading half reached neither the control nor the page.
+  // The next fix moved the row inside the last card, which read wrong. The one
+  // after painted the BAR so the row was visually safe, but the view still ate
+  // the click across the row's full width, which is the regression Abi reported
+  // on 2026-09-18. The fix now is to stop it being a row at all: it is a plain
+  // button on the last card's own line, so the only new pixels that claim a click
+  // are the button's. The guard is therefore that the stack has NO non-card
+  // child.
   const b = mount();
   b.set([failure, pinned]);
   await b.render();
   const children = b.root().kids;
   assert.ok(children.length, 'the stack was empty, so this guard proves nothing');
-  // What is asserted is the bar's own shape: one card per notice, then at most
-  // one sweep row, and the sweep last. That the stack PAINTS the whole rectangle
-  // those children sit in is the other half of the same claim and cannot be
-  // asserted against a fake DOM, so it is asserted against the stylesheet in
+  // Every child of the stack is a card. The sweep is not among them: it hangs on
+  // the last card, one level down. That the stack PAINTS the whole rectangle its
+  // cards sit in is asserted against the stylesheet in
   // desktop/test/drag-regions.test.js.
   const cards = children.filter((n) => /(^|\s)banner(\s|$)/.test(String(n.className)));
-  const rows = children.filter((n) => n.id === 'banner-actions');
-  assert.equal(cards.length + rows.length, children.length,
-    `the stack holds ${children.length} children and only ${cards.length + rows.length} of them are bar rows: `
+  assert.equal(cards.length, children.length,
+    `the stack holds a non-card child, which is a full-width strip that can eat clicks: `
     + children.map((n) => `${n.tag}.${n.className || n.id}`).join(', '));
-  assert.equal(rows.length, 1, 'expected exactly one sweep row on the bar');
-  assert.equal(children[children.length - 1], rows[0], 'the sweep must be the bottom row of the bar');
+  assert.ok(!children.some((n) => n.id === 'banner-actions'),
+    'the sweep is a stack row again, which is the shape that ate clicks');
+  // And the sweep is a button on the last (bottom) card.
+  const button = b.node('banner-actions');
+  assert.equal(button.tag, 'button', 'the sweep must be a plain button');
+  assert.equal(button.parent, children[children.length - 1], 'the sweep must hang on the bottom card');
 });
 
 test('an empty bar reports zero height, so the view stops eating clicks', async () => {

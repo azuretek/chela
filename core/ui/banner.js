@@ -101,25 +101,29 @@ function card(notice) {
  * you want after a bad morning is the bar gone, and doing that a card at a time
  * is a chore that ends with one left over.
  *
- * It is the bar's FOOTER and it lives at the BOTTOM of the bar, which is the
- * shape Abi asked for on 2026-09-17 ("mark all read button should be at the
- * bottom still, inline doesnt make sense") after a previous fix had tucked it
- * inside the last card, where it read as part of that card's own row.
+ * ★ A PLAIN BUTTON, not a row. It is appended to the trailing end of the last
+ * card's own top line, beside that card's action and dismiss, so it occupies
+ * only its own pixels and adds no strip of its own to the bar. The version this
+ * replaces was a full-width footer ROW (justify-content: flex-end), and the
+ * bar's view claims every mouse event inside its rectangle whatever is painted
+ * there, so that row's empty leading part was a dead zone that swallowed clicks
+ * meant for the Control UI underneath, however the pixels were coloured. Abi,
+ * 2026-09-18: make it a normal button, no full-width banner and no dead-zone,
+ * which supersedes the 2026-09-17 bottom-row shape.
  *
  * Nothing here can lose a condition: reading is not clearing, and a notice that
  * refuses to be dismissed refuses this too, so the finished update download
  * survives the sweep.
  */
-function actions() {
-  return el('div', { className: 'banner-actions', id: ACTIONS_ID }, [
-    el('button', {
-      className: 'banner__readall',
-      type: 'button',
-      title: 'Close the bar. Anything still true stays listed under Settings, Problems.',
-      textContent: 'Mark all read',
-      onclick: () => { void api.markNoticesRead(); },
-    }),
-  ]);
+function sweepButton() {
+  return el('button', {
+    className: 'banner__readall',
+    id: ACTIONS_ID,
+    type: 'button',
+    title: 'Mark everything read and close the bar. Anything still true stays listed under Settings, Problems.',
+    textContent: 'Mark all read',
+    onclick: () => { void api.markNoticesRead(); },
+  });
 }
 
 /**
@@ -180,23 +184,25 @@ async function render() {
     }
   }
 
-  // Rebuilt last every time, so it is the bottom of the bar and stays there as
-  // cards come and go, and absent when the only thing left is a notice it would
-  // not act on.
+  // The sweep, rebuilt last every time so a re-render never stacks two of them,
+  // and absent when the only thing left is a notice it would not act on.
   //
-  // ★ A row of its own again, and the reason that is safe is a RULE rather than
-  // the row's position: THE BAR AND ITS VIEW ARE THE SAME RECTANGLE. The stack
-  // paints a surface over its whole box (see banner.css), so a child of the stack
-  // sits on pixels the bar draws, and the view main sizes to this stack's height
-  // has no unpainted pixel inside it at all. The fault this row caused the first
-  // time was never that it was a row: it was that its strip was INVISIBLE while
-  // still belonging to the view, so a click on it was delivered into the banner's
-  // own document at a pixel with nothing drawn on it and reached neither the
-  // control nor the page underneath. A pixel the reader can see through has to
-  // belong to what they can see; a pixel the bar paints is the bar's.
+  // ★ It is a PLAIN BUTTON on the trailing end of the LAST CARD's own top line,
+  // not a row of its own, which is the whole point of this change. A view claims
+  // every mouse event inside its rectangle whatever the page paints there, and
+  // the bar's view is full width, so a footer ROW carrying one right-aligned
+  // button left its empty leading part as a dead zone over the Control UI: the
+  // reader could see the page there and could not click it. Hanging the button on
+  // a line that already exists adds no strip of its own, so the only new pixels
+  // that claim a click are the button's. It goes on the last card because that is
+  // the bottom of the bar, where the sweep has lived since 2026-09-17; a card is
+  // the only child of the stack, so "last card" and "bottom of the bar" are the
+  // same place.
   const previous = document.getElementById(ACTIONS_ID);
   if (previous) previous.remove();
-  if (notices.some((n) => n.dismissible !== false)) stack.append(actions());
+  const cards = [...stack.children].filter((n) => n.id && n.id.startsWith('n-'));
+  const last = cards[cards.length - 1];
+  if (last && notices.some((n) => n.dismissible !== false)) last.append(sweepButton());
 
   report();
 }

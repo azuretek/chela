@@ -401,19 +401,22 @@ const PROBE = `(() => {
       const node = document.getElementById('stack');
       return node ? getComputedStyle(node).backgroundColor : null;
     })(),
-    actions: (function () {
-      const row = document.querySelector('.banner-actions');
-      if (row) {
-        const box = row.getBoundingClientRect();
-        return {
-          background: getComputedStyle(row).backgroundColor,
-          top: box.top, bottom: box.bottom, left: box.left, right: box.right,
-        };
-      }
+    // The sweep button's own box, and the CARD it hangs on. The sweep is no
+    // longer a full-width row of its own (Abi, 2026-09-18): it is a plain button
+    // on the last card's line, so what has to be painted is the card behind the
+    // button, not a strip spanning the width. onCard says the button is inside a
+    // card, which is what makes its pixels the card's rather than a dead zone.
+    sweep: (function () {
       const readall = document.querySelector('.banner__readall');
       if (!readall) return null;
       const box = readall.getBoundingClientRect();
-      return { background: null, top: box.top, bottom: box.bottom, left: box.left, right: box.right };
+      const card = readall.closest('.banner');
+      const cardBox = card ? card.getBoundingClientRect() : null;
+      return {
+        onCard: Boolean(card),
+        top: box.top, bottom: box.bottom, left: box.left, right: box.right,
+        card: cardBox ? { top: cardBox.top, bottom: cardBox.bottom, left: cardBox.left, right: cardBox.right } : null,
+      };
     })(),
     // The sweep control, and whether a press at its own centre would reach it.
     // The banner is a view over the page, so a control inside it is clickable
@@ -512,7 +515,7 @@ async function capture(page, mode, win) {
   console.log(`SHOT ${shot}`);
   console.log(`     ${page.name} ${mode}: color-scheme=${probe.colorScheme} --bg=${probe.tokenBackground} body=${probe.body}`);
   if (probe.pixels) {
-    console.log(`     banner ${mode}: html=${probe.htmlBackground} stack=${probe.stackBackground} actions=${probe.actions ? probe.actions.background : 'none'}`);
+    console.log(`     banner ${mode}: html=${probe.htmlBackground} stack=${probe.stackBackground} sweep=${probe.sweep ? (probe.sweep.onCard ? 'on-card' : 'not-on-card') : 'none'}`);
     console.log(`     banner ${mode} pixels: ${JSON.stringify(probe.pixels)}`);
   }
   return probe;
@@ -535,12 +538,12 @@ function readPixels(image, probe) {
     return `rgb(${bitmap[i + 2]}, ${bitmap[i + 1]}, ${bitmap[i]}) a${bitmap[i + 3]}`;
   };
   const out = {};
-  if (probe.actions) {
-    // The row the sweep control lives in, read at its own leading edge, which is
-    // the part of it nothing is drawn on.
-    const y = (probe.actions.top + probe.actions.bottom) / 2;
-    out.actionsLeadingEdge = at(probe.actions.left + 2, y);
-    out.actionsTrailingEdge = at(probe.actions.right - 2, y);
+  if (probe.sweep) {
+    // The sweep button's own pixels, read at its centre. It hangs on a card now,
+    // so this pixel is the card's painted surface: it must NOT be a hole the page
+    // shows through, which is what a dead zone under the button would be.
+    const y = (probe.sweep.top + probe.sweep.bottom) / 2;
+    out.sweepCentre = at((probe.sweep.left + probe.sweep.right) / 2, y);
   }
   // The stack's own padding, above the first card: the strip's own surface.
   out.aboveTheCard = at(4, 4);
@@ -675,19 +678,22 @@ app.whenReady().then(async () => {
         check(`${page.name}.html paints the whole bar, so no pixel of it is a dead zone`,
           Boolean(probe.stackBackground) && !clear(probe.stackBackground),
           `the stack resolved to ${JSON.stringify(probe.stackBackground)}`);
-        check(`${page.name}.html leaves the sweep row unpainted`,
-          Boolean(probe.actions) && clear(probe.actions.background),
-          JSON.stringify(probe.actions));
-        // And the same claim off the composited pixels, which is the half a person
-        // sees: the sweep row's own leading and trailing edges, and the strip's
-        // padding above the card, all painted with the bar's own surface rather
-        // than left to the page underneath. The colour is reported beside it so a
-        // strip painted with a fully transparent colour cannot pass by looking
-        // painted.
+        // ---- the sweep is a plain button on a card, not a full-width row ------
+        // Abi, 2026-09-18: the sweep had become a full-width row whose empty part
+        // ate clicks on the Control UI. It is a plain button on the last card's
+        // line now, so the invariant is that it sits ON a card (its pixels are the
+        // card's painted surface) rather than in a strip of its own.
+        check(`${page.name}.html hangs the sweep on a card, not in a row of its own`,
+          Boolean(probe.sweep) && probe.sweep.onCard && Boolean(probe.sweep.card),
+          JSON.stringify(probe.sweep));
+        // And off the composited pixels, the half a person sees: the button's own
+        // centre is painted (it is on the card), and the strip's padding above the
+        // first card is the bar's own surface. The colour is reported beside the
+        // alpha so a fully transparent pixel cannot pass by looking painted.
         if (probe.pixels) {
           const alpha = (value) => Number(String(value).split(' a').pop());
-          check(`${page.name}.html's strip is painted where it draws no card`,
-            [probe.pixels.actionsLeadingEdge, probe.pixels.actionsTrailingEdge, probe.pixels.aboveTheCard]
+          check(`${page.name}.html paints behind the sweep button and its own strip`,
+            [probe.pixels.sweepCentre, probe.pixels.aboveTheCard]
               .every((pixel) => alpha(pixel) > 0),
             JSON.stringify(probe.pixels));
         }

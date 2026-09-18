@@ -22,9 +22,11 @@
  *   the reader can see the page underneath and cannot click it. The stack
  *   therefore carries its own surface (see .banner-stack), which covers its
  *   padding and the gaps between its cards as well as the cards themselves, and
- *   every child of it, a card or the footer row carrying Mark all read, sits on a
- *   pixel the bar paints. The body must still add nothing of its own: a margin
- *   here would be inside the view and outside the bar.
+ *   every child of it, which is a card and only ever a card, sits on a pixel the
+ *   bar paints. The sweep control (Mark all read) is NOT a child of the stack: it
+ *   hangs on the last card's own line, so it needs no strip of its own painted
+ *   behind it. The body must still add nothing of its own: a margin here would be
+ *   inside the view and outside the bar.
  * - It runs under `style-src 'self'`, so no style attribute may be written
  *   through the DOM. Everything an element needs is a class or a property set
  *   from a stylesheet.
@@ -37,17 +39,16 @@
  *   and not interactive here is a dead zone, and a dead zone over live content
  *   reads as the app being broken.
  *
- *   The fault it answers, and the third of its kind in this one area: the page's
- *   grab band over the banner, then the banner itself, and then this, the stack's
- *   own transparent furniture. The strip reported was the row carrying Mark all
- *   read, which spanned the whole width while its control sat at the trailing
- *   edge, so the empty part of that row looked exactly like the page underneath
- *   and ate every click that landed on it; the stack's padding and the gaps
- *   between cards did the same. Measured 2026-09-17 by clicking at a real screen
- *   point in that row: the click was delivered into this document and reached
- *   nothing, while the page beneath saw nothing at all. The first fix moved the
- *   row inside a card, which removed the strip and read wrong; the second paints
- *   the bar, which removes the strip without moving the row.
+ *   The fault it answers, and the fourth of its kind in this one area: the page's
+ *   grab band over the banner, then the banner itself, then the stack's own
+ *   transparent furniture, and then the Mark all read row. The strip reported was
+ *   that row, which spanned the whole width while its control sat at the trailing
+ *   edge, so the empty part of it ate every click that landed on it. Painting the
+ *   bar behind it (2026-09-17) hid the strip but not the click: the view still
+ *   claimed the mouse-down across the row's full width, which Abi reported again
+ *   on 2026-09-18. The fix now removes the row entirely: the sweep is a plain
+ *   button on the last card's line, so the only pixels that claim a click are the
+ *   button's, and the stack has no non-card child left to span the width.
  */
 
 /* The view is not a window-drag surface. Kept as the declared intent, and NOT
@@ -331,30 +332,29 @@ body.banner-body {
 }
 .banner__close:hover { background: var(--notice-dismiss-hover-surface); color: var(--notice-dismiss-hover-colour); }
 
-/* Closing the whole bar. The FOOTER of the bar: right-aligned, under the cards,
-   and deliberately quiet, because it is the way out rather than the point.
+/* Closing the whole bar. A PLAIN BUTTON, not a row: it hangs on the trailing end
+   of the last card's own top line (see the render in banner.js), beside that
+   card's action and dismiss, so it occupies only its own pixels.
 
-   ★ A row of the stack at the bottom, and the reason that is safe is the rule at
-   the top of this file rather than the row's position: the stack paints its whole
-   rectangle, so this row's full width is the bar's own surface and never a strip
-   the reader sees the page through. What the first version of this row got wrong
-   was exactly that and not its place in the stack: it had nothing painted behind
-   it, so its leading half was a dead zone. Abi asked for it back at the bottom on
-   2026-09-17; see the render in banner.js.
+   ★ Why it stopped being a row. The bar's view is full width and claims every
+   mouse event inside its rectangle whatever the page paints there, so a footer
+   ROW carrying one right-aligned button left its empty leading part as a dead
+   zone: the reader saw the Control UI through it and could not click it, and
+   painting the bar behind it (the 2026-09-17 fix) hid the strip without freeing
+   the click. Abi, 2026-09-18: a normal button, no full-width banner and no
+   dead-zone. Sitting on a line that already exists adds no strip of its own, so
+   the only pixels that claim a click are the button's, which is the rule at the
+   top of this file applied by shrinking what the control COVERS rather than by
+   painting behind it.
 
-   Its hairline is what says the row belongs to the bar rather than floating in
-   it, and it is drawn from the bar's own border token so the two read as one
-   object. The pair below is the general shape: a container is `none`, the control
-   in it is the only thing put back into hit testing. */
-.banner-actions {
-  flex: none;
-  display: flex;
-  justify-content: flex-end;
-  pointer-events: none;
-  padding-top: 8px;
-  border-top: 1px solid color-mix(in srgb, var(--notice-border) var(--notice-border-alpha), transparent);
-}
+   `align-self: center` keeps it on the card's message line while the detail wraps
+   under it, the same placement the action button uses. It sits at the card's
+   trailing edge because the card's own `.grow` column takes the free space and
+   pushes every trailing control right; no auto margin, which would fight that.
+   Quiet colours: it is the way out rather than the point. */
 .banner__readall {
+  flex: none;
+  align-self: center;
   min-height: var(--notice-action-min-height);
   padding: var(--notice-action-padding);
   background: transparent;
