@@ -7,18 +7,19 @@ Where things belong is [layout.md](layout.md); what to run before you push is
 
 ## How a change lands
 
-**Small changes go straight to main.** Run the suites, then commit with a
-conventional message and push. The commit log is the review for a change that is
-reversible and inside one tree.
+**Every change lands as a pull request.** Push the branch, open the pull request,
+let CI run, and merge when it is green. The legs compile and test and ship
+nothing, so they need no Apple credential. A change that touches only markdown
+runs no legs at all, because both workflows filter on paths a documentation file
+does not match, and there the local suites are the gate.
 
-**A pull request is for a change that needs something a push cannot give it**,
-which in practice is one of two things: verification only CI can produce, such as
-anything Swift, because the iOS build needs a macOS runner; or review before it
-lands. The pull-request legs compile and test and ship nothing, so they need no
-Apple credential.
+**Tests passing is the whole gate, because the maintainer is the one merging.**
+Nobody waits to have their own change reviewed back to them, and nobody merges
+past a red leg: the flip side of merging without a separate review is that the
+tests are not negotiable.
 
-Both paths write the same three sections, because the reason for them does not
-depend on the path: the problem, the change, and the test with its output.
+A pull request body carries three sections, which is what the reason for them
+does not depend on: the problem, the change, and the test with its output.
 `.github/pull_request_template.md` is the shape, and a commit body that
 carries the same three things is a good commit body.
 
