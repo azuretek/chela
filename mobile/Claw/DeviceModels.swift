@@ -25,6 +25,22 @@ enum DeviceModels {
         return table[key] ?? key
     }
 
+    /// The model and its identifier as one string, for the two readers that show
+    /// both: \`iPhone 16 Pro Max (iPhone17,2)\`, the identifier alone when this table
+    /// has no name for it, or \`iOS device\` when there is no identifier at all.
+    ///
+    /// Composed HERE rather than at each call site, and that is the whole reason
+    /// this function exists: the About sheet and the client-context block have to
+    /// agree, and the first cut of this had each of them joining the name and the
+    /// identifier for itself, which printed an unknown identifier TWICE, as
+    /// \`iPhone99,9, iPhone99,9\`, in the one place the value is meant to be a fact.
+    /// One function, one shape.
+    static func describe(machine: String) -> String {
+        let key = machine.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return "iOS device" }
+        guard let name = table[key] else { return key }
+        return "\(name) (\(key))"
+    }
     /// Apple's identifiers for the iPhones this table knows, and nothing else: no
     /// iPad and no Mac, because this build is iPhone-only and a row nothing can
     /// reach is a row nobody maintains.

@@ -186,7 +186,7 @@ enum PromptMetadata {
             // what this line is for. One lookup, in DeviceModels, shared with the
             // About sheet, so the name a reader is shown and the name an agent is
             // sent cannot drift. Reported 2026-09-17.
-            "os": clean("\(device.systemName) \(device.systemVersion) (\(DeviceModels.marketingName(machine: machine)), \(machine))"),
+            "os": clean("\(device.systemName) \(device.systemVersion) on \(DeviceModels.describe(machine: machine))"),
             "locale": clean(locale.identifier.replacingOccurrences(of: "_", with: "-")),
             "timezone": clean(timezone.identifier),
             "client": clean(clientIdentity(label: Naming.clientLabel, version: appVersion)),

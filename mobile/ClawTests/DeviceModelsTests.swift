@@ -18,6 +18,15 @@ final class DeviceModelsTests: XCTestCase {
         XCTAssertEqual(DeviceModels.marketingName(machine: "iPhone99,9"), "iPhone99,9")
     }
 
+    /// The composed form, which is what both readers actually show: the name and
+    /// the identifier when the table has one, the identifier ALONE when it does
+    /// not, so the fallback never says the same thing twice.
+    func testTheIdentifierIsPrintedOnce() {
+        XCTAssertEqual(DeviceModels.describe(machine: "iPhone17,2"), "iPhone 16 Pro Max (iPhone17,2)")
+        XCTAssertEqual(DeviceModels.describe(machine: "iPhone99,9"), "iPhone99,9")
+        XCTAssertEqual(DeviceModels.describe(machine: "  "), "iOS device")
+    }
+
     /// A blank is not a model, so it says so rather than reading as a phone whose
     /// name the app failed to fetch.
     func testAnEmptyIdentifierIsNotAModel() {

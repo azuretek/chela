@@ -329,7 +329,6 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
         let channel = UpdateFeed.channel(for: version)
         let device = UIDevice.current
         let machine = PromptMetadata.machineIdentifier()
-        let model = DeviceModels.marketingName(machine: machine)
         return [
             ["label": "Version", "value": version],
             ["label": "Channel", "value": channel],
@@ -339,7 +338,7 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
             // and to nobody else: reported 2026-09-17 against the iOS Settings sheet,
             // where this same phone reads "iPhone 16 Pro Max". No other client has an
             // iPhone identifier to name, so the lookup is this client's own.
-            ["label": "Device", "value": "\(model) (\(machine))"],
+            ["label": "Device", "value": DeviceModels.describe(machine: machine)],
         ]
     }
 
