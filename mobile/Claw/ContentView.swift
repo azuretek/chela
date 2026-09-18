@@ -201,44 +201,90 @@ struct ContentView: View {
             .noticeBanner(notices)
     }
 
+    /// Whether this client holds a credential for `gateway`, a token or a password,
+    /// which is what the Control UI needs before it can be anything other than its
+    /// own login prompt. Read from the Keychain on every pass, so a credential
+    /// entered in our settings page reaches the Control UI without a relaunch.
+    ///
+    /// Abi's rule, 2026-09-18: our page first. A gateway this client cannot
+    /// authenticate against shows OUR settings surface, where the login is
+    /// configured, rather than the Control UI's own token prompt, which is a page we
+    /// do not own asking for a value we own the store for.
+    private func holdsCredential(_ gateway: Gateway) -> Bool {
+        let values = SettingsCredentials.values(gateway.id)
+        return !(values.token ?? "").isEmpty || !(values.password ?? "").isEmpty
+    }
+
+    /// The gateway whose Control UI this client may show: the active one, when a
+    /// credential is held for it, and nil otherwise, which is what shows our own
+    /// settings surface.
+    ///
+    /// A property rather than a second condition in `body`, because that compound
+    /// condition pushed the view builder past the type checker: CI failed this file
+    /// with "the compiler is unable to type-check this expression in reasonable
+    /// time" while the same code built here, which is the budget rather than a bug.
+    private var controlUiGateway: Gateway? {
+        guard let gateway = gateways.activeGateway, holdsCredential(gateway) else { return nil }
+        return gateway
+    }
+
+    /// The Control UI for one gateway: the page, the pairing cover over it, and the
+    /// animation that brings the cover in and out.
+    ///
+    /// Its own function because the type checker could not afford it inline: with the
+    /// page, the cover and the animation in one expression, the CI toolchain spent its
+    /// whole budget and failed the build with "the compiler is unable to type-check
+    /// this expression in reasonable time", while the same code compiled here. The
+    /// budget is per expression, which is why splitting the expression is the fix the
+    /// error itself suggests.
+    @ViewBuilder
+    private func controlUiPage(_ gateway: Gateway) -> some View {
+        // Bound to an explicitly typed local before the modifier chain, so the type
+        // checker has one concrete view to work with rather than a call whose
+        // arguments and modifiers it must solve together: it exceeded its budget
+        // on that expression, which is what failed CI before this split.
+        let page: WebView = WebView(
+            gateway: gateway,
+            appearance: AppearanceMode.system,
+            themeColour: $themeColour,
+            notices: notices,
+            connection: connection,
+            pairing: pairing,
+            // The App-settings affordance injected into the Control UI's
+            // footer posts here when pressed, and raises the settings
+            // sheet. It is this client's ONLY settings entry: there is no
+            // native control beside it, because the footer bar below is
+            // the interface's own and a second control floating over the
+            // page was reported as an unwanted duplicate.
+            // The App-settings affordance's bridge, plus the page itself:
+            // the handle is for the one action that asks the Control UI to
+            // do something the Control UI owns. See `GatewayPage`.
+            onOpenAppSettings: { showingSettings = true },
+            pageControl: gatewayPage
+        )
+        page
+        // The pairing screen sits over the page while the gateway is
+        // refusing this device. Full cover rather than a banner, because
+        // there is no Control UI behind it to reach: the gateway held the
+        // socket, and the one thing to do is approve the device on the
+        // gateway host. It is removed the instant the socket opens, which
+        // the page's own reconnect drives once the device is approved, so
+        // recovery needs no relaunch and no button here. The settings
+        // button stays reachable above it, since a wrong gateway address
+        // is fixed there and a refusal on the wrong host looks the same.
+        .overlay {
+            if pairing.isPairing {
+                PairingView(state: pairing, deviceLabel: Self.deviceLabel)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: pairing.isPairing)
+    }
+
     var body: some View {
         Group {
-            if let gateway = gateways.activeGateway {
-                WebView(
-                    gateway: gateway,
-                    appearance: AppearanceMode.system,
-                    themeColour: $themeColour,
-                    notices: notices,
-                    connection: connection,
-                    pairing: pairing,
-                    // The App-settings affordance injected into the Control UI's
-                    // footer posts here when pressed, and raises the settings
-                    // sheet. It is this client's ONLY settings entry: there is no
-                    // native control beside it, because the footer bar below is
-                    // the interface's own and a second control floating over the
-                    // page was reported as an unwanted duplicate.
-                    // The App-settings affordance's bridge, plus the page itself:
-                    // the handle is for the one action that asks the Control UI to
-                    // do something the Control UI owns. See `GatewayPage`.
-                    onOpenAppSettings: { showingSettings = true },
-                    pageControl: gatewayPage
-                )
-                // The pairing screen sits over the page while the gateway is
-                // refusing this device. Full cover rather than a banner, because
-                // there is no Control UI behind it to reach: the gateway held the
-                // socket, and the one thing to do is approve the device on the
-                // gateway host. It is removed the instant the socket opens, which
-                // the page's own reconnect drives once the device is approved, so
-                // recovery needs no relaunch and no button here. The settings
-                // button stays reachable above it, since a wrong gateway address
-                // is fixed there and a refusal on the wrong host looks the same.
-                .overlay {
-                    if pairing.isPairing {
-                        PairingView(state: pairing, deviceLabel: Self.deviceLabel)
-                            .transition(.opacity)
-                    }
-                }
-                .animation(.easeInOut(duration: 0.2), value: pairing.isPairing)
+            if let gateway = controlUiGateway {
+                controlUiPage(gateway)
                 // The notice stack is the last overlay this branch applies, so
                 // no other overlay can be drawn over a card's own dismiss
                 // control. Measured on an iPhone 17 simulator on 2026-09-16,
