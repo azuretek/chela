@@ -258,18 +258,15 @@
         </div>
         <div class="settings-row__control">
           <input type="text" id="globalShortcut" placeholder="CommandOrControl+Shift+O" spellcheck="false">
+          <!-- This row's own answer, and the row is the only place that can carry
+               it: the field commits on Enter or on leaving it, and a field looks
+               exactly the same after it commits as before. INSIDE the control
+               column rather than beside it, because the column is width:100% in
+               this row and a sibling after it is laid out past the group's edge
+               and clipped. There is no Save button: the fifth rule in
+               ui/CONVENTIONS.md. -->
+          <div class="result" id="globalShortcut-result"></div>
         </div>
-      </div>
-      <!-- The answer to Save, and it belongs to the button rather than to any
-           one setting. It used to sit under the shortcut field, which is on one
-           client only: the phone has no shortcut, so "Saved." would have been
-           written into a hidden element and the button would have looked like it
-           did nothing at all. -->
-      <div class="settings-row settings-row--actions">
-        <div class="settings-row__control">
-          <button id="save" class="primary">Save preferences</button>
-        </div>
-        <div class="result" id="save-result"></div>
       </div>
     </div>
 

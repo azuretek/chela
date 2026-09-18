@@ -721,3 +721,33 @@ test('a stored credential is still removable, by a control that names it', () =>
   // carries it in words.
   assert.match(code, /A token is saved for this gateway\./, 'the token field does not report a stored value');
 });
+
+test('every preference on this tab commits from its own control', () => {
+  // The fifth rule in ui/CONVENTIONS.md, and the report it came from: one button at
+  // the foot of the tab wrote every preference, so the screen and the stored state
+  // could disagree for as long as the reader stayed on the page, and every control
+  // carried "have I saved this?" while they were still using it.
+  assert.doesNotMatch(html, /id="save"/, 'the Save control is back in the markup');
+  assert.doesNotMatch(page, /'save'\)\.addEventListener/, 'the page still wires a Save button');
+  assert.match(page, /async function commitSetting\(id, value, done = ''\)/,
+    'there is no single per-row commit');
+
+  // The switches, read from the spec rather than typed here: a setting added there
+  // has to be wired, and one removed from it must not stay wired to a row that is
+  // gone. The order is the page's business, so the lists are compared as sets.
+  const wired = /for \(const id of \[([^\]]*)\]\)/.exec(page);
+  assert.ok(wired, 'no switch list to check');
+  const listed = wired[1].split(',').map((entry) => entry.trim().replace(/'/g, '')).sort();
+  const declared = spec.settings.map((setting) => setting.id)
+    .filter((id) => id !== 'globalShortcut' && id !== 'gatewayHeaders' && id !== 'appearance')
+    .sort();
+  assert.deepStrictEqual(listed, declared,
+    'the switches the page commits from are not the ones the spec declares');
+
+  // And the one preference with nothing to show for itself commits on the reader's
+  // own gesture, both of them: Enter, and leaving the field having changed it.
+  assert.match(page, /shortcut\.addEventListener\('keydown'/, 'the shortcut field has no Enter');
+  assert.match(page, /shortcut\.addEventListener\('blur'/, 'the shortcut field does not commit when it is left');
+  assert.match(html, /id="globalShortcut-result"/, 'the row that must report has nowhere to report to');
+});
+

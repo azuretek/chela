@@ -339,7 +339,7 @@ app.whenReady().then(async () => {
     await settings.executeJavaScript(disabled
       ? 'window.clawDesktop.saveSettings({ autoUpdate: false })'
       : 'document.getElementById("autoUpdate").checked = false;'
-        + 'document.getElementById("save").click();');
+        + 'document.getElementById("autoUpdate").dispatchEvent(new Event("change"));');
     await delay(1000);
     const after = JSON.parse(fs.readFileSync(path.join(PROFILE, 'config.json'), 'utf8'));
     if (before.autoUpdate === false || after.autoUpdate !== false) {
