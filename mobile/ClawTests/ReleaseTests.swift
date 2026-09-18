@@ -62,10 +62,19 @@ final class ReleaseTests: XCTestCase {
     }
 
     func testTheAppAndTheManifestAreOnTheSameRelease() throws {
+        // The release segment is the invariant, asserted as a substring rather
+        // than by rebuilding the URL prefix: splitting on "/" and joining again is
+        // not the inverse of a URL, because the empty component in "https://" does
+        // not survive it, and a test that compares a mangled prefix fails for a
+        // reason that has nothing to do with the code.
         let app = Release.assetUrl(version, asset: Release.appAsset(version))
         let manifest = Release.assetUrl(version, asset: Release.manifestAsset(version))
-        let releasePrefix = app.split(separator: "/").dropLast().joined(separator: "/")
-        XCTAssertTrue(manifest.hasPrefix(releasePrefix), "one release carries both, or the install cannot work")
-        XCTAssertNotEqual(app, manifest)
+        let releaseSegment = "/releases/download/" + Release.tag(version) + "/"
+
+        XCTAssertTrue(app.contains(releaseSegment), "the app asset hangs off this version's release")
+        XCTAssertTrue(manifest.contains(releaseSegment), "and so does the manifest")
+        XCTAssertTrue(app.hasPrefix("https://"), "an OTA install requires HTTPS")
+        XCTAssertTrue(manifest.hasPrefix("https://"), "both assets, or the installer refuses it")
+        XCTAssertNotEqual(app, manifest, "the manifest is not the app")
     }
 }

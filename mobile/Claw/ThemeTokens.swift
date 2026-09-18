@@ -7,14 +7,14 @@ import UIKit
 /// About surfaces wear the interface's own type and palette rather than the
 /// fallback ui.css carries for the case where no gateway has answered.
 ///
-/// The list is a mirror of `core/spec/tokens.json`'s `live` array, which is also
-/// what the desktop reads as `THEME_TOKENS` (core/tokens.js) before inserting the
-/// values into the same two pages. One list, two clients: before it moved into the
-/// spec the list was the desktop's alone, and this client applied nothing, which
-/// is exactly how its surfaces ended up the only ones wearing the system font and
-/// a neutral grey palette while the interface beside them was Instrument Sans on
-/// `#0e1015`. `ThemeTokensParityTests` asserts every name and kind below against
-/// the spec, so the mirror cannot drift.
+/// The list is read from `core/spec/tokens.json` at runtime: `live.tokens` is the
+/// same list the desktop reads as `THEME_TOKENS` (core/tokens.js) before inserting
+/// the values into the same two pages. One list, two clients, no copy: before it
+/// moved into the spec the list was the desktop's alone, and this client applied
+/// nothing, which is exactly how its surfaces ended up the only ones wearing the
+/// system font and a neutral grey palette while the interface beside them was
+/// Instrument Sans on `#0e1015`. `ThemeTokensParityTests` asserts what is read
+/// against the repository's copy, so the two cannot drift.
 ///
 /// A value is read from the page and applied to our own page through CSSOM, with
 /// no stylesheet text built in Swift. That is deliberate: a custom property set
@@ -27,35 +27,37 @@ enum ThemeTokens {
     /// `[name, kind]` in the spec's order. The kind is carried because the spec
     /// carries it and the parity test asserts it; nothing here branches on it,
     /// as CSSOM needs no grammar to apply a custom property.
-    static let live: [(name: String, kind: String)] = [
-        // Surfaces. --bg-elevated and --card are the two the borrowed settings
-        // components draw on (their group surface IS --card, where ours used to be
-        // --panel, which the live theme could reach and this one could not), so a
-        // palette that publishes them -- every shipped one does -- must be able to
-        // hand them over rather than leaving the surface on the default palette.
-        ("--bg", "color"), ("--bg-accent", "color"), ("--bg-hover", "color"),
-        ("--bg-muted", "color"), ("--bg-content", "color"), ("--bg-elevated", "color"),
-        ("--panel", "color"), ("--panel-hover", "color"), ("--panel-strong", "color"),
-        ("--card", "color"),
-        ("--input", "color"), ("--chrome", "color"),
-        // Text
-        ("--text", "color"), ("--text-strong", "color"),
-        ("--muted", "color"), ("--muted-strong", "color"),
-        // Lines
-        ("--border", "color"), ("--border-strong", "color"), ("--border-hover", "color"),
-        // Accent
-        ("--accent", "color"), ("--accent-hover", "color"), ("--accent-subtle", "color"),
-        ("--primary", "color"), ("--primary-hover", "color"), ("--primary-foreground", "color"),
-        ("--destructive", "color"), ("--ring", "color"),
-        // Shape
-        ("--radius", "length"), ("--radius-sm", "length"), ("--radius-md", "length"),
-        ("--radius-lg", "length"), ("--radius-full", "length"),
-        // Scrollbars, the reason our scrollbars can match rather than resemble.
-        ("--scrollbar-size", "length"), ("--scrollbar-thumb-inset", "length"),
-        ("--scrollbar-thumb", "color"), ("--scrollbar-thumb-hover", "color"),
-        // Type and depth
-        ("--font-body", "font"), ("--shadow-lg", "shadow"),
-    ]
+    /// `core/spec/tokens.json`'s `live.tokens`, in the spec's order. The kind is
+    /// carried because the spec carries it and the parity test asserts it;
+    /// nothing here branches on it, as CSSOM needs no grammar to apply a custom
+    /// property.
+    static var live: [(name: String, kind: String)] {
+        spec.live.tokens.compactMap { pair in
+            guard pair.count >= 2 else { return nil }
+            return (name: pair[0], kind: pair[1])
+        }
+    }
+
+    /// `core/spec/tokens.json`, read from the app's own copy. Only `live` is decoded
+    /// here: `NoticeTokens` reads the rest of the file, and `BundledSpecTests`
+    /// accounts for every key across both readers.
+    private struct LiveSpec: Decodable {
+        struct Live: Decodable {
+            let tokens: [[String]]
+        }
+
+        let live: Live
+    }
+
+    private static let spec: LiveSpec = loadSpec()
+
+    private static func loadSpec() -> LiveSpec {
+        let empty = LiveSpec(live: LiveSpec.Live(tokens: []))
+        guard let spec = try? BundledSpec.load("tokens", as: LiveSpec.self), !spec.live.tokens.isEmpty else {
+            return empty
+        }
+        return spec
+    }
 
     static var names: [String] { live.map(\.name) }
 
