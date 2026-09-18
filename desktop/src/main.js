@@ -3501,7 +3501,11 @@ function aboutState() {
       { label: 'Version', value: app.getVersion() },
       { label: 'Channel', value: updates.channelOf(app.getVersion()) || 'stable' },
       { label: 'Electron', value: `${process.versions.electron} · Chromium ${process.versions.chrome}` },
-      { label: 'Platform', value: `${PLATFORM_NAMES[process.platform] || process.platform} ${process.arch}` },
+      // The version comes from the same helper the client-context block sends, so
+      // what About shows and what an agent is told cannot disagree. Deliberately
+      // not os.release(): on macOS that is the Darwin kernel, which read as
+      // "macOS 25.6.0" on a machine running 26.6.2 (measured 2026-09-17).
+      { label: 'Platform', value: `${PLATFORM_NAMES[process.platform] || process.platform} ${promptMetadata.osRelease()} ${process.arch}` },
       { label: 'Config', value: config.path() },
     ],
     // The Control UI this build targets, and the two fields the shared page

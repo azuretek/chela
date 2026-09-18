@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import os from 'node:os';
 
 import * as metadata from '../src/prompt-metadata.js';
 
@@ -258,3 +259,24 @@ test('the settings toggle is wired from the page through main to the gateway pag
   assert.match(main, /dom-ready[\s\S]*?installPromptMetadata\(wc\)/);
   assert.match(main, /app:save-settings[\s\S]*?installPromptMetadata\(page\(\)\)/);
 });
+
+/* ------------------------------------------------- what OS version we report */
+
+test('macOS reports the version macOS reports, not the Darwin kernel', () => {
+  // Measured 2026-09-17 on macOS 26.6.2: os.release() answered "25.6.0", the
+  // KERNEL version, so the client-context block told every agent this desktop ran
+  // an OS that does not exist. Nothing caught it because the fixture's macOS
+  // example was written by hand.
+  const plist = fs.readFileSync('/System/Library/CoreServices/SystemVersion.plist', 'utf8');
+  const product = /<key>ProductVersion<\/key>\s*<string>([^<]+)<\/string>/.exec(plist)[1].trim();
+  assert.strictEqual(metadata.osRelease('darwin'), product,
+    'the macOS version we send is not the one macOS reports for itself');
+  assert.notStrictEqual(metadata.osRelease('darwin'), os.release(),
+    'the Darwin kernel version is being sent as the macOS version again');
+});
+
+test('other platforms report their own kernel and build number', () => {
+  assert.strictEqual(metadata.osRelease('linux'), os.release());
+  assert.strictEqual(metadata.osRelease('win32'), os.release());
+});
+
