@@ -201,13 +201,31 @@ struct ContentView: View {
             .noticeBanner(notices)
     }
 
+    /// Whether this client holds a credential for `gateway`, a token or a password,
+    /// which is what the Control UI needs before it can be anything other than its
+    /// own login prompt. Read from the Keychain on every pass, so a credential
+    /// entered in our settings page reaches the Control UI without a relaunch.
+    ///
+    /// Abi's rule, 2026-09-18: our page first. A gateway this client cannot
+    /// authenticate against shows OUR settings surface, where the login is
+    /// configured, rather than the Control UI's own token prompt, which is a page we
+    /// do not own asking for a value we own the store for.
+    private func holdsCredential(_ gateway: Gateway) -> Bool {
+        let values = SettingsCredentials.values(gateway.id)
+        return !(values.token ?? "").isEmpty || !(values.password ?? "").isEmpty
+    }
+
     var body: some View {
         Group {
-            if let gateway = gateways.activeGateway {
+            if let gateway = gateways.activeGateway, holdsCredential(gateway) {
+                #if DEBUG
+                let _ = Diagnostics.log("branch: the Control UI, credential held")
+                #endif
                 WebView(
                     gateway: gateway,
                     appearance: AppearanceMode.system,
                     themeColour: $themeColour,
+                    trustedFingerprint: gateways.config.trustedCerts[gateway.url.host ?? ""],
                     notices: notices,
                     connection: connection,
                     pairing: pairing,
@@ -254,6 +272,9 @@ struct ContentView: View {
                     if let host { settingsSheetContent(host) }
                 }
             } else if let host {
+                #if DEBUG
+                let _ = Diagnostics.log("branch: our settings surface")
+                #endif
                 // No gateway yet, so this IS the app: there is nothing behind it to
                 // go back to, and nothing to draw the sheet over. About is still
                 // reached from here, so the About sheet rides the surface itself.
