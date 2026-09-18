@@ -47,6 +47,7 @@ import { withTokenHandoff } from '../../core/gateway-url.js';
 // the iOS client bundles the same spec. Answering is not identifying: this is
 // what stops a 200 from a stranger's page being put behind our chrome.
 import * as gatewayIdentity from '../../core/gateway-identity.js';
+import * as bootstrapHealth from '../../core/bootstrap-health.js';
 // The pairing copy and the approve command, read from the shared contract rather
 // than written down here: the screen the desktop shows and the screen the phone
 // shows say the same thing because they read the same file. The phase names, the
@@ -1411,6 +1412,12 @@ function createGatewayView({ attempt = false } = {}) {
     reachMilestone(progress.DOM);
     installPromptMetadata(wc);
     installAppSettingsAffordance(wc);
+    // The window's own shell has parsed, so this boot has genuinely come up
+    // whether or not a gateway then connects: advance the stage and clear the
+    // crash-loop marker. bootReady is idempotent, so a later navigation's
+    // dom-ready does no harm.
+    reachBootStage('renderer-ready');
+    bootReady();
   });
 
   wc.on('did-finish-load', () => {
@@ -2706,6 +2713,60 @@ function suppressedUpdate() {
   const record = config.get().updateSuppression;
   if (!record || typeof record.version !== 'string') return null;
   return record;
+}
+
+// ---------------------------------------------------------- bootstrap health
+//
+// The crash-loop marker outlives a run in the same config store as the update
+// suppression above, and for the same reason: a build that dies before its own
+// code runs cannot report anything, so the signal has to be on disk. main.js
+// writes a fresh attempt marker BEFORE anything can crash the boot, advances its
+// stage as the boot passes each milestone, and clears it once the window's own
+// shell is up (renderer-ready). A marker still present next launch is a boot
+// that never finished; core/bootstrap-health.js turns the count into a verdict.
+//
+// The verdict read at THIS launch, before this launch's own attempt is written,
+// so a later system (the broken-build banner and the automatic rollback) can ask
+// "did the build we are running fail to come up last time?" without re-reading
+// the store. Null until beginBootAttempt() has run.
+let bootVerdict = null;
+
+/** The verdict this launch was born with: is the running build in a crash loop? */
+function bootHealth() {
+  return bootVerdict;
+}
+
+/**
+ * Read the marker left by previous launches, judge the running build, then write
+ * a fresh attempt for THIS launch ahead of init. Called first thing in
+ * whenReady, so the marker is on disk before any later step can crash the boot.
+ */
+function beginBootAttempt() {
+  const version = app.getVersion();
+  const previous = config.get().bootMarker || null;
+  bootVerdict = bootstrapHealth.assess(previous, { version });
+  if (bootVerdict.bad) {
+    console.warn(`[claw-desktop] bootstrap: ${version} failed to come up ${bootVerdict.attempts} times in a row (last stage ${bootVerdict.stage || 'unknown'})`);
+  }
+  config.update({ bootMarker: bootstrapHealth.beginAttempt(previous, version) });
+}
+
+/** Record that the boot reached a later stage, so a report can say where it died. */
+function reachBootStage(stage) {
+  const marker = config.get().bootMarker;
+  if (!marker) return;
+  const next = bootstrapHealth.reachedStage(marker, stage);
+  if (next !== marker) config.update({ bootMarker: next });
+}
+
+/**
+ * The boot finished cleanly: clear the marker so it does not count against the
+ * next launch. This is the ONLY clear, and it runs when the window's own shell
+ * has loaded (renderer-ready), which is the point a boot has genuinely come up
+ * whether or not a gateway then connects.
+ */
+function bootReady() {
+  if (config.get().bootMarker) config.update({ bootMarker: null });
 }
 
 /**
@@ -4517,6 +4578,12 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', showMainWindow);
 
   app.whenReady().then(async () => {
+    // First thing, before any later step can crash the boot: judge the build we
+    // are running on the marker previous launches left, then write a fresh
+    // attempt for this launch. bootHealth() carries the verdict for the banner
+    // and the automatic rollback.
+    beginBootAttempt();
+
     if (process.platform === 'win32') app.setAppUserModelId('com.azuretek.claw-desktop');
 
     // The default session only ever serves our own file:// pages; the gateway
@@ -4563,6 +4630,7 @@ if (!app.requestSingleInstanceLock()) {
     // bundle until something reloads it.
     await clearOnAppUpgrade().catch((err) => console.warn(`[claw-desktop] cache clear failed: ${err.message}`));
 
+    reachBootStage('window-create');
     createMainWindow();
 
     app.on('activate', showMainWindow);

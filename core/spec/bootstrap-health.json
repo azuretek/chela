@@ -1,0 +1,13 @@
+{
+  "description": "The bootstrap crash-loop health check: the pure decision for whether the running build is booting cleanly or dying before it finishes coming up. desktop/src/main.js writes a boot-attempt marker to its config store BEFORE init starts and clears it once the window signals renderer-ready; this module reads the resulting count and says whether the build is bad. It is Electron-free and reads nothing ambient, taking the marker record and the configured threshold as arguments, so the whole decision is testable from one run and the iOS port has something to check against.",
+  "why": [
+    "A build that dies before its own code runs cannot report anything, so the signal has to survive a crash: the marker is written to persistent config ahead of init and cleared on a clean boot, and a marker that is still there on the next launch is a boot that never finished. Counting CONSECUTIVE uncleared markers is what separates a crash loop from a one-off: a single dirty marker is a crash that might not repeat, N in a row is a build that cannot come up.",
+    "The threshold is a value the caller supplies rather than a constant baked here, because the desktop and the phone may want different patience and a test must be able to drive the boundary exactly. The default of 3 is the smallest count that is a loop rather than an accident: one dirty marker is a single crash, two could be a user force-quitting during a slow boot, three consecutive boots that never reached renderer-ready is a build that does not work.",
+    "The stage is carried on the marker so a report and the banner can say WHERE it died (main-init, window-create, renderer-ready, gateway-connect) without this module knowing what those stages mean. It is opaque here on purpose: the decision is only about the count, and coupling it to a fixed stage list would make every new stage a change to the shared decision.",
+    "This module NEVER clears or writes the marker; it only reads. Writing is the client's job because only the client knows when a boot genuinely finished, and a decision layer that also mutated the store would be a second owner of the boot state. Keeping it read-only is what lets both clients share it while each owns its own persistence."
+  ],
+  "defaults": {
+    "threshold": 3
+  },
+  "stages": ["main-init", "window-create", "renderer-ready", "gateway-connect"]
+}
