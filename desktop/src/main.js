@@ -48,6 +48,7 @@ import { withTokenHandoff } from '../../core/gateway-url.js';
 // what stops a 200 from a stranger's page being put behind our chrome.
 import * as gatewayIdentity from '../../core/gateway-identity.js';
 import * as bootstrapHealth from '../../core/bootstrap-health.js';
+import issueReporter from './issue-reporter.js';
 // The pairing copy and the approve command, read from the shared contract rather
 // than written down here: the screen the desktop shows and the screen the phone
 // shows say the same thing because they read the same file. The phase names, the
@@ -2823,11 +2824,16 @@ function canRollBack() {
  */
 function raiseBrokenBuildBanner() {
   const rollback = canRollBack();
-  const banner = bootstrapHealth.brokenBuildBanner(bootHealth(), { canRollback: rollback });
+  const verdict = bootHealth();
+  const banner = bootstrapHealth.brokenBuildBanner(verdict, { canRollback: rollback });
   if (!banner) {
     clearNotice(BROKEN_BUILD);
     return;
   }
+  // The crash loop is worth a report of its own: bootAttempts and the stage it
+  // died at are exactly what the collector needs to see a bad build across the
+  // fleet, and they carry nothing identifying.
+  issueReporter.report('bootFailure', { bootAttempts: verdict.attempts, stage: verdict.stage });
   setNotice(BROKEN_BUILD, {
     tone: noticeStore.ERROR,
     message: banner.message,
@@ -2898,6 +2904,7 @@ function rollBackToLastKnownGood() {
   suppressUpdate(broken, 'broken');
   config.update({ rollback: { from: broken, to: good.version, at: Date.now() } });
   console.log(`[claw-desktop] rollback: ${broken} -> ${good.version} (last-known-good)`);
+  issueReporter.report('rollback', { rolledBackFrom: broken, rolledBackTo: good.version });
   if (updater) {
     updater.allowDowngrade = true;
     // The same path a normal update takes, but pointed downhill: the check finds
@@ -3010,6 +3017,9 @@ function initUpdates() {
     // a rate limit must not interrupt whatever the user was doing to say so.
     console.error(`[claw-desktop] update check failed: ${err && err.message}`);
     setLastCheck('check failed');
+    // A failing update lane is a report worth having, especially during a
+    // rollback: the scrubbed error names what broke without naming the machine.
+    issueReporter.report('updateFailure', { errorName: err && err.name, errorMessage: err && err.message, stack: err && err.stack });
     // ★ Settled for EVERY trigger, before the manual-check gate below. A download
     // that dies has a card of its own on the bar already, so leaving it there at
     // whatever percent it reached is not the silence this handler is for -- it is
@@ -4722,6 +4732,14 @@ if (!app.requestSingleInstanceLock()) {
     // attempt for this launch. bootHealth() carries the verdict for the banner
     // and the automatic rollback.
     beginBootAttempt();
+
+    // The issue reporter, wired before anything can crash: it installs the
+    // process error handlers and the crash reporter, and it decides the channel
+    // from the running version (null from channelOf means stable).
+    issueReporter.init({
+      config,
+      channel: () => updates.channelOf(app.getVersion()) || 'stable',
+    });
 
     if (process.platform === 'win32') app.setAppUserModelId('com.azuretek.claw-desktop');
 
