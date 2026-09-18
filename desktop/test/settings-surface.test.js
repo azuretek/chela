@@ -629,42 +629,33 @@ test('the measured half of the handoff is still a proof of the transition', () =
   assert.match(harness, /transition-before|transition-revealed/, 'the harness no longer captures the transition');
 });
 
-test('the gateway section is ONE section with ONE Save, and says what an empty field means', () => {
-  // Reported, and this is the shape it was reported against: "Right now it's very
-  // segmented and there are multiple save buttons." Measured off the rendered page
-  // before this change, the editor offered
-  // ["Save","Clear","Save","Clear","Add header","Save name and address"]: four
-  // places to press for one job.
+test('the gateway section has no Save control, and says what an empty field means', () => {
+  // The shape this test was written against, twice. Reported first as "Right now
+  // it's very segmented and there are multiple save buttons", measured off the
+  // rendered page as ["Save","Clear","Save","Clear","Add header","Save name and
+  // address"]: four places to press for one job. That was reduced to ONE Save, and
+  // reported again as "remove all the save buttons from our interface": one button at
+  // the end still made the screen's state and the stored state two things that could
+  // disagree for as long as the reader stayed on the page. See the fifth rule in
+  // ui/CONVENTIONS.md.
   //
-  // That shape was a DELIBERATE choice, and this test exists because it is being
-  // REVERSED rather than repaired. Each credential had its own Save and Clear, and
-  // the name and address had a third Save under them, on the reasoning that a
-  // control next to the thing it writes is clearer than one at the end. The
-  // reasoning is what was wrong: a person configuring one gateway is doing one
-  // thing, and several identically-shaped buttons make that one task read as
-  // several, with the press having to be guessed at from whichever button is
-  // nearest. So the per-field pair is gone and there is ONE Save.
-  //
-  // Two things came with the single Save, and both are asserted here rather than
-  // left to the screenshots, because neither is a property of the layout:
-  //
-  //   - an EMPTY field means "leave it alone", which has to be SAID, since a single
-  //     Save over several fields is what makes a partial save the ordinary case;
-  //   - a stored credential still has to be removable, and the control that does it
-  //     is now a button of its own (see the test below).
-  //
-  // What this file can hold is the shape of the code. The button COUNT on a real
-  // rendered page, in both appearances, is measured by scripts/capture-gateway-form.js.
+  // What replaced it: Enter commits the field the reader is IN, and leaving the
+  // section commits whatever was filled in it. Both write only fields that were
+  // FILLED, which is what keeps an empty field meaning leave it alone, and the
+  // sentence saying so is asserted here rather than left to the screenshots.
   const code = codeOnly(page);
 
   const editor = /function gatewayEditor\(gw\) \{[\s\S]*?\n\}/.exec(code);
   assert.ok(editor, 'the editor is no longer built by a function this test can read');
-  assert.strictEqual([...editor[0].matchAll(/textContent: 'Save'/g)].length, 1,
-    'the editor does not offer exactly one Save');
+  assert.doesNotMatch(editor[0], /textContent: 'Save'/, 'a Save button is back in the editor');
+  assert.match(editor[0], /control\.addEventListener\('keydown'/, 'Enter no longer commits a field');
+  assert.match(editor[0], /editor\.addEventListener\('focusout'/, 'leaving the section no longer commits what was filled in');
+  // A move WITHIN the editor is not a commit: a re-render under a reader tabbing
+  // between fields would take the field they were moving to.
+  assert.match(editor[0], /if \(next && editor\.contains\(next\)\) return;/,
+    'the editor re-renders while the reader is still filling the form in');
 
-  // Gone, and named one at a time so a diff shows which one came back. The filter
-  // field above the list still has a Clear of its own; that one is markup in
-  // settings.html and belongs to the search box rather than to a gateway's fields.
+  // Gone, and named one at a time so a diff shows which one came back.
   assert.doesNotMatch(code, /function credentialButtons\(/,
     'the per-field Save and Clear are back');
   assert.doesNotMatch(code, /textContent: 'Clear'/, 'a Clear button is back on this page');
@@ -679,21 +670,21 @@ test('the gateway section is ONE section with ONE Save, and says what an empty f
   assert.match(code, /a field left blank is simply not set/,
     'the create form does not say what a blank field is taken to mean');
 
-  // And the save writes only what was filled, which is what makes that sentence
-  // true rather than decorative: setCredentials CLEARS a credential when it is
-  // handed a blank string, so a save that wrote every field would delete a stored
-  // token on any save where the reader had not retyped it.
-  const save = /async function saveEditedGateway\(gw, fields, out\) \{[\s\S]*?\n\}/.exec(code);
-  assert.ok(save, 'the editor no longer saves through a function this test can read');
-  assert.match(save[0], /if \(fields\.token\.value\) creds\.token = fields\.token\.value/,
-    'the editor writes the token field whether or not it was filled');
-  assert.match(save[0], /call\('updateGateway', gw\.id, \{ label, url \}\)/,
-    'the one press no longer writes the name and address');
-  assert.match(save[0], /call\('addHeader', gw\.id, fields\.headerName\.value/,
-    'the one press no longer stores a typed header');
-  // And it reports what it kept, because a save that quietly dropped a credential
+  // And the write covers only what was filled, which is what makes that sentence
+  // true rather than decorative: setCredentials CLEARS a credential when it is handed
+  // a blank string, so a write that covered every field would delete a stored token
+  // on any press where the reader had not retyped it.
+  const commit = /async function commitGatewayFields\(gw, fields, filled, out\) \{[\s\S]*?\n\}/.exec(code);
+  assert.ok(commit, 'the editor no longer writes through a function this test can read');
+  assert.match(commit[0], /if \(!filled\.includes\(name\) \|\| !fields\[name\] \|\| !fields\[name\]\.value\) continue;/,
+    'the editor writes a credential field whether or not it was filled');
+  assert.match(commit[0], /call\('updateGateway', gw\.id, \{ label, url \}\)/,
+    'a commit no longer writes the name and address');
+  assert.match(commit[0], /call\('addHeader', gw\.id, fields\.headerName\.value/,
+    'a commit no longer stores a typed header');
+  // And it reports what it kept, because a write that quietly dropped a credential
   // reads exactly like one that stored it.
-  assert.match(save[0], /Stored its new/, 'the one press reports nothing about what it stored');
+  assert.match(commit[0], /Stored its new/, 'a commit reports nothing about what it stored');
 });
 
 test('a stored credential is still removable, by a control that names it', () => {

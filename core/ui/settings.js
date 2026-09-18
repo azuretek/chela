@@ -420,23 +420,6 @@ function headerRows(gw, { mode, ids = {}, out = null }) {
   return { node: box, name, value };
 }
 
-/**
- * One stored gateway's own panel, over the page it belongs to.
- *
- * The fields are not built here: they are `gatewayFields` in its stored state,
- * the same builder the add form uses, so the two cannot come to offer different
- * things. What this adds is what only an existing gateway can have: the section's
- * own name, its single Save, and, beside each stored credential, the control that
- * removes it.
- *
- * ONE Save, writing every field above it in one pass: the name and address through
- * `updateGateway`, a typed credential through `setCredentials` and a typed header
- * through `addHeader`, all against this gateway's id and through the commands the
- * rest of this page already uses. What it does not write is a field the reader left
- * empty, which is the half that makes a stored credential survive a save that never
- * mentioned it; see `credential` in `gatewayFields` for why the removal is then a
- * separate control rather than an empty field.
- */
 function gatewayEditor(gw) {
   const out = el('div', { className: 'result' });
   // The answer to the last press in here, if there was one. It is re-painted
@@ -444,91 +427,117 @@ function gatewayEditor(gw) {
   const answered = editorAnswers.get(gw.id);
   if (answered) setResult(out, answered.text, answered.kind);
   const fields = gatewayFields(gw, { mode: 'stored', out });
+  const editor = el('div', { className: 'editor' });
 
-  const save = el('button', {
-    className: 'primary',
-    // One word, because there is one action. It was "Save name and address", set
-    // beside a Save and a Clear for each credential, and a reader had to work out
-    // from the nearest button which fields a press would write.
-    textContent: 'Save',
-    onclick: () => saveEditedGateway(gw, fields, out),
+  // No Save button, and no Clear either: the fifth rule in ui/CONVENTIONS.md.
+  //
+  // Enter commits the field the reader is IN. Leaving the section commits whatever
+  // was filled in it, which is the phone platforms' own answer for the same job and
+  // is what keeps a value from being typed, left and silently dropped. Both write
+  // only fields that were FILLED, so an untouched credential is never cleared: an
+  // empty field means keep it, and the control beside a stored one removes it.
+  const commitInside = (field) => { void commitGatewayFields(gw, fields, [field], out); };
+  const commitEverything = () => {
+    const filled = [];
+    if (fields.url.value !== (gw.url || '') || fields.name.value !== (gw.label || '')) filled.push('address');
+    for (const name of ['token', 'password']) if (fields[name] && fields[name].value) filled.push(name);
+    if (fields.headerName && fields.headerName.value.trim()) filled.push('header');
+    if (filled.length) void commitGatewayFields(gw, fields, filled, out);
+  };
+
+  for (const pair of [
+    [fields.url, 'address'], [fields.name, 'address'],
+    [fields.token, 'token'], [fields.password, 'password'],
+    [fields.headerName, 'header'], [fields.headerValue, 'header'],
+  ]) {
+    const control = pair[0];
+    if (!control) continue;
+    control.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      control.blur();
+      commitInside(pair[1]);
+    });
+  }
+
+  // The section's own commit, on the way OUT. focusout rather than blur so the
+  // element the focus moved to is known, and a move WITHIN the editor is not a
+  // commit: a reader tabbing between fields is still filling the form in, and a
+  // re-render under them would take the field they were moving to.
+  editor.addEventListener('focusout', (e) => {
+    const next = e.relatedTarget;
+    if (next && editor.contains(next)) return;
+    commitEverything();
   });
 
-  return el('div', { className: 'editor' }, [
-    // The section is NAMED, and the rule deciding what the press does to a field
-    // nobody touched is stated here rather than left to be discovered. A save with
-    // something left empty is the ordinary case, and a field that silently deleted
-    // a stored value would be the surprise this is written to prevent.
+  editor.append(
     el('div', { className: 'settings-row settings-row--stacked' }, el('div', { className: 'settings-row__text' }, [
       el('span', { className: 'settings-row__title', textContent: 'Edit this gateway' }),
       el('span', {
         className: 'settings-row__desc',
-        textContent: 'One Save writes every field below at once. A field left empty is kept as it is, so saving without a stored credential never clears it; the button beside it removes it.',
+        textContent: 'Press Enter in a field to write it, or leave the section to write everything you filled in. A field left empty is kept as it is, so an untouched credential is never cleared; the button beside a stored one removes it.',
       }),
     ])),
     fields.node,
-    el('div', { className: 'settings-row settings-row--actions' }, [
-      el('div', { className: 'settings-row__control' }, [save]),
-    ]),
     out,
-  ]);
+  );
+  return editor;
 }
 
+
 /**
- * Save an existing gateway's whole section, in ONE press.
+ * Write what was filled in an existing gateway's section, field by field.
  *
- * The order is the store's: the address and name first, so the row the credentials
- * belong to is the one that was just written, and then the credentials, which are
- * kept against this gateway's id rather than anywhere else.
+ * `filled` names the fields to write, and each is written only when it HAS
+ * something in it: an empty field means leave it alone rather than clear it, which
+ * is not a detail, because `setCredentials` clears a credential when it is handed a
+ * blank string. Removing one is the control beside the field, on its own press.
  *
- * Only the fields that were FILLED are written. An empty credential field means
- * "leave it alone" rather than "clear it", and that is not a detail of the
- * implementation: `setCredentials` clears a credential when it is handed a blank
- * string, so a save that wrote every field would delete a stored token on any save
- * where the reader had simply not retyped it. Removing one is the control beside
- * the field, and it acts on its own press.
+ * The address and the name are ONE write: the store takes them together, so
+ * committing either sends both as they stand and the pair can never disagree with
+ * the row above it.
  *
- * The answer names what was stored rather than saying "Saved", because a save that
+ * The answer names what was stored rather than saying Saved, because a write that
  * quietly dropped a credential reads exactly like one that kept it, and a refusal
  * from the credential store is the one outcome that has to be visible.
  */
-async function saveEditedGateway(gw, fields, out) {
-  const url = fields.url.value.trim();
-  const label = fields.name.value.trim();
-  if (!url) return setResult(out, 'Enter an address first.', 'err');
-
-  const addressChanged = url !== (gw.url || '');
+async function commitGatewayFields(gw, fields, filled, out) {
   const problems = [];
+  const kept = [];
+  let addressChanged = false;
 
-  state = await call('updateGateway', gw.id, { label, url });
-
-  const creds = {};
-  if (fields.token.value) creds.token = fields.token.value;
-  if (fields.password.value) creds.password = fields.password.value;
-  if (Object.keys(creds).length) {
-    const saved = await call('setCredentials', gw.id, creds);
-    state = saved;
-    if (!saved.saved.ok) problems.push(saved.saved.error);
+  if (filled.includes('address')) {
+    const url = fields.url.value.trim();
+    const label = fields.name.value.trim();
+    if (!url) return setResult(out, 'Enter an address first.', 'err');
+    addressChanged = url !== (gw.url || '');
+    state = await call('updateGateway', gw.id, { label, url });
   }
 
-  const headerNamed = Boolean(fields.headerName && fields.headerName.value.trim());
-  if (headerNamed) {
+  for (const name of ['token', 'password']) {
+    if (!filled.includes(name) || !fields[name] || !fields[name].value) continue;
+    const saved = await call('setCredentials', gw.id, { [name]: fields[name].value });
+    state = saved;
+    if (!saved.saved.ok) problems.push(saved.saved.error);
+    else {
+      kept.push(name);
+      // Emptied once it is stored, because these fields are write-only: a value
+      // left sitting in one is on screen after it has been kept, and the row above
+      // then reports a stored token while a field shows what looks like a new one
+      // waiting to be saved again.
+      fields[name].value = '';
+    }
+  }
+
+  if (filled.includes('header') && fields.headerName && fields.headerName.value.trim()) {
     const saved = await call('addHeader', gw.id, fields.headerName.value, fields.headerValue.value);
     state = saved;
     if (!saved.saved.ok) problems.push(saved.saved.error);
-  }
-
-  const kept = [];
-  if (creds.token) kept.push('token');
-  if (creds.password) kept.push('password');
-  if (headerNamed) kept.push('header');
-
-  // Emptied once they are stored, because these fields are write-only: a value
-  // left sitting in one is on screen after it has been kept, and the row above
-  // then reports a saved token while a field shows what looks like a new one
-  // waiting to be saved again.
-  for (const control of [fields.token, fields.password, fields.headerName, fields.headerValue]) {
-    if (control) control.value = '';
+    else {
+      kept.push('header');
+      fields.headerName.value = '';
+      fields.headerValue.value = '';
+    }
   }
 
   const notes = [];
@@ -539,12 +548,13 @@ async function saveEditedGateway(gw, fields, out) {
     gw,
     out,
     problems.length
-      ? `Saved, but ${problems.join(', and ')}.`
+      ? `Not saved: ${problems.join(', and ')}.`
       : (notes.length ? `Saved. ${notes.join('; ')}.` : 'Saved.'),
     problems.length ? 'warn' : 'ok',
   );
   render();
 }
+
 
 /**
  * Whether the gateway has approved this device: 'approved', 'pending' or null.
