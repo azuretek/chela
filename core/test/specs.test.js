@@ -31,10 +31,10 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SPECS = path.join(HERE, '..', 'spec');
 const PROJECT = path.join(HERE, '..', '..', 'mobile', 'project.yml');
 
-// Still ported as constants, proven against the spec by a parity test.
-const MIRRORED = {
-  'tokens.json': 'notice colours and timings, still mirrored by NoticeTokens.swift, and the last one to convert',
-};
+// Still ported as constants, proven against the spec by a parity test. Nothing
+// is left here: every spec a client reads is bundled now, and this map stays as
+// the place an exception has to be declared rather than assumed.
+const MIRRORED = {};
 
 // Shipped as a resource and read at runtime through BundledSpec.
 const BUNDLED = {
@@ -51,6 +51,7 @@ const BUNDLED = {
   'prompt-metadata.json': 'holds the injected script that puts the client-context block on every prompt',
   'release.json': 'read at runtime for the release asset names the OTA install URL is built from',
   'settings.json': 'travels with the shared settings page, which cannot read it at runtime itself',
+  'tokens.json': 'read at runtime for the notice palettes, the card geometry, the type scale and the tone map',
   'updates.json': 'read at runtime for the check intervals; its action and outcome names are Swift enum raw values, which are compile-time',
   'upstream-reference.json': 'read at runtime by the reference page host',
 };

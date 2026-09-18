@@ -173,6 +173,8 @@ targets:
         buildPhase: resources
       - path: ../core/spec/release.json
         buildPhase: resources
+      - path: ../core/spec/tokens.json
+        buildPhase: resources
       # The shared About page, bundled rather than mirrored, for the same reason
       # the settings page is: it is the desktop's own About page (core/ui), so
       # this client renders it instead of a native screen. About was reachable
