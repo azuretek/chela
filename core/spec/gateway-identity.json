@@ -25,7 +25,8 @@
   "maxBytes": 262144,
   "messages": {
     "notOpenClaw": "That address is not an OpenClaw gateway, so nothing was loaded. It answered HTTP {status}, but its reply carries no OpenClaw Control UI marker. Check the address, or add a gateway that is running OpenClaw.",
-    "notOpenClawNoDocument": "That address is not an OpenClaw gateway, so nothing was loaded. {reason} It answered, but nothing it served identifies OpenClaw.",
+    "notOpenClawNoDocument": "That address is not an OpenClaw gateway, so nothing was loaded. It served no reply that identifies OpenClaw.",
+    "unreachableNoDocument": "That address is not an OpenClaw gateway, so nothing was loaded. It did not answer: {reason}",
     "reached": "Reachable, and it is an OpenClaw gateway. HTTP {status}.",
     "reachedCorroborated": "Reachable. HTTP {status}. It answers like an OpenClaw gateway, but its Control UI did not identify itself directly, so this was accepted on the weaker evidence: its health marker and security headers. Check the address if you did not expect that.",
     "unreachable": "That address did not answer: {reason}"

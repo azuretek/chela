@@ -233,3 +233,22 @@ test('an address that never answered is a different sentence from a rejection', 
     'a gateway that is down and an address that is not a gateway are the same sentence');
   assert.match(silent.message, /did not answer|ECONNREFUSED/);
 });
+
+test('an errored connect is never narrated as having answered', () => {
+  // The self-contradiction fault: a fetch that carried an error used to fill the
+  // rejection with "That address did not answer: {reason}" AND "It answered, but
+  // nothing it served identifies OpenClaw" in one breath. The errored case now
+  // has its own sentence, and neither wording may claim a reply that never came.
+  const errored = identify({ document: null, health: null, headers: {}, error: 'ECONNREFUSED' });
+  assert.match(errored.message, /ECONNREFUSED/, 'the reason the reader needs is not surfaced');
+  assert.doesNotMatch(errored.message, /it answered/i,
+    'an address that only errored is still narrated as having answered');
+
+  // The no-document, no-error case is a distinct sentence too, and it must not
+  // claim a reply either: nothing answered, so nothing was served.
+  const noDocument = identify({ document: null, health: null, headers: {} });
+  assert.doesNotMatch(noDocument.message, /it answered/i,
+    'a no-document rejection still claims it answered');
+  assert.notStrictEqual(errored.message, noDocument.message,
+    'the errored and the silent-no-error cases share one sentence again');
+});
