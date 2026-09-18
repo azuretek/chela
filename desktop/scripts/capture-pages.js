@@ -279,6 +279,7 @@ contextBridge.exposeInMainWorld('clawDesktop', {
   notices: async () => state.notices || [],
   onNoticesChanged: () => {},
   bannerHeight: () => {},
+  sweepBounds: () => {},
   dismissNotice: () => {},
   noticeAction: () => {},
   markNoticesRead: () => {},
@@ -429,21 +430,19 @@ const PROBE = `(() => {
         progress: progress ? box(progress) : null,
       };
     })(),
-    // The sweep button's own box, and the CARD it hangs on. The sweep is no
-    // longer a full-width row of its own (Abi, 2026-09-18): it is a plain button
-    // on the last card's line, so what has to be painted is the card behind the
-    // button, not a strip spanning the width. onCard says the button is inside a
-    // card, which is what makes its pixels the card's rather than a dead zone.
+    // The sweep control's own box, on the ONE page that draws it. The sweep is a
+    // view of its own now (core/ui/sweep.html), sized to exactly this box, so what
+    // the host needs is where the control is and how big it is. It is null on every
+    // other page, and on the bar that null is itself an assertion: the bar's view
+    // claims its whole rectangle, so a control drawn on that page would make the rest
+    // of its line a dead zone over the Control UI, and the sweep must not be there.
     sweep: (function () {
       const readall = document.querySelector('.banner__readall');
       if (!readall) return null;
       const box = readall.getBoundingClientRect();
-      const card = readall.closest('.banner');
-      const cardBox = card ? card.getBoundingClientRect() : null;
       return {
-        onCard: Boolean(card),
         top: box.top, bottom: box.bottom, left: box.left, right: box.right,
-        card: cardBox ? { top: cardBox.top, bottom: cardBox.bottom, left: cardBox.left, right: cardBox.right } : null,
+        width: box.width, height: box.height,
       };
     })(),
     // The sweep control, and whether a press at its own centre would reach it.
@@ -476,6 +475,10 @@ const PAGES = [
   { name: 'settings', file: 'settings.html', state: SMALL_STATE, title: 'Settings', back: true },
   { name: 'about', file: 'about.html', state: ABOUT_STATE, title: 'Claw Control UI', back: true, reference: true, clear: true },
   { name: 'banner', file: 'banner.html', state: BANNER_STATE, title: null, back: false, cards: true },
+  // The sweep, which is a page of its own: a view sized to exactly one control. The
+  // sweep flag is that half of the harness, and it is the only page here whose
+  // rectangle is not the window's.
+  { name: 'sweep', file: 'sweep.html', state: BANNER_STATE, title: null, back: false, sweep: true },
 ];
 
 async function capture(page, mode, win) {
@@ -515,7 +518,7 @@ async function capture(page, mode, win) {
   // being asked about here.
   await clearInjected(win);
   const theme = themeCss(themeFromReport(LIVE_THEME[mode]));
-  if (page.cards) {
+  if (page.cards || page.sweep) {
     appliedToken = await win.webContents.insertCSS(tokenStylesheet());
     applied = await win.webContents.insertCSS(theme);
   } else {
@@ -538,12 +541,12 @@ async function capture(page, mode, win) {
   // Two readings per band: the full-width row the sweep control sits in, and the
   // stack's own padding at the leading edge, which is the part of the strip a
   // person reads as "this block covers what is under it".
-  probe.pixels = page.cards ? readPixels(image, probe) : null;
+  probe.pixels = (page.cards || page.sweep) ? readPixels(image, probe) : null;
 
   console.log(`SHOT ${shot}`);
   console.log(`     ${page.name} ${mode}: color-scheme=${probe.colorScheme} --bg=${probe.tokenBackground} body=${probe.body}`);
   if (probe.pixels) {
-    console.log(`     banner ${mode}: html=${probe.htmlBackground} stack=${probe.stackBackground} sweep=${probe.sweep ? (probe.sweep.onCard ? 'on-card' : 'not-on-card') : 'none'}`);
+    console.log('     banner ' + mode + ': html=' + probe.htmlBackground + ' stack=' + probe.stackBackground + ' sweep=' + (probe.sweep ? (probe.sweep.width + 'x' + probe.sweep.height) : 'none'));
     console.log(`     banner ${mode} pixels: ${JSON.stringify(probe.pixels)}`);
   }
   return probe;
@@ -567,9 +570,10 @@ function readPixels(image, probe) {
   };
   const out = {};
   if (probe.sweep) {
-    // The sweep button's own pixels, read at its centre. It hangs on a card now,
-    // so this pixel is the card's painted surface: it must NOT be a hole the page
-    // shows through, which is what a dead zone under the button would be.
+    // The sweep chip's own centre. It carries its own surface now, where on the bar
+    // it could be transparent, because it floats over the Control UI page with
+    // nothing behind it: this pixel must be PAINTED, or the reader has a control
+    // they cannot read.
     const y = (probe.sweep.top + probe.sweep.bottom) / 2;
     out.sweepCentre = at((probe.sweep.left + probe.sweep.right) / 2, y);
   }
@@ -717,35 +721,43 @@ app.whenReady().then(async () => {
             && Boolean(body.message) && Boolean(body.detail)
             && body.detail.top >= body.message.bottom - 0.5,
           JSON.stringify(body));
-        // ---- the sweep is a plain button on a card, not a full-width row ------
-        // Abi, 2026-09-18: the sweep had become a full-width row whose empty part
-        // ate clicks on the Control UI. It is a plain button on the last card's
-        // line now, so the invariant is that it sits ON a card (its pixels are the
-        // card's painted surface) rather than in a strip of its own.
-        check(`${page.name}.html hangs the sweep on a card, not in a row of its own`,
-          Boolean(probe.sweep) && probe.sweep.onCard && Boolean(probe.sweep.card),
-          JSON.stringify(probe.sweep));
-        // And off the composited pixels, the half a person sees: the button's own
-        // centre is painted (it is on the card), and the strip's padding above the
-        // first card is the bar's own surface. The colour is reported beside the
-        // alpha so a fully transparent pixel cannot pass by looking painted.
+        // ---- the bar draws notices and nothing else --------------------------
+        // ★ Anything on this page shares the bar rectangle, which its view claims
+        // whole, so a control drawn here would make the rest of its line a dead zone
+        // over the Control UI. That is why the sweep is a page of its own, and this
+        // is the assertion that keeps it off the bar.
+        check(page.name + '.html draws no sweep: the bar rectangle is its cards plus padding',
+          probe.sweep === null && !probe.readall,
+          JSON.stringify({ sweep: probe.sweep, readall: probe.readall }));
+        // And off the composited pixels: the bar own padding above the first card is
+        // its surface. The colour is reported beside the alpha, so a strip painted
+        // with a fully transparent colour cannot pass by looking painted.
         if (probe.pixels) {
           const alpha = (value) => Number(String(value).split(' a').pop());
-          check(`${page.name}.html paints behind the sweep button and its own strip`,
-            [probe.pixels.sweepCentre, probe.pixels.aboveTheCard]
-              .every((pixel) => alpha(pixel) > 0),
-            JSON.stringify(probe.pixels));
+          check(page.name + '.html paints the bar own strip',
+            alpha(probe.pixels.aboveTheCard) > 0, JSON.stringify(probe.pixels));
         }
+      }
 
-        // ---- the sweep control is still a control -------------------------
-        // The click-swallowing bug was in this exact area, so the control is
-        // hit-tested at its own centre rather than merely checked for presence: a
-        // control covered by an opaque sibling, or by a drag region, is present,
-        // styled and dead. This is the in-document half; the real click through
-        // the window server is scripts/test-banner-clicks.js.
-        check(`${page.name}.html leaves the sweep control reachable at its own centre`,
+      if (page.sweep) {
+        // ---- the sweep, which is a view of its own ---------------------------
+        // ★ Only the control may overlay the Control UI. The view main raises for
+        // this page is sized to exactly this box (refreshSweep in src/main.js), so
+        // anything else this page painted would be an inert pixel of a page the
+        // reader cannot click.
+        check(page.name + '.html draws its one control, at the page origin',
+          Boolean(probe.sweep) && probe.sweep.top === 0 && probe.sweep.left === 0,
+          JSON.stringify(probe.sweep));
+        check(page.name + '.html leaves that control reachable at its own centre',
           Boolean(probe.readall) && probe.readall.reached && probe.readall.label === 'Mark all read',
           JSON.stringify(probe.readall));
+        // The chip carries its own surface, because it floats over the Control UI
+        // page with nothing behind it: a transparent chip is an unreadable control.
+        if (probe.pixels) {
+          const alpha = (value) => Number(String(value).split(' a').pop());
+          check(page.name + '.html paints the chip, so it reads over the page',
+            alpha(probe.pixels.sweepCentre) > 0, JSON.stringify(probe.pixels));
+        }
       }
 
       if (page.back) {

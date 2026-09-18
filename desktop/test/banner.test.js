@@ -3,20 +3,19 @@
 // core/ui/banner.js is a browser script, so it is loaded here against a minimal
 // DOM rather than required. That is worth the shim for one reason: the stack is
 // rebuilt key by key so a banner that has been sitting there for an hour does
-// not replay its slide every time an unrelated one appears, and the Mark all
-// read button is the one node in the tree that is not a notice. A rebuild that
-// treats it like a card either duplicates it or prunes it as a condition that
-// passed, and neither shows up in a screenshot of a working banner.
+// not replay its slide every time an unrelated one appears, and a rebuild that
+// treats a card as a row to append either duplicates it or prunes it, and neither
+// shows up in a screenshot of a working banner.
 //
-// The sweep is a PLAIN BUTTON hanging on the last card's own line, not a row of
-// the stack, and it has been in three wrong places before this one, so the tests
-// below say what the right place is and why it is safe. It is not a row because
-// the bar's view is full width and claims every mouse event in its rectangle, so
-// a footer row carrying one right-aligned button left its empty part eating
-// clicks on the Control UI beneath (Abi's report, 2026-09-18). A button on a
-// line that already exists adds no strip of its own. The stack still paints the
-// whole rectangle its cards sit in (asserted against the stylesheet in
-// drag-regions.test.js), which is what keeps the cards themselves safe.
+// ★ THIS PAGE DRAWS NOTICES AND NOTHING ELSE. The sweep (Mark all read) is not
+// here and must not be: anything drawn on this page is inside the bar's own
+// rectangle, which its view claims whole, so a control on a line of its own makes
+// the rest of that line a strip that eats clicks over the Control UI. Abi caught
+// that twice, on 2026-09-17 and again on 2026-09-18. The sweep is a view of its
+// own, sized to the button, in core/ui/sweep.html; the guard below is that the
+// stack has no non-card child and that nothing on this page offers the sweep. The
+// stack still paints the whole rectangle its cards sit in (asserted against the
+// stylesheet in drag-regions.test.js), which is what keeps the cards safe.
 //
 // Run with: npm test
 
@@ -136,9 +135,9 @@ function mount() {
     set(next) { unread = next; },
     rows: () => stack.kids.map((n) => n.id || n.className),
     node: (id) => find(stack, id),
-    // The stack itself, and a count over the WHOLE tree by id. The sweep row now
-    // hangs inside a card, so "how many rows are there" and "is the row still in
-    // the stack" became questions about the tree rather than about one level.
+    // The stack itself, and a count over the WHOLE tree by id, so "is the node
+    // still there" is asked of the tree rather than of one level: a card nests its
+    // own parts inside its body column.
     root: () => stack,
     count: (id) => {
       let n = 0;
@@ -184,79 +183,48 @@ const stalled = {
   action: { label: 'Open release page', command: 'update-release-page' },
 };
 
-test('★ a dismissible notice gets a way to close the whole bar, as a plain button on the last card', () => {
-  const b = mount();
-  b.set([failure]);
-  return b.render().then(() => {
-    // Abi, 2026-09-18: "make it a normal button ... no full-width banner and no
-    // dead-zone", which supersedes the 2026-09-17 bottom-row shape. The stack
-    // holds only cards now: the sweep is a button hanging on the last card's own
-    // line, not a row of its own, so its full-width row can no longer eat clicks
-    // on the Control UI underneath (a view claims every event in its rectangle).
-    assert.deepEqual(b.rows(), ['n-connection']);
-    const button = b.node('banner-actions');
-    assert.ok(button, 'no way to close the whole bar was drawn');
-    assert.equal(button.tag, 'button', 'the sweep must be a plain button, not a container row');
-    assert.equal(button.className, 'banner__readall', 'the sweep button lost its class');
-    const card = b.node('n-connection');
-    assert.equal(button.parent, card, 'the sweep must hang on the last card, not be a row of the bar');
-    // And it is the LAST card, which is the bottom of the bar: with one card, that
-    // card; the "come and go" test below covers more than one.
-    assert.equal(b.root().kids[b.root().kids.length - 1], card, 'the sweep must be on the bottom card');
-  });
-});
-
-test('nothing offers to mark all read when nothing can be', async () => {
-  // Otherwise the bar carries a control whose only effect is to do nothing.
-  const b = mount();
-  b.set([pinned]);
-  await b.render();
-  assert.deepEqual(b.rows(), ['n-update-available']);
-});
-
-test('the sweep hangs on the bottom card as cards come and go', async () => {
+test('★ the bar draws notices and nothing else: the sweep is a view of its own', async () => {
+  // ★ The sixth version of one fault in this area, and the reason it is a guard
+  // rather than a comment: the bar is drawn in a view sized to the stack, and a
+  // view claims every mouse event inside its own rectangle whatever the page
+  // draws there. A CHILD OF THE STACK THAT IS NOT A CARD is a strip of that
+  // rectangle carrying no notice, and its empty part swallows clicks meant for the
+  // Control UI beneath it.
+  //
+  // The history, because the invariant moved rather than the fault: 2026-09-17,
+  // the sweep's own row was a stack child with nothing painted behind it, so a
+  // click on its empty leading half reached neither the control nor the page. The
+  // next fix moved the row inside the last card, which read wrong. The one after
+  // painted the BAR so the row was visually safe, but the view still ate the click
+  // across the row's full width, which is the regression Abi reported on
+  // 2026-09-18; the one after that hung the button on the last card's line, and
+  // Abi asked for it below the card instead. It is now a view of its own, sized to
+  // the button (refreshSweep in src/main.js, core/ui/sweep.html), so this page
+  // draws no sweep at all and its rectangle is its cards plus the bar's padding.
   const b = mount();
   b.set([pinned, failure]);
   await b.render();
-  // The stack is cards only; the sweep is a button on the LAST one, which is the
-  // bottom of the bar. It follows the bottom card rather than sitting on a fixed
-  // one: a card leaving would otherwise take the sweep with it.
-  assert.deepEqual(b.rows(), ['n-update-available', 'n-connection']);
-  const button = b.node('banner-actions');
-  assert.ok(button, 'the sweep button is gone');
-  const bottom = b.root().kids[b.root().kids.length - 1];
-  assert.equal(button.parent, bottom, 'the sweep must hang on the bottom card');
-  assert.equal(bottom.id, 'n-connection', 'the bottom card is not the one it should be');
-  // And it is not a row of the stack: that full-width row was the dead zone.
-  assert.ok(!b.root().kids.some((n) => n.id === 'banner-actions'),
-    'the sweep is a row of the bar again, which is the shape that ate clicks');
+  const children = b.root().kids;
+  assert.ok(children.length, 'the stack was empty, so this guard proves nothing');
+  // Every child of the stack is a card. The sweep is not among them, and nothing
+  // on this page offers it either: a control here would sit inside this view's
+  // rectangle and make the rest of its line a dead zone.
+  const cards = children.filter((n) => /(^|\s)banner(\s|$)/.test(String(n.className)));
+  assert.equal(cards.length, children.length,
+    'the stack holds a non-card child, which is a strip that can eat clicks: '
+    + children.map((n) => n.tag + '.' + (n.className || n.id)).join(', '));
+  assert.ok(!children.some((n) => n.id === 'banner-actions'),
+    'the sweep is a child of the bar again, which is the shape that ate clicks');
+  assert.equal(byClass(b.root(), 'banner__readall'), null,
+    'the bar is drawing the sweep button again; it belongs in its own view');
+  assert.equal(b.calls.markAll, 0,
+    'drawing the bar asked to mark notices read, which only the sweep may do');
 });
 
-test('a re-render leaves exactly one sweep button', async () => {
-  // The stack is rebuilt by id and the sweep has no notice behind it, so it is
-  // the one node that could stack up unnoticed: three renders, three buttons, on
-  // a card that itself is rebuilt each time. render() removes the previous one by
-  // id before hanging a fresh one on the current bottom card.
+test('the card X marks only its own notice read', async () => {
   const b = mount();
   b.set([failure]);
   await b.render();
-  await b.render();
-  await b.render();
-  assert.equal(b.count('banner-actions'), 1, 'a re-render left more than one sweep button');
-  const button = b.node('banner-actions');
-  assert.equal(button.tag, 'button', 'the sweep is not a plain button');
-  assert.ok(b.node('n-connection'), 'and the card it hangs on survives too');
-  assert.equal(button.parent, b.node('n-connection'), 'and it is back on the current card, not a stale one');
-});
-
-test('pressing it marks everything read, and the card X marks only its own', async () => {
-  const b = mount();
-  b.set([failure]);
-  await b.render();
-
-  // banner-actions IS the button now, not a container row wrapping it.
-  await b.node('banner-actions').onclick();
-  assert.equal(b.calls.markAll, 1);
 
   const card = b.node('n-connection');
   await card.kids.find((k) => k.className === 'banner__close').onclick();
@@ -354,45 +322,6 @@ test('the slide is for a card arriving, not for one changing', async () => {
   b.set([{ ...first, progress: 0.2 }]);
   await b.render();
   assert.ok(!b.node('n-update-available').classList.contains('banner--enter'), 'an updated card slid again');
-});
-
-test('★ the stack holds only cards, and the sweep is a button on the last one', async () => {
-  // ★ The fifth version of one fault in this area, and the reason it is a guard
-  // rather than a comment: the bar is drawn in a view sized to the stack, and a
-  // view claims every mouse event inside its own rectangle whatever the page
-  // draws there. A CHILD OF THE STACK THAT IS NOT A CARD is a full-width strip of
-  // the overlay's rectangle that carries no notice, and its empty part swallows
-  // clicks meant for the Control UI beneath it.
-  //
-  // The history, because the invariant moved rather than the fault: 2026-09-17,
-  // the sweep's own row was a stack child with nothing painted behind it, so a
-  // click on its empty leading half reached neither the control nor the page.
-  // The next fix moved the row inside the last card, which read wrong. The one
-  // after painted the BAR so the row was visually safe, but the view still ate
-  // the click across the row's full width, which is the regression Abi reported
-  // on 2026-09-18. The fix now is to stop it being a row at all: it is a plain
-  // button on the last card's own line, so the only new pixels that claim a click
-  // are the button's. The guard is therefore that the stack has NO non-card
-  // child.
-  const b = mount();
-  b.set([failure, pinned]);
-  await b.render();
-  const children = b.root().kids;
-  assert.ok(children.length, 'the stack was empty, so this guard proves nothing');
-  // Every child of the stack is a card. The sweep is not among them: it hangs on
-  // the last card, one level down. That the stack PAINTS the whole rectangle its
-  // cards sit in is asserted against the stylesheet in
-  // desktop/test/drag-regions.test.js.
-  const cards = children.filter((n) => /(^|\s)banner(\s|$)/.test(String(n.className)));
-  assert.equal(cards.length, children.length,
-    `the stack holds a non-card child, which is a full-width strip that can eat clicks: `
-    + children.map((n) => `${n.tag}.${n.className || n.id}`).join(', '));
-  assert.ok(!children.some((n) => n.id === 'banner-actions'),
-    'the sweep is a stack row again, which is the shape that ate clicks');
-  // And the sweep is a button on the last (bottom) card.
-  const button = b.node('banner-actions');
-  assert.equal(button.tag, 'button', 'the sweep must be a plain button');
-  assert.equal(button.parent, children[children.length - 1], 'the sweep must hang on the bottom card');
 });
 
 test('an empty bar reports zero height, so the view stops eating clicks', async () => {

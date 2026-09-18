@@ -8,6 +8,12 @@
 // invisible strip that swallows clicks on the Control UI underneath, and
 // reporting too little clips the banner.
 //
+// ★ The page draws NOTICES AND NOTHING ELSE, and the sweep (Mark all read) is
+// deliberately not here. Anything on this page shares the bar's rectangle, so a
+// control on a line of its own would make the rest of that line a dead zone over
+// the Control UI. The sweep is its own view, sized to the button, in
+// core/ui/sweep.html; see refreshSweep in src/main.js for why.
+//
 // The height is measured from layout rather than after the animation, because
 // the slide is a `transform` and a transform does not change layout height. So
 // the number is correct on the first frame, and the view never resizes
@@ -35,11 +41,6 @@ function report() {
   const height = stack.childElementCount ? stack.getBoundingClientRect().height : 0;
   void api.bannerHeight(height);
 }
-
-// The one node in the bar that is not a notice. It is rebuilt outright on every
-// render rather than kept, which is the opposite of how the cards are handled
-// and fine here: there is no slide to replay and nothing to preserve.
-const ACTIONS_ID = 'banner-actions';
 
 function card(notice) {
   // Marks it read: the condition carries on, the app just stops saying so. It
@@ -100,38 +101,6 @@ function card(notice) {
 }
 
 /**
- * Close the bar, meaning read everything on it.
- *
- * One control for the whole stack rather than only per-card, because the thing
- * you want after a bad morning is the bar gone, and doing that a card at a time
- * is a chore that ends with one left over.
- *
- * ★ A PLAIN BUTTON, not a row. It is appended to the trailing end of the last
- * card's own top line, beside that card's action and dismiss, so it occupies
- * only its own pixels and adds no strip of its own to the bar. The version this
- * replaces was a full-width footer ROW (justify-content: flex-end), and the
- * bar's view claims every mouse event inside its rectangle whatever is painted
- * there, so that row's empty leading part was a dead zone that swallowed clicks
- * meant for the Control UI underneath, however the pixels were coloured. Abi,
- * 2026-09-18: make it a normal button, no full-width banner and no dead-zone,
- * which supersedes the 2026-09-17 bottom-row shape.
- *
- * Nothing here can lose a condition: reading is not clearing, and a notice that
- * refuses to be dismissed refuses this too, so the finished update download
- * survives the sweep.
- */
-function sweepButton() {
-  return el('button', {
-    className: 'banner__readall',
-    id: ACTIONS_ID,
-    type: 'button',
-    title: 'Mark everything read and close the bar. Anything still true stays listed under Settings, Problems.',
-    textContent: 'Mark all read',
-    onclick: () => { void api.markNoticesRead(); },
-  });
-}
-
-/**
  * Take a card off the bar, playing its departure.
  *
  * The slide belongs to a card leaving the same way it belongs to one arriving, and
@@ -189,26 +158,9 @@ async function render() {
     }
   }
 
-  // The sweep, rebuilt last every time so a re-render never stacks two of them,
-  // and absent when the only thing left is a notice it would not act on.
-  //
-  // ★ It is a PLAIN BUTTON on the trailing end of the LAST CARD's own top line,
-  // not a row of its own, which is the whole point of this change. A view claims
-  // every mouse event inside its rectangle whatever the page paints there, and
-  // the bar's view is full width, so a footer ROW carrying one right-aligned
-  // button left its empty leading part as a dead zone over the Control UI: the
-  // reader could see the page there and could not click it. Hanging the button on
-  // a line that already exists adds no strip of its own, so the only new pixels
-  // that claim a click are the button's. It goes on the last card because that is
-  // the bottom of the bar, where the sweep has lived since 2026-09-17; a card is
-  // the only child of the stack, so "last card" and "bottom of the bar" are the
-  // same place.
-  const previous = document.getElementById(ACTIONS_ID);
-  if (previous) previous.remove();
-  const cards = [...stack.children].filter((n) => n.id && n.id.startsWith('n-'));
-  const last = cards[cards.length - 1];
-  if (last && notices.some((n) => n.dismissible !== false)) last.append(sweepButton());
-
+  // The height is the CARDS' height and only that: the sweep is a view of its
+  // own below the bar (core/ui/sweep.html), so nothing here adds a strip the bar
+  // has to cover.
   report();
 }
 

@@ -342,6 +342,18 @@ function layoutViews() {
   // Exactly as tall as the banner page says it needs, and no taller: the view
   // eats every click inside its bounds regardless of what is drawn there.
   if (bannerView) bannerView.setBounds({ x: 0, y: top, width, height: Math.min(bannerHeight, Math.max(0, height - top)) });
+  // The sweep is sized to the CONTROL rather than to the window: only the pixels
+  // it draws may claim a click, so the view is exactly the button and it hangs
+  // under the bar's trailing edge, where the sweep has sat since 2026-09-17. The
+  // 12px inset is the bar's own side padding, and the gap clears the bar's bottom
+  // padding so the chip reads as below the bar rather than inside it.
+  if (sweepView) {
+    const gap = 8;
+    const w = Math.max(0, Math.min(sweepSize.width, width));
+    const h = Math.max(0, Math.min(sweepSize.height, Math.max(0, height - top)));
+    const y = Math.min(top + bannerHeight + gap, Math.max(0, height - h));
+    sweepView.setBounds({ x: Math.max(0, width - w - 12), y, width: w, height: h });
+  }
   // A modal covers everything including the strip: the scrim is meant to dim
   // the whole window, and each overlay page carries its own drag band.
   for (const view of overlayViews.values()) view.setBounds({ x: 0, y: 0, width, height });
@@ -1601,6 +1613,9 @@ function createMainWindow() {
     stripView = null;
     bannerView = null;
     bannerHeight = 0;
+    // The sweep is a view of its own, so it is a handle of its own to drop.
+    sweepView = null;
+    sweepSize = { width: 0, height: 0 };
     loadingView = null;
     overlayViews.clear();
     // The set of views that were on the window: they die with the window, and a
@@ -2114,7 +2129,7 @@ function restackViews() {
   // page BEFORE it joins the window (see attachReadyView), so a view that is
   // still preparing is not on the window to be restacked, and re-adding it here
   // would put it on screen half-loaded and take the reader's keyboard with it.
-  for (const view of [loadingView, ...overlayViews.values(), bannerView]) {
+  for (const view of [loadingView, ...overlayViews.values(), bannerView, sweepView]) {
     if (!view || !attachedViews.has(view) || view.webContents.isDestroyed()) continue;
     try { mainWindow.contentView.addChildView(view); } catch { /* window gone */ }
   }
@@ -2333,8 +2348,94 @@ let bannerView = null;
 // clicks on the UI underneath. Zero means gone.
 let bannerHeight = 0;
 
+// The sweep: the one control that closes the whole bar, in a view of its own,
+// below the bar.
+//
+// ★ WHY A VIEW OF ITS OWN RATHER THAN SOMETHING ON THE BAR. A view claims every
+// mouse event inside its own rectangle whatever the page draws there, so a
+// control sharing the bar's view shares the bar's rectangle: a band of the bar
+// carrying one right-aligned button left the rest of that band a dead zone over
+// the Control UI, which is the regression Abi reported on 2026-09-18 and the
+// second time this one area has produced it. Sized to the button alone and hung
+// below the bar, the sweep claims the pixels it draws and gives every other pixel
+// back to the Control UI. The page is core/ui/sweep.html, and the rule it follows
+// is the one at the top of core/ui/banner.css.
+let sweepView = null;
+// What the sweep page says it needs, in CSS pixels: the view is sized to exactly
+// this, so the control and the rectangle it claims are the same box.
+let sweepSize = { width: 0, height: 0 };
+
+/**
+ * Whether the bar carries anything the sweep could act on.
+ *
+ * It is the same question the bar's control asked when it lived on the bar, and
+ * it is asked of the store rather than of the cards, so a notice that refuses to
+ * be dismissed refuses this too: reading is not clearing.
+ */
+function sweepWanted() {
+  return notices.unread().some((n) => n.dismissible !== false);
+}
+
+/** Show the sweep, hide it, or leave it alone. Called on every notice change. */
+function refreshSweep() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  if (!sweepWanted()) {
+    if (sweepView) {
+      const view = sweepView;
+      const wc = view.webContents;
+      // Whether the keyboard is on the sweep, asked BEFORE it is taken away. It
+      // never takes the keyboard by itself (it is loaded before it is attached,
+      // see below), but the reader may have tabbed to it deliberately, and a view
+      // taken off the window with the keyboard in it leaves the window with none.
+      const held = !wc.isDestroyed() && wc.isFocused();
+      attachedViews.delete(view);
+      try { mainWindow.contentView.removeChildView(view); } catch { /* window gone */ }
+      try { if (!wc.isDestroyed()) wc.close(); } catch { /* gone */ }
+      themeCssKeys.delete(wc.id);
+      tokenCssKeys.delete(wc.id);
+      sweepView = null;
+      sweepSize = { width: 0, height: 0 };
+      if (held) {
+        const top = [...overlayViews.values()].filter((v) => !v.webContents.isDestroyed()).pop();
+        if (top) top.webContents.focus();
+        else page()?.focus();
+      }
+    }
+    return;
+  }
+
+  if (sweepView) return;
+
+  // Provisional, and corrected by the page's first frame. A view with no size
+  // never paints, and a view that never paints cannot run the script that reports
+  // the size it needs.
+  sweepSize = { width: 168, height: 40 };
+  sweepView = new WebContentsView({
+    webPreferences: { preload: PRELOAD, contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  sweepView.setBackgroundColor('#00000000');
+  const wc = sweepView.webContents;
+  attachContextMenu(wc);
+  // LOADED BEFORE IT IS PUT ON THE WINDOW, the same focus rule the bar follows: a
+  // view added to the window and then loaded takes the window's keyboard the
+  // moment its document commits, whether or not anything asks for it.
+  wc.once('dom-ready', async () => {
+    if (!sweepView || sweepView.webContents !== wc) return; // replaced while it loaded
+    await applyTokenCss(wc);
+    await applyThemeCss(wc);
+    if (!sweepView || sweepView.webContents !== wc) return;
+    attachReadyView(sweepView);
+  });
+  wc.loadFile(path.join(UI_DIR, 'sweep.html'), { search: overlaySearch() });
+}
+
 function refreshBanner() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  // The sweep follows the same store, so it is asked on every change and asked
+  // first: the bar and the control that closes it must never disagree about
+  // whether there is anything left to read.
+  refreshSweep();
   // Unread rather than size: a condition that has been read is still true and
   // still in the store, and the bar has to come down anyway or reading it would
   // leave an empty strip eating clicks on the Control UI underneath.
@@ -4297,6 +4398,15 @@ function registerIpc() {
     const next = Math.max(0, Math.min(400, Math.ceil(Number(height) || 0)));
     if (next === bannerHeight) return;
     bannerHeight = next;
+    layoutViews();
+  });
+  // The sweep's own size, reported by core/ui/sweep.js. Bounded like the bar's, so
+  // a page that reported nonsense could not size a view over the whole window.
+  ipcMain.handle('app:sweep-bounds', (_e, bounds) => {
+    const width = Math.max(0, Math.min(400, Math.ceil(Number(bounds && bounds.width) || 0)));
+    const height = Math.max(0, Math.min(200, Math.ceil(Number(bounds && bounds.height) || 0)));
+    if (width === sweepSize.width && height === sweepSize.height) return;
+    sweepSize = { width, height };
     layoutViews();
   });
   // ★ The store decides what the X MEANS, and this is the only place a surface's

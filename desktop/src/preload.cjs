@@ -131,6 +131,10 @@ if (isLocalPage) {
     notices: () => ipcRenderer.invoke('app:notices'),
     liveNotices: () => ipcRenderer.invoke('app:live-notices'),
     bannerHeight: (height) => ipcRenderer.invoke('app:banner-height', height),
+    // The sweep, in a view of its own, telling main how big to make it. See
+    // ui/sweep.js and refreshSweep in src/main.js for why the control cannot
+    // live on the bar's own page.
+    sweepBounds: (bounds) => ipcRenderer.invoke('app:sweep-bounds', bounds),
     // Marks read rather than clearing. The condition carries on; the app just
     // stops saying so.
     dismissNotice: (id) => ipcRenderer.invoke('app:dismiss-notice', id),

@@ -41,14 +41,15 @@
  *
  *   The fault it answers, and the fourth of its kind in this one area: the page's
  *   grab band over the banner, then the banner itself, then the stack's own
- *   transparent furniture, and then the Mark all read row. The strip reported was
- *   that row, which spanned the whole width while its control sat at the trailing
- *   edge, so the empty part of it ate every click that landed on it. Painting the
- *   bar behind it (2026-09-17) hid the strip but not the click: the view still
- *   claimed the mouse-down across the row's full width, which Abi reported again
- *   on 2026-09-18. The fix now removes the row entirely: the sweep is a plain
- *   button on the last card's line, so the only pixels that claim a click are the
- *   button's, and the stack has no non-card child left to span the width.
+ *   transparent furniture, and then the band the sweep sat in. The strip reported
+ *   was that band, which spanned the whole width while the control sat at the
+ *   trailing edge, so the empty part of it ate every click that landed on it.
+ *   Painting the bar behind it (2026-09-17) hid the strip but not the click: the
+ *   view still claimed the mouse-down across the band's full width, which Abi
+ *   reported again on 2026-09-18. The fix now takes the sweep OUT of this view
+ *   altogether: it is a view of its own, sized to the button, loaded from
+ *   core/ui/sweep.html. So this page's rectangle is its cards plus the bar's own
+ *   padding, and every other pixel belongs to the Control UI.
  */
 
 /* The view is not a window-drag surface. Kept as the declared intent, and NOT
@@ -75,8 +76,8 @@
    of the banner view's pixels outside a card read `rgb(25, 23, 36) a255` in the
    dark appearance and `rgb(250, 244, 237) a255` in the light, where alpha 0 is
    the only correct answer for a strip laid over someone else's page. That is
-   Abi's report exactly: the row the sweep control sits in is over the content
-   under it rather than masking it. It also defeated the card's own glass, since
+   Abi's report exactly: the strip the bar drew was over the content under it
+   rather than masking it. It also defeated the card's own glass, since
    a `color-mix()` surface at 92% over an opaque slab has nothing to show through.
 
    Nothing here may paint a surface: every pixel this page draws is a pixel of
@@ -358,36 +359,51 @@ body.banner-body {
 }
 .banner__close:hover { background: var(--notice-dismiss-hover-surface); color: var(--notice-dismiss-hover-colour); }
 
-/* Closing the whole bar. A PLAIN BUTTON, not a row: it hangs on the trailing end
-   of the last card's own top line (see the render in banner.js), beside that
-   card's action and dismiss, so it occupies only its own pixels.
+/* The sweep: closing the whole bar, meaning read everything on it. One control
+   for the whole stack rather than only per-card, because the thing you want after
+   a bad morning is the bar gone, and doing that a card at a time is a chore that
+   ends with one left over. Nothing here can lose a condition: reading is not
+   clearing, and a notice that refuses to be dismissed refuses this too, so the
+   finished update download survives the sweep.
 
-   ★ Why it stopped being a row. The bar's view is full width and claims every
-   mouse event inside its rectangle whatever the page paints there, so a footer
-   ROW carrying one right-aligned button left its empty leading part as a dead
+   ★ A PLAIN BUTTON IN A VIEW OF ITS OWN, below the bar and right-aligned, and
+   both halves of that are load-bearing.
+
+   A view claims every mouse event inside its RECTANGLE whatever the page paints
+   there, so a control sharing the bar's view shares the bar's rectangle. A band
+   of the bar carrying one right-aligned button left the rest of that band a dead
    zone: the reader saw the Control UI through it and could not click it, and
    painting the bar behind it (the 2026-09-17 fix) hid the strip without freeing
    the click. Abi, 2026-09-18: a normal button, no full-width banner and no
-   dead-zone. Sitting on a line that already exists adds no strip of its own, so
-   the only pixels that claim a click are the button's, which is the rule at the
-   top of this file applied by shrinking what the control COVERS rather than by
-   painting behind it.
+   dead-zone. Loading it from core/ui/sweep.html into a view sized to exactly this
+   button (see refreshSweep in src/main.js) is the rule at the top of this file
+   applied by shrinking what the view COVERS rather than by painting behind it.
 
-   `align-self: center` keeps it on the card's message line while the detail wraps
-   under it, the same placement the action button uses. It sits at the card's
-   trailing edge because the card's own `.grow` column takes the free space and
-   pushes every trailing control right; no auto margin, which would fight that.
-   Quiet colours: it is the way out rather than the point. */
+   It carries its own surface, where on the bar it could be transparent: the chip
+   floats over the Control UI's own page with nothing behind it, so the bar's own
+   material is what makes it legible and what says it belongs to the notices
+   rather than to the page under it.
+
+   `display: block` with `width: max-content` so the BUTTON is the whole box the
+   view is sized to: a button stretched to its view would make the view's width the
+   button's and the two would chase each other. `white-space: nowrap` keeps the
+   label on one line, which is what makes that width stable. */
 .banner__readall {
-  flex: none;
-  align-self: center;
+  display: block;
+  width: max-content;
+  white-space: nowrap;
+  margin: 0;
   min-height: var(--notice-action-min-height);
   padding: var(--notice-action-padding);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--notice-dismiss-radius);
-  font-size: var(--control-ui-text-xs);
+  background: color-mix(in srgb, var(--notice-surface) var(--notice-surface-alpha), transparent);
+  border: 1px solid color-mix(in srgb, var(--notice-border) var(--notice-border-alpha), transparent);
+  border-radius: var(--notice-radius);
+  box-shadow: var(--notice-shadow);
+  backdrop-filter: blur(var(--notice-blur));
+  -webkit-backdrop-filter: blur(var(--notice-blur));
   color: var(--muted);
+  font-family: var(--font-body);
+  font-size: var(--control-ui-text-xs);
   cursor: pointer;
 }
 .banner__readall:hover { background: var(--notice-dismiss-hover-surface); border-color: var(--notice-action-border); color: var(--notice-dismiss-hover-colour); }
