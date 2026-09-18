@@ -13,9 +13,9 @@
 //
 // Why not semantic-release or release-please: both decide the VERSION by parsing
 // Conventional Commits, and that decision is the one kept human here. The repo
-// does write those commits, cliff.toml groups the release notes by them, and
-// that is the reason to refuse the version parse rather than a reason to adopt
-// it: whether a change earns a minor or a patch is a judgement about what is
+// does write those commits, the release notes group merged pull requests by
+// them, and that is the reason to refuse the version parse rather than a reason
+// to adopt it: whether a change earns a minor or a patch is a judgement about what is
 // shipping. The older half of the history is the other reason: of its first 27
 // subjects, 1 parsed. release-it asks for the bump instead, which is the honest
 // interface.
