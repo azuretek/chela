@@ -116,11 +116,31 @@ jobs:
     uses: ./.github/workflows/platforms-gate.yml
     with:
       # The other pipeline, by the name GitHub's run list reports it under, and
-      # the jobs that are its builds and tests: the mobile test matrix, one leg
-      # per iOS version. Its release job is deliberately not named here, because
-      # it waits on this workflow in turn.
+      # the jobs that must be green before anything here is published: the mobile
+      # test matrix (one leg per iOS version), its lint, and its `release` job.
+      #
+      # ★ `^release$` is what makes "all builds and the TestFlight release
+      # READY before publishing" true. That job is where the upload to TestFlight
+      # and the wait for the build to reach VALID live, so requiring it green
+      # means the GitHub Release (the feed both clients read) is not published
+      # until the phone build is actually installable. Without it, publishing
+      # waited only on the iOS TEST legs, and the feed could appear while
+      # TestFlight was still Processing. That is the gap Abi named 2026-09-18:
+      # "CI should ensure all builds and the testflight release is ready before
+      # publishing."
+      #
+      # `^swiftlint$` is included so a red mobile lint cannot slip through: a
+      # failed lint skips the mobile `release` job, and an absent job is not a
+      # red one, so without this the gate would read "nothing wrong" from a lint
+      # that never ran the upload.
+      #
+      # NOT a deadlock, and this replaces an earlier note here that said the
+      # release job waits on this workflow in turn. It does not: the mobile gate
+      # waits on THIS workflow's `^build` jobs only, which depend on nothing in
+      # the mobile run. So the order is desktop build -> mobile gate -> mobile
+      # release (upload + VALID) -> this gate -> desktop publish, with no cycle.
       platform: claw-mobile pipeline
-      verdict: '^iOS '
+      verdict: '^iOS |^swiftlint$|^release$'
 
   # ★ The JS import lint, once, at the repo root. This is the off-the-shelf guard
   # for the boot-fatal class that shipped a green-tested build to a fatal dialog:
