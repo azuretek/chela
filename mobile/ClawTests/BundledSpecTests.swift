@@ -13,6 +13,7 @@ import XCTest
 /// A spec with no entry still mirrors its values in Swift; it moves here in the
 /// same commit that starts reading it, and `core/test/specs.test.js` is the
 /// inventory that tracks the list from the other side.
+@MainActor
 final class BundledSpecTests: XCTestCase {
     /// Keys every spec carries for a reader rather than for a machine, so no
     /// client has to name them.
@@ -32,6 +33,7 @@ final class BundledSpecTests: XCTestCase {
         Reader(name: "updates", decoded: UpdatePolicy.decodedKeys, ignored: UpdatePolicy.ignoredKeys),
         Reader(name: "connection", decoded: ConnectionState.decodedKeys, ignored: ConnectionState.ignoredKeys),
         Reader(name: "release", decoded: Release.decodedKeys, ignored: Release.ignoredKeys),
+        Reader(name: "tokens", decoded: NoticeTokens.decodedKeys, ignored: NoticeTokens.ignoredKeys),
     ]
 
     func testEachReaderAccountsForEveryKeyItsSpecCarries() throws {
