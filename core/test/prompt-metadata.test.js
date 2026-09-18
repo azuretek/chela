@@ -417,12 +417,28 @@ test('the block never enters the local record, so no reader can hand it back', (
  *
  * The lines are read FROM the spec rather than written out here, so this test
  * cannot become the second copy it is looking for.
+ *
+ * A long line this hook SHARES with another of our specs is an idiom rather than
+ * a fingerprint, so it is filtered out: a line two of our own files hold cannot
+ * evidence a copy of either one, and without the filter any second script that
+ * does similar work trips this test. Measured 2026-09-17 on
+ * core/spec/reconnect-resume-shim.json, a different script with a different job,
+ * which was reported as a copy on two shared lines of ordinary JavaScript (a
+ * string type check and a parse inside a try/catch). What is asserted is
+ * therefore every line that is distinctive to THIS script.
  */
 test('the injected script exists exactly once in the tree', () => {
   const spec = JSON.parse(
     fs.readFileSync(path.join(REPO, 'core', 'spec', 'prompt-metadata.json'), 'utf8'),
   );
-  const distinctive = spec.hook.filter((line) => line.trim().length >= 30);
+  const elsewhere = new Set(
+    fs.readdirSync(path.join(REPO, 'core', 'spec'))
+      .filter((name) => name.endsWith('.json') && name !== 'prompt-metadata.json')
+      .flatMap((name) =>
+        specStrings(JSON.parse(fs.readFileSync(path.join(REPO, 'core', 'spec', name), 'utf8'))),
+      ),
+  );
+  const distinctive = spec.hook.filter((line) => line.trim().length >= 30 && !elsewhere.has(line));
   assert.ok(distinctive.length >= 3, 'expected distinctive lines in the hook to search for');
 
   const tracked = execFileSync(
@@ -454,6 +470,17 @@ test('the injected script exists exactly once in the tree', () => {
     );
   }
 });
+
+/*
+ * Every string a spec holds, wherever it holds it in an array: `hook` and
+ * `script` are the two names a script-carrying spec uses today, and a spec that
+ * adds or renames one must not quietly switch this filter off.
+ */
+function specStrings(value) {
+  if (Array.isArray(value)) return value.filter((entry) => typeof entry === 'string');
+  if (value && typeof value === 'object') return Object.values(value).flatMap(specStrings);
+  return [];
+}
 
 test('the hook both clients install is the spec text, byte for byte', () => {
   const spec = JSON.parse(
