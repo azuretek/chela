@@ -1,0 +1,26 @@
+{
+  "description": "The opt-out issue report the desktop client sends to our own collector for debugging: JS errors, failed boots, update failures and rollback events. This file is the ONE owner of the allowlist, the forbidden set and the scrubbing rules. core/issue-report.js reads it; the desktop imports that module. There is no iOS reporter, so this spec is not shipped to the phone. REDACTION IS THE POINT: the client holds gateway tokens, pairing data and message content, and a report is allowlisted fields only, never a config dump and never message bodies. A crash report carrying a gateway token is a credential leak that leaves the house.",
+  "why": [
+    "The report is an ALLOWLIST, not a redaction of a dump: only the named fields are ever emitted, and an unknown field is dropped rather than passed through, so a field added to the codebase later cannot drift into a report without someone adding it here. This is the opposite discipline from scrubbing a blob, and it is deliberate: a deny-list forgets, an allow-list cannot.",
+    "The default is SEND (opt-out), so the redaction has to be right by construction rather than by the reader having thought about it. Every free-text field is scrubbed and length-capped in ONE place before send, so there is one thing to audit and one thing to test.",
+    "installId is a random UUID generated on first run and resettable, NOT derived from hardware, serial, hostname, account or core/device-identity.js (which is identifying and must never be used here). It is the least identifying thing that still lets two reports from one install be correlated.",
+    "No minidump in the default lane: Electron's crashReporter uploads a memory image that cannot be scrubbed and holds the gateway URL, the token, pairing data and message content, which contradicts 'no identifiable info' by construction. The default captures the crash SIGNAL as a structured report instead. Dev builds may opt into dumps because dev runs on our own hardware; prod is off behind a checkbox with a named-contents warning, and even then the collector extracts a signature and deletes the raw dump."
+  ],
+  "collectorEnv": "CLAW_ISSUE_COLLECTOR",
+  "maxFieldLength": 2048,
+  "kinds": ["uncaughtException", "unhandledRejection", "rendererGone", "bootFailure", "updateFailure", "rollback"],
+  "stages": ["main-init", "window-create", "renderer-ready", "gateway-connect"],
+  "channels": ["dev", "stable"],
+  "allow": [
+    "reportId", "installId", "kind", "appVersion", "channel", "platform", "arch",
+    "osVersion", "electronVersion", "nodeVersion", "bootAttempts", "stage",
+    "errorName", "errorMessage", "stack", "rolledBackFrom", "rolledBackTo", "at"
+  ],
+  "freeText": ["errorName", "errorMessage", "stack"],
+  "forbiddenExamples": [
+    "gatewayUrl", "hostname", "tailnet", "port", "token", "secret", "pairingCode",
+    "key", "cookie", "authHeader", "configValues", "messageContent", "transcript",
+    "prompt", "mediaPath", "deviceName", "userName", "email", "phone", "ip",
+    "serial", "udid", "mac"
+  ]
+}
