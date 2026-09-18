@@ -1,22 +1,25 @@
 // Every spec is classified, and the classification is checked.
 //
-// A spec in core/spec/ is consumed by an interface in one of two ways, and the
-// difference is not stylistic:
+// A spec in core/spec/ is consumed in one of three ways, and which one it is has
+// to be decided rather than assumed:
 //
-//   mirrored  the interface ports the values as constants and a parity test
-//             asserts them against this file on disk. Right where a value is a
-//             name or a number, because two copies of a value can be compared.
+//   mirrored   the interface ports the values as constants and a parity test
+//              asserts them against this file on disk. Now the exception rather
+//              than the rule: it is only right while the value has no reader that
+//              can carry the file.
 //
-//   bundled   the interface ships the file and reads it at runtime, so there is
-//             no copy to drift. Right where the file holds a PROGRAM, because a
-//             port of a script is a second copy of the program in another
-//             language, which is the fork the shared file exists to prevent.
+//   bundled    the interface ships the file and reads it at runtime through one
+//              loader, so there is no copy to drift. This is where everything is
+//              going, and where a file holding a PROGRAM has to be, because a
+//              port of a script is a second copy of the program in another
+//              language.
 //
-// This file is the inventory, and it exists because the split used to be
-// described in prose as "one spec is the exception". That was wrong twice: eight
-// specs are bundled, and an exception is a thing nobody checks. A spec with no
-// entry here fails this test, so its author has to say how it is consumed rather
-// than leave the next reader to work it out.
+//   not-read   no interface here reads it at all. Said out loud rather than left
+//              out, so a spec no client uses is a decision rather than an
+//              oversight.
+//
+// This file is the inventory. A spec with no entry fails it, so its author has to
+// say how it is consumed rather than leave the next reader to work it out.
 
 import test from 'node:test';
 import assert from 'node:assert';
@@ -28,30 +31,33 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SPECS = path.join(HERE, '..', 'spec');
 const PROJECT = path.join(HERE, '..', '..', 'mobile', 'project.yml');
 
-// Ported as constants, proven against the spec by a parity test.
+// Still ported as constants, proven against the spec by a parity test.
 const MIRRORED = {
-  'connection.json': 'connection state and its wording, proven against the fixtures',
-  'feed.json': 'the releases-feed reader, read by UpdateFeed.swift and the desktop',
-  'notices.json': 'notice tones and wording, mirrored by Notices.swift',
-  'quips.json': 'the rotating lines, mirrored by Quips',
-  'release.json': 'the release package names; the iOS client mirrors the OTA names it builds an install URL from, which lands with the OTA work',
-  'tokens.json': 'notice colours and timings, mirrored by NoticeTokens.swift',
-  'updates.json': 'the per-platform update policy, mirrored by UpdatePolicy.swift',
+  'tokens.json': 'notice colours and timings, still mirrored by NoticeTokens.swift, and the last one to convert',
 };
 
-// Shipped as a resource and read at runtime, because a mirror of it would be a
-// second copy of something rather than a comparable value.
+// Shipped as a resource and read at runtime through BundledSpec.
 const BUNDLED = {
   'app-settings-affordance.json': 'holds the one injected script that adds the footer control',
-  'naming.json': 'read at runtime for the product name, the repo slug and each client shorthand',
-  'progress.json': 'read at runtime for the milestone order, the floors and the easing constants',
+  'connection.json': 'read at runtime for the two sentences a pending row shows',
   'device-identity.json': 'holds two injected scripts, the device keypair seed and the capture',
+  'feed.json': 'read at runtime for the feed path, the release-notes path and the channel names',
   'gateway-identity.json': 'holds the signals a payload is recognised by, so "is this an OpenClaw gateway" is one answer rather than one per platform',
+  'naming.json': 'read at runtime for the product name, the repo slug and each client shorthand',
   'native-control-auth.json': 'read at runtime for the global name, the client mode and the operator scopes',
+  'notices.json': 'read at runtime for the tone names and their sort order',
   'pairing.json': 'holds the one injected script that observes the page gateway socket for a pairing close',
+  'progress.json': 'read at runtime for the milestone order, the floors and the easing constants',
   'prompt-metadata.json': 'holds the injected script that puts the client-context block on every prompt',
+  'release.json': 'read at runtime for the release asset names the OTA install URL is built from',
   'settings.json': 'travels with the shared settings page, which cannot read it at runtime itself',
+  'updates.json': 'read at runtime for the check intervals; its action and outcome names are Swift enum raw values, which are compile-time',
   'upstream-reference.json': 'read at runtime by the reference page host',
+};
+
+// Read by nothing in this repo's clients.
+const NOT_READ_HERE = {
+  'quips.json': 'the loading quips belong to the desktop loading cover; no iOS surface draws them',
 };
 
 function specNames() {
@@ -69,19 +75,20 @@ function shippedByProject() {
   return found;
 }
 
-test('every spec is classified, and the bundled half is what the app ships', () => {
+test('every spec is classified exactly once, and the bundled half is what the app ships', () => {
   const names = specNames();
   assert.ok(names.length > 0, 'expected specs in core/spec');
 
   for (const name of names) {
-    assert.ok(
-      MIRRORED[name] || BUNDLED[name],
-      name + ' is unclassified. Add it to MIRRORED or BUNDLED in this test and say why: a value can be mirrored and compared, a program has to be shipped.',
+    const where = [MIRRORED[name], BUNDLED[name], NOT_READ_HERE[name]].filter(Boolean);
+    assert.equal(
+      where.length,
+      1,
+      name + ' must be classified exactly once, in MIRRORED, BUNDLED or NOT_READ_HERE, with a reason: a value can be mirrored and compared, a program has to be shipped, and a spec nothing reads has to say so.',
     );
   }
-  for (const name of [...Object.keys(MIRRORED), ...Object.keys(BUNDLED)]) {
+  for (const name of [...Object.keys(MIRRORED), ...Object.keys(BUNDLED), ...Object.keys(NOT_READ_HERE)]) {
     assert.ok(names.includes(name), name + ' is classified here but is not in core/spec');
-    assert.ok(!(MIRRORED[name] && BUNDLED[name]), name + ' cannot be both mirrored and bundled');
   }
 
   // project.yml is the authority on what the app carries, so a spec this test

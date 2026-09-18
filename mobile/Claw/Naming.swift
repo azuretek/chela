@@ -42,6 +42,12 @@ enum Naming {
     /// value the app silently does not have.
     static let decodedKeys: Set<String> = ["product", "repo", "clients"]
 
+    /// The keys this deliberately does not decode: `retired` lists product
+    /// names this one replaced, which is the desktop's rename sweep and not a
+    /// thing this client reads. `BundledSpecTests` requires every key to be
+    /// either decoded or named here.
+    static let ignoredKeys: Set<String> = ["retired"]
+
     private static let spec: Spec = loadSpec()
 
     private static func loadSpec() -> Spec {
