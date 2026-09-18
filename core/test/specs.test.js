@@ -49,6 +49,7 @@ const BUNDLED = {
   'pairing.json': 'holds the one injected script that observes the page gateway socket for a pairing close',
   'progress.json': 'read at runtime for the milestone order, the floors and the easing constants',
   'prompt-metadata.json': 'holds the injected script that puts the client-context block on every prompt',
+  'reconnect-resume-shim.json': 'holds the one injected script that strips the Control UI reconnect-resume marker from a chat.send frame before it leaves the page',
   'release.json': 'read at runtime for the release asset names the OTA install URL is built from',
   'settings.json': 'travels with the shared settings page, which cannot read it at runtime itself',
   'tokens.json': 'read at runtime for the notice palettes, the card geometry, the type scale and the tone map',
