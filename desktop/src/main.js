@@ -1903,6 +1903,22 @@ function openSettings(opts = {}) {
   // On first run the main window is already showing this page full-size; a
   // modal of the same thing over the top of itself is not an improvement.
   if (settingsIsPage) {
+    // But "Open Settings" must never be a no-op, and it was: a connect attempted
+    // from settings-as-page and then failing raised a banner whose one offer
+    // pointed here, and here did nothing, because the page it offered to open was
+    // already the whole window. So the reader was left with a banner they could
+    // not act on, a page whose Escape and "Back to app" are dead in this mode,
+    // and no gateway on screen: a dead end with no way to the Control UI.
+    // Measured on 2026-09-18 and guarded by
+    // scripts/test-settings-as-page-escape.js.
+    //
+    // The failure IS a condition the settings page already shows (the row reads
+    // "Cannot connect" and can be pressed again, or another gateway picked), so
+    // what "Open Settings" means here is "let me see it": take the banner down and
+    // put the reader back on the usable page it was covering. That is the same
+    // escape the phone gets by dismissing its settings sheet on connect, and it
+    // makes the two clients behave alike from a failed connect.
+    clearNotice('connection');
     showMainWindow();
     return null;
   }
