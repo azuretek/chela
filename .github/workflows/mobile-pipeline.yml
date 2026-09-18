@@ -185,6 +185,53 @@ jobs:
       platform: claw-desktop release
       verdict: '^build'
 
+  # ★ SwiftLint, the mobile platform's half of the root lint. It runs once, on
+  # the oldest stable image, and it is the peer of the JS import lint in
+  # release.yml: mobile lints with its own tool through its own config
+  # (mobile/.swiftlint.yml), the way core and desktop lint with ESLint, so no
+  # platform's lint is bolted onto another's job.
+  #
+  # Why a separate job rather than a step in the test matrix: the matrix is one
+  # leg per iOS version, and a style finding is a property of the source rather
+  # than of the SDK, so running it twice would only report the same thing twice.
+  #
+  # --strict makes every finding fatal, the same posture the root eslint run
+  # takes. The config is clean on the current tree by construction (the rules the
+  # codebase deliberately does not follow are off in that file, each with its
+  # reason), so a finding here is a new one.
+  #
+  # It runs on every trigger including a pull request, because a lint failure on
+  # a change is worth seeing there; the release job below does not gate on it for
+  # a pull request (it does not run at all there), but on a push it does.
+  lint:
+    name: swiftlint
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      # SwiftLint is not part of Xcode and the image may or may not carry it.
+      # HOMEBREW_NO_AUTO_UPDATE keeps the install from spending a minute updating
+      # the tap index for one formula, the same discipline the xcodegen install
+      # below uses.
+      - name: Install SwiftLint
+        run: |
+          set -eo pipefail
+          if ! command -v swiftlint >/dev/null; then
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install swiftlint
+          fi
+          swiftlint version
+
+      # --strict: any finding is a failure, the CI equivalent of the eslint run
+      # in release.yml. The report is verbose by default, which is what makes a
+      # failure readable in the log.
+      - name: Lint the Swift sources
+        run: swiftlint lint --strict
+
   # The compile-and-test half, one leg per iOS version. Credential-free by
   # design: nothing here needs the Apple account and nothing here signs
   # anything, which is what keeps the test legs runnable on a pull request from
@@ -505,8 +552,8 @@ jobs:
   # upload-artifact; the sharing that is real is inside the job, where the one
   # archive is verified, exported and uploaded without being rebuilt.
   release:
-    needs: [version, test, platforms]
-    if: github.event_name != 'pull_request' && needs.version.outputs.build == 'true' && needs.test.result == 'success' && needs.platforms.result == 'success'
+    needs: [version, lint, test, platforms]
+    if: github.event_name != 'pull_request' && needs.version.outputs.build == 'true' && needs.lint.result == 'success' && needs.test.result == 'success' && needs.platforms.result == 'success'
     # Named rather than `macos-latest`, the same discipline the test matrix uses,
     # so the toolchain is a property of this file. macos-26 carries Xcode 26,
     # which is the oldest toolchain that can build the iOS 26 deployment target
