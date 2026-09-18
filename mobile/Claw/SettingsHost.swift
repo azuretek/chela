@@ -33,11 +33,7 @@ final class SettingsHost: NSObject, ObservableObject, WKScriptMessageHandler {
     private let store: GatewayStore
     private let connection: ConnectionState
     private let notices: NoticeBoard
-    /// Which appearance the app is in, so the page's own row can show it and the
-    /// choice it sends back can be applied. The value lives on the client rather
-    /// than in the shared config, and the reason is recorded as this setting's
-    /// `absent` entry in core/spec/settings.json.
-    private let appearance: AppearanceStore
+
     /// Asked to take the surface away, which only happens when there is a gateway
     /// behind it to reveal.
     private let onClose: () -> Void
@@ -66,7 +62,7 @@ final class SettingsHost: NSObject, ObservableObject, WKScriptMessageHandler {
         store: GatewayStore,
         connection: ConnectionState,
         notices: NoticeBoard,
-        appearance: AppearanceStore,
+
         onClose: @escaping () -> Void,
         onConnect: @escaping () -> Void,
         onOpenAbout: @escaping () -> Void,
@@ -75,7 +71,7 @@ final class SettingsHost: NSObject, ObservableObject, WKScriptMessageHandler {
         self.store = store
         self.connection = connection
         self.notices = notices
-        self.appearance = appearance
+
         self.onClose = onClose
         self.onConnect = onConnect
         self.onOpenAbout = onOpenAbout
@@ -255,16 +251,7 @@ final class SettingsHost: NSObject, ObservableObject, WKScriptMessageHandler {
             if let promptMetadata = patch["promptMetadata"] as? Bool {
                 store.setPromptMetadata(promptMetadata)
             }
-            // The appearance arrives on this same command rather than through one
-            // of its own, because the page can only reach what its host
-            // implements and a second door for one value is a second thing to
-            // keep in step. An unrecognised value is ignored rather than
-            // defaulted: the page sends what it offers, so anything else is a bug
-            // on one side of the contract, and guessing would hide it. See
-            // `AppearanceMode.named`.
-            if let named = AppearanceMode.named(patch["appearance"]) {
-                appearance.choose(named)
-            }
+
             // The desktop answers with what its two platform-bound preferences did
             // (`shortcut`, `login`). This client has neither, and the page reads
             // both as absent rather than as success.
@@ -353,11 +340,7 @@ final class SettingsHost: NSObject, ObservableObject, WKScriptMessageHandler {
                 "error": NSNull(),
             ] as [String: Any],
             "settings": ["promptMetadata": store.config.promptMetadata] as [String: Any],
-            // The appearance the app is actually wearing, which is the only place
-            // the page reads it from. Sent as an object rather than as a bare
-            // string so the page reads a field of the state it already renders
-            // from, matching how the desktop's state carries its own settings.
-            "appearance": appearance.state,
+
             // Read only by the Certificates tab, which this client does not have.
             // Sent because the page reads `state.trustedCerts` unconditionally
             // while drawing that panel, and a missing key would be a crash rather

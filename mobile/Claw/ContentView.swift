@@ -107,12 +107,12 @@ struct ContentView: View {
     /// back rather than left to a sleep that was frozen with the process.
     @Environment(\.scenePhase) private var scenePhase
 
-    /// Which appearance the app is in, which is this client's to decide and not
-    /// the Control UI's: the native chrome here is real (a status bar, a sheet,
-    /// the strips the safe area leaves above and below the page) and the page's
-    /// `prefers-color-scheme` resolves against the web view's own traits, so the
-    /// choice has to live somewhere both halves can read it. See `Appearance`.
-    @StateObject private var appearance = AppearanceStore()
+    /// The device's own appearance, which is what this client follows. Passed to the
+    /// token refresh so the interface's palette is re-read when the SYSTEM changes,
+    /// which is the only appearance change this client has now that it keeps no mode
+    /// of its own. See the sixth rule in core/ui/CONVENTIONS.md.
+    @Environment(\.colorScheme) private var deviceScheme
+
 
     /// Whether the settings sheet is up over a gateway. Ignored while there is no
     /// gateway, where the surface is shown without a sheet: see the note above.
@@ -172,14 +172,14 @@ struct ContentView: View {
     /// solver will take in one piece.
     @ViewBuilder
     private func settingsSheetContent(_ host: SettingsHost) -> some View {
-        SettingsSurface(host: host, tokens: liveTokens, appearance: appearance.mode)
+        SettingsSurface(host: host, tokens: liveTokens, appearance: AppearanceMode.system)
             // About is presented from the settings surface, so the second sheet
             // stacks over the first the way the desktop's About-over-Settings
             // overlay does, and lands back on settings when dismissed.
             .aboutSheet(
                 isPresented: $showingAbout,
                 host: aboutHost,
-                appearance: appearance.mode,
+                appearance: AppearanceMode.system,
                 tokens: liveTokens,
                 notices: notices
             )
@@ -189,12 +189,12 @@ struct ContentView: View {
     /// surface, with About riding it and the notice stack over both.
     @ViewBuilder
     private func SettingsAsApp(host: SettingsHost) -> some View {
-        SettingsSurface(host: host, tokens: liveTokens, appearance: appearance.mode)
+        SettingsSurface(host: host, tokens: liveTokens, appearance: AppearanceMode.system)
             .ignoresSafeArea()
             .aboutSheet(
                 isPresented: $showingAbout,
                 host: aboutHost,
-                appearance: appearance.mode,
+                appearance: AppearanceMode.system,
                 tokens: liveTokens,
                 notices: notices
             )
@@ -206,7 +206,7 @@ struct ContentView: View {
             if let gateway = gateways.activeGateway {
                 WebView(
                     gateway: gateway,
-                    appearance: appearance.mode,
+                    appearance: AppearanceMode.system,
                     themeColour: $themeColour,
                     notices: notices,
                     connection: connection,
@@ -282,7 +282,11 @@ struct ContentView: View {
         // page are the native half, and a page passed light while they stayed dark
         // is the disagreement this setting exists to remove. `nil` is `system`,
         // which leaves every one of them following the device live.
-        .preferredColorScheme(appearance.mode.colorScheme)
+        // The DEVICE's appearance, which is the only answer this client has: the
+        // status bar, the sheet's background and the strips around the page follow it
+        // live, and the Control UI's own theme resolves inside its own page. See the
+        // sixth rule in core/ui/CONVENTIONS.md.
+        .preferredColorScheme(AppearanceMode.system.colorScheme)
         .onAppear(perform: prepare)
         // The interface's live palette, read when the app appears and re-read
         // whenever the answer can have changed. One concrete modifier rather than
@@ -291,7 +295,7 @@ struct ContentView: View {
         // layer arrived ("unable to type-check this expression in reasonable
         // time", measured 2026-09-16).
         .modifier(LiveTokenRefresh(
-            appearance: appearance.mode,
+            scheme: deviceScheme,
             showingSettings: $showingSettings,
             showingAbout: $showingAbout,
             refresh: refreshLiveTokens
@@ -349,7 +353,6 @@ struct ContentView: View {
                 store: gateways,
                 connection: connection,
                 notices: notices,
-                appearance: appearance,
                 // Closing is only ever a way back to a gateway, so it is refused
                 // while there is none: with an empty list the surface is the app.
                 onClose: { if gateways.hasGateway { showingSettings = false } },
@@ -607,7 +610,10 @@ struct ContentView: View {
 /// is about to be used, but four more `onChange` links on that expression is more
 /// than the solver will take.
 private struct LiveTokenRefresh: ViewModifier {
-    let appearance: AppearanceMode
+    /// The DEVICE's appearance. The interface's palette moves with it, so a map read
+    /// in one mode is the wrong map in the other. It was this app's own stored mode,
+    /// which no longer exists.
+    let scheme: ColorScheme
     @Binding var showingSettings: Bool
     @Binding var showingAbout: Bool
     let refresh: () -> Void
@@ -615,7 +621,7 @@ private struct LiveTokenRefresh: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onAppear(perform: refresh)
-            .onChange(of: appearance) { _, _ in refresh() }
+            .onChange(of: scheme) { _, _ in refresh() }
             .onChange(of: showingSettings) { _, isOpen in if isOpen { refresh() } }
             .onChange(of: showingAbout) { _, isOpen in if isOpen { refresh() } }
     }
