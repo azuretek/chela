@@ -254,7 +254,12 @@ test('the settings toggle is wired from the page through main to the gateway pag
 
   assert.match(html, /<input type="checkbox" id="promptMetadata">/);
   assert.match(settings, /\$\('promptMetadata'\)\.checked = Boolean\(s\.promptMetadata\)/);
-  assert.match(settings, /patch\.promptMetadata = \$\('promptMetadata'\)\.checked/);
+  // The toggle commits its OWN value now, and this line read the one `patch` object
+  // the page used to hand to its Save button: the fifth rule in ui/CONVENTIONS.md,
+  // and #8 removed both. Its half of the chain is asserted here, the loop below
+  // asserts the rest, and the desktop unit suite is what found it on 2026-09-18.
+  assert.match(settings, /for \(const id of \[[^\]]*'promptMetadata'/, 'the toggle is no longer wired');
+  assert.match(settings, /commitSetting\(id, box\.checked\)/, 'the toggle no longer commits its own value');
   assert.match(main, /promptMetadata\.clientScript\(promptMetadataConfig\(\)\)/);
   assert.match(main, /dom-ready[\s\S]*?installPromptMetadata\(wc\)/);
   assert.match(main, /app:save-settings[\s\S]*?installPromptMetadata\(page\(\)\)/);
