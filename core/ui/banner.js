@@ -84,7 +84,12 @@ function card(notice) {
   ]);
 
   return el('div', { className: `banner banner--${notice.tone}`, id: `n-${notice.id}` }, [
-    el('div', { className: 'stack grow' }, [
+    // The body is a COLUMN of blocks, and this page declares that shape itself in
+    // banner.css as `.banner__body`. It carried `stack grow` until 2026-09-18,
+    // when `.stack` turned out to be a rule the settings refactor had retired:
+    // the body fell back to a plain block and its three spans laid out as one
+    // paragraph. See the rule for what the reader saw.
+    el('div', { className: 'banner__body grow' }, [
       el('span', { className: 'banner__message', textContent: notice.message }),
       notice.detail ? el('span', { className: 'banner__detail', textContent: notice.detail }) : null,
       progress,

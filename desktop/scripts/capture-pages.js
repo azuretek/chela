@@ -401,6 +401,34 @@ const PROBE = `(() => {
       const node = document.getElementById('stack');
       return node ? getComputedStyle(node).backgroundColor : null;
     })(),
+    // ---- the card's body, and whether its blocks are stacked ---------------
+    // The headline and the subject line under it are two blocks. The fault this
+    // reads for is that they were drawn as ONE paragraph: the body carried a class
+    // whose column rule had been retired from the stylesheet this page used to
+    // share with the settings surface, so the body fell back to a plain block and
+    // its spans laid out inline, which the reader sees as two sentences interleaved
+    // (Abi, 2026-09-18: "the banner has improper spacing between words"). No source
+    // assertion can see that, so the reading is geometric: the detail starts BELOW
+    // the headline, and the progress bar below that.
+    noticeBody: (function () {
+      const card = document.querySelector('.banner');
+      if (!card) return null;
+      const box = function (node) {
+        const b = node.getBoundingClientRect();
+        return { top: b.top, bottom: b.bottom, height: b.height };
+      };
+      const message = card.querySelector('.banner__message');
+      const detail = card.querySelector('.banner__detail');
+      const progress = card.querySelector('.banner__progress');
+      const body = card.firstElementChild;
+      return {
+        className: body ? body.className : null,
+        direction: body ? getComputedStyle(body).flexDirection : null,
+        message: message ? box(message) : null,
+        detail: detail ? box(detail) : null,
+        progress: progress ? box(progress) : null,
+      };
+    })(),
     // The sweep button's own box, and the CARD it hangs on. The sweep is no
     // longer a full-width row of its own (Abi, 2026-09-18): it is a plain button
     // on the last card's line, so what has to be painted is the card behind the
@@ -678,6 +706,17 @@ app.whenReady().then(async () => {
         check(`${page.name}.html paints the whole bar, so no pixel of it is a dead zone`,
           Boolean(probe.stackBackground) && !clear(probe.stackBackground),
           `the stack resolved to ${JSON.stringify(probe.stackBackground)}`);
+        // ---- the card's body stacks its blocks --------------------------------
+        // Read off geometry rather than source, because the fault was a class whose
+        // rule had gone: the card still carried it and the page still drew. The
+        // detail must START below where the headline ENDS, which is false the moment
+        // the two are laid out as one inline flow whatever the stylesheet says.
+        const body = probe.noticeBody;
+        check(`${page.name}.html stacks the headline and the detail instead of interleaving them`,
+          Boolean(body) && body.direction === 'column'
+            && Boolean(body.message) && Boolean(body.detail)
+            && body.detail.top >= body.message.bottom - 0.5,
+          JSON.stringify(body));
         // ---- the sweep is a plain button on a card, not a full-width row ------
         // Abi, 2026-09-18: the sweep had become a full-width row whose empty part
         // ate clicks on the Control UI. It is a plain button on the last card's
