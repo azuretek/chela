@@ -121,13 +121,32 @@ app.whenReady().then(async () => {
   check('the banner offers the one way out', action === 'Open Settings', `action: ${action}`);
   await shoot(banner, 'banner.png');
 
-  // THE FIX: following that offer must not be a no-op. It takes the banner down
-  // and returns the reader to the usable settings page it was covering.
+  // THE FIX: following that offer must not be a no-op. It takes the FAILURE notice
+  // down and returns the reader to the usable settings page it was covering.
+  //
+  // The claim is about the connection-failure card specifically, not the whole
+  // banner view. Another, unrelated notice may share the bar and keep the view up
+  // legitimately: a headless Linux box with no keyring raises a standing "gateway
+  // credentials cannot be saved" card, which is nothing to do with this failure and
+  // must not be swept by it. So the guard polls for the failure card to go while
+  // tolerating anything else on the bar, bounded so a card that never leaves fails.
   await banner.executeJavaScript("document.querySelector('.banner__action').click()");
-  await delay(1500);
-
-  const bannerGone = !overlayWc('banner.html');
-  check('following it clears the failure banner', bannerGone, 'the banner is still up after Open Settings');
+  const failureCardGone = async () => {
+    const b = overlayWc('banner.html');
+    if (!b) return true; // the whole bar went, so the failure card certainly did
+    try {
+      const text = await b.executeJavaScript('document.body.innerText');
+      return !/Cannot connect|not an OpenClaw gateway/i.test(text);
+    } catch { return true; } // mid-teardown reads throw; the bar is going
+  };
+  let cleared = false;
+  const clearDl = Date.now() + 8000;
+  while (Date.now() < clearDl) {
+    if (await failureCardGone()) { cleared = true; break; }
+    await delay(150);
+  }
+  check('following it clears the connection-failure notice', cleared,
+    'the "Cannot connect" card is still on the bar 8s after Open Settings');
 
   const after = settingsWc();
   check('and leaves the reader on the settings page', Boolean(after), 'settings is gone, the window is blank');
