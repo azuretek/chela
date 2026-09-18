@@ -2767,6 +2767,28 @@ function reachBootStage(stage) {
  */
 function bootReady() {
   if (config.get().bootMarker) config.update({ bootMarker: null });
+  recordLastKnownGood();
+}
+
+/**
+ * Pin the running build as the last version that came up cleanly, so a future
+ * crash loop has something to roll back TO.
+ *
+ * Written only on a clean boot and only when it changed, so a launch that
+ * changes nothing touches no file. The version rolled back FROM is never pinned
+ * as good even if it later limps to renderer-ready once: a build under an active
+ * 'broken' suppression stays off the good list until the suppression is cleared,
+ * which is what keeps a flaky build from re-nominating itself as the target.
+ */
+function recordLastKnownGood() {
+  const version = app.getVersion();
+  if (!version) return;
+  const suppressed = suppressedUpdate();
+  if (suppressed && suppressed.reason === 'broken' && suppressed.version === version) return;
+  const record = config.get().lastKnownGood;
+  if (record && record.version === version) return;
+  config.update({ lastKnownGood: { version, at: Date.now() } });
+  console.log(`[claw-desktop] bootstrap: ${version} came up cleanly; pinned as last-known-good`);
 }
 
 const BROKEN_BUILD = 'broken-build';
@@ -2800,7 +2822,8 @@ function canRollBack() {
  * dismissed banner should come back next launch rather than being marked handled.
  */
 function raiseBrokenBuildBanner() {
-  const banner = bootstrapHealth.brokenBuildBanner(bootHealth(), { canRollback: canRollBack() });
+  const rollback = canRollBack();
+  const banner = bootstrapHealth.brokenBuildBanner(bootHealth(), { canRollback: rollback });
   if (!banner) {
     clearNotice(BROKEN_BUILD);
     return;
@@ -2809,10 +2832,79 @@ function raiseBrokenBuildBanner() {
     tone: noticeStore.ERROR,
     message: banner.message,
     detail: noticeStore.sentence(banner.detail),
-    // The action is the release page for now; the automatic-rollback half wires a
-    // rollback command onto this same banner.
-    action: { label: 'Open release page', command: 'update-release-page' },
+    // Where a rollback is possible the banner offers it; where it is not, the
+    // reader is pointed at the release page to reinstall by hand.
+    action: rollback
+      ? { label: 'Roll back to the last version that worked', command: 'update-rollback' }
+      : { label: 'Open release page', command: 'update-release-page' },
   });
+}
+
+/**
+ * Roll the crash-looping build back to the last version that came up cleanly.
+ *
+ * Three moves, and each is load-bearing:
+ *   1. Suppress the running (broken) build with reason 'broken', reusing the
+ *      update-suppression lane as the do-not-refetch half: without this the next
+ *      scheduled check would offer the broken build straight back, because on our
+ *      channel a newly published build can rank HIGHER than the good one.
+ *   2. Turn on allowDowngrade, because the target is an OLDER version and
+ *      electron-updater refuses a downgrade by default.
+ *   3. Check the feed: the updater compares the newest published build against
+ *      the running one and, with allowDowngrade set and the broken build
+ *      suppressed, downloads the good build to install over it.
+ *
+ * The pinned good version is what the suppression protects: it is not itself
+ * suppressed, so the check that would otherwise refuse a downgrade is allowed to
+ * offer it. Only reachable where canRollBack() held, so the platform can install
+ * and a good version is pinned.
+ */
+/**
+ * Start the rollback on its own when the running build is in a crash loop and a
+ * rollback is possible, so a build that cannot come up does not depend on the
+ * reader finding the button.
+ *
+ * Guarded so it fires at most once per broken build: if the running build is
+ * already suppressed with reason 'broken' (we tried to roll it back on a previous
+ * launch and it is still what is installed), the automatic attempt is not
+ * repeated. The banner still offers the manual retry in that case, because a
+ * repeated automatic download every launch is worse than one that stops and asks.
+ */
+function maybeAutoRollBack() {
+  const plan = bootstrapHealth.rollbackPlan({
+    version: app.getVersion(),
+    verdict: bootHealth(),
+    lastKnownGood: config.get().lastKnownGood || null,
+    canInstall: updatePolicy().canInstall === true,
+    suppression: suppressedUpdate(),
+    auto: true,
+  });
+  if (!plan.rollBack) {
+    if (plan.skip === 'already-tried') console.log('[claw-desktop] rollback: already attempted for this build; leaving the manual offer up');
+    return;
+  }
+  rollBackToLastKnownGood();
+}
+
+function rollBackToLastKnownGood() {
+  if (!canRollBack()) {
+    console.warn('[claw-desktop] rollback: asked for, but this install cannot roll back');
+    return;
+  }
+  const good = config.get().lastKnownGood;
+  const broken = app.getVersion();
+  // Do-not-refetch half: the broken build is held down so a later check cannot
+  // offer it back over the good one we are about to install.
+  suppressUpdate(broken, 'broken');
+  config.update({ rollback: { from: broken, to: good.version, at: Date.now() } });
+  console.log(`[claw-desktop] rollback: ${broken} -> ${good.version} (last-known-good)`);
+  if (updater) {
+    updater.allowDowngrade = true;
+    // The same path a normal update takes, but pointed downhill: the check finds
+    // the good build on the feed and, with allowDowngrade on and the broken build
+    // suppressed, treats it as installable.
+    void checkForUpdates('rollback');
+  }
 }
 
 /**
@@ -4572,6 +4664,7 @@ function registerIpc() {
         void shell.openExternal(releaseNotesUrl(repo, offeredUpdate && offeredUpdate.version));
       },
       'update-restart': () => restartForUpdate(),
+      'update-rollback': () => rollBackToLastKnownGood(),
     };
     const run = commands[String(command)];
     if (run) run();
@@ -4680,8 +4773,11 @@ if (!app.requestSingleInstanceLock()) {
     createMainWindow();
 
     // The window exists, so there is a surface for it: if the build we are
-    // running kept failing to come up, say so.
+    // running kept failing to come up, say so and, where a rollback is possible,
+    // start it automatically. The banner stays up either way, so the reader sees
+    // what happened and can retry from it if the automatic attempt did not take.
     raiseBrokenBuildBanner();
+    maybeAutoRollBack();
 
     app.on('activate', showMainWindow);
   });
