@@ -66,11 +66,16 @@ enum Version {
         }
     }
 
+    // force_try stays enabled tree-wide; this one site is reviewed and carries the
+    // disable rather than switching the rule off for everything. The pattern is a
+    // compile-time literal, so it cannot throw in any runtime state.
+    // swiftlint:disable force_try
     /// `MAJOR.MINOR.PATCH`, optionally `-prerelease`, and nothing else. The same
     /// pattern the desktop uses, so the two ports accept and reject the same set.
     private static let pattern = try! NSRegularExpression(
         pattern: "^(\\d+)\\.(\\d+)\\.(\\d+)(?:-([0-9A-Za-z.-]+))?$"
     )
+    // swiftlint:enable force_try
 
     /// Parse a version string, or nil if it is not one we would release.
     static func parse(_ version: String) -> Parsed? {
