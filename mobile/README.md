@@ -226,16 +226,17 @@ classified nor shipped:
   of a value can be compared. The fixtures enforce the behaviour the port
   reproduces: change the spec, regenerate, and the Swift test fails until the
   port moves with it.
-- **Bundled** specs are copied into the app by `project.yml` and read at runtime,
-  which is right for the eight that hold a program, or the values a client reads
-  for a shape it cannot restate: `prompt-metadata.json` and
-  `app-settings-affordance.json` hold the injected scripts the clients install,
-  `pairing.json` holds the observer that reports a pairing close,
-  `device-identity.json` holds the two scripts that keep an approved device
-  approved across a reinstall, `native-control-auth.json` holds the global the
-  page authenticates from, `gateway-identity.json` holds the signals a payload
-  is recognised by, `settings.json` travels with the shared settings page, and
-  `upstream-reference.json` is read by the reference page.
+- **Bundled** specs are copied into the app by `project.yml` and read at
+  runtime through one loader, `BundledSpec`, and this is the pattern everything is
+  moving to: a mirror is a second copy kept in step by a test, and the app can
+  carry the one owner instead. The inventory in `core/test/specs.test.js` is both
+  the list and its owner, and the specs bundled today are the ones a mirror cannot
+  serve: `prompt-metadata.json`, `app-settings-affordance.json`,
+  `pairing.json` and `device-identity.json` hold the injected scripts the
+  clients install, `native-control-auth.json` and `gateway-identity.json` hold
+  the global a page authenticates with and the signals it is recognised by, and
+  `naming.json`, `progress.json`, `settings.json` and
+  `upstream-reference.json` are values a client reads rather than re-declares.
 
 A Swift copy of a script would be a second copy of the program in another
 language, which is exactly the drift the shared file exists to prevent, so the
