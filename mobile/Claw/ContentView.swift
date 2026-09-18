@@ -223,7 +223,6 @@ struct ContentView: View {
                     onOpenAppSettings: { showingSettings = true },
                     pageControl: gatewayPage
                 )
-                .background(themeColour)
                 // The pairing screen sits over the page while the gateway is
                 // refusing this device. Full cover rather than a banner, because
                 // there is no Control UI behind it to reach: the gateway held the
@@ -287,6 +286,23 @@ struct ContentView: View {
         // live, and the Control UI's own theme resolves inside its own page. See the
         // sixth rule in core/ui/CONVENTIONS.md.
         .preferredColorScheme(AppearanceMode.system.colorScheme)
+        // The strips above and below the page, from ONE place.
+        //
+        // ★ The colour at the top of the screen and the colour at the bottom must
+        // always match, and that is a rule rather than a look: reported 2026-09-18
+        // as "the color on the top and bottom of my screen being different, it
+        // should always flow". The page is laid out INSIDE the safe area (see the
+        // note at the top of this file), so both strips are this app's to paint, and
+        // painting them from ONE background is what makes them the same colour by
+        // construction rather than by two code paths agreeing.
+        //
+        // A BACKGROUND rather than an overlay, and outside the safe area rather than
+        // inside it: a background takes no part in layout, so nothing about the
+        // page's own frame moves, and `ignoresSafeArea` is what puts the colour under
+        // both strips instead of only between them. It went on the web view first,
+        // where it was clipped to the web view's own inset frame, which is the
+        // arrangement that let one end disagree with the other.
+        .background(themeColour.ignoresSafeArea())
         .onAppear(perform: prepare)
         // The interface's live palette, read when the app appears and re-read
         // whenever the answer can have changed. One concrete modifier rather than
