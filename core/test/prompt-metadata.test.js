@@ -347,17 +347,33 @@ test('the boundary is the FIELD, so a method we never asked about is covered too
   ]);
 });
 
-test('with the feature off, a rewind answer is untouched too', () => {
+test('the inbound boundary runs with the feature OFF, because the gateway rule is not ours to gate', () => {
+  // The fault: the boundary was gated by config.enabled, so a user who sent a
+  // message with Client context ON and then turned the setting OFF got the
+  // stored block glued into the composer on a rewind, because the strip never
+  // ran. The block already exists in the stored message; whether we would ADD
+  // one now is a separate question and belongs to the outbound half alone.
   const block = formatBlock(SAMPLE_FACTS);
-  const stored = `${block}\n\nhello`;
+  const typed = 'hello';
+  const stored = `${block}\n\n${typed}`;
   const { socket, received } = listeningSocket({ enabled: false, block });
 
   socket.send(JSON.stringify({ id: 'rewind-4', method: 'sessions.rewind', params: {} }));
   socket.deliver(rewindAnswer('rewind-4', stored));
 
-  // Nothing was injected on the way out because the feature is off, so there is
-  // nothing to remove on the way back and the answer arrives as the gateway sent it.
-  assert.strictEqual(received[0], rewindAnswer('rewind-4', stored));
+  const restored = JSON.parse(received[0]).result.editorText;
+  assert.strictEqual(restored, typed, 'the block was left in the composer while the setting was off');
+  assert.ok(!restored.includes(CONTEXT_MARKER), 'the marker survived into the composer with the feature off');
+});
+
+test('with the feature off, the OUTBOUND half still adds nothing', () => {
+  // The other side of the split: turning the setting off must stop the block
+  // being ADDED, even though the inbound boundary keeps removing one.
+  const block = formatBlock(SAMPLE_FACTS);
+  const { socket } = listeningSocket({ enabled: false, block });
+  const frame = JSON.stringify({ method: 'chat.send', params: { message: 'hello' } });
+  socket.send(frame);
+  assert.strictEqual(socket.sent, frame, 'the outbound frame gained a block while the feature was off');
 });
 
 test('the strip is idempotent, so a replayed or repeated answer cannot be mangled', () => {
