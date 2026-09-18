@@ -439,6 +439,28 @@ struct WebView: UIViewRepresentable {
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         ))
+        // The reconnect-resume shim, read from core/spec/reconnect-resume-shim.json
+        // rather than ported, for the same reason the observer above is. It wraps
+        // the page's `WebSocket.send` and drops the Control UI's reserved
+        // reconnect-resume marker from a chat.send frame before it leaves the
+        // page: the gateway strips that marker only for a client it counts as an
+        // operator UI, and this client connects with its native descriptor, so
+        // the send is refused as an invalid param and the page's next attempt
+        // carries the marker again. At document START, before the page's own
+        // script can capture or call send, for the same reason the client-context
+        // hook above is; installed later it would be racing a socket the page had
+        // already opened.
+        //
+        // A SHIM, and it says so: it goes when a released gateway strips the
+        // reserved field for every client, whatever the connect descriptor says,
+        // which is the trigger the spec's own why list names. Only this client
+        // needs it, because the gateway's strip already covers a browser Control
+        // UI connection.
+        scripts.addUserScript(WKUserScript(
+            source: ReconnectResumeShim.script,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
         // The gateway token, handed to the Control UI the way the page itself
         // expects it: `window.__OPENCLAW_NATIVE_CONTROL_AUTH__`, set at document
         // START, before the page reads it during boot and before it opens its

@@ -103,6 +103,20 @@ targets:
       # the repository's.
       - path: ../core/spec/pairing.json
         buildPhase: resources
+      # The reconnect-resume shim, bundled rather than mirrored for its ONE
+      # injected script, the same shape as the pairing observer above: it wraps
+      # the page's WebSocket.send and drops the Control UI's reserved
+      # reconnect-resume marker from a chat.send frame, which the gateway
+      # refuses from a client it does not count as an operator UI. This client
+      # connects with its native descriptor, so the marker is never stripped for
+      # it and the send fails as an invalid param. ReconnectResumeShim reads this
+      # at runtime and installs the script through a WKUserScript at document
+      # start. A shim with a named removal trigger, which the spec's own why list
+      # carries: it goes when a released gateway strips the reserved field for
+      # every client, and ReconnectResumeShimParityTests asserts the bundled copy
+      # is the repository's.
+      - path: ../core/spec/reconnect-resume-shim.json
+        buildPhase: resources
       # The device-identity persistence contract, bundled rather than mirrored
       # for its TWO injected scripts: the seed that restores the page's device
       # keypair into localStorage before the page boots, and the capture that
