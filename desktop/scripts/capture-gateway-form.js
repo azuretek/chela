@@ -150,6 +150,43 @@ const PROBE = `(() => {
   };
 })()`;
 
+/**
+ * The editor's ANSWER line, and where it sits against the card it belongs to.
+ *
+ * Read off the rendered page because the fault it is for is one a stylesheet
+ * assertion cannot see: the line is a child of the card but not a row, so it took
+ * no row padding and its text sat against the card's own leading edge, out of line
+ * with every row above it (Abi, 2026-09-18). The reading is the INSET of the first
+ * row's box and of the answer's box, measured from the same card edge, so the two
+ * are compared as the reader sees them rather than as they are declared.
+ */
+const ANSWER_PROBE = `(() => {
+  const card = document.querySelector('#gateways .settings-group');
+  if (!card) return null;
+  const answer = card.querySelector('.editor > .result');
+  const rowText = card.querySelector('.settings-row__text');
+  if (!answer) return null;
+  // THE TEXT, not the box. An element's box starts at its own border whatever its
+  // padding is, so a box-to-box reading cannot see an inset at all: the first
+  // version of this probe measured 1px for a line that WAS flush and 1px for the
+  // same line once it was inset, and the check passed on both. A Range over the
+  // line's own text is the box a reader sees the words in.
+  const textBox = (node) => {
+    const box = document.createRange();
+    box.selectNodeContents(node);
+    return box.getBoundingClientRect();
+  };
+  const cardBox = card.getBoundingClientRect();
+  const answerBox = textBox(answer);
+  const rowBox = rowText ? textBox(rowText) : null;
+  return {
+    text: answer.textContent.trim(),
+    rowInset: rowBox ? Math.round(rowBox.left - cardBox.left) : null,
+    answerInset: Math.round(answerBox.left - cardBox.left),
+    footRoom: Math.round(cardBox.bottom - answerBox.bottom),
+  };
+})()`;
+
 app.whenReady().then(async () => {
   const win = new BrowserWindow({
     show: false,
@@ -319,6 +356,26 @@ app.whenReady().then(async () => {
       await win.webContents.executeJavaScript(`document.querySelector('.editor input[type=password]').placeholder`)
         === 'Stored, type a new value to replace it',
       'the token field does not report a stored value');
+
+    // ---- the answer line, after a press that produces one ------------------
+    // The inset this reads for exists only once the line has something to say, so
+    // the press is part of the check rather than a state the page can be loaded
+    // into: removing a stored credential is the one control in this editor that
+    // answers on its own.
+    const pressed = await win.webContents.executeJavaScript(`(() => {
+      const remove = [...document.querySelectorAll('.editor button')].find((b) => b.textContent.trim() === 'Remove saved token');
+      if (!remove) return false;
+      remove.click();
+      return true;
+    })()`);
+    await new Promise((r) => setTimeout(r, 400));
+    const answer = await win.webContents.executeJavaScript(ANSWER_PROBE);
+    console.log(`     ${mode} editor answer ${JSON.stringify(answer)}`);
+    check(`${mode}: the editor's answer line is inset with the rows it answers under`,
+      pressed === true && Boolean(answer) && answer.answerInset >= 12
+        && (answer.rowInset === null || answer.answerInset === answer.rowInset)
+        && answer.footRoom >= 12,
+      JSON.stringify({ pressed, answer }));
   }
 
   check('the two appearances paint differently',

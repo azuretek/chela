@@ -996,6 +996,26 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
 .result.warn { color: var(--warn); }
 .result.err  { color: var(--destructive); }
 
+/* ★ The credential editor's own answer line, and the inset it was missing.
+
+   This line is a child of the card, and it is not a ROW, so it took none of a
+   row's padding and none of a row's alignment. Measured 2026-09-18 off the
+   rendered page: "Gateway password removed." sat at the card's own leading edge,
+   out of line with every row above it and hard against the card's bottom edge.
+   Abi's report the same day: "the green text that gives a user an update on what
+   happened, it should have proper padding/spacing".
+
+   So it takes a row's horizontal inset, and the foot's extra room when it is the
+   last thing in the card, which is the reason the action row at the end of a
+   group takes --space-4: the card's corner rounds against its last child. The
+   empty case needs nothing here, because `.result:empty` above takes it out of
+   the flow: an editor with nothing to say keeps the foot it had. */
+.editor > .result {
+  padding: var(--space-3) var(--space-4);
+  padding-top: 0;
+}
+.editor > .result:last-child { padding-bottom: var(--space-4); }
+
 /* --------------------------------------------------------------- gateway search */
 
 .gateway-filter {
