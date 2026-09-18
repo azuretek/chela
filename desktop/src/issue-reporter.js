@@ -15,7 +15,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import os from 'node:os';
 
-import issueReport from '../../core/issue-report.js';
+import * as issueReport from '../../core/issue-report.js';
 
 // The most a bounded queue holds, so an offline client sends later rather than
 // growing a file forever. Oldest are dropped first: a fresh crash matters more
