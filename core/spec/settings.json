@@ -98,15 +98,6 @@
       "tab": "behaviour",
       "clients": ["desktop", "ios"],
       "note": "The one Behaviour setting that means the same thing on both clients, and therefore the one they have in common there. The facts gathered differ (a phone has no home folder worth naming and no global shortcut), and that difference belongs to core/spec/prompt-metadata.json rather than to this tab."
-    },
-    {
-      "id": "appearance",
-      "tab": "behaviour",
-      "clients": ["ios"],
-      "note": "Light, dark or system, applied as it is chosen rather than at Save. The value is read from `state.appearance.mode` and written back through the `saveSettings` command, which this client already implements; a host that answers a command the page cannot reach would be a second door for one value.",
-      "absent": {
-        "desktop": "The desktop has no appearance of its own to choose. Its theme IS the Control UI's, picked in the Control UI itself, and the app follows it: the page reports the theme up, the window, tray, menus and overlays are repainted from it (adoptTheme in src/main.js), and nativeTheme.themeSource is then set from the page so `prefers-color-scheme` in our own pages resolves to the same answer. A row here would be a second control for a choice the Control UI already owns, and the two would disagree the first time only one of them was used. The phone needs one because it has a native half the page cannot paint, the status bar and the strips above and below the web view, and because the web view's own `prefers-color-scheme` is the client's to set."
-      }
     }
   ],
 

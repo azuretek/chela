@@ -749,3 +749,19 @@ test('every preference on this tab commits from its own control', () => {
   assert.match(html, /id="globalShortcut-result"/, 'the row that must report has nowhere to report to');
 });
 
+
+test('no client draws an appearance control', () => {
+  // The sixth rule in ui/CONVENTIONS.md, and the report it came from: "we
+  // shouldn't have an appearance selector in our interface, it doesn't work right
+  // anyway". The system's own appearance flows down and the Control UI's theme
+  // flows up, so a control of ours was a second one for a choice the Control UI
+  // already owns, and the two disagreed the first time only one of them was used.
+  assert.doesNotMatch(html, /id="appearance"/, 'an appearance control is back in the markup');
+  assert.doesNotMatch(page, /'appearance'\)\.addEventListener/, 'the page still wires an appearance control');
+  assert.doesNotMatch(page, /AppearanceMode/, 'the page reads a mode from somewhere again');
+  assert.ok(
+    !spec.settings.some((setting) => setting.id === 'appearance'),
+    'the spec still declares an appearance setting, so a client could be handed one',
+  );
+});
+
