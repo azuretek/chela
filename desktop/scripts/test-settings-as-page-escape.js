@@ -130,7 +130,13 @@ app.whenReady().then(async () => {
   // credentials cannot be saved" card, which is nothing to do with this failure and
   // must not be swept by it. So the guard polls for the failure card to go while
   // tolerating anything else on the bar, bounded so a card that never leaves fails.
-  await banner.executeJavaScript("document.querySelector('.banner__action').click()");
+  // NOT awaited, and that is the fix rather than tidiness: on a platform where the
+  // bar holds nothing else (macOS, with a keyring, so no standing credential card),
+  // this press clears the last notice and tears the banner's whole view down, and a
+  // promise from a web contents destroyed by its own click never settles. Awaiting it
+  // hung the harness until its watchdog on exactly the successful path. So it is
+  // fired, and the poll below is what waits.
+  banner.executeJavaScript("document.querySelector('.banner__action').click()").catch(() => {});
   const failureCardGone = async () => {
     const b = overlayWc('banner.html');
     if (!b) return true; // the whole bar went, so the failure card certainly did
