@@ -5,6 +5,11 @@ titlebar) look and behave when something changes. `spec/tokens.json` owns the
 VALUES; this file owns the RULES that use them, so a new view does not have to
 guess what "smooth" meant to the last one.
 
+**It is also the design language for our own surfaces**, which is why the rules
+below cover the space between two blocks, what a press does and where a colour
+choice comes from as well as what moves: a fault that has been reported twice
+belongs here rather than in the fix that answered it.
+
 Applies to every client. The desktop draws these pages in child views over the
 Control UI and the phone draws them in sheets, and the motion below is CSS in the
 pages they share, so both clients move alike. Where a client's own chrome is
@@ -153,6 +158,93 @@ named as deliberate rather than left to be discovered by a report.
 | `settings.js`, the tab bar | `tab-<name>.focus()` on arrow, Home and End | The reader pressed the key, and moving focus within the tab list is the convention for a tab bar. |
 | `banner.js`, `banner.html` | No `focus()` call and no `autofocus` anywhere. Its controls are focusable | The reader may tab into the bar, which is an action and is why the bar must stay reachable by keyboard; nothing is ever pressed on them. |
 | `mobile/Claw/NoticeBanner.swift`, `ContentView.swift` | The banner is a plain SwiftUI overlay: no `@FocusState`, no `becomeFirstResponder`, no sheet for a notice | The phone's half of the same rule. A SwiftUI overlay appearing does not move focus, so nothing had to change; this client's fault was the desktop's view hierarchy, not a shared page. |
+
+## ★ The fourth rule: one gap between two blocks, and it comes from the scale
+
+**A gap is a value like any other**, so it comes from the spacing scale in
+`ui.css`'s `:root` (`--space-1` at 4px through `--space-8` at 40px) and never from
+a number typed at the call site.
+
+**Between two blocks there is ONE gap, and it belongs to the block BELOW.** A top
+margin on the lower block rather than a bottom margin on the upper one is what
+keeps the value single when a block moves: the first block in a holder, the last
+and one in the middle of a list all take the same gap without a boundary case, and
+no two margins can add up into a distance nobody chose.
+
+| Where | Gap |
+|---|---|
+| Between two blocks in a holder: two cards, a card and the block after it, two entries in a host | `--space-3`, 12px |
+| A card's last row to the card's own edge | `--space-4`, 16px, because the card's corner rounds 14px and a control inside that curve reads as clipped |
+| Inside a row: the text column against the control column | `--space-4` |
+| Inside a row: two controls beside or under each other | `--space-2` |
+| A heading above its block | the heading's own margin, and it is the larger one so collapsing gives it the win |
+
+**A block that asks for spacing of its own keeps it.** Headings and the settings
+footer carry their own larger top margin, and the shared gap is written so it
+cannot displace one: the rule in `ui.css` sits at zero specificity, which is what
+makes it a fallback rather than an assignment. Written with a specificity of its
+own it silently flattens both.
+
+**★ The reported case, because it is the shape of the trap.** The About page's
+fact table follows the cached-code CARD, and it took no gap at all: the table sat
+hard under the card's edge while the two cards above it were spaced 12px apart.
+The rule that existed asked "is this a group with something above it?", and the
+table is not a group, so the question never reached it. **Ask it in both
+directions**, and ask it of the block that is there rather than of the kind of
+block the last fault happened to involve.
+
+## ★ The fifth rule: no Save buttons, and a press is answered where it was made
+
+**Our surfaces have no Save button, on any client.** A value commits on the
+reader's OWN commit gesture: Enter in a field, leaving a field after editing it,
+or a control that is switched or chosen. The confirmation belongs to the row the
+value is in and it STAYS there.
+
+Both halves of that are the reason rather than a side effect:
+
+- **A Save button makes the screen's state and the stored state two things that
+  can disagree**, and it makes every field raise "have I saved this?" while the
+  reader is still typing. A phone has no such control for its own settings, and
+  neither do we.
+- **A write that spans several fields becomes a sequence of commits rather than
+  one press.** Empty means keep, per field: emptying a field writes nothing to
+  it, and the control that REMOVES a stored value stays the only way to clear
+  one.
+
+**A control that cannot answer instantly is answered in place, and its RESULT goes
+to the banner**, in that order:
+
+| The control | When |
+|---|---|
+| Disables itself, so a second press cannot start a second job | on the press |
+| Says what it is doing on ITSELF, its label in the progressive form: "Check for updates" becomes "Checking…" | on the press |
+| Ends the busy state on the host's own push that the work finished, or on a bounded deadline, whichever comes first | when the job ends |
+
+**★ A press never writes a line that appears and then disappears.** That is a view
+the reader did not ask for, which the first rule already forbids, and it is what a
+reader experiences as something flashing that they cannot read. Reported
+2026-09-17 on the phone's About page: the only thing a press showed was a line
+that appeared and vanished, and the answer it carried was never seen. The busy
+state being on the CONTROL is also what makes it visible where the reader is
+looking, and it is the phone platforms' own answer for the same job.
+
+**A result that outlives the press belongs to the banner**, because the reader may
+have looked away, and a result that expired with their attention is one they never
+got. A line under a control is for a report that stays until the surface closes,
+meaning what a clear actually cleared.
+
+## ★ The sixth rule: colour is not ours to choose
+
+**No client draws an appearance control.** The system's appearance flows down, and
+the Control UI's own theme flows up: the page reports its theme and our chrome
+repaints from it, which is what `adoptTheme` in `desktop/src/main.js` already does.
+A control of our own is a second control for a choice the Control UI owns, and the
+two disagree the first time only one of them is used. Reported 2026-09-17 as "it
+does not work right anyway".
+
+Where a client paints something the page cannot reach, meaning the phone's status
+bar and the strips above and below the web view, it takes the same two answers in
+that order and does not add a third.
 
 ## ★ What counts as a transition
 

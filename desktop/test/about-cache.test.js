@@ -136,7 +136,10 @@ test('the result line is inside the control column, where it can be SEEN', () =>
   // full-width column and clipped by the group's `overflow:hidden`. It reads back
   // correctly from `textContent` and cannot be seen, which is the same fault as
   // saying nothing at all. Both rows in this page keep it inside the control.
-  for (const id of ['check-result', 'clear-result']) {
+  // This was ['check-result', 'clear-result'] until 2026-09-17. The Updates row has
+  // no line under it any more (the fifth rule in ui/CONVENTIONS.md), so the
+  // control column this pins is the clear-cache row's.
+  for (const id of ['clear-result']) {
     const at = html.indexOf(`id="${id}"`);
     assert.ok(at > 0, `${id} is gone`);
     const before = html.slice(0, at);
@@ -150,6 +153,23 @@ test('the result line is inside the control column, where it can be SEEN', () =>
 test('the result line is coloured with the shared classes, not a private scheme', () => {
   assert.match(page, /node\.className = `result\$\{tone \? ` \$\{tone\}` : ''\}`/,
     'the result line does not use the shared .result classes the stylesheet defines');
+});
+
+test('the Updates press is answered on the button, and the result is the banner\'s', () => {
+  // The fifth rule in ui/CONVENTIONS.md, and the fault it was written from:
+  // reported 2026-09-17, the line under the Updates buttons appeared and vanished,
+  // so on the phone a press showed no answer where the reader had pressed.
+  assert.doesNotMatch(html, /id="check-result"/, 'the transient line under the Updates buttons is back');
+  assert.match(page, /if \(checking\) return;/, 'a second press is not debounced');
+  assert.match(page, /checkButton\.disabled = true;/, 'the button can be pressed again mid-check');
+  assert.match(page, /checkButton\.textContent = 'Checking…';/, 'the button does not say what it is doing');
+  assert.match(page, /checkButton\.setAttribute\('aria-busy', 'true'\);/, 'the busy state is not announced');
+  assert.match(page, /function endCheck\(\)/, 'there is no single place the busy state ends');
+  assert.match(page, /checkDeadline = setTimeout\(endCheck, 15000\);/,
+    'a check that never answers leaves the button saying Checking…');
+  // And the push that IS the answer ends it, rather than a timer of the page's own.
+  assert.match(page, /api\.onAboutChanged\(\(\) => \{[\s\S]{0,160}endCheck\(\);/,
+    'the pushed answer does not clear the busy state');
 });
 
 /* ------------------------------------------------------ the capture harness */

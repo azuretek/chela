@@ -531,8 +531,21 @@ a  { color: var(--accent); }
    first child keeps no gap, which is the whole of what the sibling rule got
    right, and one that has a sibling before it takes the interface's group gap
    however many wrappers that sibling is nested in. One value, from the scale,
-   declared once. */
-.settings-group:not(:first-child) { margin-top: var(--space-3); }
+   declared once.
+
+   Ask the SAME question in the other direction, because that half is the one a
+   reader reported on 2026-09-17: what does the thing AFTER a card take? The About
+   page's fact table is not a card, so asking "is this a group with something above
+   it?" never reached it, and it took no gap at all: the table sat hard under the
+   cached-code card's own edge while the two cards above it were spaced. The gap
+   belongs to the block BELOW, whatever kind either side is.
+
+   :where() because this gap is a FALLBACK rather than an assignment. A block that
+   asks for spacing of its own, a heading at 26px or the settings footer at 22px,
+   keeps it, and a selector at zero specificity cannot displace it. Written as an
+   ordinary sibling rule it has a specificity of its own and silently flattens
+   both, which is why it is not .settings-group + *. */
+:where(.settings-group + *, :not(.settings-group) + .settings-group) { margin-top: var(--space-3); }
 
 /* The foot of a section, which is the one edge the card's own corner rounds
    against. The row's padding is --space-3 (12px) all round and the group's radius

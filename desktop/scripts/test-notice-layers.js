@@ -275,8 +275,9 @@ app.whenReady().then(async () => {
     await delay(1500);
     const text = ((await bannerCounts(bannerWc, 'document.body.innerText')) || '').replace(/\s*\n+\s*/g, ' | ').trim();
     check('pressing Check for updates puts an answer on the banner', /Updates are not available in this build/i.test(text), text);
-    const result = await about.executeJavaScript("document.getElementById('check-result').textContent");
-    check('and the About card stops saying "Checking…"', result !== 'Checking…', `the card reads ${JSON.stringify(result)}`);
+    const button = await about.executeJavaScript("(() => { const b = document.getElementById('check'); return { label: b.textContent, disabled: b.disabled }; })()");
+    check('and the About button stops saying "Checking…" and takes presses again',
+      button.label === 'Check for updates' && button.disabled === false, `the button reads ${JSON.stringify(button)}`);
     await captureWindow('banner-over-about');
 
     // The card's own dismissal, which has to stay reachable while all of this is

@@ -429,8 +429,15 @@ test('the gap between two blocks belongs to the element that holds them', () => 
   const css = read(REPO, 'core', 'ui', 'ui.css').replace(/\/\*[\s\S]*?\*\//g, '');
   assert.doesNotMatch(css, /\.settings-group\s*\+\s*\.settings-group/,
     'settings groups are spaced by sibling adjacency again: a host element between two groups silently removes the gap');
-  assert.match(css, /\.settings-group:not\(:first-child\)\s*\{[^}]*margin-top: var\(--space-3\)/,
-    'nothing gives a settings group the interface gap from the element that holds it');
+  // Asked in BOTH directions now, and the second half is the one a reader reported
+  // on 2026-09-17: the About page's fact table follows the cached-code card, is not
+  // a card itself, and took no gap at all. See the fourth rule in
+  // ui/CONVENTIONS.md. One value, still declared once.
+  assert.match(
+    css,
+    /:where\(\.settings-group \+ \*, :not\(\.settings-group\) \+ \.settings-group\)\s*\{[^}]*margin-top: var\(--space-3\)/,
+    'nothing gives the block after a settings group the interface gap',
+  );
 
   // One value, declared once. A second top margin for a group would be a second
   // owner of the surface's rhythm, which is how the gap this file is about comes

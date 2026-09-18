@@ -109,15 +109,51 @@ async function refresh() {
 
 /* --------------------------------------------------------------- listeners */
 
-$('check').addEventListener('click', async () => {
-  const out = $('check-result');
-  out.textContent = 'Checking…';
-  out.className = 'result';
-  await api.checkUpdates();
-  // The result arrives as its own message dialog, and the status line above
-  // refreshes itself through onAboutChanged, so all this has to do is stop
-  // saying "Checking…" if the check never comes back at all.
-  setTimeout(() => { if (out.textContent === 'Checking…') out.textContent = ''; }, 15000);
+// The press is answered ON the button, and the result arrives on the banner: the
+// fifth rule in ui/CONVENTIONS.md.
+//
+// What stood here reported itself on a line UNDER the button and then cleared
+// that line when the pushed answer arrived, so the line appeared and vanished: a
+// view the reader did not ask for, which is the first rule in the same file, and
+// on the phone it was all a press showed. Reported 2026-09-17.
+//
+// So the button takes the busy state itself, where the reader is looking, and it
+// is DEBOUNCED: the checking flag is the whole of the guard, so a second press
+// while the first is still working does nothing rather than starting a second
+// check.
+//
+// A check ends at whichever comes first: the host's own push once it finishes, or
+// a bounded deadline. A button that can only stop saying "Checking…" when the
+// other side answers says it forever when the other side never does, and the
+// reader cannot press it again to find out.
+const checkButton = $('check');
+const checkLabel = checkButton.textContent;
+let checking = false;
+let checkDeadline = 0;
+
+function endCheck() {
+  if (!checking) return;
+  checking = false;
+  clearTimeout(checkDeadline);
+  checkButton.disabled = false;
+  checkButton.removeAttribute('aria-busy');
+  checkButton.textContent = checkLabel;
+}
+
+checkButton.addEventListener('click', async () => {
+  if (checking) return;
+  checking = true;
+  checkButton.disabled = true;
+  checkButton.setAttribute('aria-busy', 'true');
+  checkButton.textContent = 'Checking…';
+  checkDeadline = setTimeout(endCheck, 15000);
+  try {
+    await api.checkUpdates();
+  } catch (err) {
+    // The host reports its own failures, on the banner with everything else. All
+    // this owes the reader is to stop claiming to be working.
+    endCheck();
+  }
 });
 
 $('releases').addEventListener('click', () => api.openReleases());
@@ -233,8 +269,9 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') dismiss();
 // check yet this run", the question this box exists to answer, answered
 // wrongly, immediately after the user did the thing that changed it.
 api.onAboutChanged(() => {
-  const out = $('check-result');
-  if (out.textContent === 'Checking…') out.textContent = '';
+  // The push IS the answer, so the button stops saying it is working here rather
+  // than on a timer of its own.
+  endCheck();
   void refresh();
 });
 
