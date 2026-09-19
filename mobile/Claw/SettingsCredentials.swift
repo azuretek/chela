@@ -74,8 +74,21 @@ enum SettingsCredentials {
             // another device.
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]
-        guard SecItemAdd(query as CFDictionary, nil) == errSecSuccess else { return false }
-        return true
+        let addStatus = SecItemAdd(query as CFDictionary, nil)
+        if addStatus == errSecSuccess { return true }
+        #if DEBUG
+        // An unsigned simulator build has no keychain-access-group entitlement,
+        // so `SecItemAdd` refuses every write with `errSecMissingEntitlement`
+        // (-34018). That is exactly the environment the debug token seed exists
+        // for (`GatewayStore.seedDebugTokenFromEnvironment`), so on that one
+        // refusal, and only in a debug build, the value is kept in memory for the
+        // life of the process instead. A release build compiles this whole branch
+        // out and a signed build on a real device never sees the refusal, so
+        // shipped behaviour is unchanged: the Keychain stays the only store there.
+        return debugFallbackSet(gatewayId, field, trimmed, keychainStatus: addStatus)
+        #else
+        return false
+        #endif
     }
 
     /// The two credentials, for the connect that needs them. Never sent to a page.
@@ -87,6 +100,9 @@ enum SettingsCredentials {
     static func forget(_ gatewayId: String) {
         delete(gatewayId, "token")
         delete(gatewayId, "password")
+        #if DEBUG
+        DebugCredentialStore.shared.forget(gatewayId)
+        #endif
     }
 
     private static func read(_ gatewayId: String, _ field: String) -> String? {
@@ -98,12 +114,22 @@ enum SettingsCredentials {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data,
-              let value = String(data: data, encoding: .utf8),
-              !value.isEmpty
-        else { return nil }
-        return value
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecSuccess,
+           let data = result as? Data,
+           let value = String(data: data, encoding: .utf8),
+           !value.isEmpty {
+            return value
+        }
+        #if DEBUG
+        // The read side of the same simulator fallback: a value the debug seed
+        // could not write to the Keychain is read back from memory. Only when the
+        // Keychain genuinely holds nothing, so a real credential always wins.
+        if status == errSecItemNotFound || status == errSecMissingEntitlement {
+            return DebugCredentialStore.shared.read(account(gatewayId, field))
+        }
+        #endif
+        return nil
     }
 
     private static func delete(_ gatewayId: String, _ field: String) {
@@ -113,5 +139,62 @@ enum SettingsCredentials {
             kSecAttrAccount as String: account(gatewayId, field),
         ]
         SecItemDelete(query as CFDictionary)
+        #if DEBUG
+        DebugCredentialStore.shared.delete(account(gatewayId, field))
+        #endif
+    }
+
+    #if DEBUG
+    /// The debug-only write fallback. Kept out of the release build entirely, and
+    /// entered only on `errSecMissingEntitlement`, which is the unsigned-simulator
+    /// refusal and nothing else: any other failure is a real one and is reported
+    /// as `false` the way it always was.
+    private static func debugFallbackSet(
+        _ gatewayId: String, _ field: String, _ value: String, keychainStatus: OSStatus
+    ) -> Bool {
+        guard keychainStatus == errSecMissingEntitlement else { return false }
+        DebugCredentialStore.shared.set(account(gatewayId, field), value)
+        return true
+    }
+    #endif
+}
+
+#if DEBUG
+/// A process-lifetime credential store, for the one case the Keychain cannot
+/// serve: an unsigned simulator build, whose `SecItemAdd` is refused for want of
+/// a keychain-access-group entitlement. It exists so the debug token seed
+/// (`-claw-gateway-url` plus `OPENCLAW_SEED_TOKEN`) can put a real credential
+/// where `SettingsCredentials.values` will find it, which is what lets a
+/// simulator prove an authenticated connection end to end.
+///
+/// Compiled out of a release build, so nothing shipped keeps a credential in
+/// memory: on a device the Keychain write succeeds and this is never reached.
+/// Thread-safe because credentials are read on the connect path and written on
+/// launch, which are not the same thread: an `NSLock` guards the one dictionary,
+/// which is what `@unchecked Sendable` asserts to the compiler here.
+private final class DebugCredentialStore: @unchecked Sendable {
+    static let shared = DebugCredentialStore()
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+
+    func set(_ account: String, _ value: String) {
+        lock.lock(); defer { lock.unlock() }
+        values[account] = value
+    }
+
+    func read(_ account: String) -> String? {
+        lock.lock(); defer { lock.unlock() }
+        return values[account]
+    }
+
+    func delete(_ account: String) {
+        lock.lock(); defer { lock.unlock() }
+        values[account] = nil
+    }
+
+    func forget(_ gatewayId: String) {
+        lock.lock(); defer { lock.unlock() }
+        values = values.filter { !$0.key.hasPrefix("gateway:\(gatewayId):") }
     }
 }
+#endif
