@@ -273,6 +273,55 @@ screen being different, it should always flow".
 - **A band that disagrees is a bug in the wrapper, not a style.** Same shape as the
   sixth rule: the reader must never see our chrome and the interface disagree.
 
+## ★ The eighth rule: a transient state is held long enough to read
+
+Abi, 2026-09-18: *"make the speed of the state changes visually take long enough
+for someone to be able to understand what is happening, lets make that part of our
+design language and apply it to everything in our ui."*
+
+**A state the reader is meant to READ has a floor on how long it stays on screen,
+and the floor is the same everywhere.** The floor is `motion.minVisibleMs` in
+`spec/tokens.json` (900ms), and the primitive that applies it is
+`core/ui/motion.js` (`remainingVisibleMs`, `heldLongEnough`). A transient state
+shown at time T may be replaced no earlier than T + the floor: a caller with
+something newer to show waits out the remainder and then shows it; a caller with
+nothing newer ignores it.
+
+**This is about how long a state STAYS, not how it MOVES.** The durations under
+Durations and easing govern the animation of a change; this governs the dwell of
+the state between two changes. The two are different questions and a fast animation
+onto a state that is then replaced in the next tick is still a flash. So the floor
+is far longer than `--duration-normal` (180ms): it is the span of a glance that
+lands, finds a short sentence, reads it and confirms it.
+
+**The fault it answers, and why it is a rule rather than a fix.** Reported on the
+"Check for updates" button: the first press raised the banner, a second press "just
+flashes and returns quickly". The check's answer settled in the time a cached
+network reply takes, which is no time at all, so the card it raised was replaced
+before it could be read. The same shape is the fifth rule's "a press never writes a
+line that appears and then disappears" seen from the other side: there the answer
+was on a control, here it is on the banner, and the floor is what both need.
+
+**Where it applies, and where it deliberately does not:**
+
+| Floor it | Do NOT floor it |
+|---|---|
+| The answer to a press: "up to date", "an update is available", a check that failed. It is transient (it has a TTL) and it is the reader's answer, so it must outlast the glance. | A STANDING condition. A notice that stays until it is fixed is not transient; it is already on screen for as long as the condition holds, so a floor is meaningless. |
+| A transient state that REPLACES another transient state: "checking" giving way to its result. The result waits until "checking" has had its floor, so the reader sees that a check happened before they see what it found. | A value changing in place that the reader is watching (a count, a progress percent). The seventh-and-below rules already say these snap; a floor would freeze a live number. |
+| The held "up to date" the manual check shows from cache, so it is a state and not a flash. | Anything the reader triggers repeatedly or at speed. A floor there stacks into lag, which is the at-speed case the motion rules already exempt. |
+
+**The primitive is clock-free and takes `now`**, so the rule can be exercised for
+every timing from one test run (`core/test/motion.test.js`) rather than by waiting
+real seconds. A surface that owns a live timer (the desktop update lane) reads the
+remainder and schedules its own replacement; a surface that cannot (a page) reads
+the same constant through the token layer.
+
+**Rollout is deliberate, not a sweep.** The primitive plus the update banner plus
+the other clearly-transient states is the safe unit; applying it to every component
+at once is the mass edit the reader did not ask for. The broader rollout is
+proposed rather than done, so each application is a place someone decided a state
+was transient rather than a global default that freezes something live.
+
 ## ★ What counts as a transition
 
 **A transition is any change the reader can SEE, and it does not have to change the

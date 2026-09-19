@@ -605,6 +605,34 @@ export function announcesFound(trigger) {
 }
 
 /**
+ * Whether a check should re-present the LAST completed check's answer from cache
+ * the instant it starts, before the live check has run.
+ *
+ * ★ This is the identity rule from announcesFound seen from the other side, and it
+ * is deliberately the same answer: only a check a person PRESSED re-presents a
+ * cached answer, so a second press shows a held state at once rather than a card
+ * that flashes while the network is re-asked. A background check (startup,
+ * scheduled) never does: it has asked nobody, so it carries no news to re-raise,
+ * and re-popping a version already seen on the interval lane is exactly the bug PR
+ * #37 fixed. There must be something cached to present, so a cold first press
+ * (nothing has finished this run) is a no-op and the live check is the only answer,
+ * as it always was.
+ *
+ * Kept beside announcesFound rather than folded into it because the two are about
+ * different cards: announcesFound is whether a FOUND release re-raises for a reader
+ * who already read it, and this is whether the ANSWER card is re-presented from
+ * cache before the live check answers. They agree on the trigger today and would
+ * move for different reasons, so a shared name would hide the moment either did.
+ *
+ * @param {string} trigger  'manual', 'startup' or 'scheduled'
+ * @param {string|null} cachedOutcome  the outcome of the last completed check, or null
+ * @returns {boolean}
+ */
+export function presentsCachedAnswer(trigger, cachedOutcome) {
+  return trigger === 'manual' && Boolean(cachedOutcome);
+}
+
+/**
  * The release channel a build belongs to, read from its own version.
  *
  * `1.0.1-dev.38.a1b2c3d4e5` is on `dev`; `1.0.1` is on stable, which returns
