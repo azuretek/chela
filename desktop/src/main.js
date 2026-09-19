@@ -39,6 +39,11 @@ import * as promptMetadata from './prompt-metadata.js';
 import * as quips from './quips.js';
 import * as tokens from './tokens.js';
 import updates from './updates.js';
+// The minimum-visible-duration primitive, shared with the phone: how long a
+// transient state (a manual check's answer card) must stay on screen before a
+// fresher one may replace it, so a second press does not flash. See
+// core/ui/motion.js and the eighth rule in core/ui/CONVENTIONS.md.
+import { MIN_VISIBLE_MS, remainingVisibleMs } from '../../core/ui/motion.js';
 import secrets from './secrets.js';
 import defaults from './defaults.js';
 import { withTokenHandoff } from '../../core/gateway-url.js';
@@ -2544,7 +2549,12 @@ function setNotice(id, notice, options = {}) {
     clearTimeout(existing);
     noticeTimers.delete(id);
   }
-  if (notices.set(id, notice, { announce })) {
+  // Whether this raise put something new on screen, returned so a caller that
+  // floors how long a transient card stays (raiseAnswer) can tell a genuine change
+  // from a same-content re-raise the store swallowed, and reset its visible clock
+  // only on the former.
+  const changed = notices.set(id, notice, { announce });
+  if (changed) {
     // Read back from the store rather than logging the argument, so the default
     // tone is applied in exactly one place and a notice raised without one is
     // recorded as the error it actually became.
@@ -2558,6 +2568,7 @@ function setNotice(id, notice, options = {}) {
     if (typeof timer.unref === 'function') timer.unref();
     noticeTimers.set(id, timer);
   }
+  return changed;
 }
 
 function clearNotice(id) {
@@ -2565,6 +2576,14 @@ function clearNotice(id) {
   if (timer) {
     clearTimeout(timer);
     noticeTimers.delete(id);
+  }
+  // The answer card is the one with a minimum-visible floor, so when it leaves the
+  // bar (its TTL fired, or a better answer superseded it) its visible clock and any
+  // pending held replacement are reset: a fresh press then re-presents at once
+  // rather than being held against a card that is no longer there.
+  if (id === UPDATE_ANSWER) {
+    answerShownAt = null;
+    if (answerReplaceTimer) { clearTimeout(answerReplaceTimer); answerReplaceTimer = null; }
   }
   if (notices.clear(id)) {
     noticeLog().cleared(id);
@@ -2690,7 +2709,18 @@ let updateTimer = null;
 let downloadCancelToken = null;
 // The last check to actually finish, for About to report. Updating is otherwise
 // invisible, see updates.statusLine() for why that is worth a line.
-let lastCheck = { at: null, result: null };
+//
+// ★ It now carries what a manual press needs to re-present the answer AT ONCE,
+// not just the one-line `result` About shows. `outcome` and `version` are the two
+// facts `updates.checkAnswer` needs to recompose the same sentence a live check
+// would, so a person who presses Check a second time gets the held answer from
+// this cache immediately while the network re-check runs behind it, rather than a
+// card that flashes waiting on a fetch. Populated by every completed check, from
+// EVERY trigger (app-start, interval and manual), which is what makes the cache
+// warm before the first manual press. `null` outcome means no check has finished
+// this run yet, so there is nothing to re-present and the press waits on the live
+// check as it always did.
+let lastCheck = { at: null, result: null, outcome: null, version: null, current: null };
 
 // ★ The trigger the running check was started with. The updater's own events do
 // not carry it, and what a check may FETCH turns on it (updates.fetchPlan): a
@@ -3027,7 +3057,9 @@ function initUpdates() {
     // Never unprompted. A machine that is offline, or behind a proxy, or hitting
     // a rate limit must not interrupt whatever the user was doing to say so.
     console.error(`[claw-desktop] update check failed: ${err && err.message}`);
-    setLastCheck('check failed');
+    // The last outcome was a failure; a manual re-press re-presents that rather
+    // than flashing, and the live re-check may then replace it with a better answer.
+    setLastCheck('check failed', { outcome: updates.FAILED, version: null });
     // A failing update lane is a report worth having, especially during a
     // rollback: the scrubbed error names what broke without naming the machine.
     issueReporter.report('updateFailure', { errorName: err && err.name, errorMessage: err && err.message, stack: err && err.stack });
@@ -3080,7 +3112,10 @@ function initUpdates() {
       offerRefusedByUpdater(offered);
       return;
     }
-    setLastCheck('up to date');
+    // Cache the outcome so a later manual press can re-present "up to date" at once
+    // rather than flashing while a fresh check runs. version is null: there is no
+    // release to name.
+    setLastCheck('up to date', { outcome: updates.CURRENT, version: null });
     if (!pendingManualCheck) return;
     pendingManualCheck = false;
     raiseAnswer(updates.checkAnswer({
@@ -3110,6 +3145,17 @@ const UPDATE_ANSWER = 'update-answer';
 // to something the user pressed; a real problem has no timeout.
 const ANSWER_TTL_MS = 9000;
 
+// ★ When the answer card currently on the bar was raised, so a fresher answer is
+// held off until it has been on screen the minimum-visible duration (see
+// core/ui/motion.js). This is the whole fix for "a second press just flashes": a
+// manual re-check re-presents the cached answer AT ONCE, and even when the live
+// re-check settles a millisecond later, its replacement waits out
+// remainingVisibleMs so the reader sees the state rather than a flicker. null when
+// no answer card is up. A pending scheduled replacement, so a second press does not
+// stack two timers on one card.
+let answerShownAt = null;
+let answerReplaceTimer = null;
+
 /**
  * Raise the answer a check owes the person who pressed the button.
  *
@@ -3127,7 +3173,39 @@ const ANSWER_TTL_MS = 9000;
  */
 function raiseAnswer(answer, ttlMs = ANSWER_TTL_MS) {
   if (!answer) return;
-  setNotice(UPDATE_ANSWER, { tone: answer.tone, message: answer.message, detail: answer.detail }, ttlMs);
+  // ★ Hold the answer on screen for the minimum-visible duration before a fresher
+  // one may replace it. The bug this fixes: a manual re-check re-presents a cached
+  // answer at once (presentCachedAnswer), then the live re-check settles a moment
+  // later and calls this again; without the floor the second raise replaces the
+  // first before the eye settles, which is the reported flash. remainingVisibleMs
+  // is measured from when the card on screen went up, so a floor already met
+  // replaces now and an unmet one waits out the remainder. A same-content re-raise
+  // changes nothing on screen, so it does not restart the clock; only a genuinely
+  // different answer is held.
+  const current = notices.get(UPDATE_ANSWER);
+  const wouldChange = !current || current.message !== answer.message
+    || current.detail !== answer.detail || current.tone !== answer.tone;
+  const remaining = answerShownAt === null ? 0 : remainingVisibleMs(answerShownAt, MIN_VISIBLE_MS);
+  if (wouldChange && remaining > 0) {
+    // A newer answer, but the one on screen has not been up long enough. Hold the
+    // fresher answer until the floor is met, replacing any earlier pending hold so
+    // two presses in quick succession do not stack timers on one card.
+    if (answerReplaceTimer) { clearTimeout(answerReplaceTimer); answerReplaceTimer = null; }
+    const timer = setTimeout(() => { answerReplaceTimer = null; raiseAnswer(answer, ttlMs); }, remaining);
+    if (typeof timer.unref === 'function') timer.unref();
+    answerReplaceTimer = timer;
+    return;
+  }
+  if (answerReplaceTimer) { clearTimeout(answerReplaceTimer); answerReplaceTimer = null; }
+  const changed = setNotice(
+    UPDATE_ANSWER,
+    { tone: answer.tone, message: answer.message, detail: answer.detail },
+    { ttlMs, announce: true },
+  );
+  // Only a raise that actually put something new on screen resets the visible
+  // clock; a re-raise of the identical card leaves the reader looking at the same
+  // thing, so its floor keeps counting from when it first appeared.
+  if (changed || answerShownAt === null) answerShownAt = Date.now();
   // The About box is where the button was pressed, so it is owed the refresh as
   // well, and this is the one place that guarantees it: every ending of a manual
   // check either calls setLastCheck (which notifies) or lands here, and the
@@ -3137,6 +3215,43 @@ function raiseAnswer(answer, ttlMs = ANSWER_TTL_MS) {
   // button that did nothing. Measured 2026-09-16 by
   // scripts/test-notice-layers.js, which asserts the card stops saying it.
   notifyAboutChanged();
+}
+
+/**
+ * Re-present the last completed check's answer from cache, at once.
+ *
+ * ★ This is what a manual press shows the INSTANT it is pressed, before the live
+ * re-check has run: the reported fault was that a second press "just flashes and
+ * returns quickly", because nothing was on screen until the network answered and
+ * then the answer settled too fast to read. With the answer cached from the last
+ * completed check (lastCheck), a press re-raises it immediately, and raiseAnswer
+ * floors how long it stays, so the reader sees a held answer rather than a flash.
+ * The live re-check then runs behind it (checkForUpdates) and only replaces this if
+ * it has genuinely newer news, which is again floored.
+ *
+ * Returns whether it presented anything: false when no check has finished this run
+ * (a cold first press), where there is nothing cached and the live check is the
+ * only answer, exactly as before.
+ *
+ * It composes the sentence through the SAME shared updates.checkAnswer a live
+ * answer uses, so the cached card and a live one cannot say different things about
+ * one outcome. A cached AVAILABLE re-derives the policy so its wording is right for
+ * this build now.
+ */
+function presentCachedAnswer() {
+  if (!lastCheck.outcome) return false;
+  const plan = updatePolicy();
+  const answer = updates.checkAnswer({
+    outcome: lastCheck.outcome,
+    trigger: 'manual',
+    version: lastCheck.version,
+    current: app.getVersion(),
+    action: plan.action,
+    reason: plan.reason,
+  });
+  if (!answer) return false;
+  raiseAnswer(answer);
+  return true;
 }
 
 /**
@@ -3186,9 +3301,19 @@ function refreshCertNotice() {
   });
 }
 
-/** Record how a check ended, and push it to an About box that is on screen. */
-function setLastCheck(result) {
-  lastCheck = { at: Date.now(), result };
+/**
+ * Record how a check ended, and push it to an About box that is on screen.
+ *
+ * `result` is the one-line summary About shows ("up to date", "1.0.1 available").
+ * `outcome` and `version` are the machine facts a manual press re-presents the
+ * answer from (see presentCachedAnswer and lastCheck): passing them here is what
+ * keeps the human line and the cache in step, so About and a re-raised card can
+ * never disagree about what the last check found. They default to leaving the
+ * cached facts untouched, so the one caller that only has a summary (a refused
+ * build's "X available" side-note) does not blank them.
+ */
+function setLastCheck(result, { outcome = lastCheck.outcome, version = lastCheck.version } = {}) {
+  lastCheck = { at: Date.now(), result, outcome, version, current: app.getVersion() };
   notifyAboutChanged();
 }
 
@@ -3208,6 +3333,17 @@ async function checkForUpdates(trigger = 'manual') {
   }
   pendingManualCheck = updates.shouldReportNoUpdate(trigger);
   lastTrigger = trigger;
+  // ★ A manual press re-presents the last completed check's answer AT ONCE, from
+  // cache, so the reader sees a held state immediately rather than a card that
+  // flashes while the network is asked afresh. This is the whole of "cache between
+  // checks so a manual click always has the info to present": the live re-check
+  // below still runs, and only replaces this when it has newer news, floored by the
+  // minimum-visible duration in raiseAnswer. A cold first press has nothing cached,
+  // so presentCachedAnswer is a no-op and the live check is the only answer, as
+  // before. Only the manual lane does this: an interval check that finds a version
+  // already seen must stay quiet (announcesFound / shouldReportNoUpdate), which is
+  // the identity rule from PR #37, so it never re-presents from cache.
+  if (updates.presentsCachedAnswer(trigger, lastCheck.outcome)) presentCachedAnswer();
   // Set by onUpdateAvailable, below, when the plan declines this version.
   declinedFetch = false;
   try {
@@ -3286,7 +3422,10 @@ function onUpdateAvailable(info) {
   const plan = updatePolicy();
   pendingManualCheck = false;
   offeredUpdate = info;
-  setLastCheck(`${info.version} available`);
+  // Cache the found release so a later manual press re-presents "an update is
+  // available" from this record at once, rather than waiting on the network to
+  // rediscover it.
+  setLastCheck(`${info.version} available`, { outcome: updates.AVAILABLE, version: info.version });
 
   // ★ A check a person PRESSED is a question, and the answer belongs on screen:
   // the card it finds comes back even when that same card was read already,
