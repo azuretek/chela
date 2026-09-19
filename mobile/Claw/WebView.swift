@@ -355,6 +355,53 @@ struct WebView: UIViewRepresentable {
         """
     }
 
+    /// The standalone body inset the Control UI applies for itself, applied here
+    /// because a `WKWebView` cannot report the mode that would apply it.
+    ///
+    /// The page declares `viewport-fit=cover` and, inside its own
+    /// `@media (display-mode: standalone)` block, sizes `html, body` to `100dvh`
+    /// and pads `body` by `--safe-area-*`, then pins it `position: fixed; inset: 0`.
+    /// A home-screen web app reports `standalone` and gets that; a `WKWebView`
+    /// reports `browser` and does not, so with the web view now covering the whole
+    /// screen (see `ContentView.controlUiPage`) the page would draw its content
+    /// under the status bar. This sets that exact rule so the content insets while
+    /// the page's `100dvh` surfaces, its navigation drawer among them, fill the
+    /// screen and reach the top.
+    ///
+    /// It names no class of the Control UI's: `--safe-area-top` and its siblings
+    /// are the page's OWN `:root` tokens (each `env(safe-area-inset-*, 0px)`), the
+    /// W3C safe-area contract the page already declares, so this is the page's own
+    /// standalone behaviour rather than a patch that assumes anything about its
+    /// elements. WebKit fills the `env()` values because the web view covers the
+    /// unsafe regions; where it does not (an unusual host, or a future page that
+    /// drops the tokens) they resolve to their `0px` fallback and this is inert.
+    ///
+    /// At document START and as a `<style>` appended to `documentElement`, so it is
+    /// present before the page's first paint and does not wait on `<head>`, which
+    /// may not exist yet at document start. The rule is marked `!important` for the
+    /// one property that must win over the page's `browser`-mode default, the body
+    /// padding; the sizing matches what the page already sets for itself.
+    ///
+    /// Not private: `WebViewSafeAreaTests` reads it through `@testable import` to
+    /// assert the rule and to install the exact bytes the app installs.
+    static var safeAreaScript: String {
+        """
+        (function () {
+          var css = 'html,body{height:100dvh}'
+            + 'body{'
+            + 'padding-top:var(--safe-area-top,env(safe-area-inset-top,0px)) !important;'
+            + 'padding-right:var(--safe-area-right,env(safe-area-inset-right,0px)) !important;'
+            + 'padding-bottom:var(--safe-area-bottom,env(safe-area-inset-bottom,0px)) !important;'
+            + 'padding-left:var(--safe-area-left,env(safe-area-inset-left,0px)) !important;'
+            + 'position:fixed;inset:0}';
+          var style = document.createElement('style');
+          style.setAttribute('data-claw-safe-area', '');
+          style.textContent = css;
+          (document.head || document.documentElement).appendChild(style);
+        })();
+        """
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(
             themeColour: $themeColour,
@@ -380,6 +427,15 @@ struct WebView: UIViewRepresentable {
         scripts.addUserScript(WKUserScript(
             source: Self.themeScript,
             injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        ))
+        // The standalone body inset, so the page insets its content while its
+        // 100dvh surfaces (its slide-open navigation drawer among them) fill the
+        // whole screen. At document START, so it is in force before the first
+        // paint rather than reflowing after it. See safeAreaScript.
+        scripts.addUserScript(WKUserScript(
+            source: Self.safeAreaScript,
+            injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         ))
         // The client-context hook, and the same bytes the desktop installs: the
