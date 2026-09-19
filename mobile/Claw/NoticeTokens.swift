@@ -102,7 +102,7 @@ enum NoticeTokens {
     private static let spec: Spec = loadSpec()
 
     private static func loadSpec() -> Spec {
-        let empty = Spec(css: nil, shape: nil, type: nil, card: nil, tone: nil)
+        let empty = Spec(css: nil, shape: nil, type: nil, card: nil, tone: nil, motion: nil)
         guard let spec = try? BundledSpec.load("tokens", as: Spec.self), spec.css?["dark"] != nil else {
             return empty
         }

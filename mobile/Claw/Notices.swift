@@ -286,6 +286,16 @@ final class NoticeStore {
     }
 
     /// Every condition that is still true, worst first, then oldest first.
+    /// The notice under this id, as stored, or nil.
+    ///
+    /// As STORED, matching `get` in `core/notices.js`: the defaults in `set` have
+    /// been applied, so a caller reading it back (the floor's saysTheSame check in
+    /// NoticeBoard) sees the notice as it is on screen rather than the raise it was
+    /// built from.
+    func get(_ id: String) -> Notice? {
+        notices[id]
+    }
+
     func list() -> [Notice] {
         notices.values.sorted {
             let left = NoticeTone.rank($0.tone)
