@@ -663,9 +663,21 @@ a  { color: var(--accent); }
    are not re-declared here because a borrowed component with a second copy of
    its own shape is the drift the pin exists to catch. */
 
+/* The connection-state pill on a gateway row: the green CONNECTED mark and its
+   siblings. Reported 2026-09-18 (Abi): "the padding on the green connected-status
+   text". The pill inherited the body's 1.55 line-height, which at a 10.5px caps
+   glyph is a 16.3px line box, so the text sat inside a tall box the 2px vertical
+   padding could not balance: the caps floated with too much air above and below
+   while the 8px flanks read as tight against a full-radius end. Setting the line
+   box to the glyph (line-height: 1) and padding evenly off that, 4px on the block
+   axis and 10px on the inline one, is what makes it a pill sized to its own text
+   rather than to a paragraph's leading. inline-flex centres the single line in
+   whatever height the row gives it, so a badge beside the taller action buttons is
+   centred on their line rather than pinned to the top of it. */
 .badge {
-  font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
-  color: var(--ok); border: 1px solid var(--ok); border-radius: var(--radius-full); padding: 2px 8px; white-space: nowrap;
+  display: inline-flex; align-items: center;
+  font-size: 10.5px; font-weight: 700; line-height: 1; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--ok); border: 1px solid var(--ok); border-radius: var(--radius-full); padding: 4px 10px; white-space: nowrap;
 }
 /* One tone per connection state, so the row is readable at a glance and a
    failing gateway cannot look like a connected one. */
