@@ -29,6 +29,27 @@ const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-form-capture-'));
 app.setPath('userData', PROFILE);
 app.commandLine.appendSwitch('user-data-dir', PROFILE);
 
+// Take the throwaway profile back down, and never let its teardown be what fails
+// the run. Chromium is still flushing cache and lock files out of the profile as
+// the process exits, so a plain rmSync races that flush and throws ENOTEMPTY on a
+// directory it half-cleared: measured during a pre-commit run where every check
+// had already passed and the harness was about to exit 0, and the throw flipped it
+// to 1. The verdict is the checks, not the cleanup, so this retries a few times to
+// let the flush finish and then gives up quietly, leaving a temp dir in the OS
+// tmpdir rather than turning a green run red.
+function removeProfile() {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      fs.rmSync(PROFILE, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      return;
+    } catch {
+      // Chromium has not finished with the profile yet; wait for the next attempt.
+      const until = Date.now() + 150;
+      while (Date.now() < until) { /* brief spin: the app is exiting, nothing else runs */ }
+    }
+  }
+}
+
 const outIndex = process.argv.indexOf('--out');
 const OUT = outIndex === -1 ? path.join(os.tmpdir(), 'claw-form') : process.argv[outIndex + 1];
 fs.mkdirSync(OUT, { recursive: true });
@@ -384,11 +405,11 @@ app.whenReady().then(async () => {
   check('and the stored editor was captured in both of them',
     Boolean(stored.light) && Boolean(stored.dark), JSON.stringify(Object.keys(stored)));
 
-  fs.rmSync(PROFILE, { recursive: true, force: true });
+  removeProfile();
   console.log(failed ? 'FAILED' : `OK   captures in ${OUT}`);
   app.exit(failed ? 1 : 0);
 }).catch((err) => {
   console.error(`FAIL harness: ${err && err.stack ? err.stack : err}`);
-  fs.rmSync(PROFILE, { recursive: true, force: true });
+  removeProfile();
   app.exit(1);
 });
