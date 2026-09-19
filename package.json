@@ -35,7 +35,8 @@
     "//gates": "The two .githooks run these instead of cd-ing into desktop/ and reaching for its scripts directly. The GUI boot smoke and the page measurements need a real desktop session, so they stay desktop-specific work, but they are reached through a ROOT script now: the hook lives at the repo root and calls the root, which is what makes no platform the root.",
     "measure": "pnpm --filter claw-desktop run measure",
     "verify": "pnpm --filter claw-desktop run verify",
-    "hooks:install": "git config core.hooksPath \"$(git rev-parse --show-toplevel)/.githooks\" && echo \"hooks installed: core.hooksPath -> .githooks\""
+    "hooks:install": "git config core.hooksPath \"$(git rev-parse --show-toplevel)/.githooks\" && echo \"hooks installed: core.hooksPath -> .githooks\"",
+    "hooks:scope": "node scripts/hook-scope.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
