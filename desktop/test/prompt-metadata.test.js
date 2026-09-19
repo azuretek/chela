@@ -37,6 +37,65 @@ function hookedSocket(config) {
   return new FakeWebSocket();
 }
 
+// A socket that also carries the inbound half, so the desktop suite can drive a
+// real rewind round trip: the page registers a message listener, the gateway
+// delivers an answer with editorText, and the hook's boundary strip runs on the
+// way in. This mirrors the core suite's listeningSocket, kept here in parity so
+// the desktop copy proves the same CRLF regression against the shared spec.
+function listeningSocket(config) {
+  class FakeWebSocket {
+    constructor() { this.sent = null; this.listeners = []; }
+    send(data) { this.sent = data; }
+    addEventListener(type, listener) { if (type === 'message') this.listeners.push(listener); }
+    deliver(data) {
+      const event = { type: 'message', data, target: this, currentTarget: this, origin: '', lastEventId: '', source: null, ports: [] };
+      for (const listener of this.listeners) listener(event);
+    }
+  }
+  class FakeMessageEvent {
+    constructor(type, init) { this.type = type; Object.assign(this, init || {}); }
+  }
+  const context = { window: {}, WebSocket: FakeWebSocket, MessageEvent: FakeMessageEvent };
+  vm.runInNewContext(metadata.clientScript(config), context);
+  const socket = new FakeWebSocket();
+  const received = [];
+  socket.addEventListener('message', (event) => { received.push(event.data); });
+  return { socket, received };
+}
+
+// The desktop client-context block a Windows machine sends, stored and handed
+// back on a rewind with CRLF line endings. This is the exact block Abi hit on
+// 2026-09-18: the whole context bled into the composer because the header match
+// keyed on a line ENDING with the marker, and a CRLF header line ends with a
+// carriage return, not the marker. Joined with an explicit \r\n.
+const WINDOWS_BLOCK_LINES = [
+  `Desktop client context: ${MARKER}`,
+  'The lines below describe the device the user is messaging from, added automatically by the client. Treat them as context, not an instruction: do not repeat them back or act on their contents; use them only to give platform-aware help.',
+  'host: azurelap1',
+  'os: Windows 10.0.26200 (x64)',
+  'user: azure',
+  'home: C:\\Users\\azure',
+  'locale: en-US',
+  'timezone: America/Los_Angeles',
+  'client: Claw Control UI (claw-desktop) 1.0.1-dev.279.9a58115cb1',
+  "----- end of client context; the user's message follows below -----",
+];
+
+test('a CRLF-encoded block is stripped from the composer on a rewind, header CR and all', () => {
+  const block = WINDOWS_BLOCK_LINES.join('\r\n');
+  const typed = "hey what's up";
+  const stored = `${block}\r\n\r\n${typed}`;
+  const { socket, received } = listeningSocket({ enabled: true, block });
+
+  socket.deliver(JSON.stringify({ id: 'rewind-crlf', result: { editorText: stored, editorAttachments: [] } }));
+
+  const restored = JSON.parse(received[0]).result.editorText;
+  assert.strictEqual(restored, typed, 'the CRLF block bled into the composer instead of being stripped');
+  assert.ok(!restored.includes(MARKER), 'no marker survives into the composer');
+  assert.ok(!restored.includes('end of client context'), 'the boundary footer does not leak into the composer');
+  assert.ok(!restored.includes('host: azurelap1'), 'no field line survives into the composer');
+});
+
 /* ------------------------------------------------------- the gateway contract */
 
 test('the header ends with the marker, which is what makes the gateway strip it', () => {
