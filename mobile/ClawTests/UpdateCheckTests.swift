@@ -17,8 +17,17 @@ final class UpdateCheckTests: XCTestCase {
 
     /// A releases.atom body naming a single release, the shape the real feed has.
     /// The tag lives in the entry id, exactly where the reader looks for it.
-    private func atom(_ tag: String) -> Data {
-        Data("""
+    ///
+    /// The entry carries the iOS availability marker in its `<content>` by
+    /// default, because a release that reaches the phone's banner is one with an
+    /// installable TestFlight build: the phone's own reader filters to marked
+    /// releases (`UpdateFeed.newerVersion`'s `iosOnly` defaults to true), so a
+    /// feed with no marker is the desktop-only case rather than the ordinary one.
+    /// `marked: false` builds that desktop-only case, used by the test that a
+    /// release with no TestFlight build raises nothing on the phone.
+    private func atom(_ tag: String, marked: Bool = true) -> Data {
+        let body = marked ? "&lt;p&gt;notes&lt;/p&gt;\n\(UpdateFeed.iosMarker)" : "&lt;p&gt;desktop only&lt;/p&gt;"
+        return Data("""
         <?xml version="1.0" encoding="UTF-8"?>
         <feed xmlns="http://www.w3.org/2005/Atom">
           <id>tag:github.com,2008:https://github.com/o/r/releases</id>
@@ -26,6 +35,7 @@ final class UpdateCheckTests: XCTestCase {
           <entry>
             <id>tag:github.com,2008:Repository/1/v\(tag)</id>
             <title>v\(tag)</title>
+            <content type="html">\(body)</content>
           </entry>
         </feed>
         """.utf8)
@@ -52,6 +62,43 @@ final class UpdateCheckTests: XCTestCase {
         XCTAssertFalse(text.contains("download"))
         XCTAssertFalse(text.contains("restart"))
         XCTAssertEqual(notice.action?.label, "Open TestFlight")
+    }
+
+    /// ★ The reported bug at the flow layer: the feed's newest release has NO
+    /// TestFlight build (no marker), so the phone raises nothing even though the
+    /// version is newer. Without the fix this raised the banner and pointed the
+    /// reader at a build that does not exist.
+    func testAnUnmarkedNewerReleaseRaisesNothingOnThePhone() async throws {
+        let board = board()
+        let feed = atom("1.0.1-dev.279.9a58115cb1", marked: false)
+        let check = UpdateCheck(board: board, currentVersion: "1.0.1-dev.148.abc1234567", fetch: { _ in feed })
+
+        await check.run()
+
+        XCTAssertNil(
+            board.all.first { $0.id == UpdateCheck.noticeId },
+            "a release with no installable TestFlight build must not be offered on iOS"
+        )
+        XCTAssertTrue(board.unread.isEmpty, "the banner has nothing to draw")
+    }
+
+    /// The same, for a PRESS: a manual check whose only newer release has no
+    /// TestFlight build answers "up to date" rather than offering a phantom
+    /// build.
+    func testAManualCheckOffersNoUnmarkedRelease() async throws {
+        let board = board()
+        let feed = atom("1.0.1-dev.279.9a58115cb1", marked: false)
+        let check = UpdateCheck(board: board, currentVersion: "1.0.1-dev.148.abc1234567", fetch: { _ in feed })
+
+        await check.run(trigger: .manual)
+
+        XCTAssertNil(board.all.first { $0.id == UpdateCheck.noticeId }, "no phantom offer")
+        let notice = try XCTUnwrap(
+            board.all.first { $0.id == UpdateCheck.answerNoticeId },
+            "a press is still answered"
+        )
+        XCTAssertEqual(notice.tone, NoticeTone.ok)
+        XCTAssertTrue(notice.message.contains("up to date"), notice.message)
     }
 
     /// The feed names this build: nothing is raised, so the banner stays absent.

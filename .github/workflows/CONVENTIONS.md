@@ -54,6 +54,16 @@ A release that silently does not happen is its own bug, so a refusal is written 
 
 **Read the refusal for what it is pointing at, which is often shared code rather than the pipeline that refused.** The platform named in the gate job is the one that failed, not the one being blamed: when a leg goes red on a commit that did not touch that client's own tree, `core/` is where the shared half lives and where the integration fault usually is. A blocked release on either platform is the first evidence of that fault, not a formality to clear.
 
+## The iOS availability marker: a release the phone may offer names a version with a TestFlight build
+
+The gate above stops a release from going out when a platform is red. It does NOT stop the phone from OFFERING a release that has no iOS build at all, and that is a different failure with the same shape: a desktop-only or `.github`-only commit produces a GitHub Release (the desktop builds) but no mobile pipeline run, so no TestFlight build, and the phone reads that release from the feed and points the user at a build that does not exist. Measured 2026-09-18: `v1.0.1-dev.279.9a58115cb1` (a `.github`-only change, PR #39) had no mobile run and was not on TestFlight, yet the in-app banner offered it.
+
+**The rule: the iOS "update available" banner only ever names a version that has an installable TestFlight build.** The phone reads `releases.atom`, whose entries carry the release body as `<content>` but carry no assets, so the signal is a marker LINE in the release body rather than an asset: `release.yml`'s release job appends it (from `core/release.js`'s `iosMarkerLine()`, the one owner of the string) at publish time, and only when the mobile pipeline's `release` job concluded success for this commit. The feed readers (`core/feed.js` and `mobile/Claw/UpdateFeed.swift`) offer a release to the phone only when its entry carries that marker; the desktop reads every release, because its own installers are on any release it published.
+
+**Why the marker is written by the desktop pipeline and not the mobile one.** The mobile `release` job finishes its wait for TestFlight VALID BEFORE the desktop publishes (the platforms gate makes the desktop publish wait on the mobile `^release$` job), so when the mobile job runs there is no published release to stamp. The desktop's publish step is the first moment a release exists AND its iOS verdict is known, so that is where the marker is written. A commit with no mobile run has no `release` job to read, so no marker, which is the intended outcome.
+
+**The two readers are kept in agreement by the parity fixture** (`core/fixtures/feed.json`'s `iosCases`, asserted by `core/test/feed.test.js` and `mobile/ClawTests/UpdateFeedParityTests.swift`): a release without the marker is filtered out by the iOS reader, one with it is offered, and the desktop reader is proven to still read every release.
+
 Three other things can block a publish, and none of them is this gate:
 
 - The **artifact gate** (`desktop/scripts/check-release-artifacts.js`) refuses a release whose platform is present but incomplete, meaning a missing installer or missing update metadata, when every build leg succeeded.

@@ -1,28 +1,400 @@
 {
   "description": "Golden feed-reading cases, asserted by core/test/feed.test.js and reproduced by the iOS client's UpdateFeed.swift (mobile/ClawTests/UpdateFeedParityTests.swift). Each case is a fetched releases document and the build reading it: `newer` is the version newerVersion(document, current) must return, or null when the banner must stay absent. `throws` marks the one case a current version this build cannot parse must throw on rather than silently suppress. The document is the shape a client hands the reader after parsing releases.atom: `entries`, newest-first, each carrying the `id` (which ends in the release tag) and `title` of one Atom <entry>. THE SIGNAL THAT DECIDES \"NEWER\" IS THE FEED'S OWN ORDERING, never a ranking of the build and commit tail: that tail's basis has changed, so ranking it inverted and the check silently stopped offering builds (see compareRelease in core/version.js). The comparison is the release only, and an entry's position in this document is what says which build is the latest. The case named \"an older release is not newer\" used to carry an older BUILD of the same release, which the old rule could rank and the new one cannot: it now carries a genuinely older RELEASE, which is the one thing the comparison may still refuse. This is the contract that keeps the two clients reading one feed the same way.",
   "cases": [
-    { "name": "a newer dev build is announced", "document": { "entries": [ { "id": "tag:github.com,2008:Repository/1/v1.0.1-dev.149.abc1234567", "title": "v1.0.1-dev.149.abc1234567" } ] }, "current": "1.0.1-dev.148.abc1234567", "newer": "1.0.1-dev.149.abc1234567" },
-    { "name": "the same build is not newer, so nothing is announced", "document": { "entries": [ { "id": "tag:github.com,2008:Repository/1/v1.0.1-dev.148.abc1234567", "title": "v1.0.1-dev.148.abc1234567" } ] }, "current": "1.0.1-dev.148.abc1234567", "newer": null },
-    { "name": "an older release is not newer", "document": { "entries": [ { "id": "tag:github.com,2008:Repository/1/v1.0.0-dev.147.abc1234567", "title": "v1.0.0-dev.147.abc1234567" } ] }, "current": "1.0.1-dev.148.abc1234567", "newer": null },
-    { "name": "an older stable release is not newer", "document": { "entries": [ { "id": ".../releases/v1.0.0", "title": "v1.0.0" } ] }, "current": "1.0.1", "newer": null },
-    { "name": "the reported bug: an installed OLD-SCHEME tail that looks HIGHER than the feed's is still offered the newest build", "document": { "entries": [ { "id": "tag:github.com,2008:Repository/1/v1.0.1-dev.12.1758000000", "title": "v1.0.1-dev.12.1758000000" }, { "id": "tag:github.com,2008:Repository/1/v1.0.1-dev.11.1757000000", "title": "v1.0.1-dev.11.1757000000" } ] }, "current": "1.0.1-dev.195.6387043585", "newer": "1.0.1-dev.12.1758000000" },
-    { "name": "the feed's tails running BACKWARDS still announce the newest by feed order", "document": { "entries": [ { "id": ".../releases/v1.0.1-dev.3.1759000000", "title": "v1.0.1-dev.3.1759000000" }, { "id": ".../releases/v1.0.1-dev.2.1758000000", "title": "v1.0.1-dev.2.1758000000" } ] }, "current": "1.0.1-dev.20.1758500000", "newer": "1.0.1-dev.3.1759000000" },
-    { "name": "a genuinely older release is not offered, so the check has not simply become always-on", "document": { "entries": [ { "id": ".../releases/v1.0.0-dev.900.1700000000", "title": "v1.0.0-dev.900.1700000000" } ] }, "current": "1.0.1-dev.195.6387043585", "newer": null },
-    { "name": "the build we are running, first on the channel, is still not newer", "document": { "entries": [ { "id": ".../releases/v1.0.1-dev.12.1758000000", "title": "v1.0.1-dev.12.1758000000" }, { "id": ".../releases/v1.0.1-dev.11.1757000000", "title": "v1.0.1-dev.11.1757000000" } ] }, "current": "1.0.1-dev.12.1758000000", "newer": null },
-    { "name": "a higher dev count is newer whatever the sha", "document": { "entries": [ { "id": "tag:github.com,2008:Repository/1/v1.0.1-dev.150.zzzzzzzzzz", "title": "v1.0.1-dev.150.zzzzzzzzzz" } ] }, "current": "1.0.1-dev.149.aaaaaaaaaa", "newer": "1.0.1-dev.150.zzzzzzzzzz" },
-    { "name": "the newest matching entry wins over older ones below it", "document": { "entries": [ { "id": ".../releases/v1.0.1-dev.150.aaaaaaaaaa", "title": "v1.0.1-dev.150.aaaaaaaaaa" }, { "id": ".../releases/v1.0.1-dev.149.bbbbbbbbbb", "title": "v1.0.1-dev.149.bbbbbbbbbb" } ] }, "current": "1.0.1-dev.148.abc1234567", "newer": "1.0.1-dev.150.aaaaaaaaaa" },
-    { "name": "a dev build skips a newer stable release and reads its own channel", "document": { "entries": [ { "id": ".../releases/v1.0.2", "title": "v1.0.2" }, { "id": ".../releases/v1.0.1-dev.149.abc1234567", "title": "v1.0.1-dev.149.abc1234567" } ] }, "current": "1.0.1-dev.148.abc1234567", "newer": "1.0.1-dev.149.abc1234567" },
-    { "name": "a stable build skips dev releases and reads the newest stable", "document": { "entries": [ { "id": ".../releases/v1.0.2-dev.5.abc1234567", "title": "v1.0.2-dev.5.abc1234567" }, { "id": ".../releases/v1.0.2", "title": "v1.0.2" } ] }, "current": "1.0.1", "newer": "1.0.2" },
-    { "name": "a dev build is not offered a stable release even when it is the only entry", "document": { "entries": [ { "id": ".../releases/v1.0.1", "title": "v1.0.1" } ] }, "current": "1.0.1-dev.148.abc1234567", "newer": null },
-    { "name": "a document with no entries announces nothing", "document": { "entries": [] }, "current": "1.0.1-dev.148.abc1234567", "newer": null },
-    { "name": "an entry whose tag does not parse is skipped, not thrown on", "document": { "entries": [ { "id": ".../releases/nightly", "title": "nightly" }, { "id": ".../releases/v1.0.1-dev.149.abc1234567", "title": "v1.0.1-dev.149.abc1234567" } ] }, "current": "1.0.1-dev.148.abc1234567", "newer": "1.0.1-dev.149.abc1234567" },
-    { "name": "an entry tag without a v prefix is still read", "document": { "entries": [ { "id": ".../releases/1.0.2", "title": "1.0.2" } ] }, "current": "1.0.1", "newer": "1.0.2" },
-    { "name": "a current version this build cannot parse is a surfaced fault", "document": { "entries": [ { "id": ".../releases/v1.0.2", "title": "v1.0.2" } ] }, "current": "latest", "throws": true }
+    {
+      "name": "a newer dev build is announced",
+      "document": {
+        "entries": [
+          {
+            "id": "tag:github.com,2008:Repository/1/v1.0.1-dev.149.abc1234567",
+            "title": "v1.0.1-dev.149.abc1234567"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.148.abc1234567",
+      "newer": "1.0.1-dev.149.abc1234567"
+    },
+    {
+      "name": "the same build is not newer, so nothing is announced",
+      "document": {
+        "entries": [
+          {
+            "id": "tag:github.com,2008:Repository/1/v1.0.1-dev.148.abc1234567",
+            "title": "v1.0.1-dev.148.abc1234567"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.148.abc1234567",
+      "newer": null
+    },
+    {
+      "name": "an older release is not newer",
+      "document": {
+        "entries": [
+          {
+            "id": "tag:github.com,2008:Repository/1/v1.0.0-dev.147.abc1234567",
+            "title": "v1.0.0-dev.147.abc1234567"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.148.abc1234567",
+      "newer": null
+    },
+    {
+      "name": "an older stable release is not newer",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/v1.0.0",
+            "title": "v1.0.0"
+          }
+        ]
+      },
+      "current": "1.0.1",
+      "newer": null
+    },
+    {
+      "name": "the reported bug: an installed OLD-SCHEME tail that looks HIGHER than the feed's is still offered the newest build",
+      "document": {
+        "entries": [
+          {
+            "id": "tag:github.com,2008:Repository/1/v1.0.1-dev.12.1758000000",
+            "title": "v1.0.1-dev.12.1758000000"
+          },
+          {
+            "id": "tag:github.com,2008:Repository/1/v1.0.1-dev.11.1757000000",
+            "title": "v1.0.1-dev.11.1757000000"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.195.6387043585",
+      "newer": "1.0.1-dev.12.1758000000"
+    },
+    {
+      "name": "the feed's tails running BACKWARDS still announce the newest by feed order",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/v1.0.1-dev.3.1759000000",
+            "title": "v1.0.1-dev.3.1759000000"
+          },
+          {
+            "id": ".../releases/v1.0.1-dev.2.1758000000",
+            "title": "v1.0.1-dev.2.1758000000"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.20.1758500000",
+      "newer": "1.0.1-dev.3.1759000000"
+    },
+    {
+      "name": "a genuinely older release is not offered, so the check has not simply become always-on",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/v1.0.0-dev.900.1700000000",
+            "title": "v1.0.0-dev.900.1700000000"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.195.6387043585",
+      "newer": null
+    },
+    {
+      "name": "the build we are running, first on the channel, is still not newer",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/v1.0.1-dev.12.1758000000",
+            "title": "v1.0.1-dev.12.1758000000"
+          },
+          {
+            "id": ".../releases/v1.0.1-dev.11.1757000000",
+            "title": "v1.0.1-dev.11.1757000000"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.12.1758000000",
+      "newer": null
+    },
+    {
+      "name": "a higher dev count is newer whatever the sha",
+      "document": {
+        "entries": [
+          {
+            "id": "tag:github.com,2008:Repository/1/v1.0.1-dev.150.zzzzzzzzzz",
+            "title": "v1.0.1-dev.150.zzzzzzzzzz"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.149.aaaaaaaaaa",
+      "newer": "1.0.1-dev.150.zzzzzzzzzz"
+    },
+    {
+      "name": "the newest matching entry wins over older ones below it",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/v1.0.1-dev.150.aaaaaaaaaa",
+            "title": "v1.0.1-dev.150.aaaaaaaaaa"
+          },
+          {
+            "id": ".../releases/v1.0.1-dev.149.bbbbbbbbbb",
+            "title": "v1.0.1-dev.149.bbbbbbbbbb"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.148.abc1234567",
+      "newer": "1.0.1-dev.150.aaaaaaaaaa"
+    },
+    {
+      "name": "a dev build skips a newer stable release and reads its own channel",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/v1.0.2",
+            "title": "v1.0.2"
+          },
+          {
+            "id": ".../releases/v1.0.1-dev.149.abc1234567",
+            "title": "v1.0.1-dev.149.abc1234567"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.148.abc1234567",
+      "newer": "1.0.1-dev.149.abc1234567"
+    },
+    {
+      "name": "a stable build skips dev releases and reads the newest stable",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/v1.0.2-dev.5.abc1234567",
+            "title": "v1.0.2-dev.5.abc1234567"
+          },
+          {
+            "id": ".../releases/v1.0.2",
+            "title": "v1.0.2"
+          }
+        ]
+      },
+      "current": "1.0.1",
+      "newer": "1.0.2"
+    },
+    {
+      "name": "a dev build is not offered a stable release even when it is the only entry",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/v1.0.1",
+            "title": "v1.0.1"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.148.abc1234567",
+      "newer": null
+    },
+    {
+      "name": "a document with no entries announces nothing",
+      "document": {
+        "entries": []
+      },
+      "current": "1.0.1-dev.148.abc1234567",
+      "newer": null
+    },
+    {
+      "name": "an entry whose tag does not parse is skipped, not thrown on",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/nightly",
+            "title": "nightly"
+          },
+          {
+            "id": ".../releases/v1.0.1-dev.149.abc1234567",
+            "title": "v1.0.1-dev.149.abc1234567"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.148.abc1234567",
+      "newer": "1.0.1-dev.149.abc1234567"
+    },
+    {
+      "name": "an entry tag without a v prefix is still read",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/1.0.2",
+            "title": "1.0.2"
+          }
+        ]
+      },
+      "current": "1.0.1",
+      "newer": "1.0.2"
+    },
+    {
+      "name": "a current version this build cannot parse is a surfaced fault",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/v1.0.2",
+            "title": "v1.0.2"
+          }
+        ]
+      },
+      "current": "latest",
+      "throws": true
+    }
+  ],
+  "iosDescription": "The iOS audience's cases: the same reader, called with the iOS filter on (newerVersion(document, current, { iosOnly: true }) in JS, UpdateFeed.newerVersion(in:current:) in Swift, whose iosOnly defaults to true because its only caller is the phone). Each entry may carry a `content` string, which is the release body GitHub emits as the Atom entry's <content>; a release with a TestFlight build carries the iosMarker line in it and one without does not. THE PHANTOM-UPDATE FIX IS HERE: an unmarked release is the newest entry in the feed and must NOT be offered to the phone, because it has no installable TestFlight build (a desktop-only or .github-only commit publishes a release with no mobile run behind it). The `cases` array above is the DESKTOP audience, filter off, and proves the desktop still reads every release; these prove the phone reads only the marked ones. The two must not be merged: an unmarked-newest case has different answers for the two audiences, which is the whole point.",
+  "iosCases": [
+    {
+      "name": "a marked dev release is offered to the phone",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/v1.0.1-dev.149.abc1234567",
+            "title": "v1.0.1-dev.149.abc1234567",
+            "content": "<p>notes</p>\nclaw-ios-testflight: available"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.148.abc1234567",
+      "newer": "1.0.1-dev.149.abc1234567"
+    },
+    {
+      "name": "★ the reported bug: the newest release has NO TestFlight build, so the phone is offered nothing",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/v1.0.1-dev.279.9a58115cb1",
+            "title": "v1.0.1-dev.279.9a58115cb1",
+            "content": "<p>a .github-only change, no mobile run</p>"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.148.abc1234567",
+      "newer": null
+    },
+    {
+      "name": "★ the phone skips an unmarked newest and offers the newest MARKED release below it",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/v1.0.1-dev.279.9a58115cb1",
+            "title": "v1.0.1-dev.279.9a58115cb1",
+            "content": "<p>desktop only</p>"
+          },
+          {
+            "id": ".../releases/v1.0.1-dev.278.cbfdb98ab7",
+            "title": "v1.0.1-dev.278.cbfdb98ab7",
+            "content": "<p>notes</p>\nclaw-ios-testflight: available"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.148.abc1234567",
+      "newer": "1.0.1-dev.278.cbfdb98ab7"
+    },
+    {
+      "name": "an entry with no content at all is treated as unmarked and skipped",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/v1.0.1-dev.279.9a58115cb1",
+            "title": "v1.0.1-dev.279.9a58115cb1"
+          },
+          {
+            "id": ".../releases/v1.0.1-dev.278.cbfdb98ab7",
+            "title": "v1.0.1-dev.278.cbfdb98ab7",
+            "content": "claw-ios-testflight: available"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.148.abc1234567",
+      "newer": "1.0.1-dev.278.cbfdb98ab7"
+    },
+    {
+      "name": "no marked release anywhere means nothing to offer, even though releases exist",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/v1.0.1-dev.279.9a58115cb1",
+            "title": "v1.0.1-dev.279.9a58115cb1",
+            "content": "<p>desktop only</p>"
+          },
+          {
+            "id": ".../releases/v1.0.1-dev.278.cbfdb98ab7",
+            "title": "v1.0.1-dev.278.cbfdb98ab7",
+            "content": "<p>also desktop only</p>"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.148.abc1234567",
+      "newer": null
+    },
+    {
+      "name": "a marked release that is the build we are running is not offered back",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/v1.0.1-dev.148.abc1234567",
+            "title": "v1.0.1-dev.148.abc1234567",
+            "content": "claw-ios-testflight: available"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.148.abc1234567",
+      "newer": null
+    },
+    {
+      "name": "a marked but genuinely OLDER release is not offered",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/v1.0.0-dev.900.1700000000",
+            "title": "v1.0.0-dev.900.1700000000",
+            "content": "claw-ios-testflight: available"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.195.6387043585",
+      "newer": null
+    },
+    {
+      "name": "the marker anywhere in a longer body is still read",
+      "document": {
+        "entries": [
+          {
+            "id": ".../releases/v1.0.1-dev.149.abc1234567",
+            "title": "v1.0.1-dev.149.abc1234567",
+            "content": "<h2>What's Changed</h2>\n<ul><li>a fix</li></ul>\nclaw-ios-testflight: available\n<p>Full Changelog: ...</p>"
+          }
+        ]
+      },
+      "current": "1.0.1-dev.148.abc1234567",
+      "newer": "1.0.1-dev.149.abc1234567"
+    }
   ],
   "releaseNotes": [
-    { "name": "a version names that release's own notes", "version": "1.0.1-dev.149.abc1234567", "output": "https://github.com/azuretek/claw-control-ui/releases/tag/v1.0.1-dev.149.abc1234567" },
-    { "name": "a stable version names its release too", "version": "1.0.2", "output": "https://github.com/azuretek/claw-control-ui/releases/tag/v1.0.2" },
-    { "name": "with no version to name, the channel's list of releases", "version": null, "output": "https://github.com/azuretek/claw-control-ui/releases" },
-    { "name": "an empty or blank version is the same as none", "version": "   ", "output": "https://github.com/azuretek/claw-control-ui/releases" }
+    {
+      "name": "a version names that release's own notes",
+      "version": "1.0.1-dev.149.abc1234567",
+      "output": "https://github.com/azuretek/claw-control-ui/releases/tag/v1.0.1-dev.149.abc1234567"
+    },
+    {
+      "name": "a stable version names its release too",
+      "version": "1.0.2",
+      "output": "https://github.com/azuretek/claw-control-ui/releases/tag/v1.0.2"
+    },
+    {
+      "name": "with no version to name, the channel's list of releases",
+      "version": null,
+      "output": "https://github.com/azuretek/claw-control-ui/releases"
+    },
+    {
+      "name": "an empty or blank version is the same as none",
+      "version": "   ",
+      "output": "https://github.com/azuretek/claw-control-ui/releases"
+    }
   ]
 }
