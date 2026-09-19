@@ -122,6 +122,24 @@ extension Notice {
             && progress == other.progress
             && action == other.action
     }
+
+    /// Whether a re-raise carries anything the reader has not already been told.
+    ///
+    /// ★ Narrower than `saysTheSame`, and the difference is the whole read-quiet
+    /// rule: this is the question the store asks before deciding whether a raise
+    /// may re-open a card the reader has already acknowledged. The message is the
+    /// condition's own sentence, the tone is how alarming it is and the action is
+    /// what the card can do, so any of those moving is news. The detail is news
+    /// too, with ONE exception: a notice about something ARRIVING moves its detail
+    /// on every tick while its sentence stays put, and that number is the same
+    /// news rather than new news. A progress notice with something new to say
+    /// changes its message, and that re-raises. Mirrors `carriesNews` in
+    /// `core/notices.js`.
+    func carriesNews(as other: Notice) -> Bool {
+        if tone != other.tone || message != other.message || action != other.action { return true }
+        if detail == other.detail { return false }
+        return progress == nil && other.progress == nil
+    }
 }
 
 /// What a raiser hands the store. Every field but the message has a default, so a
@@ -162,30 +180,20 @@ final class NoticeStore {
 
     /// Raise a notice, or update the one already under this id.
     ///
+    /// `announce` is the reader HAVING ASKED -- the explicit "check for updates"
+    /// -- so the raise is unread whatever it says, because a press is a question
+    /// and the answer belongs on screen.
+    ///
     /// - Returns: whether anything actually changed. Identical to what is already
     ///   on screen reports `false`, which matters: the caller uses it to avoid
     ///   re-rendering, and a banner that re-renders replays its slide-in
     ///   animation for no reason.
     @discardableResult
-    func set(_ id: String, _ raise: NoticeRaise) -> Bool {
-        if let previous = notices[id] {
-            let next = Notice(
-                id: id,
-                tone: raise.tone,
-                message: raise.message,
-                detail: raise.detail,
-                dismissible: raise.dismissible,
-                dismissClears: raise.dismissClears,
-                progress: raise.progress,
-                action: raise.action,
-                read: false,
-                order: previous.order
-            )
-            if previous.saysTheSame(as: next) { return false }
-            notices[id] = next
-            return true
-        }
-        notices[id] = Notice(
+    func set(_ id: String, _ raise: NoticeRaise, announce: Bool = false) -> Bool {
+        let previous = notices[id]
+        // The content of the raise, before the store's own bookkeeping is applied:
+        // `read` and `order` are not part of what the card says (see saysTheSame).
+        var next = Notice(
             id: id,
             tone: raise.tone,
             message: raise.message,
@@ -194,14 +202,23 @@ final class NoticeStore {
             dismissClears: raise.dismissClears,
             progress: raise.progress,
             action: raise.action,
-            // Unread, always, because reaching here means something changed. A
-            // condition that has been read and then says something different is
-            // new news, and leaving it read would let a failure change under a
-            // banner that has already been waved away.
             read: false,
-            order: seq
+            order: previous?.order ?? seq
         )
-        seq += 1
+        if let previous, previous.saysTheSame(as: next), !announce { return false }
+        // ★ Read means quiet for THIS RUN, for this condition, and this line is
+        // where that promise is kept or broken. An announced raise is unread
+        // because the reader asked; otherwise read SURVIVES a re-raise that
+        // carries no news -- a progress notice moving its number -- and resets
+        // when the condition says something different, because that is new news.
+        // Mirrors the `read` line in `core/notices.js`.
+        if announce {
+            next.read = false
+        } else if let previous, !previous.carriesNews(as: next) {
+            next.read = previous.read
+        }
+        notices[id] = next
+        if previous == nil { seq += 1 }
         return true
     }
 
@@ -214,21 +231,21 @@ final class NoticeStore {
         return true
     }
 
-    /// Read everything that can be read.
+    /// Read everything on the bar.
     ///
-    /// A notice that is not dismissible is not markable either. The one that
-    /// carries it is the finished update download, kept because losing it means
-    /// waiting for the next check to find a version that is already on disk, and a
-    /// bulk action is exactly how it would get lost.
+    /// ★ EVERY notice, with no exceptions left in it: the sweep is the reader
+    /// saying "I have seen this" about the whole bar in one act, so a card it
+    /// skipped is the card that keeps coming back.
     ///
-    /// A dismissClears notice is skipped too, and for a sharper reason: its X ends
-    /// it rather than reading it, and "end every condition on this bar" is not what
-    /// anybody pressed. The card's own control is one deliberate act and stays the
-    /// only one, matching `markAllRead` in `core/notices.js`.
+    /// ★ And QUIETING IS NOT CLEARING, which is the half that has not changed.
+    /// What the sweep does is read: the notice stays in the store and stays under
+    /// Settings. A `dismissClears` notice is still ended by its own X and by
+    /// nothing else, because ending a transfer is a decision about network work
+    /// rather than about reading. Mirrors `markAllRead` in `core/notices.js`.
     @discardableResult
     func markAllRead() -> Bool {
         var changed = false
-        for (id, notice) in notices where notice.dismissible && !notice.dismissClears && !notice.read {
+        for (id, notice) in notices where !notice.read {
             var next = notice
             next.read = true
             notices[id] = next
