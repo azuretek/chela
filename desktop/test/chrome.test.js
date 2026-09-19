@@ -217,7 +217,11 @@ test('windows opened before the page answers use the remembered mode', () => {
 // a stylesheet-injection primitive against the settings page.
 
 test('every borrowed token declares a type, which is what makes it checkable', () => {
-  const kinds = new Set(['color', 'length', 'font', 'shadow']);
+  // scale is the reading multiplier (--control-ui-text-scale), a unitless number
+  // the Control UI sets on :root; it is a kind of its own because a number is
+  // neither a colour, a length, a font stack nor a shadow, and it carries its own
+  // sane-range bound in sanitizeTokenValue.
+  const kinds = new Set(['color', 'length', 'font', 'shadow', 'scale']);
   assert.ok(chrome.THEME_TOKENS.length > 0);
   for (const entry of chrome.THEME_TOKENS) {
     const [name, kind] = entry;
@@ -245,6 +249,26 @@ test('resolved values in the forms Chromium actually returns are kept', () => {
     'rgba(0, 0, 0, 0.55) 0px 24px 60px 0px');
 });
 
+test('the reading scale is kept when it is a sane multiplier, and refused otherwise', () => {
+  // The Control UI resolves --control-ui-text-scale to (textScale ?? 100) / 100,
+  // so the values that actually arrive are 1, 1.1, 1.25 and 1.5. All are kept.
+  assert.strictEqual(chrome.sanitizeTokenValue('scale', '1'), '1');
+  assert.strictEqual(chrome.sanitizeTokenValue('scale', '1.1'), '1.1');
+  assert.strictEqual(chrome.sanitizeTokenValue('scale', '1.25'), '1.25');
+  assert.strictEqual(chrome.sanitizeTokenValue('scale', '1.5'), '1.5');
+  // A scale is a unitless number: nothing with a unit, a function or a second
+  // token can pass, the same total refusal every other kind gets.
+  assert.strictEqual(chrome.sanitizeTokenValue('scale', '1.25px'), null);
+  assert.strictEqual(chrome.sanitizeTokenValue('scale', 'calc(1.25)'), null);
+  assert.strictEqual(chrome.sanitizeTokenValue('scale', '1; color: red'), null);
+  assert.strictEqual(chrome.sanitizeTokenValue('scale', 'rgb(1,2,3)'), null);
+  // And a number that is syntactically fine but would break the page is refused
+  // rather than followed: a 0 collapses every scaled size to nothing, and a huge
+  // one blows the layout out. The grammar cannot say "between", so the bound does.
+  assert.strictEqual(chrome.sanitizeTokenValue('scale', '0'), null);
+  assert.strictEqual(chrome.sanitizeTokenValue('scale', '40'), null);
+});
+
 test('nothing that could close a CSS rule survives', () => {
   const attacks = [
     'red} body{display:none} .x{color:red',   // escape the rule entirely
@@ -255,7 +279,7 @@ test('nothing that could close a CSS rule survives', () => {
     'expression(alert(1))',
     '<script>',
   ];
-  for (const kind of ['color', 'length', 'font', 'shadow']) {
+  for (const kind of ['color', 'length', 'font', 'shadow', 'scale']) {
     for (const value of attacks) {
       assert.strictEqual(chrome.sanitizeTokenValue(kind, value), null, `${kind} accepted: ${value}`);
     }
