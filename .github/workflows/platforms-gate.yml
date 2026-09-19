@@ -212,6 +212,33 @@ jobs:
 
           red="$(printf '%s\n' "$jobs" | grep -Ev '\|(success|skipped)$' || true)"
           if [ -n "$red" ]; then
+            # A cancelled leg is normally a refusal. But a leg cancelled by
+            # SUPERSESSION (a newer run of the same workflow on the same branch)
+            # is a commit that has been REPLACED, not a platform that is broken,
+            # and refusing there manufactures a red run for a commit nobody is
+            # waiting on. Measured 2026-09-18: two merges seconds apart, the
+            # first one's desktop run cancelled by the second's, and this gate
+            # went red on it while every mobile job had passed.
+            #
+            # Narrow on purpose: EVERY red job must be cancelled (a real failure
+            # still refuses), and a newer run of the same workflow must exist on
+            # this branch, which is what proves the cancellation was the branch
+            # moving on rather than a manual stop or a broken runner.
+            if [ -z "$(printf '%s\n' "$red" | grep -v '|cancelled$' || true)" ]; then
+              other_branch="$(gh api "repos/$REPO/actions/runs/$run_id" --jq '.head_branch')"
+              other_created="$(gh api "repos/$REPO/actions/runs/$run_id" --jq '.created_at')"
+              newer="$(gh api "repos/$REPO/actions/runs?branch=$other_branch&per_page=100" \
+                --jq "[.workflow_runs[] | select(.name == \"$OTHER\") | select(.created_at > \"$other_created\")] | length")"
+              if [ "${newer:-0}" -gt 0 ]; then
+                {
+                  echo "::notice::$OTHER's run for $SHA was superseded ($newer newer run(s) of it on $other_branch), so its legs were cancelled by the branch moving on rather than by anything failing. Standing down: this commit has been replaced, and this is not a failure."
+                  echo "### Superseded, not failed"
+                  echo
+                  echo "\`$OTHER\` was cancelled for \`$SHA\` because $newer newer run(s) of it exist on \`$other_branch\`."
+                } >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
+            fi
             {
               echo "::error::refusing to publish: $OTHER did not pass on $SHA, and a release waits on the whole matrix."
               printf '%s\n' "$red" | awk -F'|' '{print "  " $1 ": " $3}'
