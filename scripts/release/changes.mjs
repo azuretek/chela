@@ -42,6 +42,7 @@
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
 /**
  * ★ The rule. A changed path that matches NONE of these ships, and a commit
@@ -253,6 +254,11 @@ export function run(argv, env = process.env) {
   return result;
 }
 
-if (process.argv[1] && import.meta.url === fileURLToPath(import.meta.url) && process.argv[1].endsWith('changes.mjs')) {
+// Run when invoked as a script. The check compares two filesystem paths: the
+// module's own path and the resolved entry path. The earlier form compared
+// import.meta.url (a file:// URL) with fileURLToPath(import.meta.url) (a path),
+// which is always false, so run() never fired and every release silently stood
+// down. Guarded now by a subprocess test, not just a direct run() import.
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   run(process.argv.slice(2));
 }
