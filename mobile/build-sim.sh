@@ -1,52 +1,51 @@
 #!/usr/bin/env bash
 #
-# Build the current Claw app, run it in the iOS Simulator, and drive it toward a
-# connected state against a gateway, in one command. Repeatable sim test harness.
+# Build the current Claw app, run it in the iOS Simulator, and drive it all the
+# way to a CONNECTED, paired state against the gateway, in one command, using a
+# REVOCABLE credential it cleans up afterward. Repeatable sim test harness.
 #
 # Why this exists: the device flow is mobile/build-device.sh, which needs a
 # physical phone. Testing a change without a phone means the simulator, and a
 # simulator cannot be typed into by a script and has no URL scheme, so the app
-# ships two DEBUG-only launch seams (compiled out of a release build):
+# ships DEBUG-only launch seams (compiled out of a release build):
 #
-#   -claw-gateway-url <https-url>   seeds the active gateway into the config
-#                                   (GatewayStore.screenshotGateway)
-#   OPENCLAW_SEED_TOKEN=<token>     seeds the gateway's connect token into the
-#                                   credential store (seedDebugTokenFromEnvironment)
+#   -claw-gateway-url <https-url>        seeds the active gateway into the config
+#                                        (GatewayStore.screenshotGateway)
+#   OPENCLAW_SEED_BOOTSTRAP_TOKEN=<tok>  seeds a setup-code (bootstrap) token onto
+#                                        the load URL fragment as #bootstrapToken=
+#                                        so the Control UI runs the real pairing
+#                                        handshake (WebView.loadURL)
 #
-# ★ TWO THINGS TO KNOW ABOUT THE INPUTS
+# HOW THIS CONNECTS WITHOUT THE SHARED, TIER-ONE TOKEN
 #
-#   1. The gateway URL must be https/http, NOT wss. The app is a WKWebView that
-#      loads the Control UI page over HTTPS; `Gateway.parse` refuses a wss scheme,
-#      so a wss url silently seeds nothing and the app boots to empty setup.
+#   The gateway's connect auth has two distinct credentials. auth.token is the
+#   SHARED connect secret (auth.mode=token), sourced from the vault, tier-one:
+#   it must never land in argv, a log or a file. auth.bootstrapToken is a
+#   short-lived, REVOCABLE setup-code minted per pairing. They are different
+#   gates: a setup code fed as the shared token is refused ("This Gateway expects
+#   its token"), which is the bug an earlier version of this script tripped by
+#   seeding a token into the native connect global.
 #
-#   2. OPENCLAW_SEED_TOKEN must be the gateway's OWN connect token, the shared
-#      token the gateway validates on connect (auth.mode=token). It is NOT the
-#      `openclaw qr` setup code's bootstrapToken: that is a device-onboarding
-#      credential and the gateway rejects it as a connect secret ("This Gateway
-#      expects its token"). On this fleet the connect token is sourced from the
-#      vault, and it is a tier-one credential: it must never land in argv, a log
-#      or a file. So this script reads it from the CALLER's environment and passes
-#      it to the app via SIMCTL_CHILD_ (which keeps it out of the app's argv), and
-#      it is the caller's responsibility to export it safely, e.g.
+#   So this harness never touches the shared token. It mints a LIMITED setup code
+#   locally (openclaw qr --limited: a local state-DB write, no gateway
+#   connection, no shared token), hands its bootstrapToken to the app on the URL
+#   fragment, lets the app's own keypair + pairing handshake run, then APPROVES
+#   the pending request and REVOKES the resulting device with local state-DB
+#   writes (mobile/scripts/pair-local.mjs), which the running gateway picks up on
+#   the next connect (it re-reads the pairing store per connect). Every credential
+#   this creates is revoked before the script exits: no live temp credential is
+#   left behind.
 #
-#        export OPENCLAW_SEED_TOKEN="$(<secure source>)"   # never echoed
-#        ./build-sim.sh
-#
-#      Without it the app loads the Control UI and shows the gateway's own token
-#      prompt, which is a real, correct result: it proves the app reached the
-#      gateway, just unauthenticated.
+#   The gateway URL must be https/http, NOT wss. The app is a WKWebView that loads
+#   the Control UI over HTTPS; Gateway.parse refuses a wss scheme, so a wss url
+#   silently seeds nothing and the app boots to empty setup.
 #
 # Usage:
-#   OPENCLAW_SEED_TOKEN=... ./build-sim.sh            # build, install, launch
-#   OPENCLAW_SEED_TOKEN=... ./build-sim.sh <sim-udid> # target a specific sim
-#   GATEWAY_URL=https://host OPENCLAW_SEED_TOKEN=... ./build-sim.sh
-#   SKIP_BUILD=1 OPENCLAW_SEED_TOKEN=... ./build-sim.sh   # reuse the last build
-#
-# After it launches, approve the sim's device-pairing request from the gateway:
-#   openclaw devices list          # find the pending ios request
-#   openclaw devices approve --latest
-# then re-screenshot:
-#   xcrun simctl io <udid> screenshot proof.png
+#   ./build-sim.sh                 # build, install, launch, pair, approve, shoot, revoke
+#   ./build-sim.sh <sim-udid>      # target a specific sim (else the booted one)
+#   GATEWAY_URL=https://host ./build-sim.sh
+#   SKIP_BUILD=1 ./build-sim.sh    # reuse the last build
+#   NO_REVOKE=1 ./build-sim.sh     # leave the paired device in place (debugging only)
 #
 # The generated project and build output are gitignored and rebuilt here.
 
@@ -57,6 +56,7 @@ BUNDLE_ID="com.azuretek.claw-mobile"
 GATEWAY_URL="${GATEWAY_URL:-https://minizilla.tail8a6fef.ts.net}"
 SHOT_DIR="${SHOT_DIR:-build-sim}"
 SHOT="${SHOT_DIR}/claw-sim.png"
+PAIR_LOCAL="./scripts/pair-local.mjs"
 
 # The target simulator: an argument if given, otherwise the one booted device.
 SIM="${1:-}"
@@ -109,56 +109,97 @@ xcrun simctl uninstall "$SIM" "$BUNDLE_ID" 2>/dev/null || true
 echo "== installing"
 xcrun simctl install "$SIM" "$APP"
 
-# The connect token, from the caller's environment. simctl has no --env flag;
-# a child env var is passed by prefixing SIMCTL_CHILD_, which keeps the token out
-# of the app's argv (and so out of any process listing).
-LAUNCH_ENV=()
-if [ -n "${OPENCLAW_SEED_TOKEN:-}" ]; then
-  export SIMCTL_CHILD_OPENCLAW_SEED_TOKEN="$OPENCLAW_SEED_TOKEN"
-  echo "== launching with a seeded connect token (len ${#OPENCLAW_SEED_TOKEN})"
-else
-  echo "== launching WITHOUT a token: the app will reach the gateway and show its"
-  echo "   own token prompt. Set OPENCLAW_SEED_TOKEN to prove an authenticated"
-  echo "   connection. See the header of this script."
+# Mint a LIMITED, revocable setup code locally. This is a local state-DB write
+# (no gateway connection, no shared token); the bootstrapToken inside is what the
+# app exchanges in the pairing handshake.
+echo "== minting a limited, revocable setup code (local; no shared token)"
+SETUP_CODE="$(openclaw qr --limited --setup-code-only)"
+BOOTSTRAP_TOKEN="$(printf '%s' "$SETUP_CODE" | python3 -c '
+import sys, json, base64
+raw = sys.stdin.read().strip()
+pad = "=" * (-len(raw) % 4)
+print(json.loads(base64.urlsafe_b64decode(raw + pad))["bootstrapToken"])')"
+if [ -z "$BOOTSTRAP_TOKEN" ]; then
+  echo "error: could not mint a setup code / decode its bootstrapToken" >&2
+  exit 1
 fi
+echo "== minted (bootstrapToken len ${#BOOTSTRAP_TOKEN})"
 
-echo "== launching pointed at $GATEWAY_URL"
+# Hand the bootstrap token to the app on the URL fragment via the DEBUG seam.
+# simctl has no --env flag; a child env var is passed by prefixing SIMCTL_CHILD_,
+# which keeps it out of the app's argv (and so out of any process listing).
+export SIMCTL_CHILD_OPENCLAW_SEED_BOOTSTRAP_TOKEN="$BOOTSTRAP_TOKEN"
+
+echo "== launching pointed at $GATEWAY_URL (bootstrap token on the fragment)"
 xcrun simctl launch --terminate-running-process \
   "$SIM" "$BUNDLE_ID" -claw-gateway-url "$GATEWAY_URL" >/dev/null
 
-# The device keypair is the pairing gate. A fresh install mints a new one, so if
-# the token authenticates, the gateway now has a pending request. Poll and
-# approve. Bounded so a run that never pairs ends with a message, not a hang.
-echo "== waiting up to ~30s for the sim's pairing request"
-HAVE_PENDING=""
-for i in $(seq 1 15); do
-  HAVE_PENDING="$(openclaw devices list --json 2>/dev/null | python3 -c '
+# The device keypair is the pairing gate. A fresh install mints a new one, so the
+# bootstrap handshake raises a pending request. Poll the LOCAL pairing store
+# (no shared token) and grab the request's public key so cleanup targets exactly
+# this device and nothing else. Bounded so a run that never pairs ends with a
+# message, not a hang.
+echo "== waiting up to ~40s for the sim's pairing request"
+PENDING_PUBKEY=""
+for i in $(seq 1 20); do
+  PENDING_PUBKEY="$(node "$PAIR_LOCAL" list-json 2>/dev/null | python3 -c '
 import json,sys
 try: d=json.load(sys.stdin)
 except Exception: sys.exit(0)
-print("yes" if d.get("pending") else "")
-' 2>/dev/null || true)"
-  [ -n "$HAVE_PENDING" ] && break
+p=d.get("pending") or []
+if p:
+    latest=max(p, key=lambda r: r.get("ts",0))
+    print(latest.get("publicKey",""))' 2>/dev/null || true)"
+  [ -n "$PENDING_PUBKEY" ] && break
   sleep 2
 done
 
-if [ -n "$HAVE_PENDING" ]; then
-  echo "== approving the latest pending pairing request"
-  openclaw devices approve --latest
-  sleep 4
+APPROVED_PUBKEY=""
+if [ -n "$PENDING_PUBKEY" ]; then
+  echo "== approving the latest pending pairing request (local; no shared token)"
+  APPROVE_JSON="$(node "$PAIR_LOCAL" approve-latest)"
+  echo "   $APPROVE_JSON"
+  APPROVED_PUBKEY="$(printf '%s' "$APPROVE_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("publicKey",""))' 2>/dev/null || true)"
+  sleep 6
 else
-  echo "== no pending pairing request surfaced." >&2
-  echo "   With a valid token this means already-paired or a connection issue;" >&2
-  echo "   without a token this is expected (the token prompt is showing)." >&2
+  echo "== no pending pairing request surfaced within the window." >&2
+  echo "   The app reached the gateway but did not raise a pairing request; check" >&2
+  echo "   the screenshot below (it may be showing the token/pairing prompt)." >&2
 fi
 
-sleep 4
+sleep 3
 echo "== capturing screenshot -> $SHOT"
 mkdir -p "$SHOT_DIR"
 xcrun simctl io "$SIM" screenshot "$SHOT"
 
+if [ -n "$APPROVED_PUBKEY" ]; then
+  echo "== connection check (local pairing store):"
+  APPROVED_PUBKEY="$APPROVED_PUBKEY" node "$PAIR_LOCAL" list-json 2>/dev/null | python3 -c '
+import json,sys,os
+pk=os.environ.get("APPROVED_PUBKEY","")
+d=json.load(sys.stdin)
+dev=next((x for x in d.get("paired",[]) if x.get("publicKey")==pk), None)
+if dev:
+    print("   paired: deviceId=%s platform=%s remoteIp=%s lastSeenReason=%s"
+          % (dev.get("deviceId","")[:16], dev.get("platform"), dev.get("remoteIp"), dev.get("lastSeenReason")))
+else:
+    print("   (device not found in paired store yet)")' || true
+fi
+
+# Cleanup: revoke + remove the device this run created, by its EXACT public key,
+# so no live temp credential is left behind. A public key is unique to the
+# keypair this fresh install minted; matching by clientId/platform would risk the
+# household's real iPhone, which shares clientId "openclaw-ios".
+if [ "${NO_REVOKE:-}" = "1" ]; then
+  echo "== NO_REVOKE=1: leaving the paired sim device in place (debugging only)."
+  echo "   Revoke it later with: node $PAIR_LOCAL remove-by-pubkey ${APPROVED_PUBKEY:-<pubkey>}"
+elif [ -n "$APPROVED_PUBKEY" ]; then
+  echo "== revoking + removing the sim's device token (cleanup; local)"
+  node "$PAIR_LOCAL" remove-by-pubkey "$APPROVED_PUBKEY"
+else
+  echo "== nothing to revoke (no device was paired this run)."
+fi
+
 echo
 echo "== done."
 echo "   screenshot: $(cd "$(dirname "$SHOT")" && pwd)/$(basename "$SHOT")"
-echo "   verify: openclaw devices list   (the sim's device, connected:true,"
-echo "     remoteIp = this host's tailscale ip)"

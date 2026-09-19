@@ -28,7 +28,34 @@ enum GatewayURL {
     /// it already carries a fragment: an empty token is not a token, and treating
     /// it as one would rewrite an address to say nothing.
     static func withTokenHandoff(_ url: URL, _ token: String?) -> URL {
-        guard let token, !token.isEmpty else { return url }
+        withFragmentHandoff(url, key: "token", value: token)
+    }
+
+    /// `url` with `#bootstrapToken=<token>` merged into its fragment.
+    ///
+    /// The setup-code / QR credential, NOT the shared connect token. The Control
+    /// UI reads `bootstrapToken` from the fragment during boot and exchanges it in
+    /// the device pairing handshake: it becomes `auth.bootstrapToken` on the
+    /// connect, which the gateway validates against its device-bootstrap table and
+    /// answers with a pending pairing request, whereas `token` is the shared-owner
+    /// connect secret the gateway checks directly. They are different gates, and a
+    /// setup code fed as `token` is refused with "This Gateway expects its token",
+    /// which is why this is a distinct key. Ported from `withBootstrapHandoff` in
+    /// `core/gateway-url.js`, sharing the same fragment-merge rule as the token
+    /// handoff so the two cannot drift.
+    ///
+    /// A nil or empty token returns the address exactly as it was, the same rule
+    /// the token handoff keeps and for the same reason.
+    static func withBootstrapHandoff(_ url: URL, _ token: String?) -> URL {
+        withFragmentHandoff(url, key: "bootstrapToken", value: token)
+    }
+
+    /// The one owner of the fragment-merge rule both handoffs share: preserve an
+    /// existing fragment, set `key` in place if present or append it otherwise,
+    /// and hand an unparseable address back untouched. Ported from
+    /// `withFragmentHandoff` in `core/gateway-url.js`.
+    private static func withFragmentHandoff(_ url: URL, key: String, value: String?) -> URL {
+        guard let value, !value.isEmpty else { return url }
         // An address with no scheme and host is not one this client could ever
         // hold, and it is what `new URL(...)` throws on in the shared module. The
         // guard is that same refusal, expressed where the type allows a relative
@@ -38,12 +65,12 @@ enum GatewayURL {
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
 
         var pairs = fragmentPairs(components.percentEncodedFragment ?? "")
-        if let index = pairs.firstIndex(where: { $0.key == "token" }) {
+        if let index = pairs.firstIndex(where: { $0.key == key }) {
             // In place, which is what `URLSearchParams.set` does and what keeps a
-            // re-connect from appending a second token to a long fragment.
-            pairs[index].value = token
+            // re-connect from appending a second value to a long fragment.
+            pairs[index].value = value
         } else {
-            pairs.append((key: "token", value: token))
+            pairs.append((key: key, value: value))
         }
 
         components.percentEncodedFragment = pairs
