@@ -138,6 +138,25 @@ const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-capture-pages-'));
 app.setPath('userData', PROFILE);
 app.commandLine.appendSwitch('user-data-dir', PROFILE);
 
+// Take the throwaway profile back down, and never let its teardown be what fails
+// the run. Chromium is still flushing cache and lock files out of the profile as
+// the process exits, so a plain rmSync races that flush and throws ENOTEMPTY on a
+// directory it half-cleared, which flips a run whose checks all passed to a
+// failure. The verdict is the checks, not the cleanup, so this retries to let the
+// flush finish and then gives up quietly, leaving a temp dir in the OS tmpdir
+// rather than turning a green run red.
+function removeProfile() {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      fs.rmSync(PROFILE, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      return;
+    } catch {
+      const until = Date.now() + 150;
+      while (Date.now() < until) { /* brief spin: the app is exiting, nothing else runs */ }
+    }
+  }
+}
+
 const outIndex = process.argv.indexOf('--out');
 const OUT = outIndex === -1 ? path.join(os.tmpdir(), 'claw-pages') : process.argv[outIndex + 1];
 const widthIndex = process.argv.indexOf('--width');
@@ -787,11 +806,11 @@ app.whenReady().then(async () => {
       JSON.stringify({ light: seen.light.colorScheme, dark: seen.dark.colorScheme }));
   }
 
-  fs.rmSync(PROFILE, { recursive: true, force: true });
+  removeProfile();
   console.log(failed ? 'FAILED' : `OK   ${PAGES.length * 2} captures in ${OUT}`);
   app.exit(failed ? 1 : 0);
 }).catch((err) => {
   console.error(`FAIL harness: ${err && err.stack ? err.stack : err}`);
-  fs.rmSync(PROFILE, { recursive: true, force: true });
+  removeProfile();
   app.exit(1);
 });
