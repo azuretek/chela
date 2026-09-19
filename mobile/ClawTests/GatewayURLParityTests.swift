@@ -70,4 +70,49 @@ final class GatewayURLParityTests: XCTestCase {
         XCTAssertEqual(GatewayURL.withTokenHandoff(url, "").absoluteString, "https://example-host.example.ts.net/#tab=chat")
         XCTAssertEqual(GatewayURL.withTokenHandoff(url, nil).absoluteString, "https://example-host.example.ts.net/#tab=chat")
     }
+
+    // MARK: - The bootstrap (setup-code) handoff
+
+    // The setup-code credential rides the SAME fragment mechanism as the token,
+    // but under a DIFFERENT key: the Control UI reads `bootstrapToken` from the
+    // fragment and exchanges it in the pairing handshake, where `token` is the
+    // shared connect secret. Mixing them up is exactly the bug this handoff fixes
+    // (a setup code fed as `token` is refused "This Gateway expects its token"),
+    // so these pin that the two keys stay distinct and never clobber each other.
+
+    func testBootstrapTokenLandsOnTheFragmentUnderItsOwnKey() {
+        let url = URL(string: "https://example-host.example.ts.net/")!
+        let out = GatewayURL.withBootstrapHandoff(url, "setup123")
+        XCTAssertEqual(out.absoluteString, "https://example-host.example.ts.net/#bootstrapToken=setup123")
+        XCTAssertNil(URLComponents(url: out, resolvingAgainstBaseURL: false)?.query,
+                     "a bootstrap token must not reach the query string")
+    }
+
+    func testAnEmptyBootstrapTokenLeavesTheAddressAlone() {
+        let url = URL(string: "https://example-host.example.ts.net/#tab=chat")!
+        XCTAssertEqual(GatewayURL.withBootstrapHandoff(url, "").absoluteString, "https://example-host.example.ts.net/#tab=chat")
+        XCTAssertEqual(GatewayURL.withBootstrapHandoff(url, nil).absoluteString, "https://example-host.example.ts.net/#tab=chat")
+    }
+
+    func testAnExistingFragmentIsPreservedAndOnlyBootstrapTokenIsSet() {
+        let url = URL(string: "https://example-host.example.ts.net/#tab=chat")!
+        XCTAssertEqual(
+            GatewayURL.withBootstrapHandoff(url, "boot").absoluteString,
+            "https://example-host.example.ts.net/#tab=chat&bootstrapToken=boot"
+        )
+    }
+
+    func testTokenAndBootstrapHandoffsCoexistWithoutClobbering() {
+        let url = URL(string: "https://example-host.example.ts.net/")!
+        let withToken = GatewayURL.withTokenHandoff(url, "shared")
+        let both = GatewayURL.withBootstrapHandoff(withToken, "setup")
+        let frag = URLComponents(url: both, resolvingAgainstBaseURL: false)?.fragment ?? ""
+        XCTAssertTrue(frag.contains("token=shared"), "the shared token must survive")
+        XCTAssertTrue(frag.contains("bootstrapToken=setup"), "the bootstrap token must be added beside it")
+    }
+
+    func testAnAddressWithNoSchemeAndHostIsHandedBackByTheBootstrapHandoff() {
+        let relative = URL(string: "//example-host.example.ts.net")!
+        XCTAssertEqual(GatewayURL.withBootstrapHandoff(relative, "boot").absoluteString, relative.absoluteString)
+    }
 }
