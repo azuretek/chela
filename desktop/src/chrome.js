@@ -273,7 +273,23 @@ const TOKEN_GRAMMAR = {
   // A resolved font stack: family names, quotes, commas, hyphens. No
   // parentheses at all, so no function call of any kind can hide in one.
   font: /^[\w\s"',.-]{1,300}$/,
+  // The interface's reading scale, a unitless multiplier the Control UI resolves
+  // --control-ui-text-scale to (`${(textScale ?? 100) / 100}`, so 1, 1.1, 1.25,
+  // 1.5). Digits and one dot only: no unit, no function, nothing that could carry
+  // a value into the rule it is injected into. The BOUND is enforced beside the
+  // grammar in sanitizeTokenValue, because a syntactically fine number can still
+  // be one that breaks the page (a 0 would collapse every scaled size to nothing,
+  // a huge one would blow the layout out), and a grammar cannot say "between".
+  scale: /^\d+(?:\.\d+)?$/,
 };
+
+// The reading scale's sane range. A value outside it is dropped rather than
+// clamped, the same total refusal every other token gets: a page reporting a
+// scale of 0 or 40 is a page this app should keep its own fallback of 1 for,
+// not one to follow partway. The ceiling is generous (the Control UI's own
+// largest step is 1.5) so a future step is not refused for being new.
+const SCALE_MIN = 0.5;
+const SCALE_MAX = 3;
 
 // The colour forms above, for reuse. A resolved box-shadow is the one token
 // whose value legitimately *contains* colours, so it cannot be a flat character
@@ -308,6 +324,13 @@ export function sanitizeTokenValue(kind, value) {
   } else {
     const grammar = TOKEN_GRAMMAR[kind];
     if (!grammar || !grammar.test(trimmed)) return null;
+  }
+  // The reading scale is the one token whose grammar is not enough: a number can
+  // be syntactically fine and still be one that breaks the page, so a value
+  // outside the sane range is refused whole rather than followed partway.
+  if (kind === 'scale') {
+    const n = Number(trimmed);
+    if (!Number.isFinite(n) || n < SCALE_MIN || n > SCALE_MAX) return null;
   }
   // Unbalanced parentheses would let a value swallow the rest of the rule.
   const open = (trimmed.match(/\(/g) || []).length;
