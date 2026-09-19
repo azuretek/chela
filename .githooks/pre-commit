@@ -37,6 +37,29 @@ set -e
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
 
+# Scope to the change, before anything heavy is even looked for. The measured
+# half renders core/ui in Electron, so it only means anything when the pages or
+# the code that builds them moved. A commit that touches only mobile/, docs/,
+# .github/ or other paths cannot change a rendered page, and paying a
+# multi-minute Electron launch for it is what made every commit slow (Abi,
+# 2026-09-18). CI cannot run these at all (no GUI session), so scoping is a local
+# decision, not a hole: every headless check is unchanged.
+decision="$(git diff --cached --name-only | node scripts/hook-scope.mjs)"
+if [ "$decision" = "skip" ]; then
+  cat >&2 <<'EOF'
+
+pre-commit: SKIPPED the page measurements, and the reason is named.
+
+  Nothing staged touches desktop/, core/, a root manifest or a root script, so no
+  rendered page or form can have changed: an Electron render would measure the
+  same pixels as last time.
+
+  This is a SKIP, not a pass: the pages were not measured, because nothing in
+  this commit can have moved them.
+EOF
+  exit 0
+fi
+
 # The package DIRECTORY rather than a binary name, so this reads the same on every
 # platform: a Windows checkout has node_modules/electron and electron.cmd rather
 # than a file called `electron`. A present-but-broken install is not skipped:
