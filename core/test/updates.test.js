@@ -18,6 +18,7 @@ import {
   AVAILABLE, CURRENT, UNAVAILABLE, FAILED,
   STALL_MS, stallRemaining, offeredStanding, offeredCaveat, downloadingMessage, stalledMessage,
   fetchPlan, OFFER_INSTALL, OFFER_RELEASE,
+  announcesFound, presentsCachedAnswer,
 } from '../updates.js';
 // The tones the answers are drawn in, imported from the notice model rather than
 // written as literals: what a tone IS belongs to that module, and a test naming
@@ -344,4 +345,40 @@ test('the offer follows the policy action, because only one of the two is true',
   // build can do, so silence would hide the only way on.
   assert.equal(fetchPlan({ action: NOTIFY, version: '1.0.2', suppressedVersion: '1.0.2', trigger: 'scheduled' }).offer,
     OFFER_RELEASE);
+});
+
+
+/* ------------------------------------ manual re-raise vs. background quiet */
+
+test('a manual check re-presents a cached answer, and a background check never does', () => {
+  // ★ The identity rule, both halves. A press is a question, so it re-presents the
+  // last completed check's answer from cache at once (which is what stops a second
+  // press flashing while the network is re-asked). A background check has asked
+  // nobody, so it re-presents nothing: re-popping a version already seen on the
+  // interval lane is the exact bug PR #37 fixed, and this is the same rule seen
+  // from the caching side.
+  for (const outcome of [AVAILABLE, CURRENT, FAILED, UNAVAILABLE]) {
+    assert.equal(presentsCachedAnswer('manual', outcome), true, `manual should re-present a cached ${outcome}`);
+    assert.equal(presentsCachedAnswer('scheduled', outcome), false, 'a scheduled check must not re-pop a seen answer');
+    assert.equal(presentsCachedAnswer('startup', outcome), false, 'an app-start check must not re-pop a seen answer');
+  }
+});
+
+test('a manual check with nothing cached re-presents nothing, so a cold first press waits on the live check', () => {
+  // There has to be something cached to present. A cold first press (no check has
+  // finished this run) is a no-op, and the live check is the only answer, exactly
+  // as before the cache existed.
+  assert.equal(presentsCachedAnswer('manual', null), false);
+  assert.equal(presentsCachedAnswer('manual', undefined), false);
+});
+
+test('announcesFound is manual-only, and it is a different card from the cached re-present', () => {
+  // announcesFound is whether a FOUND release re-raises for a reader who already
+  // read it; presentsCachedAnswer is whether the ANSWER card is re-presented from
+  // cache before the live check answers. They agree on the trigger and would move
+  // for different reasons, so both are pinned here rather than one standing in for
+  // the other.
+  assert.equal(announcesFound('manual'), true);
+  assert.equal(announcesFound('scheduled'), false);
+  assert.equal(announcesFound('startup'), false);
 });
