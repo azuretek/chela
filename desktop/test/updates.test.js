@@ -433,7 +433,7 @@ test('★ main.js re-decides the version electron-updater refused, before report
   assert.ok(handler, 'the update-not-available handler was not found');
 
   assert.match(handler[0], /updates\.isNewerBuild\(/, 'its candidate is re-decided by the shared rule');
-  assert.ok(handler[0].indexOf('updates.isNewerBuild(') < handler[0].indexOf("setLastCheck('up to date')"),
+  assert.ok(handler[0].indexOf('updates.isNewerBuild(') < handler[0].indexOf("setLastCheck('up to date',"),
     'and the decision is made BEFORE anything is reported as up to date');
 
   assert.match(main, /function offerRefusedByUpdater\(/, 'a refused-but-newer build is offered, not dropped');
@@ -788,3 +788,73 @@ test('★ the quiet half stays quiet: no progress card before movement, and none
     'a transfer the reader already ended is still silent, so the card cannot come back through this door');
 });
 
+
+/* --------------------------- manual re-raise from cache, held long enough */
+
+test('★ a manual check re-presents the cached answer at once, and only a manual one does', () => {
+  // The reported bug: the first "Check for updates" raised the banner, a second
+  // press "just flashes and returns quickly". The fix is that a press re-presents
+  // the last completed check's answer from cache immediately, before the live
+  // re-check runs, and the decision about WHO does that is the shared rule so the
+  // background lane keeps the #37 identity rule.
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+  const check = /async function checkForUpdates\(trigger = 'manual'\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(check, 'checkForUpdates was not found');
+  assert.match(check[0], /if \(updates\.presentsCachedAnswer\(trigger, lastCheck\.outcome\)\) presentCachedAnswer\(\);/,
+    'a manual check must re-present the cached answer, gated by the shared rule');
+  // The gate is the shared rule, which is manual-only: a background check re-presents
+  // nothing, so a version seen on the interval lane does not re-pop.
+  assert.equal(updates.presentsCachedAnswer('manual', updates.CURRENT), true);
+  assert.equal(updates.presentsCachedAnswer('scheduled', updates.CURRENT), false);
+  assert.equal(updates.presentsCachedAnswer('startup', updates.AVAILABLE), false);
+  // And nothing to present is a no-op, so a cold first press waits on the live check.
+  assert.equal(updates.presentsCachedAnswer('manual', null), false);
+});
+
+test('★ the result is cached from every completed check, so a manual press has it to present', () => {
+  // "cache in between our update checks (app start then every interval)": the cache
+  // is populated by the completed check whatever started it, so it is warm before
+  // the first manual press. The three outcomes that produce an answer each record
+  // their outcome (and version, where there is one) into lastCheck.
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+  // The presentable cache carries the outcome and the version, not only About's line.
+  assert.match(main, /let lastCheck = \{ at: null, result: null, outcome: null, version: null, current: null \};/,
+    'lastCheck no longer carries the facts a re-present needs');
+  // A found release is cached as AVAILABLE with its version.
+  assert.match(main, /setLastCheck\(`\$\{info\.version\} available`, \{ outcome: updates\.AVAILABLE, version: info\.version \}\);/,
+    'a found release is not cached with its version');
+  // "up to date" is cached as CURRENT.
+  assert.match(main, /setLastCheck\('up to date', \{ outcome: updates\.CURRENT, version: null \}\);/,
+    'an up-to-date result is not cached');
+  // A failed check is cached as FAILED.
+  assert.match(main, /setLastCheck\('check failed', \{ outcome: updates\.FAILED, version: null \}\);/,
+    'a failed check is not cached');
+  // presentCachedAnswer composes through the shared answer, so the cached card and a
+  // live one cannot disagree about one outcome.
+  const present = /function presentCachedAnswer\(\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(present, 'presentCachedAnswer was not found');
+  assert.match(present[0], /if \(!lastCheck\.outcome\) return false;/, 'a cold cache is a no-op');
+  assert.match(present[0], /updates\.checkAnswer\(\{/, 'the cached answer is composed through the shared answer');
+});
+
+test('★ a transient answer is held the minimum-visible duration before a fresher one replaces it', () => {
+  // The floor, from the shared primitive: a manual re-check re-presents at once and
+  // the live re-check settles a moment later; without the floor the second raise
+  // would replace the first before it could be read. raiseAnswer holds the fresher
+  // answer for remainingVisibleMs, measured from when the card on screen went up.
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+  const raise = /function raiseAnswer\(answer, ttlMs = ANSWER_TTL_MS\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(raise, 'raiseAnswer was not found');
+  assert.match(raise[0], /remainingVisibleMs\(answerShownAt, MIN_VISIBLE_MS\)/,
+    'raiseAnswer does not floor the replacement against the shared primitive');
+  assert.match(raise[0], /if \(wouldChange && remaining > 0\) \{/,
+    'a fresher answer is not held until the floor is met');
+  assert.match(raise[0], /setTimeout\(\(\) => \{ answerReplaceTimer = null; raiseAnswer\(answer, ttlMs\); \}, remaining\)/,
+    'the held answer is not re-raised once the floor is met');
+  // The clock resets when the card leaves the bar, so a fresh press re-presents at once.
+  assert.match(main, /if \(id === UPDATE_ANSWER\) \{\s*answerShownAt = null;/,
+    'the visible clock is not reset when the answer card clears');
+  // The primitive is imported from the shared core, not reinvented here.
+  assert.match(main, /import \{ MIN_VISIBLE_MS, remainingVisibleMs \} from '\.\.\/\.\.\/core\/ui\/motion\.js';/,
+    'the min-visible primitive is not the shared one');
+});

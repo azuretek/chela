@@ -34,6 +34,12 @@ const SURFACE_JS = read(UI, 'surface.js');
 const DOC = read(UI, 'CONVENTIONS.md');
 const CORE_README = read(REPO, 'core', 'README.md');
 
+// The minimum-visible-duration primitive itself, imported so the constant and the
+// remaining-time maths are checked as code rather than described. See the section
+// at the end of this file.
+import { MIN_VISIBLE_MS, remainingVisibleMs, heldLongEnough } from '../ui/motion.js';
+import tokenSpec from '../spec/tokens.json' with { type: 'json' };
+
 const SHEETS = [
   ['ui.css', UI_CSS],
   ['banner.css', BANNER_CSS],
@@ -429,4 +435,81 @@ test('the doc is reachable from where the shared surface is documented', () => {
   for (const page of ['settings.html', 'about.html', 'pairing.html', 'loading.html']) {
     assert.ok(read(UI, page).includes('surface.js'), `${page} does not load the shared departure handshake`);
   }
+});
+
+/* --------------------------------- the minimum-visible-duration primitive */
+
+test('the minimum-visible floor comes from the token spec, and is a real dwell', () => {
+  // The constant is the spec's, not a number in the module: a second copy is the
+  // drift this primitive exists to remove.
+  assert.strictEqual(MIN_VISIBLE_MS, tokenSpec.motion.minVisibleMs,
+    'MIN_VISIBLE_MS does not read spec/tokens.json motion.minVisibleMs');
+  // It is a dwell a reader can use, and it is longer than the longest ANIMATION
+  // token: the two are different questions (how long a thing STAYS versus how it
+  // MOVES), and a floor shorter than a single animation would be no floor at all.
+  const normalMs = parseFloat(tokenSpec.shape['--duration-normal']);
+  assert.ok(MIN_VISIBLE_MS > normalMs,
+    'the visible floor is not longer than --duration-normal, so it does not outlast the movement onto the state');
+  assert.ok(MIN_VISIBLE_MS >= 400,
+    'the visible floor is below the span of a glance that reads a short sentence');
+});
+
+test('remainingVisibleMs owes the whole floor at the start and nothing past it', () => {
+  const shownAt = 1_000_000;
+  // Shown this instant: the whole floor is still owed.
+  assert.strictEqual(remainingVisibleMs(shownAt, 900, shownAt), 900);
+  // Part-way through: exactly the remainder.
+  assert.strictEqual(remainingVisibleMs(shownAt, 900, shownAt + 300), 600);
+  // At the floor and past it: nothing owed, never negative.
+  assert.strictEqual(remainingVisibleMs(shownAt, 900, shownAt + 900), 0);
+  assert.strictEqual(remainingVisibleMs(shownAt, 900, shownAt + 5000), 0);
+});
+
+test('remainingVisibleMs is measured from when shown, not when work began', () => {
+  // ★ The core of the rule: a check that took two seconds has shown nothing for two
+  // seconds, so its answer, once drawn, is still owed the full floor. The function
+  // takes shownAt for exactly this reason, and a caller that passed startedAt would
+  // let a slow check's answer flash.
+  const startedAt = 1_000_000;
+  const shownAt = startedAt + 2000; // the answer only reached the screen here
+  assert.strictEqual(remainingVisibleMs(shownAt, 900, shownAt), 900,
+    'the floor was consumed by work that happened before the state was on screen');
+});
+
+test('remainingVisibleMs is defensive rather than throwing in a handler', () => {
+  const now = 1_000_000;
+  // An unusable shownAt is treated as "shown now", which owes the FULL floor: the
+  // safe failure is a state held too long, never one that flashes.
+  assert.strictEqual(remainingVisibleMs(undefined, 900, now), 900);
+  assert.strictEqual(remainingVisibleMs(NaN, 900, now), 900);
+  // A zero or negative floor is "no floor", so nothing is owed.
+  assert.strictEqual(remainingVisibleMs(now, 0, now), 0);
+  assert.strictEqual(remainingVisibleMs(now, -5, now), 0);
+});
+
+test('heldLongEnough is the boolean form of the same answer', () => {
+  const shownAt = 1_000_000;
+  assert.strictEqual(heldLongEnough(shownAt, 900, shownAt), false);
+  assert.strictEqual(heldLongEnough(shownAt, 900, shownAt + 899), false);
+  assert.strictEqual(heldLongEnough(shownAt, 900, shownAt + 900), true);
+  assert.strictEqual(heldLongEnough(shownAt, 900, shownAt + 1500), true);
+});
+
+test('the conventions doc carries the minimum-visible-duration rule as design language', () => {
+  // The drift guard for the eighth rule: a rule that lives only in the code that
+  // applies it is the fault this file exists to prevent. Each claim is one a future
+  // edit could quietly drop while the primitive above went on passing.
+  assert.match(DOC, /minimum-visible-duration|minVisibleMs|held long enough to read/i,
+    'the doc no longer names the minimum-visible-duration primitive');
+  assert.ok(DOC.includes('motion.minVisibleMs'),
+    'the doc does not point at the token the floor is read from');
+  assert.ok(DOC.includes('core/ui/motion.js'),
+    'the doc does not point at the primitive that applies the floor');
+  assert.match(DOC, /how long a state STAYS, not how it MOVES/i,
+    'the doc no longer distinguishes the dwell from the animation, which is the whole point');
+  assert.match(DOC, /Check for updates/i,
+    'the doc no longer records the fault the rule answers');
+  // The rollout is proposed rather than swept, and the doc says so.
+  assert.match(DOC, /Rollout is deliberate, not a sweep/i,
+    'the doc no longer says the rollout is deliberate rather than a mass edit');
 });
