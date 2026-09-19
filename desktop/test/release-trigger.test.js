@@ -30,6 +30,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import {
@@ -45,7 +46,11 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..', '..');
 const WORKFLOWS = ['release.yml', 'mobile-pipeline.yml', 'platforms-gate.yml'];
 
-const read = (file) => fs.readFileSync(path.join(ROOT, '.github', 'workflows', file), 'utf8');
+// Normalised to LF, because this suite runs on the Windows leg too and a
+// checkout there may hand back CRLF. Every pattern below anchors on \n, so an
+// unconverted carriage return would make a workflow that HAS a path filter read
+// as one that does not, which is the wrong way for this guard to fail.
+const read = (file) => fs.readFileSync(path.join(ROOT, '.github', 'workflows', file), 'utf8').replace(/\r\n?/g, '\n');
 
 /** The `on:` block, which is where a path filter can live. */
 function onBlock(yml) {
@@ -203,7 +208,10 @@ test('a release asked for and not shipping REFUSES, and a push stands down quiet
 });
 
 test('the decision writes the outputs the workflows read, on one line each', () => {
-  const out = path.join(fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'claw-changes-')), 'out');
+  // os.tmpdir(), never TMPDIR or /tmp: the suite runs on the Windows leg, where
+  // TMPDIR is unset and /tmp does not exist. Measured 2026-09-18: the /tmp form
+  // failed the Windows leg's Test step and took main red with it.
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'claw-changes-')), 'out');
   fs.writeFileSync(out, '');
   run(['--files', 'desktop/src/main.js'], { GITHUB_OUTPUT: out });
   const written = fs.readFileSync(out, 'utf8');
