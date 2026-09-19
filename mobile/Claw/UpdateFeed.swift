@@ -36,18 +36,19 @@ enum UpdateFeed {
     private struct Spec: Decodable {
         let releasesPath: String
         let releaseNotesPath: String
+        let iosMarker: String
         let channels: [String: String]
     }
 
     /// The keys this decodes, and the ones it deliberately does not.
     /// `BundledSpecTests` requires every key in the file to be one or the other.
-    static let decodedKeys: Set<String> = ["releasesPath", "releaseNotesPath", "channels"]
+    static let decodedKeys: Set<String> = ["releasesPath", "releaseNotesPath", "iosMarker", "channels"]
     static let ignoredKeys: Set<String> = []
 
     private static let spec: Spec = loadSpec()
 
     private static func loadSpec() -> Spec {
-        let empty = Spec(releasesPath: "", releaseNotesPath: "", channels: [:])
+        let empty = Spec(releasesPath: "", releaseNotesPath: "", iosMarker: "", channels: [:])
         guard let spec = try? BundledSpec.load("feed", as: Spec.self), !spec.releasesPath.isEmpty else {
             return empty
         }
@@ -63,6 +64,19 @@ enum UpdateFeed {
 
     /// The path a release's own notes live at. The version is appended to it.
     static var releaseNotesPath: String { spec.releaseNotesPath }
+
+    /// The line a release carries in its body when, and only when, a TestFlight
+    /// build of that version is installable.
+    ///
+    /// The phone's answer to a question the desktop never asks: a release exists
+    /// per desktop-building commit, but a desktop-only or .github-only commit
+    /// produces no mobile pipeline run and so no TestFlight build, and the phone
+    /// reading that release would offer a build that does not exist. The marker
+    /// rides in the release body because the phone reads releases.atom, whose
+    /// entries carry the body as `<content>` but carry no assets. Mirrors
+    /// `IOS_MARKER` in `core/feed.js`, asserted against `core/spec/feed.json` by
+    /// `UpdateFeedParityTests`.
+    static var iosMarker: String { spec.iosMarker }
 
     /// The public URL the phone reads for the repository's releases.
     ///
@@ -124,6 +138,21 @@ enum UpdateFeed {
         return stripped.isEmpty ? nil : stripped
     }
 
+    /// Whether one Atom entry's release carries the iOS availability marker.
+    ///
+    /// The marker rides in the release body, which GitHub emits as an entry's
+    /// `<content>`, so this reads `entry.content` and asks whether the marker
+    /// string appears in it. A missing content is `false`, the safe direction: a
+    /// release with no body, or one that never carried the marker, is not one the
+    /// phone may offer. A plain substring match rather than a line or a parse,
+    /// because the body is HTML by the time it reaches `<content>` and the marker
+    /// is deliberately plain ASCII so it survives HTML escaping unchanged.
+    /// Mirrors `iosAvailable` in `core/feed.js`.
+    static func iosAvailable(_ entry: Entry) -> Bool {
+        guard let content = entry.content else { return false }
+        return content.contains(iosMarker)
+    }
+
     /// The newest release on a channel, from a releases document, or nil.
     ///
     /// Entries arrive newest first, which is how GitHub orders releases.atom, so
@@ -132,14 +161,23 @@ enum UpdateFeed {
     /// signal `channelOf` reads, because Atom does not carry GitHub's
     /// `prerelease` boolean and the tag is the honest channel signal. An entry
     /// whose tag does not parse is skipped, matching the JS: a repository can
-    /// carry a hand-made tag that is not one of ours. Mirrors `newestOnChannel`
-    /// in `core/feed.js`.
-    static func newestOnChannel(in document: Document, channel: String) -> String? {
+    /// carry a hand-made tag that is not one of ours.
+    ///
+    /// ★ `iosOnly` is the phantom-update fix: with it set, an entry whose release
+    /// does not carry the iOS marker is skipped, so a desktop-only release is
+    /// invisible to the phone even when it is the newest entry in the feed. The
+    /// desktop reads every entry, because its own installers are on any release
+    /// it published; the phone reads the narrower feed. The filter is on this one
+    /// function so the two audiences cannot disagree about which entry is newest.
+    /// Mirrors `newestOnChannel` in `core/feed.js`.
+    static func newestOnChannel(in document: Document, channel: String, iosOnly: Bool = false) -> String? {
         let wantPrerelease = channel == devChannel
         for entry in document.entries {
             guard let version = tagVersion(entry), let parsed = Version.parse(version) else { continue }
             let isPrerelease = parsed.prerelease != nil
-            if isPrerelease == wantPrerelease { return version }
+            if isPrerelease != wantPrerelease { continue }
+            if iosOnly && !iosAvailable(entry) { continue }
+            return version
         }
         return nil
     }
@@ -197,11 +235,18 @@ enum UpdateFeed {
     /// so a build the desktop offers an update to is one the phone offers one to
     /// as well. The channel is the build's own, so a dev build is only ever
     /// compared against dev releases. Mirrors `newerVersion` in `core/feed.js`.
-    static func newerVersion(in document: Document, current: String) throws -> String? {
+    ///
+    /// ★ `iosOnly` defaults to `true` here, because the caller of this method IS
+    /// the phone (`UpdateCheck`): the phantom-update bug was the phone offering a
+    /// desktop-only release, so the phone's own reader filters to releases that
+    /// carry a TestFlight build by default. The default is on the client that
+    /// only ever reads for itself; the shared rule in `core/feed.js` takes the
+    /// audience as an argument because the desktop calls the same JS.
+    static func newerVersion(in document: Document, current: String, iosOnly: Bool = true) throws -> String? {
         // A current version this build cannot even parse is our own bug, not the
         // feed's, and it must not silently suppress an update: let it throw.
         guard Version.parse(current) != nil else { throw Version.Failure.notAVersion(current) }
-        guard let advertised = newestOnChannel(in: document, channel: channel(for: current)) else { return nil }
+        guard let advertised = newestOnChannel(in: document, channel: channel(for: current), iosOnly: iosOnly) else { return nil }
         return try isNewerBuild(advertised, than: current) ? advertised : nil
     }
 
@@ -217,6 +262,17 @@ enum UpdateFeed {
     struct Entry: Decodable {
         let id: String?
         let title: String?
+        /// The release body, which GitHub emits as the entry's `<content>`. This
+        /// is where the iOS availability marker rides, so `iosAvailable` reads it.
+        /// Optional and defaulted, because a feed entry can carry no content and
+        /// the golden fixture stores most cases without one.
+        let content: String?
+
+        init(id: String?, title: String?, content: String? = nil) {
+            self.id = id
+            self.title = title
+            self.content = content
+        }
     }
 
     /// The releases document, its entries newest-first as GitHub orders them.
@@ -257,6 +313,7 @@ enum UpdateFeed {
         private var text = ""
         private var entryId: String?
         private var entryTitle: String?
+        private var entryContent: String?
 
         func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?,
                     qualifiedName: String?, attributes: [String: String]) {
@@ -267,7 +324,12 @@ enum UpdateFeed {
                 inEntry = true
                 entryId = nil
                 entryTitle = nil
-            case "id", "title" where inEntry:
+                entryContent = nil
+            case "id", "title", "content" where inEntry:
+                // `<content>` carries the release body, which is where the iOS
+                // availability marker rides. GitHub emits it as escaped HTML, and
+                // XMLParser unescapes it, so `text` accumulates the real body and
+                // `iosAvailable` can substring-match the plain-ASCII marker in it.
                 currentField = name
                 text = ""
             default:
@@ -279,6 +341,15 @@ enum UpdateFeed {
             if currentField != nil { text += string }
         }
 
+        // `<content type="html">` is served as escaped text, but a feed can also
+        // carry a CDATA body; this is what captures that form so the marker is
+        // read either way.
+        func parser(_ parser: XMLParser, foundCDATA CDATABlock: Data) {
+            if currentField != nil, let chunk = String(data: CDATABlock, encoding: .utf8) {
+                text += chunk
+            }
+        }
+
         func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?,
                     qualifiedName: String?) {
             switch name {
@@ -288,8 +359,11 @@ enum UpdateFeed {
             case "title" where inEntry:
                 if currentField == "title" { entryTitle = text }
                 currentField = nil
+            case "content" where inEntry:
+                if currentField == "content" { entryContent = text }
+                currentField = nil
             case "entry":
-                entries.append(Entry(id: entryId, title: entryTitle))
+                entries.append(Entry(id: entryId, title: entryTitle, content: entryContent))
                 inEntry = false
             default:
                 break

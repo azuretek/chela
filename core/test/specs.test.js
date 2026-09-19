@@ -41,7 +41,7 @@ const BUNDLED = {
   'app-settings-affordance.json': 'holds the one injected script that adds the footer control',
   'connection.json': 'read at runtime for the two sentences a pending row shows',
   'device-identity.json': 'holds two injected scripts, the device keypair seed and the capture',
-  'feed.json': 'read at runtime for the feed path, the release-notes path and the channel names',
+  'feed.json': 'read at runtime for the feed path, the release-notes path, the iOS availability marker and the channel names',
   'gateway-identity.json': 'holds the signals a payload is recognised by, so "is this an OpenClaw gateway" is one answer rather than one per platform',
   'naming.json': 'read at runtime for the product name, the repo slug and each client shorthand',
   'native-control-auth.json': 'read at runtime for the global name, the client mode and the operator scopes',

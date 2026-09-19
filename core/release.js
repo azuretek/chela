@@ -21,12 +21,30 @@
 
 import spec from './spec/release.json' with { type: 'json' };
 import feedSpec from './spec/feed.json' with { type: 'json' };
-import { DEV_CHANNEL } from './feed.js';
+import { DEV_CHANNEL, IOS_MARKER } from './feed.js';
 import { parse } from './version.js';
 import { product, mobile, repo } from './naming.js';
 
 export const tagPrefix = spec.tagPrefix;
 export const ota = spec.ota;
+
+// The marker line a release carries when a TestFlight build of it is
+// installable, and the line release.yml appends to the release body to write it.
+//
+// The bare marker is owned by feed.js (IOS_MARKER), which is where the two
+// clients read it from, so this is only the WRITER's shape: the same string on a
+// line of its own, which is how it survives into the entry's <content> that the
+// phone reads. re-exported so a caller reads one string from one module rather
+// than rebuilding the line where it is stamped.
+export const iosMarker = IOS_MARKER;
+
+// The body line release.yml appends when the mobile pipeline produced a VALID
+// TestFlight build for this commit. A leading marker on its own line so a reader
+// substring-matching the marker cannot be fooled by prose that happens to quote
+// it, and so a human reading the notes sees one plain line rather than markup.
+export function iosMarkerLine() {
+  return IOS_MARKER;
+}
 
 // The two tokens a pattern may carry. A pattern is a filename with {version} and
 // {channel} in it, and everything else in it is literal.

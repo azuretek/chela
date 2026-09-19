@@ -19,6 +19,7 @@ import XCTest
 final class UpdateFeedParityTests: XCTestCase {
     private struct Fixture: Decodable {
         let cases: [Case]
+        let iosCases: [Case]
         let releaseNotes: [ReleaseNotesCase]
     }
 
@@ -40,17 +41,101 @@ final class UpdateFeedParityTests: XCTestCase {
         let fixture = try Fixtures.load("feed", as: Fixture.self)
         XCTAssertFalse(fixture.cases.isEmpty, "expected feed fixtures")
 
+        // The desktop audience: the filter OFF, so every release is read. The
+        // phone would answer some of these differently, which is exactly why the
+        // iOS cases are a separate array; here iosOnly is set false so this proves
+        // the shared reader still reads the whole feed for the desktop.
         for testCase in fixture.cases {
             if testCase.throws == true {
                 XCTAssertThrowsError(
-                    try UpdateFeed.newerVersion(in: testCase.document, current: testCase.current),
+                    try UpdateFeed.newerVersion(in: testCase.document, current: testCase.current, iosOnly: false),
                     testCase.name
                 )
                 continue
             }
+            let result = try UpdateFeed.newerVersion(in: testCase.document, current: testCase.current, iosOnly: false)
+            XCTAssertEqual(result, testCase.newer, testCase.name)
+        }
+    }
+
+    /// ★ THE PHANTOM-UPDATE FIX, proven against the same golden iOS cases the JS
+    /// asserts (`newerVersion(document, current, { iosOnly: true })` in
+    /// `core/test/feed.test.js`).
+    ///
+    /// The phone offers a release only when it carries the iOS availability
+    /// marker in its body, meaning a TestFlight build of that version is
+    /// installable. So a desktop-only release, the newest entry in the feed, is
+    /// invisible to the phone. `UpdateFeed.newerVersion`'s `iosOnly` defaults to
+    /// true because its only caller is the phone, so these call it plainly, the
+    /// way `UpdateCheck` does.
+    func testIOSNewerVersionOffersOnlyReleasesWithATestFlightBuild() throws {
+        let fixture = try Fixtures.load("feed", as: Fixture.self)
+        XCTAssertFalse(fixture.iosCases.isEmpty, "expected iOS feed fixtures")
+        for testCase in fixture.iosCases {
             let result = try UpdateFeed.newerVersion(in: testCase.document, current: testCase.current)
             XCTAssertEqual(result, testCase.newer, testCase.name)
         }
+    }
+
+    /// A desktop-only release, the newest in the feed, is offered to the desktop
+    /// (iosOnly false) but not to the phone (the default), which is the exact bug
+    /// this whole change fixes.
+    func testADesktopOnlyReleaseIsInvisibleToThePhone() throws {
+        let document = UpdateFeed.Document(entries: [
+            UpdateFeed.Entry(
+                id: ".../releases/v1.0.1-dev.279.9a58115cb1",
+                title: "v1.0.1-dev.279.9a58115cb1",
+                content: "<p>a .github-only change, no mobile run</p>"
+            ),
+        ])
+        XCTAssertEqual(
+            try UpdateFeed.newerVersion(in: document, current: "1.0.1-dev.148.abc1234567", iosOnly: false),
+            "1.0.1-dev.279.9a58115cb1",
+            "the desktop reads every release"
+        )
+        XCTAssertNil(
+            try UpdateFeed.newerVersion(in: document, current: "1.0.1-dev.148.abc1234567"),
+            "the phone is offered nothing without the marker"
+        )
+    }
+
+    /// `iosAvailable` reads the marker out of an entry body, or false for a body
+    /// that does not carry it and for an entry with no body at all.
+    func testIOSAvailableReadsTheMarker() {
+        XCTAssertTrue(UpdateFeed.iosAvailable(UpdateFeed.Entry(id: nil, title: nil, content: "notes\n\(UpdateFeed.iosMarker)")))
+        XCTAssertTrue(UpdateFeed.iosAvailable(UpdateFeed.Entry(id: nil, title: nil, content: UpdateFeed.iosMarker)), "the marker alone is enough")
+        XCTAssertFalse(UpdateFeed.iosAvailable(UpdateFeed.Entry(id: nil, title: nil, content: "<p>desktop only</p>")))
+        XCTAssertFalse(UpdateFeed.iosAvailable(UpdateFeed.Entry(id: nil, title: nil, content: nil)), "no body is not available, the safe direction")
+    }
+
+    /// The marker survives a real Atom `<content>` round trip: the escaped HTML
+    /// GitHub serves unescapes to the real body, and the plain-ASCII marker in it
+    /// is read. This is the end-to-end proof that the phone can see the marker in
+    /// the one document it actually reads.
+    func testTheMarkerIsReadFromARealAtomBody() throws {
+        let atom = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <id>tag:github.com,2008:https://github.com/o/r/releases</id>
+          <title>Release notes from r</title>
+          <entry>
+            <id>tag:github.com,2008:Repository/1/v1.0.1-dev.150.aaaaaaaaaa</id>
+            <title>v1.0.1-dev.150.aaaaaaaaaa</title>
+            <content type="html">&lt;p&gt;notes&lt;/p&gt;\n\(UpdateFeed.iosMarker)</content>
+          </entry>
+          <entry>
+            <id>tag:github.com,2008:Repository/1/v1.0.1-dev.149.bbbbbbbbbb</id>
+            <title>v1.0.1-dev.149.bbbbbbbbbb</title>
+            <content type="html">&lt;p&gt;desktop only&lt;/p&gt;</content>
+          </entry>
+        </feed>
+        """
+        let document = try XCTUnwrap(UpdateFeed.decode(Data(atom.utf8)))
+        XCTAssertEqual(document.entries.count, 2)
+        XCTAssertTrue(UpdateFeed.iosAvailable(document.entries[0]), "the marker in the first entry's body is read")
+        XCTAssertFalse(UpdateFeed.iosAvailable(document.entries[1]), "the second entry carries no marker")
+        let newer = try UpdateFeed.newerVersion(in: document, current: "1.0.1-dev.148.abc1234567")
+        XCTAssertEqual(newer, "1.0.1-dev.150.aaaaaaaaaa", "the phone offers the newest MARKED release")
     }
 
     /// ★ The rule the whole check turns on, in both directions.
@@ -72,8 +157,12 @@ final class UpdateFeedParityTests: XCTestCase {
             UpdateFeed.Entry(id: ".../releases/v1.0.1-dev.3.1759000000", title: nil),
             UpdateFeed.Entry(id: ".../releases/v1.0.1-dev.2.1758000000", title: nil),
         ])
+        // iosOnly false: this asserts the release-only ORDERING rule, which is
+        // audience-independent, and the fixture carries no marker because the
+        // marker is not what this case is about. The iOS filter is proven by the
+        // iosCases fixture and the dedicated tests above.
         XCTAssertEqual(
-            try UpdateFeed.newerVersion(in: backwards, current: "1.0.1-dev.20.1758500000"),
+            try UpdateFeed.newerVersion(in: backwards, current: "1.0.1-dev.20.1758500000", iosOnly: false),
             "1.0.1-dev.3.1759000000"
         )
 
@@ -125,10 +214,13 @@ final class UpdateFeedParityTests: XCTestCase {
                 let stable: String
             }
             let releasesPath: String
+            let iosMarker: String
             let channels: Channels
         }
         let spec: FeedSpec = try Fixtures.loadSpec("feed")
         XCTAssertEqual(UpdateFeed.releasesPath, spec.releasesPath, "UpdateFeed.releasesPath disagrees with core/spec/feed.json")
+        XCTAssertEqual(UpdateFeed.iosMarker, spec.iosMarker, "UpdateFeed.iosMarker disagrees with core/spec/feed.json")
+        XCTAssertFalse(UpdateFeed.iosMarker.isEmpty, "the iOS marker must be a real string, or every release reads as unavailable")
         XCTAssertEqual(UpdateFeed.devChannel, spec.channels.dev, "UpdateFeed.devChannel disagrees with core/spec/feed.json")
         XCTAssertEqual(UpdateFeed.stableChannel, spec.channels.stable, "UpdateFeed.stableChannel disagrees with core/spec/feed.json")
     }
@@ -185,7 +277,10 @@ final class UpdateFeedParityTests: XCTestCase {
         """
         let document = try XCTUnwrap(UpdateFeed.decode(Data(atom.utf8)))
         XCTAssertEqual(document.entries.count, 2, "both entries are read, and the feed's own id/title are not entries")
-        let newer = try UpdateFeed.newerVersion(in: document, current: "1.0.1-dev.148.abc1234567")
+        // iosOnly false: this asserts DOCUMENT ORDER, which is audience-independent,
+        // so the entries carry no marker and the reader is asked to read all of
+        // them. The iOS marker filter has its own fixture and tests above.
+        let newer = try UpdateFeed.newerVersion(in: document, current: "1.0.1-dev.148.abc1234567", iosOnly: false)
         XCTAssertEqual(newer, "1.0.1-dev.150.aaaaaaaaaa", "the newest matching entry, first in document order, is the answer")
     }
 }
