@@ -26,6 +26,11 @@ import {
   // same reason the policy is, and re-exported here so src/main.js reads one
   // module. See fetchPlan in core/updates.js.
   fetchPlan, OFFER_INSTALL, OFFER_RELEASE,
+  // And what a check that FOUND a release does about a card the reader has
+  // already read: a press re-raises it, a background check leaves it where it
+  // was. It rides with the policy for the same reason, because it is a rule
+  // about a trigger rather than about this surface.
+  announcesFound,
 } from '../../core/updates.js';
 // ★ The desktop's answer to "is the feed's newest build newer than this one"
 // comes from the same owner the phone calls, not from a comparison written
@@ -51,6 +56,7 @@ export {
   // being called progress is core's, and so is whether a check may start one.
   STALL_MS, stallRemaining, offeredStanding, offeredCaveat, downloadingMessage, stalledMessage,
   fetchPlan, OFFER_INSTALL, OFFER_RELEASE,
+  announcesFound,
 };
 
 /**
@@ -156,4 +162,5 @@ export default {
   AVAILABLE, CURRENT, UNAVAILABLE, FAILED,
   STALL_MS, stallRemaining, offeredStanding, offeredCaveat, downloadingMessage, stalledMessage,
   fetchPlan, OFFER_INSTALL, OFFER_RELEASE,
+  announcesFound,
 };

@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import * as notices from '../src/notices.js';
+import updates from '../src/updates.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -217,21 +218,33 @@ test('marking all read empties the banner in one go', () => {
   assert.equal(n.markAllRead(), false, 'and again is a no-op');
 });
 
-test('a notice that cannot be dismissed cannot be bulk-read either', () => {
-  // The download in flight, the only notice that refuses to be dismissed: it is
-  // replaced within seconds by the one with the install offer, so there is
-  // nothing for a sweep to lose.
+test('the sweep leaves NOTHING on the bar for the run, a dismissClears card included', () => {
+  // The report (Abi, 2026-09-18): mark everything read, and one card is still
+  // there. It was the download, which the sweep skipped because its X ENDS its
+  // condition rather than reading it. Quieting is not clearing, so the sweep must
+  // read that card too and leave the transfer behind it alone.
   const n = notices.create();
-  n.set('a', { message: 'ordinary' });
-  n.set('update-available', { tone: notices.INFO, message: 'Downloading', progress: 0.4, dismissible: false });
+  n.set('conn', { tone: notices.ERROR, message: 'Cannot connect' });
+  n.set('update-available', {
+    tone: notices.INFO,
+    message: 'Downloading Claw Control UI 1.0.1.',
+    detail: '25 MB of 130 MB.',
+    progress: 0.2,
+    dismissible: true,
+    dismissClears: true,
+  });
 
-  n.markAllRead();
-  assert.deepEqual(n.unread().map((x) => x.id), ['update-available'], 'it survives the sweep');
+  assert.equal(n.markAllRead(), true);
+  assert.deepEqual(n.unread(), [], 'the bar is empty for the run');
+  assert.equal(n.size(), 2, 'and nothing was cleared');
+  // Its own X still ends it, which is the half a sweep must not take over.
+  assert.equal(n.dismiss('update-available'), true);
+  assert.equal(n.get('update-available'), null);
 });
 
 test('a notice that cannot be dismissed can still be read one at a time', () => {
-  // markAllRead protects it from a sweep aimed at everything else. An explicit
-  // instruction about that one notice is not that.
+  // The bulk action used to be the only one that skipped it; an explicit
+  // instruction about that one notice never did.
   const n = notices.create();
   n.set('update-available', { tone: notices.INFO, message: 'Downloading', dismissible: false });
   assert.equal(n.markRead('update-available'), true);
@@ -244,4 +257,89 @@ test('unread keeps the banner ordering, worst first', () => {
   n.set('err', { tone: notices.ERROR, message: 'broken' });
   n.set('warn', { tone: notices.WARN, message: 'iffy' });
   assert.deepEqual(n.unread().map((x) => x.id), ['err', 'warn', 'ok']);
+});
+
+test('a progress tick does not re-unread a read notice, a changed message does', () => {
+  // The download says the same sentence for the whole transfer while the number
+  // under it moves. That is not new news, so it must not re-open a card the reader
+  // acknowledged; a sentence that CHANGES is news and must.
+  const n = notices.create();
+  const downloading = {
+    tone: notices.INFO, message: 'Downloading Claw Control UI 1.0.1.', detail: '25 MB of 130 MB.', progress: 0.2,
+  };
+  n.set('update-available', downloading);
+  assert.equal(n.markRead('update-available'), true);
+  assert.deepEqual(n.unread(), [], 'read, so off the bar');
+
+  n.set('update-available', { ...downloading, detail: '60 MB of 130 MB.', progress: 0.46 });
+  assert.deepEqual(n.unread(), [], 'the bar moved and the reader was not told again');
+
+  n.set('update-available', {
+    tone: notices.WARN,
+    message: 'Downloading Claw Control UI 1.0.1. has stopped making progress.',
+    detail: 'Nothing has arrived for 45 seconds.',
+  });
+  assert.deepEqual(n.unread().map((x) => x.id), ['update-available'], 'a changed message is news');
+});
+
+test('a user-initiated check re-raises the update card, a passive check does not', () => {
+  // Abi, 2026-09-18: "if I click check for updates it should bring up the banner."
+  // The asker is owed the answer on screen; a background check that finds the same
+  // release again says nothing new and leaves a read card read.
+  const n = notices.create();
+  const card = { tone: notices.INFO, message: 'Claw Control UI 1.0.1 is available.', detail: 'You are on 1.0.0.' };
+  n.set('update-available', card);
+  n.markRead('update-available');
+
+  for (const trigger of ['startup', 'scheduled']) {
+    n.set('update-available', card, { announce: updates.announcesFound(trigger) });
+    assert.deepEqual(n.unread(), [], `the ${trigger} check must stay quiet`);
+  }
+
+  n.set('update-available', card, { announce: updates.announcesFound('manual') });
+  assert.deepEqual(n.unread().map((x) => x.id), ['update-available'], 'the reader asked, so it is back');
+});
+
+test('the desktop asks the store that question from the check trigger', () => {
+  // The store half is proved above; this is the half that says the desktop asks it
+  // the right question, because a rule no caller consults is not running.
+  //
+  // Sliced to onUpdateAvailable rather than grepped over the whole file, so the
+  // guard fails for the reason it names: that function is where a check that found
+  // a release becomes a card, and it is the one a manual press goes through.
+  const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+  const start = main.indexOf('function onUpdateAvailable(');
+  assert.ok(start > 0, 'onUpdateAvailable is gone, and it is where the wiring lives');
+  const body = main.slice(start, main.indexOf('\n/**', start));
+  assert.match(body, /updates\.announcesFound\(lastTrigger\)/, 'the check trigger must reach the update card');
+  assert.match(body, /\{ announce \}/, 'and the raise must carry what the trigger decided');
+});
+
+test('a NEW version raises again while the same version stays quiet once read', () => {
+  // The update notice is keyed by the VERSION, which rides in its headline. The
+  // same release found again is the same card and stays quiet; a new release is
+  // news and comes back. Written against the real composition, so it fails if the
+  // version ever stops being what tells two offers apart.
+  const offer = (version) => updates.checkAnswer({
+    outcome: updates.AVAILABLE,
+    version,
+    current: '1.0.0',
+    action: updates.NOTIFY,
+    trigger: 'scheduled',
+  });
+  const withAction = (answer) => ({
+    ...answer, action: { label: 'Open release page', command: 'update-release-page' },
+  });
+
+  const n = notices.create();
+  n.set('update-available', withAction(offer('1.0.1')));
+  assert.equal(n.markRead('update-available'), true);
+  assert.deepEqual(n.unread(), [], 'read, so quiet for the run');
+
+  n.set('update-available', withAction(offer('1.0.1')));
+  assert.deepEqual(n.unread(), [], 'the SAME version found again is the same card');
+
+  n.set('update-available', withAction(offer('1.0.2')));
+  assert.deepEqual(n.unread().map((x) => x.id), ['update-available'], 'a NEW version is news');
+  assert.match(n.unread()[0].message, /1\.0\.2/, 'and its headline names the version');
 });

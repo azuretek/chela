@@ -18,6 +18,11 @@ import XCTest
 /// after being read becomes unread again. Each step's return value is asserted as
 /// well as the state at the end, since every one of those rules is answered by the
 /// boolean rather than by the dictionary.
+///
+/// The read half carries the rule the sweep turns on (Abi, 2026-09-18): a read
+/// notice stays quiet for the run unless the raise carries news or the reader
+/// ASKED, a sweep reads every card on the bar without clearing any of them, and a
+/// progress notice moving its number is not news.
 final class NoticesParityTests: XCTestCase {
     func testSentenceReproducesEveryFixture() throws {
         let fixture: NoticesFixture = try Fixtures.load("notices")
@@ -95,6 +100,9 @@ final class NoticesParityTests: XCTestCase {
             // Every field but the message is optional in the fixture, which is
             // what the JS's own defaults are: an omitted tone is the error it
             // raised, and an omitted dismissible is one that can be.
+            // `announce` rides on the op rather than in the notice, because it is
+            // the reader HAVING ASKED rather than a property of the card. An absent
+            // one is the passive raise, which leaves a read card read.
             return store.set(id, NoticeRaise(
                 tone: payload.tone ?? NoticeTone.error,
                 message: payload.message,
@@ -103,7 +111,7 @@ final class NoticesParityTests: XCTestCase {
                 dismissClears: payload.dismissClears ?? false,
                 action: payload.action.map { NoticeAction(label: $0.label, command: $0.command) },
                 progress: payload.progress
-            ))
+            ), announce: op.announce ?? false)
         case "markRead":
             guard let id = op.id else { XCTFail("a markRead op with no id"); return false }
             return store.markRead(id)
@@ -172,6 +180,9 @@ struct NoticesFixture: Decodable {
         let op: String
         let id: String?
         let notice: Raise?
+        /// The reader HAVING ASKED, on a `set` op: the explicit "check for
+        /// updates" re-raises a card that was already read.
+        let announce: Bool?
 
         var description: String { "\(op) \(id ?? "-")" }
     }

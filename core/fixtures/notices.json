@@ -595,7 +595,7 @@
       }
     },
     {
-      "name": "marking all read skips a notice that cannot be dismissed",
+      "name": "the sweep quiets every notice on the bar, one that cannot be dismissed included",
       "ops": [
         {
           "op": "set",
@@ -629,9 +629,7 @@
           "connection",
           "download"
         ],
-        "unread": [
-          "download"
-        ],
+        "unread": [],
         "notice": {
           "connection": {
             "tone": "error",
@@ -649,7 +647,7 @@
             "dismissible": false,
             "progress": null,
             "action": null,
-            "read": false
+            "read": true
           }
         }
       }
@@ -883,7 +881,7 @@
       }
     },
     {
-      "name": "a sweep of the bar never decides the fate of a transfer",
+      "name": "a sweep of the bar quiets a transfer without deciding its fate",
       "ops": [
         {
           "op": "set",
@@ -902,16 +900,14 @@
       ],
       "returns": [
         true,
-        false
+        true
       ],
       "expect": {
         "size": 1,
         "list": [
           "download"
         ],
-        "unread": [
-          "download"
-        ],
+        "unread": [],
         "notice": {
           "download": {
             "tone": "info",
@@ -919,6 +915,121 @@
             "detail": null,
             "dismissible": true,
             "progress": 0,
+            "action": null,
+            "read": true
+          }
+        }
+      }
+    },
+    {
+      "name": "a progress tick is not news, but a new sentence is",
+      "ops": [
+        {
+          "op": "set",
+          "id": "update-available",
+          "notice": {
+            "tone": "info",
+            "message": "Downloading Claw Control UI 1.0.2.",
+            "detail": "25 MB of 130 MB.",
+            "progress": 0.2
+          }
+        },
+        {
+          "op": "markRead",
+          "id": "update-available"
+        },
+        {
+          "op": "set",
+          "id": "update-available",
+          "notice": {
+            "tone": "info",
+            "message": "Downloading Claw Control UI 1.0.2.",
+            "detail": "60 MB of 130 MB.",
+            "progress": 0.46
+          }
+        }
+      ],
+      "returns": [
+        true,
+        true,
+        true
+      ],
+      "expect": {
+        "size": 1,
+        "list": [
+          "update-available"
+        ],
+        "unread": [],
+        "notice": {
+          "update-available": {
+            "tone": "info",
+            "message": "Downloading Claw Control UI 1.0.2.",
+            "detail": "60 MB of 130 MB.",
+            "dismissible": true,
+            "progress": 0.46,
+            "action": null,
+            "read": true
+          }
+        }
+      }
+    },
+    {
+      "name": "a raise the reader asked for is unread even when nothing changed",
+      "ops": [
+        {
+          "op": "set",
+          "id": "update-available",
+          "notice": {
+            "tone": "info",
+            "message": "Claw Control UI 1.0.2 is available.",
+            "detail": "You are on 1.0.1."
+          }
+        },
+        {
+          "op": "markRead",
+          "id": "update-available"
+        },
+        {
+          "op": "set",
+          "id": "update-available",
+          "notice": {
+            "tone": "info",
+            "message": "Claw Control UI 1.0.2 is available.",
+            "detail": "You are on 1.0.1."
+          }
+        },
+        {
+          "op": "set",
+          "id": "update-available",
+          "announce": true,
+          "notice": {
+            "tone": "info",
+            "message": "Claw Control UI 1.0.2 is available.",
+            "detail": "You are on 1.0.1."
+          }
+        }
+      ],
+      "returns": [
+        true,
+        true,
+        false,
+        true
+      ],
+      "expect": {
+        "size": 1,
+        "list": [
+          "update-available"
+        ],
+        "unread": [
+          "update-available"
+        ],
+        "notice": {
+          "update-available": {
+            "tone": "info",
+            "message": "Claw Control UI 1.0.2 is available.",
+            "detail": "You are on 1.0.1.",
+            "dismissible": true,
+            "progress": null,
             "action": null,
             "read": false
           }

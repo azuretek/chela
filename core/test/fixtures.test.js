@@ -123,7 +123,10 @@ test('the pending copy comes from the spec rather than a literal in the row', ()
  */
 function applyOp(store, op) {
   switch (op.op) {
-    case 'set': return store.set(op.id, op.notice);
+    // `announce` is on the op rather than in the notice: it is the reader HAVING
+    // ASKED rather than a property of the card, so it belongs beside the id the
+    // way the sweep does. An absent one is the passive raise.
+    case 'set': return store.set(op.id, op.notice, { announce: op.announce === true });
     case 'markRead': return store.markRead(op.id);
     case 'markAllRead': return store.markAllRead();
     // The store's own answer to what a card's X means, which is the rule the

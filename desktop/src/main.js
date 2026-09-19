@@ -2377,11 +2377,15 @@ let sweepSize = { width: 0, height: 0 };
  * Whether the bar carries anything the sweep could act on.
  *
  * It is the same question the bar's control asked when it lived on the bar, and
- * it is asked of the store rather than of the cards, so a notice that refuses to
- * be dismissed refuses this too: reading is not clearing.
+ * it is asked of the store rather than of the cards. Anything unread is something
+ * it can act on, because the sweep reads EVERY notice on the bar: it used to
+ * exclude the cards that refuse to be dismissed, back when the sweep skipped them
+ * too, and a card left standing on an otherwise empty bar is exactly what that
+ * exclusion cost (Abi, 2026-09-18). Reading is not clearing, so there is nothing
+ * left for this to exclude.
  */
 function sweepWanted() {
-  return notices.unread().some((n) => n.dismissible !== false);
+  return notices.unread().length > 0;
 }
 
 /** Show the sweep, hide it, or leave it alone. Called on every notice change. */
@@ -2526,14 +2530,21 @@ const noticeTimers = new Map();
  *
  * The timer lives here rather than in the store so src/notices.js stays a pure
  * data structure with no clock in it.
+ *
+ * `announce` is the reader HAVING ASKED, and it is the store's: this passes it
+ * through and owns nothing about what it means. The one caller that sets it is
+ * the update card found by a check a person pressed (see onUpdateAvailable).
  */
-function setNotice(id, notice, ttlMs = 0) {
+function setNotice(id, notice, options = {}) {
+  // A bare number is the old positional TTL, still accepted so the call sites
+  // that pass one keep reading the same way.
+  const { ttlMs = 0, announce = false } = typeof options === 'number' ? { ttlMs: options } : options;
   const existing = noticeTimers.get(id);
   if (existing) {
     clearTimeout(existing);
     noticeTimers.delete(id);
   }
-  if (notices.set(id, notice)) {
+  if (notices.set(id, notice, { announce })) {
     // Read back from the store rather than logging the argument, so the default
     // tone is applied in exactly one place and a notice raised without one is
     // recorded as the error it actually became.
@@ -3256,7 +3267,7 @@ function offerRefusedByUpdater(version) {
     message,
     detail,
     action: { label: 'Open release page', command: 'update-release-page' },
-  });
+  }, { announce: updates.announcesFound(lastTrigger) });
 }
 
 /**
@@ -3276,6 +3287,14 @@ function onUpdateAvailable(info) {
   pendingManualCheck = false;
   offeredUpdate = info;
   setLastCheck(`${info.version} available`);
+
+  // ★ A check a person PRESSED is a question, and the answer belongs on screen:
+  // the card it finds comes back even when that same card was read already,
+  // because reading a notice was never a promise not to be told again. The
+  // background check is the other half and stays quiet, leaving a read card where
+  // it was (see announcesFound in core/updates.js). What announcing MEANS for
+  // read state belongs to the store; this owns only which trigger is a person.
+  const announce = updates.announcesFound(lastTrigger);
 
   // ★ What this check may fetch, and what it says while it does. One owner for the
   // decision, shared with the phone (updates.fetchPlan), because the rule is about
@@ -3338,7 +3357,7 @@ function onUpdateAvailable(info) {
     }
     // A quiet attempt draws ITSELF the moment it has something true to say; see
     // beginUpdateDownload and onDownloadProgress.
-    beginUpdateDownload(info.version, { quiet: fetch.quiet });
+    beginUpdateDownload(info.version, { quiet: fetch.quiet, announce });
     return;
   }
 
@@ -3362,7 +3381,7 @@ function onUpdateAvailable(info) {
     action: fetch.offer === updates.OFFER_INSTALL
       ? { label: 'Download and install', command: 'update-download' }
       : { label: 'Open release page', command: 'update-release-page' },
-  });
+  }, { announce });
 }
 
 /** The offer taken up: fetch it now, without touching the standing preference. */
@@ -3553,13 +3572,13 @@ function onDownloadStall() {
  * the gate would put the abandoned card back for the next chunk of a transfer the
  * reader already told the app to stop reporting on.
  */
-function showUpdateNotice(notice) {
+function showUpdateNotice(notice, { announce = false } = {}) {
   if (downloadAttempt === clearedAttempt) {
     downloadCardRaised = false;
     return;
   }
   downloadCardRaised = true;
-  setNotice('update-available', notice);
+  setNotice('update-available', notice, { announce });
 }
 
 /**
@@ -3576,7 +3595,7 @@ function showUpdateNotice(notice) {
  * it. Only the press path raises at zero, because a person who asked is owed the
  * card immediately.
  */
-function beginUpdateDownload(version, { quiet = false } = {}) {
+function beginUpdateDownload(version, { quiet = false, announce = false } = {}) {
   downloadAttempt += 1;
   downloadVersion = version;
   downloadStartedAt = Date.now();
@@ -3584,7 +3603,7 @@ function beginUpdateDownload(version, { quiet = false } = {}) {
   lastProgressPercent = 0;
   downloadQuiet = quiet;
   if (quiet) downloadCardRaised = false;
-  else showUpdateNotice(downloadingNotice(version, { percent: 0 }));
+  else showUpdateNotice(downloadingNotice(version, { percent: 0 }), { announce });
   armStallWatch();
 }
 
@@ -4636,11 +4655,12 @@ function registerIpc() {
     if (notice && notice.dismissClears) abandonUpdateDownload();
     if (notices.dismiss(key)) refreshBanner();
   });
-  // Closing the bar is the same act aimed at everything on it. Anything not
-  // dismissible is left alone, and so is anything whose dismissal means clearing:
-  // a sweep is not a decision about a transfer, and the download card's own X is
-  // one deliberate act rather than a side effect of emptying the bar. The store
-  // owns both rules (see markAllRead in core/notices.js).
+  // Closing the bar is the same act aimed at everything on it, and it READS each
+  // notice rather than clearing it: nothing on the bar is left behind, and no
+  // condition's fate is decided. A card whose X means clearing keeps that X as its
+  // only way out, so a sweep silences the download card for the run and leaves its
+  // transfer running. The store owns both halves (see markAllRead in
+  // core/notices.js).
   ipcMain.handle('app:mark-notices-read', () => {
     if (notices.markAllRead()) refreshBanner();
   });
