@@ -170,9 +170,18 @@ final class GatewayStore: ObservableObject {
     /// argument, and absent from a release build entirely.
     private static func screenshotGateway() -> Config? {
         let arguments = ProcessInfo.processInfo.arguments
-        guard let index = arguments.firstIndex(of: "-claw-gateway-url"), index + 1 < arguments.count,
-              let gateway = Gateway.parse(arguments[index + 1])
+        guard let index = arguments.firstIndex(of: "-claw-gateway-url"), index + 1 < arguments.count
         else { return nil }
+        let raw = arguments[index + 1]
+        // The id is derived from the address rather than a fresh UUID, because
+        // this function is called from two places on the same launch: the config
+        // load here, and `seedDebugTokenFromEnvironment` which stores the token
+        // under the active gateway's id. A random id would differ between the two
+        // calls, so the token would be stored under an id the loaded gateway did
+        // not carry, `holdsCredential` would find nothing, and the app would show
+        // its settings surface with "No token saved" instead of connecting. A
+        // stable id keyed to the address makes both calls name the same gateway.
+        guard let gateway = Gateway.parse(raw, id: screenshotGatewayId(raw)) else { return nil }
         return Config(
             gateways: [gateway],
             activeGatewayId: gateway.id,
@@ -180,6 +189,15 @@ final class GatewayStore: ObservableObject {
             promptMetadata: false,
             autoUpdate: true
         )
+    }
+
+    /// A stable gateway id for a screenshot run, derived from the launched-with
+    /// address so every call in one launch names the same gateway. Not a real
+    /// UUID and not meant to be: it only has to be identical across the two calls
+    /// above and unique to this address, which a prefixed, sanitised copy of the
+    /// address is. Debug only, like everything that reads it.
+    private static func screenshotGatewayId(_ raw: String) -> String {
+        "screenshot-" + raw.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Store the gateway token a debug run was launched with into the Keychain,

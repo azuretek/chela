@@ -24,11 +24,49 @@
  * @returns {string}
  */
 export function withTokenHandoff(rawUrl, token) {
-  if (!token) return rawUrl;
+  return withFragmentHandoff(rawUrl, 'token', token);
+}
+
+/**
+ * `rawUrl` with `#bootstrapToken=<token>` merged into its fragment.
+ *
+ * The setup-code / QR credential, NOT the shared connect token. The Control UI
+ * reads `bootstrapToken` from the fragment during boot and exchanges it in the
+ * device pairing handshake (it becomes `auth.bootstrapToken` on the connect,
+ * which the gateway validates against the device-bootstrap table and answers
+ * with a pending pairing request), whereas `token` is the shared-owner connect
+ * secret the gateway checks directly. They are different gates: a setup code fed
+ * as `token` is rejected with "This Gateway expects its token", which is why the
+ * two handoffs are distinct keys and this one exists.
+ *
+ * Same fragment rules as `withTokenHandoff`: an existing fragment is preserved,
+ * only the `bootstrapToken` key is set, a falsy token leaves the URL unchanged,
+ * and a URL that will not parse is handed back untouched.
+ *
+ * @param {string} rawUrl  the gateway's Control UI URL
+ * @param {string} [token] the bootstrap/setup-code token; falsy leaves the URL unchanged
+ * @returns {string}
+ */
+export function withBootstrapHandoff(rawUrl, token) {
+  return withFragmentHandoff(rawUrl, 'bootstrapToken', token);
+}
+
+/**
+ * `rawUrl` with `#<key>=<value>` merged into its fragment. The one owner of the
+ * merge rule both handoffs share, so `token` and `bootstrapToken` cannot drift
+ * in how they preserve an existing fragment or replace an existing key.
+ *
+ * @param {string} rawUrl
+ * @param {string} key
+ * @param {string} [value]
+ * @returns {string}
+ */
+function withFragmentHandoff(rawUrl, key, value) {
+  if (!value) return rawUrl;
   try {
     const url = new URL(rawUrl);
     const frag = new URLSearchParams(url.hash.startsWith('#') ? url.hash.slice(1) : url.hash);
-    frag.set('token', token);
+    frag.set(key, value);
     url.hash = `#${frag.toString()}`;
     return url.toString();
   } catch {

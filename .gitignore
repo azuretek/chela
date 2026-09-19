@@ -27,6 +27,11 @@ mobile/.team
 # a committed copy would be pure drift, and it is large.
 mobile/build-device/
 
+# Simulator build output from mobile/build-sim.sh. Regenerated on every run, so
+# nothing here is source.
+mobile/build-sim/
+mobile/build-sim-release/
+
 # Xcode build output, when a build is pointed at a derivedDataPath under mobile/
 # (a screenshot or verification run does this). Regenerated on every run and
 # large; the default DerivedData is outside the repo, and this keeps an explicit

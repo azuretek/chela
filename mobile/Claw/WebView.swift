@@ -612,7 +612,35 @@ struct WebView: UIViewRepresentable {
         // The plain gateway URL: the credential travels in the injected global,
         // not on the address, so nothing about a real token reaches the
         // navigation URL, a request log or a Referer header.
-        webView.load(URLRequest(url: gateway.url))
+        //
+        // The one exception is a DEBUG simulator run seeded with a setup-code
+        // bootstrap token: that credential is NOT the shared connect token and
+        // is not carried on the native global at all, it rides the URL fragment
+        // as `#bootstrapToken=` because that is the only channel the Control UI
+        // reads a bootstrap token from (it exchanges it in the pairing handshake
+        // rather than presenting it as the connect secret). `loadURL` is the
+        // plain URL in a release build and everywhere but that one seeded run, so
+        // no shipped app can ever put a token on the address.
+        webView.load(URLRequest(url: Self.loadURL(gateway.url)))
+    }
+
+    /// The URL to load: the gateway's own address, except in a DEBUG simulator
+    /// run seeded with a setup-code bootstrap token, where the token is merged
+    /// into the fragment as `#bootstrapToken=` so the Control UI's pairing
+    /// handshake picks it up. A simulator cannot be typed into by a script and
+    /// has no URL scheme, so this launch seam is the only way to exercise the
+    /// real pairing path end to end; it reads the token from the process
+    /// environment, never a launch argument, so it stays out of the argv a
+    /// process listing shows, and the whole thing is compiled out of a release
+    /// build.
+    static func loadURL(_ url: URL) -> URL {
+        #if DEBUG
+        if let bootstrap = ProcessInfo.processInfo.environment["OPENCLAW_SEED_BOOTSTRAP_TOKEN"],
+           !bootstrap.isEmpty {
+            return GatewayURL.withBootstrapHandoff(url, bootstrap)
+        }
+        #endif
+        return url
     }
 
     /// Read the stored token and (re)install the document-start script that sets
