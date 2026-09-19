@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { newerVersion, isNewerBuild, tagVersion, newestOnChannel, feedUrl, releaseNotesUrl, channelFor, DEV_CHANNEL, STABLE_CHANNEL } from '../feed.js';
+import { newerVersion, isNewerBuild, tagVersion, newestOnChannel, feedUrl, releaseNotesUrl, channelFor, iosAvailable, IOS_MARKER, DEV_CHANNEL, STABLE_CHANNEL } from '../feed.js';
 // The two comparisons, side by side on purpose: `compare` is the one an update
 // check must NOT make, and these tests say so by asserting it disagrees.
 import { compare, release, compareRelease, isNewerRelease } from '../version.js';
@@ -36,6 +36,49 @@ test('newerVersion() reproduces every fixture', () => {
       continue;
     }
     assert.strictEqual(newerVersion(document, current), newer, name);
+  }
+});
+
+/*
+ * ★ THE PHANTOM-UPDATE FIX, as a fixture the phone and the desktop both read.
+ *
+ * The desktop reads every release, because its own installers are on any release
+ * it published. The phone reads a NARROWER feed: a release is offered only when
+ * it carries the iOS availability marker in its body, meaning a TestFlight build
+ * of that version is installable. So a desktop-only release, the newest entry in
+ * the feed, is invisible to the phone. These cases pass { iosOnly: true }, which
+ * is the audience the Swift client defaults to (UpdateFeed.newerVersion's only
+ * caller is the phone). The desktop cases above deliberately do not, so the two
+ * audiences are proven to read the same feed differently.
+ */
+test('newerVersion({ iosOnly }) offers the phone only releases with a TestFlight build', () => {
+  const { iosCases } = load('feed.json');
+  assert.ok(iosCases.length > 0, 'expected iOS feed fixtures');
+  for (const { name, document, current, newer } of iosCases) {
+    assert.strictEqual(newerVersion(document, current, { iosOnly: true }), newer, name);
+  }
+});
+
+test('a desktop-only release is offered to the desktop but not to the phone', () => {
+  // The exact bug: the newest release has no TestFlight build. The desktop still
+  // offers it (its installers are on it); the phone must not.
+  const document = {
+    entries: [
+      { id: '.../releases/v1.0.1-dev.279.9a58115cb1', title: 'v1.0.1-dev.279.9a58115cb1', content: '<p>a .github-only change</p>' },
+    ],
+  };
+  assert.strictEqual(newerVersion(document, '1.0.1-dev.148.abc1234567'), '1.0.1-dev.279.9a58115cb1', 'the desktop reads every release');
+  assert.strictEqual(newerVersion(document, '1.0.1-dev.148.abc1234567', { iosOnly: true }), null, 'the phone is offered nothing without the marker');
+});
+
+test('iosAvailable() reads the marker out of an entry body, or false', () => {
+  assert.equal(iosAvailable({ content: 'notes\n' + IOS_MARKER }), true);
+  assert.equal(iosAvailable({ content: IOS_MARKER }), true, 'the marker alone is enough');
+  assert.equal(iosAvailable({ content: '<p>desktop only</p>' }), false, 'a body without the marker is not available');
+  // A non-answer for anything a feed a client did not write can hand it, and the
+  // safe direction: an unrecognised shape is not offered to the phone.
+  for (const bad of [null, undefined, {}, { content: 5 }, { content: null }, 'a string', 42]) {
+    assert.equal(iosAvailable(bad), false, `for ${JSON.stringify(bad)}`);
   }
 });
 
@@ -191,6 +234,15 @@ test('the build we are running is not offered back to us', () => {
   assert.equal(isNewerBuild('1.0.1-dev.12.1758000000', '1.0.1-dev.12.1758000000'), false);
   const document = { entries: [{ id: '.../releases/v1.0.1-dev.12.1758000000' }] };
   assert.equal(newerVersion(document, '1.0.1-dev.12.1758000000'), null);
+});
+
+test('★ one owner, iOS audience: newerVersion({ iosOnly }) and the filtered newestOnChannel cannot disagree', () => {
+  const { iosCases } = load('feed.json');
+  for (const { name, document, current, newer } of iosCases) {
+    const advertised = newestOnChannel(document, channelFor(current), { iosOnly: true });
+    const decision = advertised === null ? null : (isNewerBuild(advertised, current) ? advertised : null);
+    assert.equal(decision, newer, `${name}: the iOS filter path disagrees with newerVersion`);
+  }
 });
 
 test('★ one owner: newerVersion() and isNewerBuild() cannot disagree', () => {

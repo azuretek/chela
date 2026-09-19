@@ -841,6 +841,98 @@ jobs:
             echo "::error::could not withdraw the draft for $TAG; nothing was published, but a draft may remain for a rerun to reuse"
           fi
 
+      # ★ The iOS availability marker: a line in the release body, written ONLY
+      # when the mobile pipeline produced an installable TestFlight build for this
+      # commit. The phone reads releases.atom, which carries the release body as an
+      # entry's <content> but carries no assets, so a body line is the one signal
+      # the phone can read off the same release the desktop published. The reader
+      # (core/feed.js, mobile/Claw/UpdateFeed.swift) offers a release to the phone
+      # only when its entry carries this line, so a desktop-only or .github-only
+      # commit, which produces a release but NO mobile run, is invisible to the
+      # phone's "update available". That is the phantom-update bug: measured
+      # 2026-09-18, v1.0.1-dev.279.9a58115cb1 (a .github-only change, PR #39) had
+      # no mobile run and was not on TestFlight, yet the banner offered it.
+      #
+      # ★ Why HERE and not in the mobile pipeline: the mobile release job finishes
+      # its VALID wait BEFORE this job publishes (the platforms gate above makes
+      # the desktop publish wait on the mobile ^release^ job), so at that moment
+      # there is no published release for the mobile job to stamp. This job, at
+      # publish time, is the first place a release exists AND its iOS verdict is
+      # known. It reads that verdict the same way platforms-gate.yml does: the
+      # mobile run for this commit, and whether its ^release^ job concluded
+      # success. A commit with no mobile run (desktop-only, .github-only) has no
+      # such job, so no marker, which is exactly the intended outcome.
+      #
+      # The marker string has one owner, core/release.js (iosMarkerLine()), so the
+      # writer here and the two readers cannot drift. The line is appended to the
+      # generated notes rather than replacing them, and only when the verdict is a
+      # green mobile release; anything else (no run, a red or absent release job)
+      # leaves the body unmarked and the release invisible to the phone.
+      - name: Mark iOS availability when TestFlight is ready
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          TAG: v${{ needs.version.outputs.version }}
+          MOBILE_PIPELINE: claw-mobile pipeline
+        run: |
+          set -eo pipefail
+
+          # The marker line, from its one owner, so this step cannot spell it a
+          # different way from the readers.
+          marker="$(node -e 'import(\"./core/release.js\").then(m => process.stdout.write(m.iosMarkerLine()))')"
+          if [ -z "$marker" ]; then
+            echo "::error::core/release.js produced no iOS marker line, so the phone could never be offered any release"
+            exit 1
+          fi
+
+          # The mobile pipeline's run for this exact commit, newest first. A
+          # commit that does not build the phone (desktop-only, .github-only) has
+          # no such run at all, which is a real answer: the release stays unmarked
+          # and the phone does not offer it.
+          run_id="$(gh api "repos/$REPO/actions/runs?head_sha=$SHA&per_page=100" \
+            --jq "[.workflow_runs[] | select(.name == \"$MOBILE_PIPELINE\")] | sort_by(.created_at) | reverse | .[0].id // empty")"
+
+          if [ -z "$run_id" ]; then
+            echo "::notice::no $MOBILE_PIPELINE run for $SHA, so this commit built no TestFlight build; the release is left unmarked and the phone will not offer it."
+            exit 0
+          fi
+
+          # Whether that run's release job (the TestFlight upload and the wait for
+          # VALID) concluded success. That job is named 'release' in the mobile
+          # pipeline; the platforms gate above has already refused to publish if
+          # it was red, so by this line it is either success or does not exist.
+          release_result="$(gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.name == "release")] | .[0].conclusion // empty')"
+
+          if [ "$release_result" != 'success' ]; then
+            echo "::notice::$MOBILE_PIPELINE ran for $SHA but its release job is not success (it is '$release_result' or absent), so no installable TestFlight build was produced; the release is left unmarked."
+            exit 0
+          fi
+
+          # There is an installable TestFlight build. Append the marker to the
+          # release body, once: read the current body, and add the line only if
+          # it is not already there (a rerun against an already-marked release
+          # must not stack it).
+          body="$(gh release view "$TAG" --repo "$REPO" --json body --jq '.body // ""')"
+          if printf '%s' "$body" | grep -qF "$marker"; then
+            echo "the release already carries the iOS marker"
+            exit 0
+          fi
+
+          printf '%s\n\n%s\n' "$body" "$marker" > "$RUNNER_TEMP/notes.md"
+          gh release edit "$TAG" --repo "$REPO" --notes-file "$RUNNER_TEMP/notes.md"
+
+          # Read it back: the marker must actually be in the body the phone will
+          # read, not merely have been sent.
+          after="$(gh release view "$TAG" --repo "$REPO" --json body --jq '.body // ""')"
+          if printf '%s' "$after" | grep -qF "$marker"; then
+            echo "marked $TAG as iOS-available: an installable TestFlight build exists for $SHA"
+          else
+            echo "::error::the iOS marker did not stick to $TAG, so the phone would not be offered this release even though its TestFlight build is valid"
+            exit 1
+          fi
+
       # ★ Publication, last, and the only step that creates the tag. Every claim
       # about the asset set has already been made by the step above, and a run
       # that could not make them failed instead of reaching this line.

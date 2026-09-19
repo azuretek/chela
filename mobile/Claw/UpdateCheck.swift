@@ -42,6 +42,12 @@ final class UpdateCheck {
     ///
     /// DEBUG-only: a release build has no screenshot runs to seed.
     static func seededFeed(advertising version: String) -> Data {
+        // The entry carries the iOS availability marker in its <content>, because
+        // a screenshot run stands in for a real feed the phone would act on, and
+        // the phone offers only releases whose body carries the marker (an
+        // installable TestFlight build). Without it the seeded release is filtered
+        // out as a desktop-only one and the banner stays empty, which is the
+        // opposite of what a screenshot run seeds it to show.
         Data("""
         <?xml version="1.0" encoding="UTF-8"?>
         <feed xmlns="http://www.w3.org/2005/Atom">
@@ -50,6 +56,7 @@ final class UpdateCheck {
           <entry>
             <id>tag:github.com,2008:Repository/1/v\(version)</id>
             <title>v\(version)</title>
+            <content type="html">\(UpdateFeed.iosMarker)</content>
           </entry>
         </feed>
         """.utf8)

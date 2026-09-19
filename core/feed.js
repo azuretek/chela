@@ -38,6 +38,27 @@ export const DEV_CHANNEL = spec.channels.dev;
 export const STABLE_CHANNEL = spec.channels.stable;
 
 /**
+ * The line a release carries in its body when, and only when, a TestFlight
+ * build of that version is installable.
+ *
+ * It is the iOS audience's answer to a question the desktop never has to ask:
+ * the desktop's own installers are on any release it published, so a release
+ * that exists is one the desktop may offer. The phone cannot assume that,
+ * because a desktop-only or .github-only commit produces a release with no
+ * TestFlight build behind it (no mobile pipeline run at all), and the phone
+ * reading that release would point the user at a build that does not exist.
+ *
+ * A body line rather than a release asset, because the phone reads
+ * releases.atom, and an Atom entry carries the release body as its `<content>`
+ * but carries no assets. So the one signal both a human and the phone can read
+ * off the same release is a line in its notes. release.yml writes it at publish
+ * time, when the platforms gate has already told it whether the mobile pipeline
+ * produced a VALID build for this commit; this constant is the one owner of the
+ * exact string, so the writer and the reader cannot drift.
+ */
+export const IOS_MARKER = spec.iosMarker;
+
+/**
  * The public URL a client reads for the repository's releases.
  *
  * Built from the repo slug rather than written out, so a rename moves it with
@@ -79,6 +100,34 @@ export function releaseNotesUrl(repo, version = null) {
   const base = `https://github.com/${repo}`;
   const trimmed = typeof version === 'string' ? version.trim() : '';
   return trimmed ? `${base}/${spec.releaseNotesPath}${trimmed}` : releasesUrl;
+}
+
+/**
+ * Whether one Atom entry's release carries the iOS availability marker.
+ *
+ * The marker rides in the release body, which GitHub emits as an entry's
+ * `<content>`, so this reads `entry.content` (the JS client hands the parsed
+ * entry that field, the Swift client the same) and asks whether the marker
+ * string appears in it. A missing or non-string content is `false`, the same
+ * non-answer a feed a client did not write is entitled to: a release with no
+ * body, or an entry shape this does not recognise, is not one the phone may
+ * offer, which is the safe direction (a desktop-only release must be invisible
+ * to the phone, not offered by accident).
+ *
+ * The match is a plain substring rather than a line or a JSON parse, because the
+ * body is HTML by the time it reaches `<content>` and the marker is deliberately
+ * plain ASCII (no `<`, `>` or `&`) so it survives HTML escaping unchanged. What
+ * matters is that the exact string release.js wrote is present, and IOS_MARKER
+ * is that one string.
+ *
+ * @param {{content?: string}} entry  one parsed Atom entry
+ * @returns {boolean}
+ */
+export function iosAvailable(entry) {
+  if (!entry || typeof entry !== 'object') return false;
+  const content = typeof entry.content === 'string' ? entry.content : null;
+  if (content === null) return false;
+  return content.includes(IOS_MARKER);
 }
 
 /**
@@ -127,15 +176,27 @@ export function tagVersion(entry) {
  * check reading past it is correct. The version that DOES get compared, in
  * `newerVersion`, is the one this returned, and that one parsed here.
  *
+ * ★ The iOS audience reads a NARROWER feed than the desktop, and that is the
+ * whole of the phantom-update fix. Passed `{ iosOnly: true }`, this skips any
+ * entry whose release does not carry the iOS availability marker, so a
+ * desktop-only release (published for a commit whose mobile pipeline never ran,
+ * or ran without uploading) is invisible to the phone even though it is the
+ * newest entry in the feed. The desktop passes nothing and reads every entry,
+ * because a release that exists carries its own installers. The filter is here,
+ * on the one function both audiences call, rather than in each client, so the
+ * two cannot disagree about which entry is "the newest on the channel".
+ *
  * @param {unknown} document  the parsed releases document, `{ entries: [...] }`
  * @param {string} channel    DEV_CHANNEL or STABLE_CHANNEL
+ * @param {{iosOnly?: boolean}} [options]  iosOnly filters to marker-bearing releases
  * @returns {string|null}  the newest version on the channel, or null
  */
-export function newestOnChannel(document, channel) {
+export function newestOnChannel(document, channel, options) {
   if (!document || typeof document !== 'object') return null;
   const entries = Array.isArray(document.entries) ? document.entries : null;
   if (!entries) return null;
 
+  const iosOnly = !!(options && options.iosOnly);
   const wantPrerelease = channel === DEV_CHANNEL;
   for (const entry of entries) {
     const version = tagVersion(entry);
@@ -143,7 +204,12 @@ export function newestOnChannel(document, channel) {
     const parsed = parse(version);
     if (!parsed) continue;
     const isPrerelease = parsed.prerelease !== null;
-    if (isPrerelease === wantPrerelease) return version;
+    if (isPrerelease !== wantPrerelease) continue;
+    // The iOS audience skips a release with no installable TestFlight build,
+    // whatever its position in the feed: an unmarked release is not one the
+    // phone may offer, so the reader keeps looking for the newest one that is.
+    if (iosOnly && !iosAvailable(entry)) continue;
+    return version;
   }
   return null;
 }
@@ -211,15 +277,24 @@ export function isNewerBuild(candidate, current) {
  * the build's own (`channelFor`), so a dev build is only ever compared against
  * dev releases and a stable build against stable ones.
  *
+ * ★ The iOS audience passes `{ iosOnly: true }`, which is the whole fix: the
+ * candidate it compares against is the newest release CARRYING A TESTFLIGHT
+ * BUILD, not merely the newest release, so the phone never announces a
+ * desktop-only version. The desktop passes nothing and keeps reading every
+ * release, because its installers are on any release it published. Both reach
+ * the same `isNewerBuild` rule, so the audience changes which candidate is
+ * chosen, never how newer is decided.
+ *
  * @param {unknown} document  the parsed releases document
  * @param {string} current    this build's own version
+ * @param {{iosOnly?: boolean}} [options]  iosOnly filters to marker-bearing releases
  * @returns {string|null}  the newer version to announce, or null
  */
-export function newerVersion(document, current) {
+export function newerVersion(document, current, options) {
   // A current version this build cannot even parse is our own bug, not the
   // feed's, and it must not silently suppress an update: surface it.
   if (!parse(current)) throw new Error(`not a version: ${current}`);
-  const advertised = newestOnChannel(document, channelFor(current));
+  const advertised = newestOnChannel(document, channelFor(current), options);
   if (advertised === null) return null;
   return isNewerBuild(advertised, current) ? advertised : null;
 }
