@@ -67,6 +67,29 @@ test('no workflow carries a path filter: the trigger set has one owner', () => {
   }
 });
 
+test('no workflow hands node a program with a stray backslash escape', () => {
+  // ★ The class this catches, measured on main 2026-09-18. release.yml passed
+  // its marker program as a single-quoted node -e argument whose quotes were
+  // backslash-escaped. Inside a SINGLE-quoted shell argument a backslash
+  // survives VERBATIM, so node received the backslashes and died at eval with
+  // "Expected unicode escape". The release job failed one step before
+  // publishing, the draft was never published, and no release went out at all.
+  // The command reads as correct in review, which is why this is asserted.
+  //
+  // The check is narrow on purpose: a backslash inside that single-quoted
+  // argument is never what is meant, and a legitimate one would be escaped
+  // through a different quoting style.
+  for (const file of WORKFLOWS) {
+    const yml = read(file);
+    for (const match of yml.matchAll(/node -e '([^']*)'/g)) {
+      assert.ok(
+        !match[1].includes('\\'),
+        file + ': a single-quoted node -e program carries a backslash, which reaches node verbatim: ' + match[1],
+      );
+    }
+  }
+});
+
 test('every workflow that publishes asks the owner whether this commit ships', () => {
   // Both publish paths, so both must read the same answer. platforms-gate.yml is
   // the shared gate and carries no trigger of its own, so it is not here.

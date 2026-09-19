@@ -938,7 +938,18 @@ jobs:
 
           # The marker line, from its one owner, so this step cannot spell it a
           # different way from the readers.
-          marker="$(node -e 'import(\"./core/release.js\").then(m => process.stdout.write(m.iosMarkerLine()))')"
+          # ★ The program is SINGLE quoted and carries no backslashes, and both
+          # halves of that matter. Escaped quotes inside a single-quoted shell
+          # argument survive VERBATIM, so this line used to hand node
+          # `import(\"./core/release.js\")` and die with "Expected unicode escape"
+          # at eval, one step before publishing. Measured 2026-09-18 on
+          # v1.0.1-dev.282.3dda142f49: the release job failed here, the draft was
+          # never published, and no release went out at all. The command itself
+          # is correct and needs no escaping, which is why the stray backslashes
+          # were invisible in review. desktop/test/release-trigger.test.js now
+          # asserts no workflow passes a backslash inside a single-quoted
+          # `node -e` program.
+          marker="$(node -e 'import("./core/release.js").then(m => process.stdout.write(m.iosMarkerLine()))')"
           if [ -z "$marker" ]; then
             echo "::error::core/release.js produced no iOS marker line, so the phone could never be offered any release"
             exit 1
