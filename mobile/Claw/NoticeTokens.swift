@@ -73,32 +73,36 @@ enum NoticeTokens {
             let glyph: String
         }
 
+        struct MotionSpec: Decodable {
+            let minVisibleMs: Int
+        }
+
         let css: [String: [String: String]]?
         let shape: [String: String]?
         let type: Typography?
         let card: Card?
         let tone: [String: ToneSpec]?
+        let motion: MotionSpec?
     }
 
     /// What the clients read: everything here, plus `live`, which `ThemeTokens`
     /// consumes. The rest of the file is provenance, kept beside the values it
     /// describes, and `BundledSpecTests` requires every key to be either decoded
     /// or named here.
-    static let decodedKeys: Set<String> = ["css", "shape", "type", "card", "tone", "live"]
+    static let decodedKeys: Set<String> = ["css", "shape", "type", "card", "tone", "live", "motion"]
     static let ignoredKeys: Set<String> = [
         "source", "provenance", "shapeProvenance", "typeProvenance", "cardProvenance", "toneNote",
-        // motion.minVisibleMs is the minimum-visible-duration floor, read by the
-        // desktop (core/ui/motion.js) today. This client does not honour the
-        // floor yet, so the key is declared ignored rather than dropped in
-        // silence; making iOS honour it is the motion-parity work. motionNote is
-        // prose, like toneNote.
-        "motion", "motionNote",
+        // motion.minVisibleMs is decoded (see minVisibleMs below), so this client
+        // honours the minimum-visible-duration floor the same as the desktop: the
+        // primitive is Motion.swift, applied by NoticeBoard. motionNote is prose,
+        // like toneNote.
+        "motionNote",
     ]
 
     private static let spec: Spec = loadSpec()
 
     private static func loadSpec() -> Spec {
-        let empty = Spec(css: nil, shape: nil, type: nil, card: nil, tone: nil)
+        let empty = Spec(css: nil, shape: nil, type: nil, card: nil, tone: nil, motion: nil)
         guard let spec = try? BundledSpec.load("tokens", as: Spec.self), spec.css?["dark"] != nil else {
             return empty
         }
@@ -120,6 +124,15 @@ enum NoticeTokens {
     /// Radius, depth and motion. Mode-independent, because the Control UI keeps
     /// one geometry contract across its palettes.
     static var shape: [String: String] { spec.shape ?? [:] }
+
+    /// The minimum-visible-duration floor, in milliseconds: how long a transient
+    /// state stays on screen before it may be replaced. Read by `Motion`, which is
+    /// where the rule is applied. OURS rather than borrowed from the Control UI, so
+    /// it is exempt from the upstream-parity check the colour and shape tokens face,
+    /// and it is proven instead by `MotionParityTests` against `core/test/motion.test.js`.
+    /// A spec without it falls back to the design-language value rather than zero:
+    /// a missing floor must fail toward holding a state too long, never toward a flash.
+    static var minVisibleMs: Int { spec.motion?.minVisibleMs ?? 900 }
 
     /// The type scale, at the Control UI's default text scale of 1.
     static var sizes: [String: String] { spec.type?.size ?? [:] }
