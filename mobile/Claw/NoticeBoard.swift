@@ -122,7 +122,17 @@ final class NoticeBoard: ObservableObject {
         }
 
         // A transient answer. Hold it off if the one on screen has not had its floor.
-        let wouldChange = !(store.get(id)?.saysTheSame(as: notice) ?? false)
+        // wouldChange is judged on the card's own content (tone, message, detail),
+        // the same fields the desktop's raiseFloored compares: a same-content
+        // re-raise the store would swallow changes nothing on screen, so it is never
+        // held. The stored value is a Notice and the incoming one is a NoticeRaise,
+        // so the comparison is field by field rather than through saysTheSame, which
+        // compares two Notices.
+        let current = store.get(id)
+        let wouldChange = current == nil
+            || current?.tone != notice.tone
+            || current?.message != notice.message
+            || current?.detail != notice.detail
         let shownAt = floorShownAt[id]
         let remaining = shownAt.map { Motion.remainingVisibleMs(shownAt: $0, now: now()) } ?? 0
         if wouldChange && remaining > 0 {
