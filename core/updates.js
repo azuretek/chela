@@ -582,6 +582,29 @@ export function shouldReportNoUpdate(trigger) {
 }
 
 /**
+ * Whether a check that FOUND a release puts its card back up for a reader who
+ * has already read that same card.
+ *
+ * ★ The question is WHO ASKED, and it is the whole of the rule. A press is a
+ * question, so the answer belongs on screen whether or not the same answer was
+ * read before: reading a notice was never a promise never to be told again. A
+ * background check has asked nobody, so it carries no news and leaves a card the
+ * reader has already read exactly where it was, which is the other half of the
+ * reported fault where a read card kept returning.
+ *
+ * Deliberately separate from `shouldReportNoUpdate` just above, even though the
+ * two answer the same way today. One is about the silence a check owes when it
+ * found NOTHING; this one is about re-raising what it FOUND. A shared name would
+ * hide the moment either policy moved, and they would move for different reasons.
+ *
+ * @param {string} trigger  'manual', 'startup' or 'scheduled'
+ * @returns {boolean} whether the found card is raised even if it was read
+ */
+export function announcesFound(trigger) {
+  return trigger === 'manual';
+}
+
+/**
  * The release channel a build belongs to, read from its own version.
  *
  * `1.0.1-dev.38.a1b2c3d4e5` is on `dev`; `1.0.1` is on stable, which returns

@@ -502,9 +502,10 @@ test('★ a cleared attempt does not come straight back', () => {
   // One gate for every raise of the update card. A raise that skipped it would put
   // the abandoned card back on the next chunk of a transfer the reader already
   // asked to stop hearing about, which is the "must not reappear" half of the bug.
-  const gate = /function showUpdateNotice\(notice\) \{[\s\S]*?\n\}/.exec(main);
+  const gate = /function showUpdateNotice\(notice, \{ announce = false \} = \{\}\) \{[\s\S]*?\n\}/.exec(main);
   assert.ok(gate, 'the raise gate was not found');
   assert.match(gate[0], /downloadAttempt === clearedAttempt/, 'the gate compares the attempt');
+  assert.match(gate[0], /\{ announce \}/, 'and it passes the ask through to the store');
 
   // Every phase of the download goes through it: the start, each whole percent, and
   // the stalled state. Progress is the one that would otherwise fight the reader.
@@ -516,7 +517,7 @@ test('★ a cleared attempt does not come straight back', () => {
 
   // A new attempt is a new generation, which is how a later offer is still able to
   // appear: "not this attempt, again, now" rather than a version hidden forever.
-  const begin = /function beginUpdateDownload\(version, \{ quiet = false \} = \{\}\) \{[\s\S]*?\n\}/.exec(main);
+  const begin = /function beginUpdateDownload\(version, \{ quiet = false, announce = false \} = \{\}\) \{[\s\S]*?\n\}/.exec(main);
   assert.ok(begin, 'beginUpdateDownload was not found');
   assert.match(begin[0], /downloadAttempt \+= 1/, 'each attempt is its own generation');
 });
@@ -669,7 +670,7 @@ test('★ a cleared transfer is recorded on disk, because memory does not surviv
   // The read, on the path that raises it: the offer consults the shared decision,
   // and a background fetch is silent.
   assert.match(main, /updates\.fetchPlan\(\{/, 'the fetch decision comes from the shared core');
-  assert.match(main, /beginUpdateDownload\(info\.version, \{ quiet: fetch\.quiet \}\)/,
+  assert.match(main, /beginUpdateDownload\(info\.version, \{ quiet: fetch\.quiet, announce \}\)/,
     'and a quiet fetch is started without a card');
   // The record has to be dropped when it stops being true, or a version nobody can
   // fetch is suppressed forever.
@@ -678,7 +679,7 @@ test('★ a cleared transfer is recorded on disk, because memory does not surviv
 
 test('★ a background fetch draws no card until it has evidence', () => {
   const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
-  const begin = /function beginUpdateDownload\(version, \{ quiet = false \} = \{\}\) \{[\s\S]*?\n\}/.exec(main);
+  const begin = /function beginUpdateDownload\(version, \{ quiet = false, announce = false \} = \{\}\) \{[\s\S]*?\n\}/.exec(main);
   assert.ok(begin, 'beginUpdateDownload was not found');
   // The quiet path must not raise the notice, and must still arm the watchdog: a
   // transfer that never moves still has to be given up on.
@@ -743,7 +744,10 @@ test('★ a background check that finds a release raises the availability card',
     'a quiet transfer must not silence the availability notice',
   );
   // The transfer itself is still quiet, which is the half that must not be undone.
-  assert.match(body, /beginUpdateDownload\(info\.version, \{ quiet: fetch\.quiet \}\)/,
+  // It carries `announce` with it, and that is correct here: the quiet half is the
+  // BACKGROUND path, where announcesFound is false, so a press re-raises and a
+  // background check does not.
+  assert.match(body, /beginUpdateDownload\(info\.version, \{ quiet: fetch\.quiet, announce \}\)/,
     'the transfer keeps the plan\'s own quiet');
   // One wording, composed once, for every path that tells the reader a release
   // exists: the sentence cannot differ between a press and a background check.
@@ -764,10 +768,10 @@ test('★ the quiet half stays quiet: no progress card before movement, and none
   const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
 
   // A quiet attempt still raises nothing at zero and still arms the stall window.
-  const begin = /function beginUpdateDownload\(version, \{ quiet = false \} = \{\}\) \{[\s\S]*?\n\}/.exec(main);
+  const begin = /function beginUpdateDownload\(version, \{ quiet = false, announce = false \} = \{\}\) \{[\s\S]*?\n\}/.exec(main);
   assert.ok(begin, 'beginUpdateDownload was not found');
   assert.match(begin[0], /if \(quiet\) downloadCardRaised = false;/, 'a quiet attempt draws no card');
-  assert.match(begin[0], /else showUpdateNotice\(downloadingNotice\(version, \{ percent: 0 \}\)\);/,
+  assert.match(begin[0], /else showUpdateNotice\(downloadingNotice\(version, \{ percent: 0 \}\), \{ announce \}\);/,
     'the zero-percent card belongs to the reader who asked');
   assert.match(begin[0], /armStallWatch\(\);/, 'and the window is still armed');
 
