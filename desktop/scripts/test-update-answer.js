@@ -231,6 +231,37 @@ app.whenReady().then(async () => {
   check('and it is not still checking', !/checking/i.test(status || ''), status);
   await capture('update-available');
 
+  /* ------------------------------------ direction three: a SECOND press */
+
+  // ★ The reported bug: "clicking the check for updates button works great the
+  // first time, but if I click it again it just flashes and returns quickly". The
+  // first press this run is already covered above; this is the SECOND press for the
+  // same outcome, which used to flash because the answer settled on a re-check with
+  // nothing cached to hold on screen. Now the cached answer is re-presented at once
+  // and floored (MIN_VISIBLE_MS), so the card is on the bar continuously across the
+  // press rather than blinking. Driven on the "current" feed so the held state is
+  // the "up to date" answer, and it is the one the reader complained they could not
+  // read.
+  feed = 'current';
+  await pressCheck(about);
+  text = await bannerText();
+  check('a second press still reports the answer, held rather than flashed',
+    /up to date/i.test(text), `the banner reads ${JSON.stringify(text)} after a second press`);
+  check('and it still names the build you are on', /You are on/.test(text), text);
+  // Press again immediately, then read the bar WITHOUT waiting for the re-check to
+  // settle: the cached answer is up at once, so the bar is never empty between the
+  // press and the live answer. This is the frame that used to be blank.
+  await about.executeJavaScript("document.getElementById('check').click()");
+  await delay(80); // far shorter than the stubbed check's 50ms + render, deliberately
+  const immediate = await bannerText();
+  check('★ the answer is on the bar the instant the button is pressed, not after a fetch',
+    /up to date/i.test(immediate), `the banner read ${JSON.stringify(immediate)} right after the press`);
+  await delay(1400); // let the re-check settle and the held card ride its floor
+  const settled = await bannerText();
+  check('and it is still there once the re-check settles, not replaced by a flash',
+    /up to date/i.test(settled), `the banner reads ${JSON.stringify(settled)} after the re-check`);
+  await capture('update-second-press');
+
   console.log(failed ? 'FAILED' : 'ALL OK');
   server.close();
   app.exit(failed ? 1 : 0);

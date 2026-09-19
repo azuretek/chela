@@ -31,6 +31,11 @@ import {
   // was. It rides with the policy for the same reason, because it is a rule
   // about a trigger rather than about this surface.
   announcesFound,
+  // And whether a manual check re-presents the last completed check's answer from
+  // cache the instant it starts, so a second press shows a held state rather than a
+  // flash. The background lane never does (the #37 identity rule). See
+  // presentsCachedAnswer in core/updates.js.
+  presentsCachedAnswer,
 } from '../../core/updates.js';
 // ★ The desktop's answer to "is the feed's newest build newer than this one"
 // comes from the same owner the phone calls, not from a comparison written
@@ -56,7 +61,7 @@ export {
   // being called progress is core's, and so is whether a check may start one.
   STALL_MS, stallRemaining, offeredStanding, offeredCaveat, downloadingMessage, stalledMessage,
   fetchPlan, OFFER_INSTALL, OFFER_RELEASE,
-  announcesFound,
+  announcesFound, presentsCachedAnswer,
 };
 
 /**
@@ -162,5 +167,5 @@ export default {
   AVAILABLE, CURRENT, UNAVAILABLE, FAILED,
   STALL_MS, stallRemaining, offeredStanding, offeredCaveat, downloadingMessage, stalledMessage,
   fetchPlan, OFFER_INSTALL, OFFER_RELEASE,
-  announcesFound,
+  announcesFound, presentsCachedAnswer,
 };
