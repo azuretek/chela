@@ -46,6 +46,41 @@ function sameAction(a, b) {
   return a.label === b.label && a.command === b.command;
 }
 
+/**
+ * Whether two raises of one id put the same thing on screen.
+ *
+ * This is the check that lets a repeated raise report no change, which the
+ * caller uses to avoid re-rendering: a banner that re-renders replays its
+ * slide-in animation for no reason.
+ */
+function sameContent(a, b) {
+  return a.tone === b.tone && a.message === b.message && a.detail === b.detail
+    && a.progress === b.progress && sameAction(a.action, b.action);
+}
+
+/**
+ * Whether a re-raise carries anything the reader has not already been told.
+ *
+ * ★ This is what read-quiet turns on, and it is narrower than "did anything
+ * change". The message is the condition's own sentence, the tone is how alarming
+ * it is and the action is what the card can do, so any of those moving is news.
+ * The detail is news too, with ONE exception, and the exception is the case this
+ * whole rule exists for: a notice that is about something ARRIVING moves its
+ * detail on every tick (a byte count, a rate) while its sentence stays put. That
+ * number is the same news rather than new news, which is why a progress notice
+ * has to be able to keep moving without reopening a banner the reader has
+ * already read. A progress notice that genuinely has something new to say
+ * changes its message -- "Downloading X" becomes "Downloading X has stopped
+ * making progress" -- and that re-raises.
+ *
+ * @returns {boolean} true when the reader is being told something new
+ */
+function carriesNews(a, b) {
+  if (a.tone !== b.tone || a.message !== b.message || !sameAction(a.action, b.action)) return true;
+  if (a.detail === b.detail) return false;
+  return a.progress === null && b.progress === null;
+}
+
 export function create() {
   const notices = new Map();
   let seq = 0;
@@ -77,16 +112,28 @@ export function create() {
    * @param {{tone?: string, message: string, detail?: string, dismissible?: boolean,
    *          dismissClears?: boolean, progress?: number|null,
    *          action?: {label: string, command: string}}} notice
+   * @param {{announce?: boolean}} [options]  `announce` is the reader HAVING
+   *          ASKED, so this raise is unread whatever it says -- see the note on
+   *          `read` below. Only a check a person pressed sets it.
    * @returns {boolean} whether anything actually changed
    */
   function set(id, {
     tone = ERROR, message, detail = null, dismissible = true, dismissClears = false,
     action = null, progress = null,
-  }) {
+  }, { announce = false } = {}) {
     const previous = notices.get(id);
-    if (previous && previous.tone === tone && previous.message === message && previous.detail === detail
-      && previous.progress === progress
-      && sameAction(previous.action, action)) {
+    const next = {
+      tone,
+      message,
+      detail,
+      // Part of the notice rather than of the store, because it is a fact about
+      // this condition: a card whose X means "stop" says so, and one that does not
+      // say so is read.
+      dismissClears,
+      progress,
+      action: action ? { label: action.label, command: action.command } : null,
+    };
+    if (previous && sameContent(previous, next) && !announce) {
       // Identical to what is already on screen. Reporting no change matters:
       // the caller uses it to avoid re-rendering, and a banner that re-renders
       // replays its slide-in animation for no reason.
@@ -98,17 +145,24 @@ export function create() {
       message,
       detail,
       dismissible,
-      // Part of the notice rather than of the store, because it is a fact about
-      // this condition: a card whose X means "stop" says so, and one that does not
-      // say so is read.
       dismissClears,
       progress,
-      action: action ? { label: action.label, command: action.command } : null,
-      // Unread, always, because reaching here means something changed. A
-      // condition that has been read and then says something different is new
-      // news, and leaving it read would let a failure change under a banner
-      // that has already been waved away.
-      read: false,
+      action: next.action,
+      // ★ Read means quiet for THIS RUN, for this condition, and this line is
+      // where that promise is kept or broken.
+      //
+      // A raise the reader ASKED for carries `announce`, and it is unread
+      // whatever it says: a press is a question and the answer belongs on
+      // screen. That is the explicit "Check for updates", which must bring the
+      // card back even for an identical release the reader has already read.
+      //
+      // Otherwise read SURVIVES a re-raise that carries no news, which is the
+      // download's own case: the number under the sentence moves every tick and
+      // the sentence does not, so the reader who acknowledged the card has not
+      // been told anything since. It resets when the condition says something
+      // different, because that is new news, and leaving it read would let a
+      // failure change under a banner that has already been waved away.
+      read: announce ? false : Boolean(previous && !carriesNews(previous, next) && previous.read),
       // Insertion order within a severity, so a new warning appears below an
       // older one rather than shuffling what someone is reading.
       order: previous ? previous.order : seq++,
@@ -132,23 +186,28 @@ export function create() {
   }
 
   /**
-   * Read everything that can be read.
+   * Read everything on the bar.
    *
-   * A notice that is not dismissible is not markable either. The one that
-   * carries it is the finished update download, kept because losing it means
-   * waiting for the next check to find a version that is already on disk, and a
-   * bulk action is exactly how it would get lost.
+   * ★ EVERY notice, with no exceptions left in it. The sweep is the reader
+   * saying "I have seen this" about the whole bar in one act, so nothing on it
+   * may be left behind: a card the sweep skipped is the card that keeps coming
+   * back, which is the fault this rule exists for. It used to skip the ones that
+   * refuse to be dismissed and the ones whose X clears, and a single card left
+   * standing on an otherwise empty bar is exactly what Abi hit on 2026-09-18.
    *
-   * ★ A dismissClears notice is skipped for the same reason and a sharper one. Its
-   * X does not read it, it ends it, and "end every condition on this bar" is not
-   * what anybody pressed: a sweep over the banner must never decide the fate of a
-   * transfer, which is a decision about network work rather than about reading.
-   * The card's own control is one deliberate act and stays the only one.
+   * ★ And QUIETING IS NOT CLEARING, which is the half that has not changed. What
+   * the sweep does is read: the notice stays in the store, stays under Settings,
+   * and the condition behind it is untouched. A `dismissClears` notice -- the
+   * download, the stalled fetch -- is still ended by its own X and by nothing
+   * else, because ending a transfer is a decision about network work rather than
+   * about reading, and "I have seen everything" is not "stop everything". So the
+   * sweep silences one of those for the run and leaves its transfer alone; see
+   * dismiss() below for the entry point that does end it.
    */
   function markAllRead() {
     let changed = false;
     for (const notice of notices.values()) {
-      if (notice.dismissible === false || notice.dismissClears || notice.read) continue;
+      if (notice.read) continue;
       notice.read = true;
       changed = true;
     }

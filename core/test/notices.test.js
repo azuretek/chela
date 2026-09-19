@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 
-import { create, sentence, ERROR, WARN, OK } from '../notices.js';
+import { create, sentence, ERROR, WARN, INFO, OK } from '../notices.js';
 
 test('the same id replaces rather than stacks', () => {
   const store = create();
@@ -50,13 +50,24 @@ test('a change re-raises a read notice as unread', () => {
   assert.equal(store.get('c').read, false);
 });
 
-test('markAllRead skips a non-dismissible notice', () => {
+test('the sweep quiets EVERY notice on the bar, including one whose X clears', () => {
+  // The fault this rule was written for (Abi, 2026-09-18): the sweep skipped the
+  // notices that refuse to be dismissed and the ones whose own X clears, so a bar
+  // swept to nothing could still be left carrying exactly one card. A card that
+  // comes back after being read is the report, and this was the likeliest one.
   const store = create();
   store.set('update', { tone: OK, message: 'Downloading', progress: 0.4, dismissible: false });
+  store.set('download', { tone: OK, message: 'Downloading another', progress: 0.2, dismissClears: true });
   store.set('conn', { tone: ERROR, message: 'down' });
-  store.markAllRead();
-  assert.equal(store.get('update').read, false, 'the download in flight stays unread');
-  assert.equal(store.get('conn').read, true);
+
+  assert.equal(store.markAllRead(), true);
+  assert.deepEqual(store.unread(), [], 'nothing is left on the bar for the run');
+  assert.equal(store.size(), 3, 'and nothing was CLEARED: quieting is not clearing');
+  assert.equal(store.get('download').dismissClears, true);
+  // The X still ends that condition and nothing else does: the sweep reached the
+  // card's READ state, not the transfer behind it.
+  assert.equal(store.dismiss('download'), true, 'its own X still ends it');
+  assert.equal(store.get('download'), null);
 });
 
 test('progress is part of the notice, and a move in it is a change', () => {
@@ -76,6 +87,52 @@ test('progress is part of the notice, and a move in it is a change', () => {
   // draws no bar rather than one sitting at zero.
   store.set('conn', { tone: ERROR, message: 'down' });
   assert.equal(store.get('conn').progress, null);
+});
+
+test('a detail that moved on a notice about something arriving is not news', () => {
+  // The download's own case: the number under the sentence moves every tick and
+  // the sentence does not, so a reader who acknowledged the card has not been told
+  // anything since and must not see it again.
+  const store = create();
+  const downloading = {
+    tone: OK, message: 'Downloading Claw Control UI 1.0.1.', detail: '25 MB of 130 MB, 2 MB/s.', progress: 0.2,
+  };
+  store.set('update-available', downloading);
+  store.markRead('update-available');
+
+  assert.equal(
+    store.set('update-available', { ...downloading, detail: '60 MB of 130 MB, 3 MB/s.', progress: 0.46 }),
+    true,
+    'the bar genuinely moved',
+  );
+  assert.deepEqual(store.unread(), [], 'and that is the same news, so the reader is not told twice');
+});
+
+test('a detail that moved on an ordinary notice IS news', () => {
+  // The other half of the rule, and the one that must not be lost with it: a
+  // connection that was refused and is now failing to resolve says something
+  // different, and staying read would hide that under a card already waved away.
+  const store = create();
+  store.set('connection', { tone: ERROR, message: 'Cannot connect', detail: 'Refused.' });
+  store.markRead('connection');
+  store.set('connection', { tone: ERROR, message: 'Cannot connect', detail: 'The name did not resolve.' });
+  assert.deepEqual(store.unread().map((n) => n.id), ['connection']);
+});
+
+test('a raise the reader asked for is unread even when nothing changed', () => {
+  // The explicit "Check for updates": the reader pressed the button, so the card
+  // belongs on screen whether or not that same card was read before. The passive
+  // check is the other half and leaves it where it was.
+  const store = create();
+  const card = { tone: INFO, message: 'Claw Control UI 1.0.1 is available.', detail: 'You are on 1.0.0.' };
+  store.set('update-available', card);
+  store.markRead('update-available');
+
+  assert.deepEqual(store.unread(), [], 'read, so quiet');
+  assert.equal(store.set('update-available', card), false, 'a re-raise that says the same thing is not even a change');
+  assert.deepEqual(store.unread(), [], 'and the card stays quiet');
+  assert.equal(store.set('update-available', card, { announce: true }), true, 'the ask is a change');
+  assert.deepEqual(store.unread().map((n) => n.id), ['update-available'], 'so the asker sees it');
 });
 
 test('sentence capitalises the front and closes the back, once', () => {
