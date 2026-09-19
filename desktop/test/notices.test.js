@@ -145,7 +145,20 @@ test('every notice id is a literal, so the banner has a ceiling', () => {
   // call sites rather than the store, because the store cannot see the
   // difference.
   const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
-  const ids = [...main.matchAll(/(?<!function )setNotice\(\s*([^,]+),/g)].map((m) => m[1].trim());
+  // The floored transients go through raiseFloored, which forwards a bounded id to
+  // setNotice internally: its own `setNotice(id, ...)` is the one call site whose
+  // id is a variable BY DESIGN, because the id it forwards was already checked at
+  // raiseFloored's call sites. So the ceiling is read at both surfaces: every
+  // setNotice id must be a literal, EXCEPT the single forward inside raiseFloored,
+  // and every raiseFloored id must be a literal too, which is what keeps the
+  // forwarded id countable.
+  const setNoticeIds = [...main.matchAll(/(?<!function )setNotice\(\s*([^,]+),/g)]
+    .map((m) => m[1].trim())
+    .filter((id) => id !== 'id'); // the one forward inside raiseFloored, checked below
+  const flooredIds = [...main.matchAll(/(?<!function )raiseFloored\(\s*([^,]+),/g)]
+    .map((m) => m[1].trim())
+    .filter((id) => id !== 'id'); // raiseFloored's own recursive re-raise forwards the checked id
+  const ids = [...setNoticeIds, ...flooredIds];
 
   assert.ok(ids.length >= 7, `expected every call site, found ${ids.length}`);
   for (const id of ids) {
@@ -154,6 +167,22 @@ test('every notice id is a literal, so the banner has a ceiling', () => {
       `notice id is not a literal, so the banner is unbounded: ${id}`,
     );
   }
+  // And the one forward is genuinely the helper's, so the filter above cannot be
+  // used to smuggle an unbounded id in: raiseFloored's own body is where `id` may
+  // be a variable, and nowhere else calls setNotice with a bare `id`.
+  // The `(?<!function )` guard drops the two function DEFINITIONS (setNotice and
+  // raiseFloored both open `function name(id, ...`), leaving only real forwards.
+  const setForwards = [...main.matchAll(/(?<!function )setNotice\(\s*id,/g)];
+  assert.equal(setForwards.length, 1, 'setNotice(id, ...) may appear only once, inside raiseFloored');
+  // raiseFloored's own recursive re-raise forwards the same checked id, so it too
+  // may appear only inside the helper: the recursive call and no other.
+  const flooredForwards = [...main.matchAll(/(?<!function )raiseFloored\(\s*id,/g)];
+  assert.equal(flooredForwards.length, 1, 'raiseFloored(id, ...) may appear only once, its own re-raise');
+  assert.match(
+    /function raiseFloored\(id, notice[\s\S]*?setNotice\(id, notice,/.exec(main)?.[0] ?? '',
+    /setNotice\(id, notice,/,
+    'the one setNotice(id, ...) forward is not the one inside raiseFloored',
+  );
 });
 
 /* -------------------------------------------------------------------- read */

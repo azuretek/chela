@@ -840,20 +840,31 @@ test('★ the result is cached from every completed check, so a manual press has
 test('★ a transient answer is held the minimum-visible duration before a fresher one replaces it', () => {
   // The floor, from the shared primitive: a manual re-check re-presents at once and
   // the live re-check settles a moment later; without the floor the second raise
-  // would replace the first before it could be read. raiseAnswer holds the fresher
-  // answer for remainingVisibleMs, measured from when the card on screen went up.
+  // would replace the first before it could be read. The floor is a keyed mechanism
+  // (raiseFloored) every transient shares rather than logic the update lane owns a
+  // copy of, and raiseAnswer routes the update answer through it. It holds the
+  // fresher answer for remainingVisibleMs, measured from when the card on screen
+  // went up.
   const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+  // The shared floor: the hold is measured against the primitive, keyed by notice id.
+  const floored = /function raiseFloored\(id, notice, \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(floored, 'raiseFloored (the shared floor) was not found');
+  assert.match(floored[0], /remainingVisibleMs\(state\.shownAt, MIN_VISIBLE_MS\)/,
+    'the shared floor does not measure the hold against the shared primitive');
+  assert.match(floored[0], /if \(wouldChange && remaining > 0\) \{/,
+    'a fresher answer is not held until the floor is met');
+  assert.match(floored[0], /raiseFloored\(id, notice, \{ ttlMs, announce, after \}\);/,
+    'the held answer is not re-raised once the floor is met');
+  // The update answer is routed through the shared floor rather than a bespoke copy.
   const raise = /function raiseAnswer\(answer, ttlMs = ANSWER_TTL_MS\) \{[\s\S]*?\n\}/.exec(main);
   assert.ok(raise, 'raiseAnswer was not found');
-  assert.match(raise[0], /remainingVisibleMs\(answerShownAt, MIN_VISIBLE_MS\)/,
-    'raiseAnswer does not floor the replacement against the shared primitive');
-  assert.match(raise[0], /if \(wouldChange && remaining > 0\) \{/,
-    'a fresher answer is not held until the floor is met');
-  assert.match(raise[0], /setTimeout\(\(\) => \{ answerReplaceTimer = null; raiseAnswer\(answer, ttlMs\); \}, remaining\)/,
-    'the held answer is not re-raised once the floor is met');
-  // The clock resets when the card leaves the bar, so a fresh press re-presents at once.
-  assert.match(main, /if \(id === UPDATE_ANSWER\) \{\s*answerShownAt = null;/,
-    'the visible clock is not reset when the answer card clears');
+  assert.match(raise[0], /raiseFloored\(\s*UPDATE_ANSWER,/,
+    'raiseAnswer does not go through the shared floor');
+  // The clock resets when a floored card leaves the bar, so a fresh press re-presents
+  // at once; clearNotice calls resetFloor, which is a no-op for an unfloored id.
+  assert.match(main, /function resetFloor\(id\) \{[\s\S]*?state\.shownAt = null;/,
+    'the visible clock is not reset when a floored card clears');
+  assert.match(main, /resetFloor\(id\);/, 'clearNotice does not reset the floor');
   // The primitive is imported from the shared core, not reinvented here.
   assert.match(main, /import \{ MIN_VISIBLE_MS, remainingVisibleMs \} from '\.\.\/\.\.\/core\/ui\/motion\.js';/,
     'the min-visible primitive is not the shared one');

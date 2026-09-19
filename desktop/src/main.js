@@ -2577,14 +2577,11 @@ function clearNotice(id) {
     clearTimeout(timer);
     noticeTimers.delete(id);
   }
-  // The answer card is the one with a minimum-visible floor, so when it leaves the
-  // bar (its TTL fired, or a better answer superseded it) its visible clock and any
-  // pending held replacement are reset: a fresh press then re-presents at once
-  // rather than being held against a card that is no longer there.
-  if (id === UPDATE_ANSWER) {
-    answerShownAt = null;
-    if (answerReplaceTimer) { clearTimeout(answerReplaceTimer); answerReplaceTimer = null; }
-  }
+  // A floored transient leaving the bar (its TTL fired, or a better answer
+  // superseded it) resets its visible clock and any pending held replacement, so a
+  // fresh raise re-presents at once rather than being held against a card that is
+  // no longer there. resetFloor is a no-op for an id that was never floored.
+  resetFloor(id);
   if (notices.clear(id)) {
     noticeLog().cleared(id);
     refreshBanner();
@@ -3145,16 +3142,85 @@ const UPDATE_ANSWER = 'update-answer';
 // to something the user pressed; a real problem has no timeout.
 const ANSWER_TTL_MS = 9000;
 
-// ★ When the answer card currently on the bar was raised, so a fresher answer is
-// held off until it has been on screen the minimum-visible duration (see
-// core/ui/motion.js). This is the whole fix for "a second press just flashes": a
-// manual re-check re-presents the cached answer AT ONCE, and even when the live
-// re-check settles a millisecond later, its replacement waits out
-// remainingVisibleMs so the reader sees the state rather than a flicker. null when
-// no answer card is up. A pending scheduled replacement, so a second press does not
-// stack two timers on one card.
-let answerShownAt = null;
-let answerReplaceTimer = null;
+// ★ The minimum-visible-duration floor, keyed by notice id, so any TRANSIENT
+// notice (one with a TTL) honours the eighth rule in core/ui/CONVENTIONS.md: a
+// state a reader is meant to READ stays on screen the floor (core/ui/motion.js,
+// MIN_VISIBLE_MS) before a fresher one may replace it. This is the whole fix for
+// "a second press just flashes": a manual re-check re-presents the cached answer
+// AT ONCE, and even when the live re-check settles a millisecond later, its
+// replacement waits out remainingVisibleMs so the reader sees the state rather
+// than a flicker.
+//
+// Keyed rather than a single pair of variables, because the floor is the design
+// language for every transient and not a fact about the update lane: it used to
+// be answerShownAt/answerReplaceTimer, one bespoke copy that no other transient
+// could reach. `shownAt` holds when the card under an id went up (null when none
+// is), and `timer` holds a pending held replacement so two presses in quick
+// succession do not stack timers on one card. The phone floors the same way, by
+// notice id, in NoticeBoard.raise -- one design, two clients.
+const floorState = new Map(); // id -> { shownAt: number|null, timer: Timeout|null }
+
+function floorFor(id) {
+  let s = floorState.get(id);
+  if (!s) { s = { shownAt: null, timer: null }; floorState.set(id, s); }
+  return s;
+}
+
+/**
+ * Raise a TRANSIENT notice under `id`, holding whatever is on screen there for the
+ * minimum-visible floor before a genuinely different answer replaces it.
+ *
+ * The generalization of the update lane's old raiseAnswer, so the floor is one
+ * mechanism every transient shares rather than a rule the update card alone obeys.
+ * `wouldChange` gates the hold on there being genuinely new content: a
+ * same-content re-raise the store swallows changes nothing on screen, so it never
+ * restarts the clock and is never held. A caller passes the notice body, the ttl,
+ * whether the raise is an announce (the reader having asked), and an optional
+ * `after` run once the raise actually lands (the update lane refreshes About).
+ *
+ * @returns {boolean} whether something new was put on screen now (false when held)
+ */
+function raiseFloored(id, notice, { ttlMs = 0, announce = false, after = null } = {}) {
+  const state = floorFor(id);
+  const current = notices.get(id);
+  const wouldChange = !current || current.message !== notice.message
+    || current.detail !== notice.detail || current.tone !== notice.tone;
+  const remaining = state.shownAt === null ? 0 : remainingVisibleMs(state.shownAt, MIN_VISIBLE_MS);
+  if (wouldChange && remaining > 0) {
+    // A newer answer, but the one on screen has not been up long enough. Hold the
+    // fresher answer until the floor is met, replacing any earlier pending hold so
+    // two presses in quick succession do not stack timers on one card.
+    if (state.timer) { clearTimeout(state.timer); state.timer = null; }
+    const timer = setTimeout(() => {
+      state.timer = null;
+      raiseFloored(id, notice, { ttlMs, announce, after });
+    }, remaining);
+    if (typeof timer.unref === 'function') timer.unref();
+    state.timer = timer;
+    return false;
+  }
+  if (state.timer) { clearTimeout(state.timer); state.timer = null; }
+  const changed = setNotice(id, notice, { ttlMs, announce });
+  // Only a raise that actually put something new on screen resets the visible
+  // clock; a re-raise of the identical card leaves the reader looking at the same
+  // thing, so its floor keeps counting from when it first appeared.
+  if (changed || state.shownAt === null) state.shownAt = Date.now();
+  if (after) after();
+  return changed;
+}
+
+/**
+ * A floored transient left the bar (its TTL fired, or a better answer superseded
+ * it): reset its visible clock and any pending held replacement, so a fresh raise
+ * re-presents at once rather than being held against a card that is no longer
+ * there. Called from clearNotice.
+ */
+function resetFloor(id) {
+  const state = floorState.get(id);
+  if (!state) return;
+  state.shownAt = null;
+  if (state.timer) { clearTimeout(state.timer); state.timer = null; }
+}
 
 /**
  * Raise the answer a check owes the person who pressed the button.
@@ -3173,48 +3239,22 @@ let answerReplaceTimer = null;
  */
 function raiseAnswer(answer, ttlMs = ANSWER_TTL_MS) {
   if (!answer) return;
-  // ★ Hold the answer on screen for the minimum-visible duration before a fresher
-  // one may replace it. The bug this fixes: a manual re-check re-presents a cached
-  // answer at once (presentCachedAnswer), then the live re-check settles a moment
-  // later and calls this again; without the floor the second raise replaces the
-  // first before the eye settles, which is the reported flash. remainingVisibleMs
-  // is measured from when the card on screen went up, so a floor already met
-  // replaces now and an unmet one waits out the remainder. A same-content re-raise
-  // changes nothing on screen, so it does not restart the clock; only a genuinely
-  // different answer is held.
-  const current = notices.get(UPDATE_ANSWER);
-  const wouldChange = !current || current.message !== answer.message
-    || current.detail !== answer.detail || current.tone !== answer.tone;
-  const remaining = answerShownAt === null ? 0 : remainingVisibleMs(answerShownAt, MIN_VISIBLE_MS);
-  if (wouldChange && remaining > 0) {
-    // A newer answer, but the one on screen has not been up long enough. Hold the
-    // fresher answer until the floor is met, replacing any earlier pending hold so
-    // two presses in quick succession do not stack timers on one card.
-    if (answerReplaceTimer) { clearTimeout(answerReplaceTimer); answerReplaceTimer = null; }
-    const timer = setTimeout(() => { answerReplaceTimer = null; raiseAnswer(answer, ttlMs); }, remaining);
-    if (typeof timer.unref === 'function') timer.unref();
-    answerReplaceTimer = timer;
-    return;
-  }
-  if (answerReplaceTimer) { clearTimeout(answerReplaceTimer); answerReplaceTimer = null; }
-  const changed = setNotice(
+  // The update answer is a transient state, so it goes through the shared floor
+  // (raiseFloored) rather than a copy of the hold logic: the bug this fixes is a
+  // manual re-check re-presenting a cached answer at once (presentCachedAnswer)
+  // and the live re-check settling a moment later, which without the floor
+  // replaces the first answer before the eye settles. `announce` is true because
+  // this is always the reply to a press. The `after` runs on the raise that
+  // actually lands and refreshes the About box, which is the one place that
+  // guarantees the pressed-there card stops saying "Checking...": every ending of
+  // a manual check either calls setLastCheck (which notifies) or lands here, and
+  // the ending that only lands here is the one where the build cannot check at
+  // all. Measured 2026-09-16 by scripts/test-notice-layers.js.
+  raiseFloored(
     UPDATE_ANSWER,
     { tone: answer.tone, message: answer.message, detail: answer.detail },
-    { ttlMs, announce: true },
+    { ttlMs, announce: true, after: notifyAboutChanged },
   );
-  // Only a raise that actually put something new on screen resets the visible
-  // clock; a re-raise of the identical card leaves the reader looking at the same
-  // thing, so its floor keeps counting from when it first appeared.
-  if (changed || answerShownAt === null) answerShownAt = Date.now();
-  // The About box is where the button was pressed, so it is owed the refresh as
-  // well, and this is the one place that guarantees it: every ending of a manual
-  // check either calls setLastCheck (which notifies) or lands here, and the
-  // ending that only lands here is the one where the build cannot check at all.
-  // Without it the card sat on "Checking..." for its own 15-second fallback after
-  // an answer had already been drawn on the banner above it, which reads as a
-  // button that did nothing. Measured 2026-09-16 by
-  // scripts/test-notice-layers.js, which asserts the card stops saying it.
-  notifyAboutChanged();
 }
 
 /**
