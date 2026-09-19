@@ -282,10 +282,11 @@ design language and apply it to everything in our ui."*
 **A state the reader is meant to READ has a floor on how long it stays on screen,
 and the floor is the same everywhere.** The floor is `motion.minVisibleMs` in
 `spec/tokens.json` (900ms), and the primitive that applies it is
-`core/ui/motion.js` (`remainingVisibleMs`, `heldLongEnough`). A transient state
-shown at time T may be replaced no earlier than T + the floor: a caller with
-something newer to show waits out the remainder and then shows it; a caller with
-nothing newer ignores it.
+`core/ui/motion.js` (`remainingVisibleMs`, `heldLongEnough`) on the desktop, with
+`mobile/Claw/Motion.swift` its iOS mirror so the two clients hold a transient the
+same length. A transient state shown at time T may be replaced no earlier than T +
+the floor: a caller with something newer to show waits out the remainder and then
+shows it; a caller with nothing newer ignores it.
 
 **This is about how long a state STAYS, not how it MOVES.** The durations under
 Durations and easing govern the animation of a change; this governs the dwell of
@@ -311,15 +312,25 @@ was on a control, here it is on the banner, and the floor is what both need.
 | The held "up to date" the manual check shows from cache, so it is a state and not a flash. | Anything the reader triggers repeatedly or at speed. A floor there stacks into lag, which is the at-speed case the motion rules already exempt. |
 
 **The primitive is clock-free and takes `now`**, so the rule can be exercised for
-every timing from one test run (`core/test/motion.test.js`) rather than by waiting
-real seconds. A surface that owns a live timer (the desktop update lane) reads the
-remainder and schedules its own replacement; a surface that cannot (a page) reads
-the same constant through the token layer.
+every timing from one test run (`core/test/motion.test.js`, and the iOS mirror in
+`mobile/ClawTests/MotionParityTests.swift`) rather than by waiting real seconds. A
+surface that owns a live timer (the desktop update lane, and the phone's
+`NoticeBoard`) reads the remainder and schedules its own replacement; a surface
+that cannot (a page) reads the same constant through the token layer.
+
+**How each client applies it.** The floor is one keyed mechanism per client rather
+than logic the update lane owns a copy of: on the desktop `raiseFloored` in
+`src/main.js` holds any transient notice by its id, and the update answer routes
+through it; on iOS `NoticeBoard.raise` floors any TTL'd raise the same way, by
+notice id. A standing condition (no TTL) is never floored on either client, which
+is the split the table above draws. So a new transient on either client honours the
+floor by going through its client's raiser, not by copying the hold.
 
 **Rollout is deliberate, not a sweep.** The primitive plus the update banner plus
 the other clearly-transient states is the safe unit; applying it to every component
-at once is the mass edit the reader did not ask for. The broader rollout is
-proposed rather than done, so each application is a place someone decided a state
+at once is the mass edit the reader did not ask for. The floor is now applied by
+both clients' notice raisers rather than the desktop update lane alone, so each
+application is a place someone decided a state
 was transient rather than a global default that freezes something live.
 
 ## ★ What counts as a transition
