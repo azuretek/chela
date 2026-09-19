@@ -75,6 +75,24 @@ final class NoticeBoard: ObservableObject {
     /// leaving two timers racing to clear the same notice.
     private var timers: [String: Task<Void, Never>] = [:]
 
+    /// When the transient answer under an id went on screen, so a fresher answer is
+    /// held off until it has been up the minimum-visible duration (`Motion`). This
+    /// is the phone's half of the desktop's `answerShownAt`: the same fix for "a
+    /// second press just flashes", where a manual re-check re-presents the cached
+    /// answer at once and the live re-check settles a moment later. Only a floored
+    /// (transient) raise records or reads it; a standing condition is not held.
+    /// nil when no floored answer is up under that id.
+    private var floorShownAt: [String: Date] = [:]
+
+    /// A held replacement waiting out the remainder of the floor, by id, so two
+    /// presses in quick succession do not stack timers on one card.
+    private var floorHolds: [String: Task<Void, Never>] = [:]
+
+    /// A clock the tests inject, so the floor is exercised without waiting real
+    /// seconds. Production reads the wall clock; `Motion` takes `now` for the same
+    /// reason `core/ui/motion.js` does.
+    var now: () -> Date = { Date() }
+
     /// Raise a notice, optionally for a fixed time.
     ///
     /// Almost every notice is a standing condition and stays until whatever
@@ -82,11 +100,51 @@ final class NoticeBoard: ObservableObject {
     /// the handful that are not: the answer to a manual "check for updates", which
     /// is a reply to a question rather than a condition, and would otherwise sit
     /// there permanently announcing that nothing is wrong.
+    ///
+    /// ★ A TTL'd raise is a TRANSIENT state, so it honours the minimum-visible
+    /// floor: if the transient answer already on screen under this id has not been
+    /// up long enough, a genuinely different answer waits out the remainder
+    /// (`Motion.remainingVisibleMs`) before it replaces it, so the reader sees the
+    /// first answer rather than a flash of it. A same-content re-raise the store
+    /// swallows changes nothing on screen, so it does not restart the clock; only a
+    /// genuinely different answer is held. A standing condition (ttlMs == 0) is
+    /// never floored: it is on screen until it is fixed, so a floor is meaningless,
+    /// which is the same split the desktop and the eighth rule draw.
     func raise(_ id: String, _ notice: NoticeRaise, ttlMs: Int = 0) {
+        // A standing condition: no floor, and it clears any transient bookkeeping
+        // that an earlier answer under this id left behind.
+        guard ttlMs > 0 else {
+            floorHolds[id]?.cancel(); floorHolds[id] = nil
+            floorShownAt[id] = nil
+            timers[id]?.cancel(); timers[id] = nil
+            if store.set(id, notice) { refresh() }
+            return
+        }
+
+        // A transient answer. Hold it off if the one on screen has not had its floor.
+        let wouldChange = !(store.get(id)?.saysTheSame(as: notice) ?? false)
+        let shownAt = floorShownAt[id]
+        let remaining = shownAt.map { Motion.remainingVisibleMs(shownAt: $0, now: now()) } ?? 0
+        if wouldChange && remaining > 0 {
+            floorHolds[id]?.cancel()
+            floorHolds[id] = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(remaining) * 1_000_000)
+                guard !Task.isCancelled else { return }
+                self?.floorHolds[id] = nil
+                self?.raise(id, notice, ttlMs: ttlMs)
+            }
+            return
+        }
+        floorHolds[id]?.cancel(); floorHolds[id] = nil
+
         timers[id]?.cancel()
         timers[id] = nil
-        if store.set(id, notice) { refresh() }
-        guard ttlMs > 0 else { return }
+        let changed = store.set(id, notice)
+        // Only a raise that actually put something new on screen resets the visible
+        // clock; a re-raise of the identical card leaves the reader looking at the
+        // same thing, so its floor keeps counting from when it first appeared.
+        if changed || floorShownAt[id] == nil { floorShownAt[id] = now() }
+        if changed { refresh() }
         timers[id] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(ttlMs) * 1_000_000)
             guard !Task.isCancelled else { return }
@@ -105,6 +163,12 @@ final class NoticeBoard: ObservableObject {
     func clear(_ id: String) {
         timers[id]?.cancel()
         timers[id] = nil
+        // A floored answer leaving the bar (its TTL fired, or a better answer
+        // superseded it) resets its visible clock and any held replacement, so a
+        // fresh press re-presents at once rather than being held against a card that
+        // is no longer there. Mirrors the desktop's clearNotice for UPDATE_ANSWER.
+        floorHolds[id]?.cancel(); floorHolds[id] = nil
+        floorShownAt[id] = nil
         if store.clear(id) { refresh() }
     }
 
