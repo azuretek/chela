@@ -196,7 +196,7 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.55 var(--font-body);
+  font: calc(13px * var(--control-ui-text-scale))/1.55 var(--font-body);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -334,8 +334,8 @@ body.as-page .modal { border-color: transparent; box-shadow: none; }
 
 /* ------------------------------------------------------------------- type */
 
-h1 { font-size: 17px; margin: 0 0 4px; font-weight: 650; color: var(--text-strong); }
-h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 26px 0 10px; font-weight: 600; }
+h1 { font-size: calc(17px * var(--control-ui-text-scale)); margin: 0 0 4px; font-weight: 650; color: var(--text-strong); }
+h2 { font-size: calc(12px * var(--control-ui-text-scale)); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 26px 0 10px; font-weight: 600; }
 p  { margin: 0 0 12px; color: var(--muted); }
 a  { color: var(--accent); }
 
@@ -364,7 +364,7 @@ a  { color: var(--accent); }
   border-bottom: 2px solid transparent; margin-bottom: -1px;
   padding: 4px 8px 8px; cursor: pointer;
   display: inline-flex; align-items: center; gap: 6px;
-  font: inherit; font-size: 12px; font-weight: 550;
+  font: inherit; font-size: calc(12px * var(--control-ui-text-scale)); font-weight: 550;
   text-transform: none; letter-spacing: 0; color: var(--muted);
 }
 /* Beat `button:hover:not(:disabled)` on its own terms: a tab hover changes the
@@ -382,7 +382,7 @@ a  { color: var(--accent); }
    which is the one thing this page cannot afford to do. */
 .tab__count {
   display: inline-flex; align-items: center; min-height: 16px;
-  font-size: 10px; font-weight: 700; line-height: 1;
+  font-size: calc(10px * var(--control-ui-text-scale)); font-weight: 700; line-height: 1;
   background: var(--bg-hover); color: var(--muted);
   border-radius: var(--radius-full); padding: 0 5px; min-width: 7px; text-align: center;
 }
@@ -656,7 +656,7 @@ a  { color: var(--accent); }
 .row + .row { margin-top: 10px; }
 .grow { flex: 1; min-width: 0; }
 
-.url  { color: var(--muted); font-family: var(--mono); font-size: 11.5px; overflow-wrap: anywhere; }
+.url  { color: var(--muted); font-family: var(--mono); font-size: calc(11.5px * var(--control-ui-text-scale)); overflow-wrap: anywhere; }
 /* `.stack` and `.name` used to live here, as the column and the title of every
    row on the page. Both are upstream's now: `settings-row__text` and
    `settings-row__title`, declared in the upstream components section, and they
@@ -676,7 +676,7 @@ a  { color: var(--accent); }
    centred on their line rather than pinned to the top of it. */
 .badge {
   display: inline-flex; align-items: center;
-  font-size: 10.5px; font-weight: 700; line-height: 1; letter-spacing: .05em; text-transform: uppercase;
+  font-size: calc(10.5px * var(--control-ui-text-scale)); font-weight: 700; line-height: 1; letter-spacing: .05em; text-transform: uppercase;
   color: var(--ok); border: 1px solid var(--ok); border-radius: var(--radius-full); padding: 4px 10px; white-space: nowrap;
 }
 /* One tone per connection state, so the row is readable at a glance and a
@@ -777,9 +777,9 @@ body.is-failed .loading__mark::before { animation: none; opacity: .3; }
   .loading, .loading__ring, .loading__mark::before { animation: none; }
 }
 
-.loading__title { font-size: 15px; margin: 0 0 6px; }
+.loading__title { font-size: calc(15px * var(--control-ui-text-scale)); margin: 0 0 6px; }
 .loading__label { color: var(--text); margin: 0 0 4px; font-weight: 550; }
-.loading__url { color: var(--muted); font-size: 11.5px; margin: 0; max-width: 420px; }
+.loading__url { color: var(--muted); font-size: calc(11.5px * var(--control-ui-text-scale)); margin: 0; max-width: 420px; }
 .loading__retry { margin-top: 22px; }
 
 /* A fixed width rather than a share of the window: the bar sits under a URL
@@ -822,7 +822,7 @@ body.is-failed .loading__progress-fill {
   gap: 8px;
   margin: 10px 0 0;
   width: min(320px, 76vw);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--control-ui-text-scale));
   color: var(--muted);
 }
 
@@ -889,7 +889,7 @@ body.frameless .pairing { padding-top: 58px; }
 
 .pairing__logo { width: 30px; height: 30px; opacity: .9; }
 
-.pairing__title { margin: 0 0 10px; font-size: 19px; font-weight: 600; }
+.pairing__title { margin: 0 0 10px; font-size: calc(19px * var(--control-ui-text-scale)); font-weight: 600; }
 
 .pairing__body {
   max-width: 52ch;
@@ -913,7 +913,7 @@ body.frameless .pairing { padding-top: 58px; }
 /* `user-select: all` so one click selects the whole command: it is short, it is
    meant to be copied, and the id inside it is not. */
 .pairing__command { width: min(520px, 100%); margin-top: 14px; text-align: left; }
-.pairing__command-label { color: var(--muted); font-size: 11.5px; }
+.pairing__command-label { color: var(--muted); font-size: calc(11.5px * var(--control-ui-text-scale)); }
 .pairing__command code {
   display: block;
   margin-top: 5px;
@@ -921,7 +921,7 @@ body.frameless .pairing { padding-top: 58px; }
   background: var(--input);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-size: 12px;
+  font-size: calc(12px * var(--control-ui-text-scale));
   user-select: all;
 }
 
@@ -930,10 +930,10 @@ body.frameless .pairing { padding-top: 58px; }
 .pairing__waiting { margin: 20px 0 0; color: var(--warn); }
 
 .pairing__actions { display: flex; align-items: center; gap: 16px; margin-top: 16px; }
-.pairing__docs { color: var(--muted); font-size: 11.5px; }
+.pairing__docs { color: var(--muted); font-size: calc(11.5px * var(--control-ui-text-scale)); }
 .pairing__docs:hover { color: var(--accent); }
 
-.pairing__note { max-width: 52ch; margin: 16px 0 0; color: var(--muted); font-size: 11.5px; }
+.pairing__note { max-width: 52ch; margin: 16px 0 0; color: var(--muted); font-size: calc(11.5px * var(--control-ui-text-scale)); }
 
 /* ----------------------------------------------------------------- inputs */
 
@@ -1003,7 +1003,7 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
    padding, and the rule below gives that padding the room the card's corner
    needs. */
 .result:empty { display: none; }
-.result { font-size: 12px; margin-top: 8px; min-height: 17px; }
+.result { font-size: calc(12px * var(--control-ui-text-scale)); margin-top: 8px; min-height: 17px; }
 .result.ok   { color: var(--ok); }
 .result.warn { color: var(--warn); }
 .result.err  { color: var(--destructive); }
@@ -1153,7 +1153,7 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
   }
 }
 
-.muted-sm { color: var(--muted); font-size: 11.5px; }
+.muted-sm { color: var(--muted); font-size: calc(11.5px * var(--control-ui-text-scale)); }
 .mono { font-family: var(--mono); overflow-wrap: anywhere; }
 .empty { color: var(--muted); font-style: italic; }
 /* `.actions` used to be here, as a row of buttons under a card. A row of
@@ -1198,7 +1198,7 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
   border: 1px solid var(--border);
   color: var(--text);
   font: inherit;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--control-ui-text-scale));
   font-weight: 550;
   cursor: pointer;
   border-radius: var(--radius-sm);
@@ -1213,7 +1213,7 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
 .about-footer__build {
   color: var(--muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
+  font-size: calc(11px * var(--control-ui-text-scale));
   font-weight: 400;
 }
 .about-footer__build:empty { display: none; }
@@ -1361,7 +1361,7 @@ body:not(.frameless) .scrim { padding-top: 24px; }
 
 .strip__label {
   color: var(--muted);
-  font: 500 12px/1 var(--font-body);
+  font: 500 calc(12px * var(--control-ui-text-scale))/1 var(--font-body);
   letter-spacing: .01em;
   white-space: nowrap;
   overflow: hidden;

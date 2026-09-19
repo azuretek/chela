@@ -262,6 +262,16 @@ const RESOLVE = {
   length: { prop: 'width', read: 'width', absent: '31337px' },
   font: { prop: 'fontFamily', read: 'fontFamily', absent: '__claw_absent__' },
   shadow: { prop: 'boxShadow', read: 'boxShadow', absent: '0px 0px 0px rgb(1, 2, 3)' },
+  // The interface's reading scale: a unitless multiplier the Control UI sets on
+  // :root as --control-ui-text-scale. It is resolved through `flex-grow` rather
+  // than read off the custom property directly for the same reason the colours
+  // are, so the engine hands back a resolved NUMBER whatever the token was
+  // authored as: flex-grow takes a bare number, computes to that number, and its
+  // initial value is 0, which is the sentinel here (a real scale is never 0, and
+  // sanitizeTokenValue refuses one that is). A page with no scale token leaves
+  // flex-grow at the initial 0 and the reading is dropped, so our pages keep
+  // their own fallback of 1.
+  scale: { prop: 'flexGrow', read: 'flexGrow', absent: '0' },
 };
 
 // The token list lives in src/chrome.js, which a sandboxed preload cannot
