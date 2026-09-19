@@ -32,6 +32,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 import {
   NON_RELEASE_PATHS,
@@ -240,4 +241,21 @@ test('the non-release list is short enough to read and each entry says why', () 
   for (const entry of NON_RELEASE_PATHS) {
     assert.ok(entry.describes && entry.why, 'every non-release entry carries its reason');
   }
+});
+
+test('running the script the way the workflow does writes the release output', () => {
+  // The workflows invoke `node scripts/release/changes.mjs`, not run() directly.
+  // A broken main-entry guard once made the script a silent no-op: it exited 0
+  // and wrote nothing to GITHUB_OUTPUT, so every release stood down without even
+  // the designed refusal, and the direct-run() tests above could not see it.
+  // This exercises the real entry path.
+  const script = path.join(ROOT, 'scripts', 'release', 'changes.mjs');
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'claw-entry-')), 'out');
+  fs.writeFileSync(out, '');
+  execFileSync(process.execPath, [script, '--files', 'core/gateway-url.js'], {
+    env: { ...process.env, GITHUB_OUTPUT: out },
+    stdio: 'ignore',
+  });
+  const written = fs.readFileSync(out, 'utf8');
+  assert.match(written, /^release=true$/m, 'the script must write release=true for a shipping change; empty output means the entry guard never fired');
 });
