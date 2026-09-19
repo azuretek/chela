@@ -53,6 +53,28 @@ EOF
   exit 1
 }
 
+# Scope to the change. The local gate is the JS app's: the desktop unit suite,
+# the import audit and an Electron boot smoke. A push whose commits touch nothing
+# under desktop/, core/ or a root manifest cannot change the app, so the smoke
+# would be a multi-minute Electron launch for no signal (Abi, 2026-09-18). CI
+# still runs every headless check on the pushed commit, including the iOS legs.
+changed="$(
+  while read -r _local_ref local_sha _remote_ref remote_sha; do
+    [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+      base="$(git merge-base "$local_sha" refs/remotes/origin/HEAD 2>/dev/null || true)"
+      if [ -n "$base" ]; then git diff --name-only "$base..$local_sha" || true; fi
+    else
+      git diff --name-only "$remote_sha..$local_sha" || true
+    fi
+  done
+)"
+if [ "$(printf '%s\n' "$changed" | node scripts/hook-scope.mjs)" = "skip" ]; then
+  echo "pre-push: SKIPPED the local gate; nothing pushed touches desktop/, core/ or a root manifest."
+  echo "          CI runs the headless gate on this commit, so this is a skip, not a pass."
+  exit 0
+fi
+
 echo "pre-push: local gate (desktop unit tests, import audit, GUI boot smoke)"
 if ! npm run verify; then
   fail "the verification suite failed."
