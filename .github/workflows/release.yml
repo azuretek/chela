@@ -191,6 +191,20 @@ jobs:
       # release (upload + VALID) -> this gate -> desktop publish, with no cycle.
       platform: claw-mobile pipeline
       verdict: '^iOS |^swiftlint$|^release$'
+      # ★ 90 minutes, because of what this now waits for. The verdict names the
+      # mobile `release` job, and that job's own budget is 60 minutes: an archive,
+      # an export, an upload, and then a wait of up to 45 minutes for the build to
+      # reach VALID in App Store Connect. The gate's default of 45 would give up
+      # while that job is still legitimately waiting on Apple, and refuse a
+      # release whose TestFlight build was about to become installable.
+      #
+      # A refusal is the safe direction, but it is still a release that did not
+      # happen, which the rule treats as its own bug. 90 minutes is above the
+      # mobile job's whole budget, so the gate now only ever gives up on a run
+      # that has already been killed, and reports that rather than a timeout it
+      # invented. It costs nothing on a healthy push: the gate is idle waiting
+      # either way, and measured 2026-09-17 it was 5 m 58 s in practice.
+      window: 90
 
   # ★ The JS import lint, once, at the repo root. This is the off-the-shelf guard
   # for the boot-fatal class that shipped a green-tested build to a fatal dialog:
