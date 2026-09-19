@@ -14,6 +14,23 @@ Abi extended it the same day to make the symmetry explicit, and gave the reason:
 
 **The case it was written from, and the reason it is not a preference.** On one commit the desktop release concluded SUCCESS and published, while the mobile pipeline FAILED on a parity test. A release went out for a commit whose other platform was red, and nothing in either file could see it: `release.yml`'s release job required its own build matrix, `mobile-pipeline.yml`'s required its own test matrix, and both of those were satisfied on that commit by a workflow that had no idea the other existed. Each platform gated itself, so the pair was ungated. See the run history for `2026-09-16`, where three commits in a row show a green desktop release beside a red mobile pipeline.
 
+## ★ And only when something SHIPPED changed
+
+Abi, 2026-09-18: "we only need a release if something actually changed, so docs and other things like that definitely do not need a release at all."
+
+**A release happens only for a commit that changes something which ships.** This is a second rule rather than a restatement of the first, and it changed what the path filter was FOR: it used to decide whether a release **waited** for the other platform, and its answer for a commit confined to one client's tree was "publishing is unaffected". It now decides whether a release happens **at all**. The escape is gone, and so is the filter: the trigger set has one owner, `scripts/release/changes.mjs`, which both pipelines ask through a `changes` job and which a test holds them to (`desktop/test/release-trigger.test.js`, which fails if a `paths:` or `paths-ignore:` reappears anywhere under `on:`).
+
+| | Release-triggering | Not |
+|---|---|---|
+| Paths | `core/` (compiled into both clients, spec and ui included), `desktop/`, `mobile/`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` | `docs/`, `*.md`, `.github/`, `.githooks/`, `scripts/`, and `LICENSE` / `.gitignore` |
+| What runs | both pipelines in full, nothing published until every leg and the TestFlight upload are green | CI still builds, tests and lints, and NOTHING publishes: no version bump, no GitHub Release, no TestFlight upload |
+
+**The classification is exclusion rather than inclusion**: a path ships unless the list says otherwise, so a tree nobody thought about is treated as shipped and is gated by the whole matrix rather than being silently exempt. The two failure directions are not equally bad. Publishing a release for a commit that changed nothing costs a version number; a shipped fix that never reaches anyone costs the fix.
+
+**A tag and a `workflow_dispatch` are an explicit "release this"**, so where they find nothing shipped the `changes` job REFUSES rather than standing down: a release that was asked for and quietly did not happen is its own bug. The range a tag or a dispatch is judged over is everything since the last release tag, because that is what it would ship, rather than only its tip commit.
+
+**The two rules are what make the cost affordable.** A commit that ships now runs the whole matrix on BOTH platforms, a desktop-only commit included, because the release the desktop publishes is the feed the phone reads. That is why the mobile pipeline caches its generated project, its simulator build products and the Swift package caches: a commit that changes no iOS input restores those layers instead of rebuilding them.
+
 ### Why this is not per-platform, and why one direction is not enough
 
 **A build or test failure on one platform can be an integration issue in the shared code, not a fault confined to the client that showed it.** The clients are a product monorepo: `core/` is compiled into both of them, while `desktop/` reaches only the desktop app and `mobile/` only the phone. A leg that goes red is therefore evidence about code BOTH clients run, and the platform that happened to pass is no evidence at all that the commit is safe to ship either client from.
@@ -26,7 +43,7 @@ Both pipelines call `platforms-gate.yml`, and both publish jobs need it:
 
 | Pipeline | Waits on | Because |
 |---|---|---|
-| `release.yml` | `claw-mobile pipeline`, jobs matching `^iOS ` | a desktop release must not ship a commit the phone failed |
+| `release.yml` | `claw-mobile pipeline`, jobs matching `^iOS \|^swiftlint$\|^release$` | a desktop release must not ship a commit the phone failed, and must not go out before the TestFlight build is VALID |
 | `mobile-pipeline.yml` | `claw-desktop release`, jobs matching `^build` | a TestFlight upload must not ship a commit the desktop failed |
 
 **Both directions, with no asymmetry.** Each client ships from its own pipeline, so a commit that broke one of them is not a commit to hand anyone either client from. There is nothing to weigh; the two directions are the same claim.
@@ -35,13 +52,13 @@ Both pipelines call `platforms-gate.yml`, and both publish jobs need it:
 
 What the gate reads, and what it deliberately does not:
 
-- **The other pipeline's build and test jobs**, every one of which must conclude `success`. A cancelled or timed-out leg is not a passing one, and is treated as a failure. A leg that was skipped is not evidence either: if every verdict job was skipped the gate reads the other run's own conclusion, so a version job that failed (which skips its matrix and fails its run) still refuses.
+- **The other pipeline's build and test jobs, and the upload**, every one of which must conclude `success`. Only `success` passes. A cancelled or timed-out leg is not a passing one, a **skipped** one is not evidence either, and a job the pattern cannot find at all refuses: a gate that cannot see what it waits for is not a gate.
 - **A run's job list lags the run itself.** A run object appears within seconds of its push while its jobs register seconds to tens of seconds later, so the gate waits for a matching job to appear rather than reading an empty list as a rename, and refuses on an empty match only once the other run has concluded without ever listing one. Reading the empty list as a verdict is what refused a release whose counterpart was green on 2026-09-17.
 - **Not the other pipeline's publish job.** Each release job needs its own pipeline's gate, and each gate waits on the other pipeline's verdict, so waiting on its publish as well would deadlock both runs. The upload is not a build or a test either.
 
 **Failure behaviour.** A phase that fails, is cancelled, or times out refuses in one direction only: nothing is published. The gate never publishes on behalf of the other platform, and it never turns a red verdict into a deferred one. In `release.yml` a failed gate skips the release job exactly as a failed build leg does, so no GitHub Release and no tag are created; in `mobile-pipeline.yml` it skips the upload, so no build reaches TestFlight.
 
-**A platform this commit cannot affect has no run at all**, and that is a real answer rather than a fault: `desktop/` and `core/` build the desktop while `mobile/` and `core/` build the phone, so a commit confined to one client's own tree only builds that client. On a **tag** push the answer must not be read this way, because GitHub does not evaluate path filters for tags: a tag release runs both pipelines whatever changed, so a missing run there is a fault and the gate refuses. That is the case that actually ships to everyone.
+**A missing run is a refusal, and so is a skipped job.** Both pipelines trigger on every path, so a commit that reaches the gate has always been built by the other one: a missing run means the trigger regressed or a run was never created, and the gate refuses rather than reading it as a platform this commit does not involve. A **skipped** job refuses for the same reason, and this is the half that matters most. The mobile `release` job is where the TestFlight upload and the wait for the build to reach VALID live, so a skipped upload means no installable iOS build exists, and the release published then is a feed entry pointing the phone at a build that is not there.
 
 ## Where to look when a release did not happen
 
@@ -101,8 +118,8 @@ Three other things can block a publish, and none of them is this gate:
 
 Named so it is not mistaken for coverage.
 
-- **A commit that only changes one client's tree is gated on that client only.** The gate keys on the commit being published, so if a `core/` change breaks the phone and the next commit touches only `desktop/`, the desktop release for that next commit is not blocked. The release that accompanies the breaking change is blocked, which is the case the rule was written from.
-- **A manual `workflow_dispatch` of one pipeline** is a dev build of that platform on demand. It is still gated when the other pipeline happens to have run the same commit; when it has not, the gate reports that the other platform has no run and publishes. A tag release can never take that path, which is the one that reaches everyone.
+- **A commit that only changes one client's tree still publishes for both.** Both pipelines run for every commit that ships, so a `desktop/`-only change is built, tested and uploaded on the phone before the desktop releases it. The gate keys on the commit being published, so an earlier unlucky commit whose `core/` change broke the phone does not block a later one: the release that accompanies the breaking change is blocked, which is the case the rule was written from.
+- **A manual `workflow_dispatch` of one pipeline** is a dev build of that platform on demand, and it is held to the whole matrix like any other: it refuses when the other pipeline has no run for that commit rather than publishing, so dispatching one pipeline alone is no longer a way around the gate. Dispatching a ref that ships nothing refuses too, by the rule above.
 - **A rolled-back or re-run publish** is not re-gated beyond the run it belongs to. A `gh run rerun` of a publish job re-reads the other pipeline's verdict as it stands at that moment.
 
 ## The files

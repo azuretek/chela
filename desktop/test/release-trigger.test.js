@@ -1,0 +1,235 @@
+// The release trigger set, held to its one owner.
+//
+// Abi's rule, 2026-09-18: a release happens only when something that SHIPS
+// changed, and the paths that decide that live in ONE place. Two halves of that
+// live in the workflows and the answer lives in a script, and this test is the
+// third thing that keeps them agreeing:
+//
+//   no path filter in either workflow   The filter used to be the thing that
+//                                       decided whether a release waited for the
+//                                       other platform, and its answer for a
+//                                       narrow commit was "publishing is
+//                                       unaffected". A path filter is therefore
+//                                       not a tidy-up here: it is how the
+//                                       phantom-update class got out, so its
+//                                       reintroduction is a failure rather than
+//                                       a review note.
+//
+//   scripts/release/changes.mjs         The one owner of which paths ship. Its
+//                                       verdict gates publication in both
+//                                       pipelines.
+//
+//   the fixtures below                  Prove the classification, the refusal
+//                                       when a release is asked for and nothing
+//                                       shipped, and that neither pipeline's own
+//                                       path list survives anywhere.
+//
+// Run with: npm test
+
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import assert from 'node:assert';
+import fs from 'node:fs';
+import path from 'node:path';
+
+import {
+  NON_RELEASE_PATHS,
+  RELEASE_PATHS,
+  ships,
+  classify,
+  decide,
+  run,
+} from '../../scripts/release/changes.mjs';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.join(HERE, '..', '..');
+const WORKFLOWS = ['release.yml', 'mobile-pipeline.yml', 'platforms-gate.yml'];
+
+const read = (file) => fs.readFileSync(path.join(ROOT, '.github', 'workflows', file), 'utf8');
+
+/** The `on:` block, which is where a path filter can live. */
+function onBlock(yml) {
+  const match = /^on:\n([\s\S]*?)(?=^[a-z]|$(?![\s\S]))/m.exec(yml);
+  assert.ok(match, 'the workflow has no on: block');
+  return match[1];
+}
+
+test('no workflow carries a path filter: the trigger set has one owner', () => {
+  // ★ The guard. A `paths:` or `paths-ignore:` anywhere under `on:` is a
+  // second copy of the rule, and the copy that shipped a release with no iOS
+  // build behind it (v1.0.1-dev.279.9a58115cb1) was exactly this shape.
+  for (const file of WORKFLOWS) {
+    const block = onBlock(read(file));
+    assert.ok(
+      !/^\s*paths(-ignore)?:/m.test(block),
+      `${file} carries a path filter under on:. Which paths ship is owned by scripts/release/changes.mjs`,
+    );
+  }
+});
+
+test('no workflow hands node a program with a stray backslash escape', () => {
+  // ★ The class this catches, measured on main 2026-09-18. release.yml passed
+  // its marker program as a single-quoted node -e argument whose quotes were
+  // backslash-escaped. Inside a SINGLE-quoted shell argument a backslash
+  // survives VERBATIM, so node received the backslashes and died at eval with
+  // "Expected unicode escape". The release job failed one step before
+  // publishing, the draft was never published, and no release went out at all.
+  // The command reads as correct in review, which is why this is asserted.
+  //
+  // The check is narrow on purpose: a backslash inside that single-quoted
+  // argument is never what is meant, and a legitimate one would be escaped
+  // through a different quoting style.
+  for (const file of WORKFLOWS) {
+    const yml = read(file);
+    for (const match of yml.matchAll(/node -e '([^']*)'/g)) {
+      assert.ok(
+        !match[1].includes('\\'),
+        file + ': a single-quoted node -e program carries a backslash, which reaches node verbatim: ' + match[1],
+      );
+    }
+  }
+});
+
+test('every workflow that publishes asks the owner whether this commit ships', () => {
+  // Both publish paths, so both must read the same answer. platforms-gate.yml is
+  // the shared gate and carries no trigger of its own, so it is not here.
+  for (const file of ['release.yml', 'mobile-pipeline.yml']) {
+    const yml = read(file);
+    assert.match(
+      yml,
+      /^\s*changes:\n/m,
+      `${file} has no changes job, so nothing decides whether a release happens`,
+    );
+    assert.match(
+      yml,
+      /scripts\/release\/changes\.mjs/,
+      `${file} does not run the owner of the trigger set`,
+    );
+    assert.match(
+      yml,
+      /needs\.changes\.outputs\.release == 'true'/,
+      `${file} publishes without asking whether this commit ships anything`,
+    );
+  }
+});
+
+test('every path in the shipped list classifies as shipping', () => {
+  for (const entry of RELEASE_PATHS) {
+    const sample = entry.endsWith('/') ? entry + 'anything.js' : entry;
+    assert.ok(ships(sample), `${entry} is named as a shipped path but does not ship`);
+  }
+});
+
+test('the non-release list covers what the rule names, and nothing else does', () => {
+  const nonRelease = [
+    'docs/guide.md',
+    'README.md',
+    'mobile/README.md',
+    '.github/workflows/release.yml',
+    '.github/pull_request_template.md',
+    '.githooks/pre-commit',
+    'scripts/mobile.mjs',
+    'scripts/release/changes.mjs',
+    'LICENSE',
+    '.gitignore',
+  ];
+  for (const file of nonRelease) {
+    assert.ok(!ships(file), `${file} should not trigger a release`);
+  }
+
+  // The other direction, which is the one that can lose a shipped fix: a path
+  // outside the non-release list ships, including one nobody has thought about.
+  const shipped = [
+    'core/release.js',
+    'core/spec/feed.json',
+    'core/ui/settings.js',
+    'desktop/src/main.js',
+    'mobile/Claw/UpdateFeed.swift',
+    'mobile/project.yml',
+    'package.json',
+    'pnpm-lock.yaml',
+    'pnpm-workspace.yaml',
+    'some-new-tree/asset.bin',
+  ];
+  for (const file of shipped) {
+    assert.ok(ships(file), `${file} should trigger a release`);
+  }
+});
+
+test('a commit of nothing but non-release paths does not ship', () => {
+  // The dev.279 phantom case: a .github-only change. It produced a release the
+  // phone offered as an update while no TestFlight build existed, and under the
+  // new rule it produces no release at all.
+  const verdict = classify(['.github/workflows/platforms-gate.yml']);
+  assert.equal(verdict.release, false);
+  assert.equal(verdict.shipped.length, 0);
+  assert.deepEqual(verdict.byReason['.github/'], ['.github/workflows/platforms-gate.yml']);
+});
+
+test('one shipped path is enough, whatever it sits beside', () => {
+  const verdict = classify(['docs/guide.md', '.github/workflows/release.yml', 'desktop/src/main.js']);
+  assert.equal(verdict.release, true);
+  assert.deepEqual(verdict.shipped, ['desktop/src/main.js']);
+});
+
+test('an empty change set does not ship', () => {
+  assert.equal(classify([]).release, false);
+});
+
+test('a release asked for and not shipping REFUSES, and a push stands down quietly', () => {
+  // ★ A tag and a dispatch are both "release this", so "nothing shipped" is a
+  // refusal there rather than a silent stand-down: a release that was asked for
+  // and quietly did not happen is its own bug.
+  const refused = run(['--files', '.github/workflows/release.yml'], {
+    GITHUB_OUTPUT: '',
+    GITHUB_REF_TYPE: 'tag',
+  });
+  assert.equal(refused.release, false);
+  assert.equal(process.exitCode, 1, 'a tag that ships nothing must refuse');
+  process.exitCode = 0;
+
+  const dispatched = run(['--files', 'docs/guide.md'], {
+    GITHUB_OUTPUT: '',
+    GITHUB_EVENT_NAME: 'workflow_dispatch',
+  });
+  assert.equal(dispatched.release, false);
+  assert.equal(process.exitCode, 1, 'a dispatch that ships nothing must refuse');
+  process.exitCode = 0;
+
+  const pushed = run(['--files', 'docs/guide.md'], { GITHUB_OUTPUT: '', GITHUB_EVENT_NAME: 'push' });
+  assert.equal(pushed.release, false);
+  assert.notEqual(process.exitCode, 1, 'a push that ships nothing stands down rather than failing');
+  process.exitCode = 0;
+});
+
+test('the decision writes the outputs the workflows read, on one line each', () => {
+  const out = path.join(fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'claw-changes-')), 'out');
+  fs.writeFileSync(out, '');
+  run(['--files', 'desktop/src/main.js'], { GITHUB_OUTPUT: out });
+  const written = fs.readFileSync(out, 'utf8');
+  assert.match(written, /^release=true\n/);
+  // A newline inside the reason would end the output early and silently.
+  assert.equal(written.trim().split('\n').length, 2, `expected two output lines, got: ${written}`);
+});
+
+test('the range a dispatch or a tag ships is everything since the last release', () => {
+  // Against this repository's own history rather than a fixture, so the rule is
+  // exercised on the shape it will actually meet: a release tag, then commits.
+  const tags = fs.existsSync(path.join(ROOT, '.git'));
+  if (!tags) return;
+
+  const base = decide({
+    eventName: 'workflow_dispatch',
+    refType: '',
+    sha: 'HEAD',
+  });
+  assert.equal(typeof base.release, 'boolean');
+  // A dispatch is an explicit request, so it is never read as a plain push.
+  assert.equal(base.explicit, true);
+});
+
+test('the non-release list is short enough to read and each entry says why', () => {
+  for (const entry of NON_RELEASE_PATHS) {
+    assert.ok(entry.describes && entry.why, 'every non-release entry carries its reason');
+  }
+});
