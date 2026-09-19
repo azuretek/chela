@@ -45,27 +45,25 @@ name: claw-mobile pipeline
 # the version they carry and whether the resulting build may leave internal
 # testing. Nothing about how it is signed or uploaded changes.
 #
-# `paths` names what this workflow depends on rather than what it ignores, and
-# `core/**` is the non-obvious entry: the client compiles the shared library in,
-# so a change confined to core/ produces a different app while leaving the
-# desktop alone, and a filter of `mobile/**` alone would skip exactly that run.
-# No docs or config path appears here, because none of them can change what
-# compiles. GitHub does not evaluate path filters for tag pushes, so a release
-# can never be skipped by one.
+# ★ There is no path filter here any more, and that is the release rule rather
+# than a simplification of it. It used to name mobile/**, core/** and this file,
+# while release.yml ignored mobile/**, so the two filters left exactly the commits
+# that touch only desktop/ or only .github/ apart: release.yml published a GitHub
+# Release for them and this workflow never ran, so the release carried no iOS
+# build at all and the phone offered a build that did not exist
+# (v1.0.1-dev.279.9a58115cb1, a .github-only change).
+#
+# A release names one version across BOTH clients, so this workflow now runs for
+# every commit that ships, including a desktop-only one. Which commits those are
+# is answered in ONE place, `scripts/release/changes.mjs`, through the `changes`
+# job below; a commit that ships nothing still builds, tests and lints here and
+# uploads nothing. `desktop/test/release-trigger.test.js` fails if a path filter
+# is ever added back to either workflow.
 on:
   push:
     branches: [main]
     tags: ['v*']
-    paths:
-      - 'mobile/**'
-      - 'core/**'
-      # A workflow that cannot run on its own change is one nobody can fix.
-      - '.github/workflows/mobile-pipeline.yml'
   pull_request:
-    paths:
-      - 'mobile/**'
-      - 'core/**'
-      - '.github/workflows/mobile-pipeline.yml'
   workflow_dispatch:
 
 # Pushing three commits in a minute should test and upload the last one, not all
@@ -78,6 +76,42 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  # ★ Whether this commit ships anything at all, which is the question that decides
+  # whether a TestFlight build is uploaded from it.
+  #
+  # The trigger set has ONE owner, `scripts/release/changes.mjs`, and this is the
+  # only place this pipeline asks it. The two answers, and why both are correct:
+  #
+  #   ships something   the test matrix runs, its lint runs, and the upload runs
+  #                     once the desktop pipeline is green beside it. That is every
+  #                     commit either client ships from, a desktop-only commit
+  #                     included, because the release the desktop publishes names
+  #                     this client too.
+  #   ships nothing     docs, a .github change, tooling. Still built, tested and
+  #                     linted, and NOTHING is uploaded: no archive, no
+  #                     TestFlight build, no version bumped.
+  #
+  # A tag and a workflow_dispatch are an explicit "release this", so where they
+  # find nothing shipped this job REFUSES rather than standing down quietly.
+  changes:
+    name: does this commit ship anything
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.decide.outputs.release }}
+      reason: ${{ steps.decide.outputs.reason }}
+    steps:
+      # Full history: the answer is a diff whose base may be a release tag rather
+      # than the previous commit.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - id: decide
+        env:
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/release/changes.mjs
+
   # Runs once, on the cheapest runner, before the build. It settles what version
   # this build carries and whether it should happen at all, and the answer is
   # Apple's problem as much as ours: a bundle version has to be three integers
@@ -171,8 +205,10 @@ jobs:
   # the build down through the version job, the same condition `release` uses.
   platforms:
     name: every platform must be green
-    needs: version
-    if: github.event_name != 'pull_request' && needs.version.outputs.build == 'true'
+    needs: [version, changes]
+    # A pull request ships nothing, and neither does a commit whose diff is all
+    # docs or CI: there is no upload for a red platform to hold up.
+    if: github.event_name != 'pull_request' && needs.version.outputs.build == 'true' && needs.changes.outputs.release == 'true'
     permissions:
       actions: read
     uses: ./.github/workflows/platforms-gate.yml
@@ -288,6 +324,63 @@ jobs:
       # supposed to judge.
       - uses: actions/checkout@v4
 
+      # ★ The affordability half of the release rule, and the reason the full
+      # matrix is affordable on every commit that ships. This workflow now runs
+      # for a desktop-only and a .github-only commit as well as a mobile one, so
+      # nothing here may be paid again on a commit that changed no iOS input.
+      #
+      # ★ Keyed on the INPUTS rather than on the commit, which is the whole
+      # design: a commit that changes no iOS source restores the layers instead of
+      # rebuilding them, and the restore-key below turns a commit that does change
+      # them into an incremental build rather than a clean one.
+      #
+      # ★ The source hash deliberately names only what this app compiles: `Claw`
+      # and `ClawTests` are its own tree, and `core/spec` plus `core/ui` are the
+      # shared files project.yml bundles into it. `mobile/**` itself is NOT the
+      # pattern, because the generated project is restored into `mobile/`
+      # Claw.xcodeproj by the step below and would then hash differently on every
+      # run, which is how a cache key becomes one that never hits.
+      - name: Cache the generated Xcode project
+        id: xcodeproj
+        uses: actions/cache@v4
+        with:
+          path: mobile/Claw.xcodeproj
+          key: xcodeproj-${{ hashFiles('mobile/project.yml') }}-${{ hashFiles('mobile/Claw/**', 'mobile/ClawTests/**') }}
+
+      # The compile products. `build-for-testing` below makes the app and the test
+      # bundle together and the test step runs exactly those products with
+      # `test-without-building`, so a restored warm tree turns both into a
+      # no-op when no iOS input changed. Measured 2026-09-17, a cold leg spent
+      # 31 s to 3 m 55 s here before the simulator ever booted.
+      #
+      # The key carries the leg's own major version, because the products are
+      # per-SDK and one leg must never restore another's tree.
+      - name: Cache the simulator build
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/DerivedData
+          key: deriveddata-${{ matrix.ios }}-${{ hashFiles('pnpm-lock.yaml', 'mobile/project.yml') }}-${{ hashFiles('mobile/Claw/**', 'mobile/ClawTests/**', 'core/spec/**', 'core/ui/**') }}
+          restore-keys: |
+            deriveddata-${{ matrix.ios }}-${{ hashFiles('pnpm-lock.yaml', 'mobile/project.yml') }}-
+            deriveddata-${{ matrix.ios }}-
+
+      # SwiftPM's own caches. This project declares no Swift package today, so
+      # these carry nothing yet and the run log says so; they are cached because
+      # the day a package IS added is otherwise the day every leg starts paying a
+      # network resolve, and because SourcePackages is where a resolve puts what
+      # the build then reads. Created first, since actions/cache restores nothing
+      # from a path that does not exist.
+      - name: Cache the Swift package caches
+        run: mkdir -p "$HOME/Library/Caches/org.swift.swiftpm" mobile/SourcePackages
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            mobile/SourcePackages
+          key: swiftpm-${{ matrix.ios }}-${{ hashFiles('mobile/project.yml', 'mobile/Package.resolved') }}
+          restore-keys: |
+            swiftpm-${{ matrix.ios }}-
+
       # Which Xcode is used is chosen here rather than left to the image's
       # default, and the newest installed one wins.
       #
@@ -365,7 +458,13 @@ jobs:
       # xcodegen is not part of Xcode and the image may or may not carry it.
       # HOMEBREW_NO_AUTO_UPDATE keeps the install from spending a minute
       # updating the tap index for one formula.
+      #
+      # Skipped on a project-cache hit, which needs no generator at all: the cache
+      # key IS the project's own inputs, so a hit means xcodegen would write these
+      # same bytes. The app is still compiled from THIS checkout's sources, so a
+      # wrong cache cannot put different code in the build.
       - name: Install xcodegen
+        if: steps.xcodeproj.outputs.cache-hit != 'true'
         run: |
           set -eo pipefail
           if ! command -v xcodegen >/dev/null; then
@@ -378,13 +477,14 @@ jobs:
       # so. The checkout therefore has no project in it at all, and this step is
       # what makes the next two possible.
       #
-      # Generated here rather than carried in from another job on purpose. It is
-      # the one thing every job in this pipeline produces identically from the
-      # same source, so it looks like a saving, and it is not one: the generator
-      # is whatever brew installed on that image, the file is a few lines of
-      # text, and passing it around would buy seconds while adding a stage that
-      # must finish before any other job can start.
+      # Regenerated here rather than carried in from another job on purpose, since
+      # the generator is whatever brew installed on that image and the file is a
+      # few lines of text. What the cache above does instead is different from
+      # carrying it between jobs: the key is the two inputs it is generated FROM,
+      # so a hit means this generator would produce these same bytes, and a miss
+      # regenerates exactly as before.
       - name: Generate the Xcode project
+        if: steps.xcodeproj.outputs.cache-hit != 'true'
         run: xcodegen generate
 
       # Gate 1, compile. Building for the simulator rather than for a device is
@@ -552,8 +652,15 @@ jobs:
   # upload-artifact; the sharing that is real is inside the job, where the one
   # archive is verified, exported and uploaded without being rebuilt.
   release:
-    needs: [version, lint, test, platforms]
-    if: github.event_name != 'pull_request' && needs.version.outputs.build == 'true' && needs.lint.result == 'success' && needs.test.result == 'success' && needs.platforms.result == 'success'
+    needs: [version, changes, lint, test, platforms]
+    # ★ `changes` is new here, and it is what makes a commit that ships nothing
+    # produce no TestFlight build at all. Abi's rule, 2026-09-18: "we only need a
+    # release if something actually changed, so docs and other things like that
+    # definitely do not need a release at all". A .github-only change used to
+    # build and upload a TestFlight build nobody asked for, and the release the
+    # desktop published for it was the one the phone offered with nothing behind
+    # it.
+    if: github.event_name != 'pull_request' && needs.changes.outputs.release == 'true' && needs.version.outputs.build == 'true' && needs.lint.result == 'success' && needs.test.result == 'success' && needs.platforms.result == 'success'
     # Named rather than `macos-latest`, the same discipline the test matrix uses,
     # so the toolchain is a property of this file. macos-26 carries Xcode 26,
     # which is the oldest toolchain that can build the iOS 26 deployment target
@@ -575,6 +682,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+
+      # SwiftPM's caches, and deliberately nothing else. This job produces the
+      # artifact that is signed and handed to Apple, so it regenerates its project
+      # and compiles from a cold tree rather than from a restored one; what is
+      # cached is the package resolve, which cannot change what is built.
+      - name: Cache the Swift package caches
+        run: mkdir -p "$HOME/Library/Caches/org.swift.swiftpm" mobile/SourcePackages
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            mobile/SourcePackages
+          key: swiftpm-release-${{ hashFiles('mobile/project.yml', 'mobile/Package.resolved') }}
+          restore-keys: |
+            swiftpm-release-
 
       # The newest Xcode the runner has, with a floor of 16 for Swift 6 language
       # mode. Identical to the selection in the test legs above, including the

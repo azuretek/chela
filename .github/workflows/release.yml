@@ -24,32 +24,32 @@ name: claw-desktop release
 # is not configurable. The two are kept apart by channel, not by trust, see the
 # `prerelease` input below and `channelOf()` in src/updates.js.
 #
-# `paths-ignore` skips pushes that cannot change what this workflow builds. It
-# is safe to combine with the tag filter: GitHub does not evaluate path filters
-# for tag pushes, so a release can never be skipped by one.
+# ★ There is no path filter here any more, and that is the rule rather than a
+# simplification. A path filter used to decide whether a release WAITED for the
+# other platform, and its answer for a commit confined to one client's tree was
+# "publishing is unaffected". Which paths SHIP is still a real question, and it
+# is now answered in ONE place for both pipelines, by `scripts/release/changes.mjs`
+# through the `changes` job below. The two answers are not the same answer:
 #
-# GitHub's rule is "run unless EVERY changed path matches an ignored pattern",
-# so a push touching one ignored path and one other path still builds: a commit
-# that changes core/ plus a doc still builds the desktop, which is the behaviour
-# wanted rather than a gap in the filter.
+#   a commit that ships    runs BOTH pipelines, and nothing is published until
+#                          every desktop leg, both iOS legs and the TestFlight
+#                          upload are green. There is no per-path escape left on
+#                          a release commit, which is the whole point: a
+#                          desktop-only commit used to publish a GitHub Release
+#                          (the feed the phone reads) while no TestFlight build
+#                          existed behind it.
+#   a commit that ships nothing   still builds, tests and lints, and publishes
+#                          NOTHING: no version bump, no GitHub Release, no
+#                          TestFlight upload. A .github-only change is this case,
+#                          and it is the one that produced the phantom update
+#                          v1.0.1-dev.279.9a58115cb1.
+#
+# GitHub does not evaluate path filters for tag pushes, so a tag release could
+# never be skipped by one; with no filter at all that is true of every event.
 on:
   push:
     branches: [main]
     tags: ['v*']
-    paths-ignore:
-      - '**.md'
-      - 'LICENSE'
-      - '.gitignore'
-    # This workflow builds only the desktop app. A change confined to core/ still
-    # affects it (desktop consumes core), so core is not ignored; but a change
-    # confined to mobile/ must not trigger a desktop release.
-      - 'mobile/**'
-    # The mobile pipeline's own file, and the gap this closes is a workflow file
-    # rather than app code: `.github/workflows/mobile-pipeline.yml` is not under
-    # `mobile/**`, so a change to the mobile pipeline alone used to fall through
-    # to here and build three desktop installers, one per platform. Nothing this
-    # workflow reads changes when a mobile workflow file moves.
-      - '.github/workflows/mobile-pipeline.yml'
   workflow_dispatch:
 
 # ★ This workflow does not publish on its own any more. Publication waits on the
@@ -61,6 +61,15 @@ on:
 # publishing here exactly as a red leg of our own does. `platforms-gate.yml` owns
 # what is waited on; `CONVENTIONS.md` in this directory owns the rule and where to
 # look when a release did not happen.
+#
+# ★ And the wait has no per-path escape left in it, which is the other half of
+# the same rule (Abi, 2026-09-18): "do not publish until literally all platforms
+# are green and artifacts are ready and testflight release is ready". A commit
+# that ships can no longer be told "the other pipeline has no run, so publishing
+# is unaffected", because this workflow no longer carries a path filter for that
+# answer to come from, and `platforms-gate.yml` treats a missing run as a
+# refusal. Every commit that reaches the release job has therefore been built,
+# tested and uploaded on both platforms first.
 
 # Pushing three commits in a minute should build the last one, not all three.
 # Tag builds are exempt: a release run must never be cancelled by anything.
@@ -69,6 +78,44 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  # ★ Whether this commit ships anything at all, which is the question that now
+  # decides whether a release happens rather than whether a release waits.
+  #
+  # The trigger set has ONE owner, `scripts/release/changes.mjs`, and this job is
+  # the only place either pipeline asks it. Neither workflow carries a path filter
+  # for a test to keep in step (`desktop/test/release-trigger.test.js` asserts
+  # that), because the filter is what let a release out with no iOS build behind
+  # it. The paths a diff is taken over:
+  #
+  #   a push        the push itself, previous commit..this one
+  #   a tag         everything since the last release tag, which is what that
+  #                 release would SHIP rather than only its tip commit
+  #   a dispatch    the same range as a tag
+  #
+  # A tag and a dispatch are both an explicit "release this", so where they find
+  # nothing shipped the job REFUSES rather than standing down: a release that was
+  # asked for and quietly did not happen is its own bug. A push that ships
+  # nothing is the ordinary case and stands down quietly, with its own CI still
+  # green beside it.
+  changes:
+    name: does this commit ship anything
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.decide.outputs.release }}
+      reason: ${{ steps.decide.outputs.reason }}
+    steps:
+      # Full history, because the answer is a diff and its base may be a release
+      # tag from weeks ago rather than the previous commit.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - id: decide
+        env:
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/release/changes.mjs
+
   # Runs once, on the cheapest runner, before either platform build starts. It
   # settles two things: what version this build carries, and whether it should
   # happen at all. A tag that disagrees with package.json is caught here in
@@ -109,8 +156,11 @@ jobs:
   # condition `build` uses: there is nothing to gate when nothing publishes.
   platforms:
     name: every platform must be green
-    needs: version
-    if: needs.version.outputs.build == 'true'
+    needs: [version, changes]
+    # Only a commit that ships has anything to gate: a commit that publishes
+    # nothing has no release for a red platform to hold up, and its CI runs
+    # beside this job rather than through it.
+    if: needs.version.outputs.build == 'true' && needs.changes.outputs.release == 'true'
     permissions:
       actions: read
     uses: ./.github/workflows/platforms-gate.yml
@@ -486,7 +536,7 @@ jobs:
             desktop/dist/*.blockmap
 
   release:
-    needs: [version, build, platforms]
+    needs: [version, changes, build, platforms]
     # Everything that built gets published; `prerelease` is what separates a dev
     # build from a release, not whether it is published at all.
     #
@@ -503,7 +553,15 @@ jobs:
     # asserts its test matrix the same way. This `if` still takes no status
     # function (always(), !cancelled(), failure()); one of those would override the
     # success requirement outright and publish a partial release.
-    if: needs.version.outputs.build == 'true' && needs.build.result == 'success' && needs.platforms.result == 'success'
+    #
+    # ★ `changes` is the other half of the gate, and it is new: it is what makes
+    # a commit that ships NOTHING publish nothing at all. Abi's rule, 2026-09-18:
+    # "we only need a release if something actually changed, so docs and other
+    # things like that definitely do not need a release at all". A release for a
+    # .github-only commit was not only unnecessary, it was the phantom update the
+    # phone offered (v1.0.1-dev.279.9a58115cb1), so this is a correctness gate as
+    # much as a cost one.
+    if: needs.changes.outputs.release == 'true' && needs.version.outputs.build == 'true' && needs.build.result == 'success' && needs.platforms.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
