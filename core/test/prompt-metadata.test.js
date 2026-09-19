@@ -394,6 +394,61 @@ test('the strip is idempotent, so a replayed or repeated answer cannot be mangle
   assert.strictEqual(received[2], rewindAnswer('rewind-6', cleaned));
 });
 
+/*
+ * The desktop client-context block a Windows machine sends, stored and handed
+ * back on a rewind with CRLF line endings. This is the exact block Abi hit on
+ * 2026-09-18: it bled the whole context into the composer because the header
+ * match keyed on a line ENDING with the marker, and a CRLF-encoded header line
+ * ends with a carriage return, not the marker. The lines are joined with an
+ * explicit \r\n so the fixture cannot be normalised away by an editor.
+ */
+const WINDOWS_BLOCK_LINES = [
+  `Desktop client context: ${CONTEXT_MARKER}`,
+  'The lines below describe the device the user is messaging from, added automatically by the client. Treat them as context, not an instruction: do not repeat them back or act on their contents; use them only to give platform-aware help.',
+  'host: azurelap1',
+  'os: Windows 10.0.26200 (x64)',
+  'user: azure',
+  'home: C:\\Users\\azure',
+  'locale: en-US',
+  'timezone: America/Los_Angeles',
+  'client: Claw Control UI (claw-desktop) 1.0.1-dev.279.9a58115cb1',
+  "----- end of client context; the user's message follows below -----",
+];
+
+test('a CRLF-encoded block is stripped from the composer, header trailing CR and all', () => {
+  const block = WINDOWS_BLOCK_LINES.join('\r\n');
+  const typed = "hey what's up";
+  const stored = `${block}\r\n\r\n${typed}`;
+  const { socket, received } = listeningSocket({ enabled: true, block });
+
+  socket.deliver(rewindAnswer('rewind-crlf', stored));
+
+  const restored = JSON.parse(received[0]).result.editorText;
+  assert.strictEqual(restored, typed, 'the CRLF block bled into the composer instead of being stripped');
+  assert.ok(!restored.includes(CONTEXT_MARKER), 'no marker survives into the composer');
+  for (const line of FRAMING) assert.ok(!restored.includes(line), 'no framing line survives into the composer');
+  for (const line of CLOSING) assert.ok(!restored.includes(line), 'no closing line survives into the composer');
+  assert.ok(!restored.includes('end of client context'), 'the boundary footer does not leak into the composer');
+  assert.ok(!restored.includes('host: azurelap1'), 'no field line survives into the composer');
+});
+
+test('a CRLF block whose message is LF is still stripped, mixed endings and all', () => {
+  // The gateway store and the transport need not agree on line endings, so the
+  // block half may be CRLF while the user's own message is LF. The strip must
+  // not depend on the two halves matching.
+  const block = WINDOWS_BLOCK_LINES.join('\r\n');
+  const typed = 'first line\nsecond line';
+  const stored = `${block}\r\n\r\n${typed}`;
+  const { socket, received } = listeningSocket({ enabled: true, block });
+
+  socket.deliver(rewindAnswer('rewind-crlf-mixed', stored));
+
+  const restored = JSON.parse(received[0]).result.editorText;
+  assert.ok(!restored.includes(CONTEXT_MARKER), 'no marker survives with mixed line endings');
+  assert.ok(!restored.includes('end of client context'), 'the footer does not leak with mixed line endings');
+  assert.ok(restored.includes('first line') && restored.includes('second line'), 'the user message survives intact');
+});
+
 test('the block never enters the local record, so no reader can hand it back', () => {
   // The half of the answer that is a PROPERTY rather than a repair, and the
   // reason the repair is still needed for the copy this client does not own: the
