@@ -87,6 +87,12 @@ enum NoticeTokens {
     static let decodedKeys: Set<String> = ["css", "shape", "type", "card", "tone", "live"]
     static let ignoredKeys: Set<String> = [
         "source", "provenance", "shapeProvenance", "typeProvenance", "cardProvenance", "toneNote",
+        // motion.minVisibleMs is the minimum-visible-duration floor, read by the
+        // desktop (core/ui/motion.js) today. This client does not honour the
+        // floor yet, so the key is declared ignored rather than dropped in
+        // silence; making iOS honour it is the motion-parity work. motionNote is
+        // prose, like toneNote.
+        "motion", "motionNote",
     ]
 
     private static let spec: Spec = loadSpec()
