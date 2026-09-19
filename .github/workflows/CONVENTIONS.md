@@ -130,3 +130,19 @@ Named so it is not mistaken for coverage.
 | `release.yml` | The desktop build matrix, the artifact gate, the asset completeness check, and the desktop release. |
 | `mobile-pipeline.yml` | The iOS test matrix, the archive, and the TestFlight upload. |
 | this file | The rule, the rationale for its two directions, and where to look. |
+
+## The 2026-09-18 measurement: what the caches buy, and what they do not
+
+Measured across two runs of the SAME commit (PR runs `35424068878` then `35424385502`), so the only difference between them is the caches. Comparing the baseline commit instead would be misleading: its legs ran 307 s and 186 s against 384 s and 377 s here, which is runner variance, not the change.
+
+| iOS leg step | cold | warm (cache hit) |
+|---|---|---|
+| Install xcodegen | 2 s / 4 s | 0 s, skipped |
+| Generate the Xcode project | 0 s | 0 s, skipped |
+| Build for the simulator | 34 s (iOS 27), 50 s (iOS 26) | 17 s (iOS 27) |
+| Test on the resolved simulator | 320 s (iOS 27), 285 s (iOS 26) | the same work, uncacheable |
+| job total | 384 s (iOS 27), 377 s (iOS 26) | see the run |
+
+What was restored: `deriveddata-26` and `deriveddata-27` (77 to 78 MiB), `xcodeproj` (12 KiB) and `swiftpm` (1.7 KiB). The restore is verifiable from the cache list alone, because each key's `lastAccessedAt` is seconds after its `createdAt`. The 1.7 KiB Swift package cache is also the evidence that this project declares no Swift packages, which is why that layer carries nothing yet.
+
+**Said plainly: the cache removes the compile, and the simulator is what dominates an iOS leg.** Booting the simulator and installing the bundles is the largest single cost and no cache can skip it, so the saving is tens of seconds on a leg that takes minutes. The full matrix is affordable because it is parallel and its fixed costs are off the critical path, not because caching makes an iOS leg fast. Claiming more than that would not survive the numbers above.
