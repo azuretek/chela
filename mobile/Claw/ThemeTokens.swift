@@ -149,10 +149,28 @@ enum ThemeTokens {
     /// what keeps a page's colours and its appearance from being read off two
     /// different chains.
     static func pageTrait(tokens: [String: String], own: UIUserInterfaceStyle) -> UIUserInterfaceStyle {
-        switch tokens[schemeKey] {
+        switch pageColorScheme(mode: tokens[schemeKey]) {
         case "light": return .light
         case "dark": return .dark
         default: return own
+        }
+    }
+
+    /// The one appearance decision, mirrored from `core/appearance.js`
+    /// `pageColorScheme`, and proven against the same golden pairs by
+    /// `mobile/ClawTests/AppearanceParityTests.swift`. It answers the abstract
+    /// scheme ("light", "dark", or "system") for a page that resolved the given
+    /// mode; `pageTrait` above is the iOS adapter that maps that answer onto a
+    /// `UIUserInterfaceStyle` ("system" is `.unspecified`, which leaves the
+    /// device to drive it), and desktop maps the same answer onto
+    /// `nativeTheme.themeSource`. Keeping the decision here as its own function,
+    /// rather than folding it into the switch above, is what lets the parity test
+    /// run the identical inputs the JS test runs.
+    static func pageColorScheme(mode: String?) -> String {
+        switch mode {
+        case "light": return "light"
+        case "dark": return "dark"
+        default: return "system"
         }
     }
 
