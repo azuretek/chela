@@ -1,0 +1,199 @@
+name: CI
+
+# ★ The MERGE gate, and the one required check on a pull request.
+#
+# The problem this answers, measured on PR #52 (2026-09-19). Branch protection was
+# off and "merge on green" was best-effort, so a squash merge landed while the iOS
+# legs were still running. Two deeper gaps surfaced while fixing it:
+#
+#   1. release.yml has NO pull_request trigger at all, so the desktop build and
+#      its tests never ran on a PR. A PR touching only desktop/ got zero CI.
+#   2. mobile-pipeline.yml runs on PRs but is PATH-FILTERED (mobile/**, core/**),
+#      so a desktop-only PR skips it entirely and produces no check to require.
+#
+# A path-filtered workflow does not run a "skipped" job you can require; it does
+# not run AT ALL, so a required status check that names one of its jobs blocks
+# every PR that does not touch that path, forever. So the gate cannot be one of
+# those jobs. It has to be a workflow that ALWAYS runs on a PR, whatever the PR
+# touches, and reports ONE status branch protection can require. This is that
+# workflow.
+#
+# What it runs, and what it deliberately does not (Abi, 2026-09-19: "ensure these
+# run on PRs, just not our full build unless it's needed for tests"):
+#
+#   js    lint, the core+desktop unit tests, the import and package audits, and
+#         the boot smoke. The smoke runs the app from the WORKING TREE, so it
+#         needs Electron but not a packaged artifact. None of this is the release
+#         build.
+#   ios   swiftlint and the build-for-testing (xcodegen + xcodebuild), which is
+#         what compiles the Swift and runs the unit tests. This is a build, but it
+#         is the build a TEST needs, not the packaged .app/.ipa.
+#
+# The full packaged build matrix stays where it was, in release.yml, on push to
+# main and on tags. A PR proves the code is sound; the push that follows the merge
+# produces the artifact. That is the "only build if a test needs it" split.
+#
+# Each heavy job is gated on whether its tree changed (the `changes` job), so a
+# desktop-only PR does not pay for an iOS runner and vice versa. But the GATE job
+# always runs and always reports, so the required check is present on every PR.
+
+on:
+  pull_request:
+  # So the gate has a status on the branch after a merge too, which is what lets
+  # "require branches up to date" compare against a base that has one.
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Which trees moved, so the heavy jobs run only when they can be affected. core/
+  # is compiled into BOTH clients, so a change there runs both, the same reasoning
+  # the release gate uses.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      js: ${{ steps.filter.outputs.js }}
+      ios: ${{ steps.filter.outputs.ios }}
+    steps:
+      # Full history so a PR can be diffed against its base. A shallow checkout
+      # has no merge base to compare against.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Change detection inline with git rather than a third-party action: the
+      # existing workflows use only actions/*, pnpm/action-setup and
+      # softprops/action-gh-release, and a merge gate is the wrong place to add a
+      # new external dependency. The diff base is the PR's base ref on a pull
+      # request, and the previous commit on a push to main.
+      - name: Which trees changed
+        id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -eo pipefail
+          if [ "$EVENT" = 'pull_request' ]; then
+            git fetch --no-tags --depth=100 origin "$BASE_REF" >/dev/null 2>&1 || true
+            base="$(git merge-base "origin/$BASE_REF" HEAD)"
+          else
+            base="$BEFORE"
+            # A first push or a force-push can leave BEFORE at all-zeros; fall
+            # back to the parent so the diff is never empty-by-accident.
+            case "$base" in ''|0000000000000000000000000000000000000000) base="$(git rev-parse HEAD~1 2>/dev/null || echo HEAD)";; esac
+          fi
+          changed="$(git diff --name-only "$base" HEAD)"
+          echo "changed against $base:"; printf '%s\n' "$changed" | sed 's/^/  /'
+          # ★ Fail OPEN: if the diff cannot be computed, run everything. A merge
+          # gate that skipped a platform because it misread the diff would pass a
+          # PR it never tested, which is the fault this whole file exists to stop.
+          matches () { printf '%s\n' "$changed" | grep -Eq "$1"; }
+          js=false; ios=false
+          if [ -z "$changed" ]; then js=true; ios=true; fi
+          if matches '^(core/|desktop/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|eslint\.config\.mjs|\.github/workflows/ci\.yml)'; then js=true; fi
+          if matches '^(core/|mobile/|\.github/workflows/ci\.yml)'; then ios=true; fi
+          echo "js=$js" >> "$GITHUB_OUTPUT"
+          echo "ios=$ios" >> "$GITHUB_OUTPUT"
+          echo "js=$js ios=$ios"
+
+  # The JS half: lint, unit tests, the audits and the boot smoke. No packaging.
+  js:
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install (frozen lockfile, workspace)
+        run: pnpm install --frozen-lockfile
+      - name: Lint (js)
+        run: pnpm run lint:js
+      - name: Unit tests (core + desktop)
+        run: pnpm run test:js
+      - name: Import audit
+        run: pnpm run check:imports
+      - name: Package audit
+        run: pnpm run check:package
+      # The boot smoke needs a display for Electron; xvfb-run gives the Linux
+      # runner one, and it ships on the ubuntu image so no external action is
+      # added. It runs the app from the working tree (scripts/smoke.js --instance
+      # source), so it is a boot test, not a packaged build.
+      - name: Boot smoke (working tree)
+        run: xvfb-run --auto-servernum pnpm run smoke
+
+  # The iOS half: swiftlint and the build-for-testing. This compiles the Swift and
+  # runs the unit tests (xcodegen generate + xcodebuild build-for-testing), which
+  # is the build a test needs, not the packaged app.
+  ios:
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: macos-26
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - name: SwiftLint
+        run: node ../scripts/mobile.mjs lint
+      - name: Build for testing (xcodegen + xcodebuild)
+        run: node ../scripts/mobile.mjs test
+
+  # ★ THE GATE. Always runs, always reports, so branch protection has one check to
+  # require on every PR whatever it touched. It passes only when every job that
+  # WAS needed passed: a job that was skipped because its tree did not change is
+  # not a failure (that is the path filter doing its job), but a job that ran and
+  # failed, or was cancelled, is. This is the single required status check.
+  gate:
+    # The display name is what the run list and the required-check setting show,
+    # so it reads as a sentence; the job id is a plain identifier because ids may
+    # not contain spaces.
+    name: merge gate
+    needs: [changes, js, ios]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every needed job is green
+        env:
+          JS: ${{ needs.js.result }}
+          IOS: ${{ needs.ios.result }}
+          JS_NEEDED: ${{ needs.changes.outputs.js }}
+          IOS_NEEDED: ${{ needs.changes.outputs.ios }}
+        run: |
+          set -eo pipefail
+          fail=0
+          # A result is one of: success, failure, cancelled, skipped. A job that
+          # was not needed is 'skipped' and that is fine; anything a needed job
+          # reports other than 'success' is a refusal.
+          check () {
+            name="$1"; needed="$2"; result="$3"
+            if [ "$needed" = 'true' ]; then
+              if [ "$result" = 'success' ]; then
+                echo "  $name: $result"
+              else
+                echo "::error::$name did not pass: $result"
+                fail=1
+              fi
+            else
+              echo "  $name: not needed for this change ($result)"
+            fi
+          }
+          echo "the merge gate: every job this change needed must be green"
+          check "js"  "$JS_NEEDED"  "$JS"
+          check "ios" "$IOS_NEEDED" "$IOS"
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::refusing the merge: a needed job is not green (see above)."
+            exit 1
+          fi
+          echo "all needed jobs are green"
