@@ -2666,6 +2666,19 @@ function refreshThemedPages() {
     applyThemeCss(stripView.webContents);
     stripView.setBackgroundColor(currentTheme.surface);
   }
+  // The gateway view's own surface, which is NOT the page's stylesheet: it is
+  // the colour Electron paints behind the Control UI where the page itself does
+  // not, an overscroll rubber-band at the bottom edge, the gap while a fresh
+  // payload is swapped in, the frame before a navigation paints. It is set once
+  // at createGatewayView and was never moved after, so a theme change repainted
+  // the strip (top) and the window while this kept the old colour, which the
+  // reader saw as a band at the top or bottom disagreeing with the rest. The
+  // strip's own note above is the same fault one surface over. The in-flight
+  // attempt gets it too, so a view promoted right after a theme change does not
+  // arrive wearing the previous surface.
+  for (const view of [pageView, attemptView]) {
+    if (view && !view.webContents.isDestroyed()) view.setBackgroundColor(currentTheme.surface);
+  }
   if (bannerView && !bannerView.webContents.isDestroyed()) applyThemeCss(bannerView.webContents);
   if (loadingView && !loadingView.webContents.isDestroyed()) applyThemeCss(loadingView.webContents);
   if (settingsIsPage && mainWindow && !mainWindow.isDestroyed()) {
