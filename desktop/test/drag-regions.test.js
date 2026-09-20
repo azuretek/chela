@@ -127,15 +127,23 @@ test('the app hosts a page either at the window top or below the strip', () => {
   const main = read(path.join(SRC, 'main.js'));
   const layout = /function layoutViews\(\)[\s\S]*?\n\}/.exec(main);
   assert.ok(layout, 'layoutViews was not found in main.js');
+  // The full-window views begin at x: 0; the banner and the sweep do not, because
+  // they hug the trailing edge (floating cards), so their y is read without pinning
+  // x to 0.
   const bounds = (name) => {
     const m = new RegExp(`${name}\\.setBounds\\(\\{ x: 0, y: ([^,]+),`).exec(layout[0]);
-    assert.ok(m, `${name} has no setBounds in layoutViews`);
+    assert.ok(m, `${name} has no full-width setBounds in layoutViews`);
+    return m[1].trim();
+  };
+  const bannerY = () => {
+    const m = /bannerView\.setBounds\(\{ x: [^,]+, y: ([^,]+),/.exec(layout[0]);
+    assert.ok(m, 'bannerView has no setBounds in layoutViews');
     return m[1].trim();
   };
   assert.equal(bounds('stripView'), '0', 'the title strip must begin at the window top');
   assert.equal(bounds('pageView'), 'top', 'the gateway page must begin below the strip');
   assert.equal(bounds('loadingView'), 'top', 'the loading cover must begin below the strip');
-  assert.equal(bounds('bannerView'), 'top', 'the notice banner must begin below the strip');
+  assert.equal(bannerY(), 'top', 'the notice banner must begin below the strip');
   // ★ The sweep is a view of its own, and BOTH halves of that are the rule: it is
   // sized to the control rather than to the window, and it is placed below the
   // bar. A view claims every mouse event inside its rectangle whatever the page
@@ -146,8 +154,8 @@ test('the app hosts a page either at the window top or below the strip', () => {
   const sweepBlock = layout[0].slice(sweepAt, layout[0].indexOf('setBounds', sweepAt) + 120);
   assert.ok(sweepBlock.includes('width: w'),
     'the sweep view must be sized to the control it draws, not to the window');
-  assert.ok(sweepBlock.includes('top + bannerHeight'),
-    'the sweep must be placed below the bar, which is where Abi asked for it');
+  assert.ok(sweepBlock.includes('bannerFoot'),
+    'the sweep must be placed below the card cluster (bannerFoot), which is where Abi asked for it');
   assert.ok(!sweepBlock.includes('width, height'),
     'the sweep view is taking the window shape, which would make it a full-width strip');
   // Every overlay is full-window, which is why a band inside one is the title
@@ -157,12 +165,29 @@ test('the app hosts a page either at the window top or below the strip', () => {
   assert.equal(overlays[1].trim(), '0', 'an overlay covers the whole window');
 });
 
+test('the cards leaving re-lays-out, so the sweep never hangs where they were', () => {
+  // ★ The sweep sits at `bannerFoot + gap`, the card cluster's foot (asserted
+  // above). When the cards leave, refreshBanner zeroes bannerSize, and the reader
+  // reported "Mark all read gets stuck after banners leave": the removal branch has
+  // to lay out again or the sweep's y stays computed against the box the cluster
+  // HAD. This reads the removal branch out of refreshBanner and asserts the reset
+  // and the relayout are both there, in that order.
+  const main = read(path.join(SRC, 'main.js'));
+  const fn = /function refreshBanner\(\)[\s\S]*?\n\}/.exec(main);
+  assert.ok(fn, 'refreshBanner was not found in main.js');
+  const reset = fn[0].indexOf('bannerSize = { width: 0, height: 0 };');
+  assert.ok(reset !== -1, 'refreshBanner never zeroes bannerSize, so a departed cluster leaves a stale box');
+  const relayout = fn[0].indexOf('layoutViews()', reset);
+  assert.ok(relayout !== -1,
+    'refreshBanner zeroes bannerSize but never lays out again, so the sweep hangs where the cards were');
+});
+
 test('the cover begins below the strip, so a band on it would sit on the banner', () => {
   // The arithmetic the whole rule rests on, asserted rather than described: the
   // banner's band starts at `top`, and a band at the top of a view that starts
   // at `top` therefore covers the banner's own first 50px -- which is where its
   // controls are.
-  const bannerTop = STRIP_HEIGHT; // layoutViews: y: top, height: min(bannerHeight, ...)
+  const bannerTop = STRIP_HEIGHT; // layoutViews: banner y: top, height: min(bannerSize.height, ...)
   assert.ok(bannerTop > 0, 'the content area begins at the title strip, so a cover band overlaps it');
 });
 
@@ -306,50 +331,32 @@ test('the overlay that is not a control gives the click up', () => {
   }
 });
 
-test('★ the bar paints the whole rectangle its view is sized to', () => {
-  // The rule the sweep row's place depends on, and the one thing the earlier fixes
-  // in this area did not have. The banner's view is sized to exactly the stack's
-  // height (refreshBanner in src/main.js), and a view claims every mouse event
-  // inside its own rectangle whatever the page draws there, so any pixel of that
-  // rectangle left unpainted is a strip the reader can see the page through and
-  // cannot click. Painting the bar is what makes a row of its own safe again:
-  // every child of the stack, a card or the sweep footer, then sits on a pixel the
-  // bar draws, which is why the invariant in banner.test.js is about the bar's
-  // shape rather than about every child being a card.
-  //
-  // Asserted on the declarations rather than in a screenshot, because a stack that
-  // paints and one that does not are indistinguishable until the pixel under them
-  // is measured, and because the three ways it can silently stop painting are
-  // exactly what is checked: a surface that is transparent or absent, a margin
-  // that puts the bar's own edge inside the view, and a radius that leaves the
-  // corners of the view unpainted.
+test('★ the stack paints no band, so the floating-card view claims only the cards', () => {
+  // ★ Floating cards, not a bar. Abi, 2026-09-19: "floating cards no full width
+  // bar that's pointless". The old rule here was the opposite: the bar had to
+  // paint its whole rectangle, because its view spanned the window and a view
+  // claims every click in its rectangle whatever it draws. That was living with a
+  // full-width view by making its dead zone at least visible. The fix instead
+  // sizes the view to the card cluster (report() in banner.js sends the box,
+  // layoutViews sizes the view to it), so the honest thing is now the reverse: the
+  // stack must paint NOTHING of its own, so its own area beyond the cards is
+  // see-through and passes clicks. Each card keeps its own surface, which
+  // banner.test.js and the tokens test guard. Proven at the pixel by
+  // desktop/scripts/prove-floating-cards.mjs.
   const rules = pageStylesheets(pages.filter((p) => p.name === 'banner.html'));
   const stack = rules.find((rule) => rule.selector.split(',').map((s) => s.trim()).includes('.banner-stack'));
   assert.ok(stack, 'banner.css has no .banner-stack rule');
 
   const background = stack.decls.get('background');
-  assert.ok(background, 'the bar paints nothing: .banner-stack must carry the bar\'s own surface, or the view '
-    + 'sized to it is a transparent strip eating clicks on the page underneath');
-  assert.notEqual(background, 'transparent',
-    'the bar\'s surface is transparent, so the view sized to it is a strip of nothing');
-  const clip = stack.decls.get('background-clip');
-  assert.ok(!clip || clip === 'border-box' || clip === 'padding-box',
-    `the bar's surface is clipped to \"${clip}\", which does not cover its own padding: the view inside it is `
-    + 'sized to the padding BOX, so anything the surface does not cover is an unpainted strip');
-
-  // A margin is inside the view and outside the bar, and the sizing cannot know
-  // about it: the one pixel band that would go on eating clicks with every check
-  // in this file still passing.
-  assert.equal(stack.decls.get('margin'), undefined,
-    'the bar must not carry a margin: the view is sized to the stack\'s box, so a margin is an unpainted band '
-    + 'inside it over the Control UI');
-
-  // A radius rounds the bar's own corners off and leaves them unpainted, which is
-  // the same fault at four pixels instead of a strip. The bar spans the window
-  // under the title strip, so its corners are the window's anyway.
-  assert.equal(stack.decls.get('border-radius'), undefined,
-    'the bar must not be rounded: its corners would be unpainted pixels inside the view, and the bar spans '
-    + 'the window, so its corners are the window\'s');
+  assert.ok(!background || background === 'transparent' || background === 'none',
+    `the stack paints a band (background: ${background}). It is a floating cluster now, not a bar, so its own `
+    + 'area beyond the cards must be transparent or it is a full-width dead strip again');
+  // And it must not span the window: max-content width plus a trailing pin is what
+  // keeps the reported box tight to the widest card.
+  assert.equal(stack.decls.get('width'), 'max-content',
+    'the stack does not hug its cards (width should be max-content), so its reported box would be full-width');
+  assert.equal(stack.decls.get('margin-left'), 'auto',
+    'the stack has no margin-left: auto, so it does not pin to the trailing edge the way the cluster should');
 });
 
 test('★ the sweep is a plain button in a view of its own, so it adds no dead zone', () => {

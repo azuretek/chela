@@ -127,6 +127,16 @@
   --motion-rise: 8px;
   --motion-drop: 4px;
   --motion-slide: 12px;
+  /* The minimum-visible floor, as a CSS custom property so a sandboxed page can
+     read it the way surface.js already reads the duration tokens. It is the same
+     value core/ui/motion.js exports as MIN_VISIBLE_MS, which reads it from
+     spec/tokens.json (motion.minVisibleMs): a transient state a reader is meant
+     to READ stays on screen at least this long before it may be replaced, so a
+     cached answer that settles instantly is still held long enough to read
+     rather than flashing. The eighth rule in ui/CONVENTIONS.md. core/test/
+     motion.test.js asserts this literal equals the spec value, since a page
+     cannot import the module and this is the one place the number is restated. */
+  --motion-min-visible: 900ms;
   --cursor-action: default;
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 3px color-mix(in srgb, var(--ring) 80%, transparent);
 
@@ -327,6 +337,18 @@ body.as-page .modal { border-color: transparent; box-shadow: none; }
    card's rounded corners fixed while the content moves. */
 .modal__body {
   overflow-y: auto;
+  /* ★ No surface scrolls sideways. A descendant that cannot shrink below its
+     content (a long unbroken build string, a Windows config path) would
+     otherwise push the whole surface wider than the window and the reader would
+     have to scroll left to right to read a paragraph. This is the standard for
+     every one of our surfaces, not a fix for this card: long content wraps
+     within the padding, and the horizontal axis is never a scroll axis. The
+     children carry the wrap (`.sub`, `.fact__value`, `.mono`, the row text); this
+     is the guard that makes a missed one impossible rather than merely unlikely.
+     `min-width: 0` lets that hold, since a flex item defaults to min-content
+     width and would refuse to shrink without it. */
+  overflow-x: hidden;
+  min-width: 0;
   padding: 16px 22px 22px;
 }
 .modal__body > h2:first-child,
@@ -339,7 +361,12 @@ h2 { font-size: calc(12px * var(--control-ui-text-scale)); text-transform: upper
 p  { margin: 0 0 12px; color: var(--muted); }
 a  { color: var(--accent); }
 
-.sub { color: var(--muted); margin-bottom: 18px; }
+/* The subtitle under a title, and the build line is one: a single long,
+   near-unbreakable string (a dev version with a commit and a build stamp). It
+   wraps here rather than establishing a min-content width wider than the modal,
+   which is what forced the About card, and with it the whole settings surface,
+   to scroll sideways. Per the no-side-scroll standard on `.modal__body`. */
+.sub { color: var(--muted); margin-bottom: 18px; min-width: 0; overflow-wrap: anywhere; }
 
 /* The page's sections, one at a time.
    They were headings down a single column, which works up to about three and
@@ -1003,7 +1030,17 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
    padding, and the rule below gives that padding the room the card's corner
    needs. */
 .result:empty { display: none; }
-.result { font-size: calc(12px * var(--control-ui-text-scale)); margin-top: 8px; min-height: 17px; }
+/* ★ The reserved line scales WITH the text, not against it. `min-height: 17px`
+   was a fixed box: at the interface's larger reading scales the 12px text grows
+   to 18px (1.5×) and clipped against a 17px line, so the reply the reader most
+   needs, a failure in red or a confirmation in green, was the one cut off. A
+   min-height in the same scaled em as the line box (1.4em) tracks the text at
+   every scale, so the space reserved for a message that ARRIVES is exactly the
+   space the message takes, and accessibility text sizing never clips it. The
+   line-height is stated so the em the min-height resolves against is known rather
+   than inherited. Accessibility is a first-class constraint here: a fixed pixel
+   box that clips scaled text is a bug, not a look. */
+.result { font-size: calc(12px * var(--control-ui-text-scale)); line-height: 1.4; margin-top: 8px; min-height: 1.4em; }
 .result.ok   { color: var(--ok); }
 .result.warn { color: var(--warn); }
 .result.err  { color: var(--destructive); }
@@ -1192,6 +1229,20 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
 .about-footer__link {
   display: inline-flex;
   align-items: center;
+  /* ★ Wrap rather than push. The build line beside the name is a long, near-
+     unbreakable string (a dev version with its commit and stamp), and this
+     control is `inline-flex` with no width bound: measured through electron at a
+     400px window, its right edge reached 511px at scale 1 and 652px at 1.5, which
+     is the sideways scroll of the whole settings surface Abi reported. The build
+     line lives here, in the settings footer, not only in the About card. So the
+     control is capped at the width it has and its contents wrap: `flex-wrap`
+     lets the build line drop under the name, `max-width: 100%` and `min-width: 0`
+     stop it establishing a min-content width wider than the page, and the build
+     line's own `overflow-wrap` (below) breaks the string itself. Per the
+     no-side-scroll standard. */
+  flex-wrap: wrap;
+  max-width: 100%;
+  min-width: 0;
   gap: 8px;
   padding: 8px 14px;
   background: var(--panel);
@@ -1215,6 +1266,11 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: calc(11px * var(--control-ui-text-scale));
   font-weight: 400;
+  /* Break the build string itself rather than let it set the control's width.
+     min-width: 0 lets this flex child shrink below its content so the wrap can
+     engage. Per the no-side-scroll standard. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .about-footer__build:empty { display: none; }
 /* The message dialog renders its buttons reversed so the default lands at the
@@ -1235,7 +1291,15 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
    page's own scale instead of beside it. */
 .fact {
   display: grid;
-  grid-template-columns: 88px 1fr;
+  /* `minmax(0, ...)` on BOTH tracks, not the bare `88px 1fr` this was. A grid
+     track's default minimum is min-content, so a value holding an unbreakable
+     path (C:\Users\...\config.json) grew the value track past the card and took
+     the whole surface into a sideways scroll, even though `.fact__value` already
+     carries `overflow-wrap: anywhere`: the wrap cannot engage while the track
+     refuses to shrink below the word. `minmax(0, ...)` lets the track shrink so
+     the wrap does its job. The label track is bounded too so a scaled-up label
+     wraps rather than shoving the value column off the edge. */
+  grid-template-columns: minmax(0, 88px) minmax(0, 1fr);
   gap: 10px;
   padding: 5px 0;
   font-size: var(--control-ui-text-sm);

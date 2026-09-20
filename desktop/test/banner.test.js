@@ -58,9 +58,11 @@ function makeNode(tag) {
       this.parent.kids[i] = next;
       this.parent = null;
     },
-    // The page reports this to main, which sizes the view to it. Any number will
-    // do here; what matters is that an empty stack reports zero.
-    getBoundingClientRect() { return { height: this.kids.length * 40 }; },
+    // The page reports this to main, which sizes the view to the card cluster.
+    // Any numbers will do here; what matters is that an empty stack reports a zero
+    // box and a non-empty one reports a card-sized box. width is a card's, not the
+    // window's, since the view now hugs the cards (see report() in banner.js).
+    getBoundingClientRect() { return { width: this.kids.length ? 420 : 0, height: this.kids.length * 40 }; },
   };
   // The real element has one, and the banner uses it to mark a card that is new
   // to the stack. Without it here, a real change would arrive as a TypeError
@@ -100,7 +102,7 @@ function byClass(node, className) {
 function mount() {
   const stack = makeNode('div');
   stack.id = 'stack';
-  const calls = { markAll: 0, dismissed: [], actions: [], heights: [] };
+  const calls = { markAll: 0, dismissed: [], actions: [], bounds: [] };
   let unread = [];
 
   global.document = {
@@ -110,7 +112,7 @@ function mount() {
   global.window = {
     clawDesktop: {
       notices: async () => unread,
-      bannerHeight: (h) => { calls.heights.push(h); },
+      bannerBounds: (b) => { calls.bounds.push(b); },
       markNoticesRead: async () => { calls.markAll += 1; },
       dismissNotice: async (id) => { calls.dismissed.push(id); },
       noticeAction: async (c) => { calls.actions.push(c); },
@@ -324,15 +326,22 @@ test('the slide is for a card arriving, not for one changing', async () => {
   assert.ok(!b.node('n-update-available').classList.contains('banner--enter'), 'an updated card slid again');
 });
 
-test('an empty bar reports zero height, so the view stops eating clicks', async () => {
+test('an empty cluster reports a zero box, so the view stops eating clicks', async () => {
   // A view swallows every mouse event inside its bounds whatever is drawn there,
-  // so a bar that empties without saying so leaves an invisible strip over the
-  // Control UI.
+  // so a cluster that empties without saying so leaves an invisible strip over
+  // the Control UI. The floating-cards view is sized to the reported box, so an
+  // empty box is what takes the whole view away.
   const b = mount();
   b.set([failure]);
   await b.render();
+  // A non-empty cluster reports a card-sized box, not the window's width.
+  const populated = b.calls.bounds[b.calls.bounds.length - 1];
+  assert.ok(populated && populated.width > 0 && populated.height > 0,
+    'a populated cluster reported no box, so the view has nothing to size to');
   b.set([]);
   await b.render();
   assert.deepEqual(b.rows(), []);
-  assert.equal(b.calls.heights[b.calls.heights.length - 1], 0);
+  const empty = b.calls.bounds[b.calls.bounds.length - 1];
+  assert.deepEqual({ width: empty.width, height: empty.height }, { width: 0, height: 0 },
+    'an empty cluster did not report a zero box, so the view keeps eating clicks');
 });

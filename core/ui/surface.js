@@ -67,6 +67,27 @@
     durationMs: durationMs,
 
     /**
+     * The minimum-visible floor, in milliseconds, read from the stylesheet.
+     *
+     * The page-side reach for what core/ui/motion.js exports as MIN_VISIBLE_MS: a
+     * sandboxed page cannot import the module, so it reads the same value off the
+     * `--motion-min-visible` custom property ui.css declares, the same way it reads
+     * the duration tokens above. A transient state a page raises (the About page's
+     * “Checking…”, say) is held this long before it reverts, so a cached answer
+     * that settles instantly is still on screen long enough to read. The eighth
+     * rule in ui/CONVENTIONS.md, and the desktop main process floors its own
+     * transients against the same constant.
+     *
+     * Falls back to the module's value if the token is missing, so a page whose
+     * stylesheet did not load holds too long rather than flashing, which is the
+     * safe direction for this rule.
+     */
+    minVisibleMs: function () {
+      var value = durationMs('--motion-min-visible');
+      return value === FALLBACK_MS ? 900 : value;
+    },
+
+    /**
      * Play this surface's departure, and resolve when it has finished.
      *
      * Resolves with whether anything was animated, which the host logs rather than

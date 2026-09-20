@@ -130,19 +130,70 @@ const checkButton = $('check');
 const checkLabel = checkButton.textContent;
 let checking = false;
 let checkDeadline = 0;
+// When “Checking…” went on the button, so its dwell is measured from when the
+// reader could SEE it rather than from when the work began: a check that takes two
+// seconds has already shown “Checking…” for two seconds, but a cached check settles
+// in no time at all, and its “Checking…” is what would flash. The eighth rule in
+// ui/CONVENTIONS.md.
+let checkShownAt = 0;
+let checkRevertTimer = 0;
 
-function endCheck() {
-  if (!checking) return;
+// The floor, read from the stylesheet the same way a duration is (surface.js owns
+// the parse). This is the page-side reach for core/ui/motion.js's MIN_VISIBLE_MS,
+// which a sandboxed page cannot import.
+function minVisibleMs() {
+  const surface = window.clawSurface;
+  return surface && typeof surface.minVisibleMs === 'function' ? surface.minVisibleMs() : 900;
+}
+
+// How much of the floor is still owed, measured from when “Checking…” appeared.
+// The same maths as core/ui/motion.js remainingVisibleMs, inline because this page
+// cannot import the module: zero once the floor is met, the remainder before then.
+function remainingCheckMs() {
+  if (!checkShownAt) return 0;
+  const floor = minVisibleMs();
+  const elapsed = Date.now() - checkShownAt;
+  return elapsed >= floor ? 0 : floor - elapsed;
+}
+
+// Revert the button to its resting label. Nothing more: whether it may run NOW or
+// must wait out the floor is endCheck's decision, so a reduced-motion reader and a
+// missing stylesheet both still land here.
+function revertCheck() {
   checking = false;
+  checkShownAt = 0;
   clearTimeout(checkDeadline);
+  clearTimeout(checkRevertTimer);
+  checkRevertTimer = 0;
   checkButton.disabled = false;
   checkButton.removeAttribute('aria-busy');
   checkButton.textContent = checkLabel;
 }
 
+// ★ End the check, but never before “Checking…” has been up long enough to read.
+// The answer's arrival (onAboutChanged) and the deadline both call this, and a
+// cached answer arrives within a frame, so without the floor the reader sees
+// “Checking…” flash and vanish with no sense that a check happened. So a revert
+// owed more time is deferred by exactly the remainder, and a second call while one
+// is pending is folded into it rather than stacking a timer. The answer itself is
+// on the banner (host-side, and floored there too), so the button holding
+// “Checking…” a beat longer costs the reader nothing.
+function endCheck() {
+  if (!checking) return;
+  const remaining = remainingCheckMs();
+  if (remaining > 0) {
+    if (checkRevertTimer) clearTimeout(checkRevertTimer);
+    checkRevertTimer = setTimeout(revertCheck, remaining);
+    return;
+  }
+  revertCheck();
+}
+
 checkButton.addEventListener('click', async () => {
   if (checking) return;
   checking = true;
+  checkShownAt = Date.now();
+  if (checkRevertTimer) { clearTimeout(checkRevertTimer); checkRevertTimer = 0; }
   checkButton.disabled = true;
   checkButton.setAttribute('aria-busy', 'true');
   checkButton.textContent = 'Checking…';

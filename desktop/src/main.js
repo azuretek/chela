@@ -346,19 +346,32 @@ function layoutViews() {
   // Exactly over the page it stands in for, so the title strip stays visible
   // and draggable while the app is connecting.
   if (loadingView) loadingView.setBounds({ x: 0, y: top, width, height: Math.max(0, height - top) });
-  // Exactly as tall as the banner page says it needs, and no taller: the view
-  // eats every click inside its bounds regardless of what is drawn there.
-  if (bannerView) bannerView.setBounds({ x: 0, y: top, width, height: Math.min(bannerHeight, Math.max(0, height - top)) });
+  // ★ Exactly the card cluster, and no bigger, hugging the top-trailing corner:
+  // the view eats every click inside its bounds regardless of what is drawn there,
+  // so a view any wider or taller than the cards is a dead strip over the Control
+  // UI. The bar is gone (Abi, 2026-09-19); the cards float, and everything beside
+  // and below them passes through. Right-aligned to match the sweep chip and the
+  // phone's trailing stack, with the same 12px side inset the sweep uses.
+  // Where the sweep hangs from: the cards' foot, or the strip top when the bar is
+  // gone. Updated as the banner view is placed.
+  let bannerFoot = top;
+  if (bannerView) {
+    const bw = Math.max(0, Math.min(bannerSize.width, width));
+    const bh = Math.max(0, Math.min(bannerSize.height, Math.max(0, height - top)));
+    const bx = Math.max(0, width - bw - 12);
+    bannerView.setBounds({ x: bx, y: top, width: bw, height: bh });
+    bannerFoot = top + bh;
+  }
   // The sweep is sized to the CONTROL rather than to the window: only the pixels
   // it draws may claim a click, so the view is exactly the button and it hangs
-  // under the bar's trailing edge, where the sweep has sat since 2026-09-17. The
-  // 12px inset is the bar's own side padding, and the gap clears the bar's bottom
-  // padding so the chip reads as below the bar rather than inside it.
+  // under the card cluster's trailing edge. The 12px inset matches the cards', and
+  // the gap clears the last card so the chip reads as below the stack rather than
+  // inside it.
   if (sweepView) {
     const gap = 8;
     const w = Math.max(0, Math.min(sweepSize.width, width));
     const h = Math.max(0, Math.min(sweepSize.height, Math.max(0, height - top)));
-    const y = Math.min(top + bannerHeight + gap, Math.max(0, height - h));
+    const y = Math.min(bannerFoot + gap, Math.max(0, height - h));
     sweepView.setBounds({ x: Math.max(0, width - w - 12), y, width: w, height: h });
   }
   // A modal covers everything including the strip: the scrim is meant to dim
@@ -1625,7 +1638,7 @@ function createMainWindow() {
     payloadGateway = null;
     stripView = null;
     bannerView = null;
-    bannerHeight = 0;
+    bannerSize = { width: 0, height: 0 };
     // The sweep is a view of its own, so it is a handle of its own to drop.
     sweepView = null;
     sweepSize = { width: 0, height: 0 };
@@ -2355,11 +2368,14 @@ function noticeLog() {
 // page and this app draws no app UI into that. Its own WebContents for the same
 // reason every other page of ours is one.
 let bannerView = null;
-// What the page says it needs, in CSS pixels. The view is resized to exactly
-// this: a view swallows every mouse event inside its bounds no matter what the
-// page draws there, so an over-tall banner is an invisible strip that eats
-// clicks on the UI underneath. Zero means gone.
-let bannerHeight = 0;
+// The card cluster's own box, in CSS pixels, reported by ui/banner.js. The view
+// is resized to exactly this: a view swallows every mouse event inside its bounds
+// no matter what the page draws there, so a view any bigger than the cards is an
+// invisible strip that eats clicks on the UI underneath. The bar is gone (Abi,
+// 2026-09-19: "floating cards no full width bar"), so this is a WIDTH as well as a
+// height: the cards float at the top-trailing corner and everything beside them
+// passes through. { width: 0, height: 0 } means gone.
+let bannerSize = { width: 0, height: 0 };
 
 // The sweep: the one control that closes the whole bar, in a view of its own,
 // below the bar.
@@ -2471,7 +2487,17 @@ function refreshBanner() {
       themeCssKeys.delete(wc.id);
       tokenCssKeys.delete(wc.id);
       bannerView = null;
-      bannerHeight = 0;
+      bannerSize = { width: 0, height: 0 };
+      // ★ Reposition everything now that the cards are gone. The sweep hangs off
+      // the card cluster's foot (see layoutViews), so cards that leave without
+      // this leave the sweep's y computed against the box they HAD. In the
+      // ordinary case the sweep left on the same change (refreshSweep ran first
+      // and unread() is empty), but the reader reported "Mark all read gets stuck
+      // after banners leave": any path that keeps the sweep a moment longer, or a
+      // later change that shrinks the cluster, was laying it out against a stale
+      // box. bannerSize is zeroed now, so this puts the sweep back where it
+      // belongs, or removes the strip the departed cards' box described.
+      layoutViews();
       // Hand the keyboard back the way closeOverlay does, and only when it was
       // actually there: a dismissal must not move the reader's focus at all.
       if (held) {
@@ -2484,10 +2510,11 @@ function refreshBanner() {
   }
 
   if (!bannerView) {
-    // Provisional, and immediately corrected by the page. A view with no height
-    // never paints, and a view that never paints cannot run the script that
-    // would tell us how tall to make it.
-    bannerHeight = 72;
+    // Provisional, and immediately corrected by the page. A view with no size
+    // never paints, and a view that never paints cannot run the script that would
+    // tell us how big to make it. A width too, now that the view hugs the cards
+    // rather than spanning the window.
+    bannerSize = { width: 420, height: 72 };
     bannerView = new WebContentsView({
       webPreferences: { preload: PRELOAD, contextIsolation: true, nodeIntegration: false, sandbox: true },
     });
@@ -4814,10 +4841,16 @@ function registerIpc() {
   // view swallows clicks over its whole rect, so main cannot guess at it.
   // What the banner draws, which is only what has not been acknowledged.
   ipcMain.handle('app:notices', () => notices.unread());
-  ipcMain.handle('app:banner-height', (_e, height) => {
-    const next = Math.max(0, Math.min(400, Math.ceil(Number(height) || 0)));
-    if (next === bannerHeight) return;
-    bannerHeight = next;
+  ipcMain.handle('app:banner-bounds', (_e, bounds) => {
+    // The card cluster's box, reported by ui/banner.js. Bounded like the sweep's,
+    // so a page that reported nonsense could not size a view over the whole
+    // window. Width is capped at the widest a card is allowed to be (see
+    // banner.css --notice-card-max plus the cluster's own insets); the ceiling
+    // here is generous of that so a future wider card is not clipped.
+    const width = Math.max(0, Math.min(560, Math.ceil(Number(bounds && bounds.width) || 0)));
+    const height = Math.max(0, Math.min(600, Math.ceil(Number(bounds && bounds.height) || 0)));
+    if (width === bannerSize.width && height === bannerSize.height) return;
+    bannerSize = { width, height };
     layoutViews();
   });
   // The sweep's own size, reported by core/ui/sweep.js. Bounded like the bar's, so

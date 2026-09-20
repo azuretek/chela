@@ -708,27 +708,23 @@ app.whenReady().then(async () => {
         check(`${page.name}.html uses the row gap the spec records`,
           probe.cardGap === '8px', `the gap resolved to "${probe.cardGap}"`);
 
-        // ---- the bar paints its whole rectangle -----------------------------
-        // This assertion is where the reversal is recorded. What stood here
-        // required the ROOT, the BODY and the STACK to be transparent, so the strip
-        // was an unpainted band the page underneath showed through. That was the
-        // first answer to the click-swallowing fault and it READ WRONG: the reader
-        // saw a strip of the app under a floating bar, and those unpainted pixels
-        // were dead zones over the Control UI anyway, which is the fault it was
-        // meant to fix. See the note at the top of core/ui/banner.css: the bar
-        // paints its whole rectangle, because a view claims every mouse event
-        // inside its rectangle whatever is drawn there.
-        //
-        // So the STACK paints, and the two above it must still add NOTHING: the
-        // root's background is propagated to the whole viewport, and a margin on
-        // the body would sit inside the view and outside the bar.
+        // ---- floating cards, not a bar --------------------------------------
+        // ★ The reversal, recorded here. This once required the STACK to paint its
+        // whole rectangle, because the view spanned the window and a view claims
+        // every click in its rectangle whatever it draws: painting the band at
+        // least made the dead zone visible. Abi, 2026-09-19: "floating cards no full
+        // width bar that's pointless". The view is now sized to the card cluster
+        // (report() in banner.js, layoutViews in main.js), so the honest thing is
+        // the reverse: the ROOT, the BODY and the STACK all paint NOTHING, so the
+        // stack's own area beyond the cards is see-through and passes clicks. Each
+        // card keeps its own surface (checked below and in tokens.test.js).
         const clear = (value) => /rgba?\([^)]*,\s*0\)$|^transparent$/.test(String(value || '').trim());
-        check(`${page.name}.html adds no canvas above the bar`,
+        check(`${page.name}.html adds no canvas above the cards`,
           clear(probe.htmlBackground) && clear(probe.body),
           JSON.stringify({ html: probe.htmlBackground, body: probe.body }));
-        check(`${page.name}.html paints the whole bar, so no pixel of it is a dead zone`,
-          Boolean(probe.stackBackground) && !clear(probe.stackBackground),
-          `the stack resolved to ${JSON.stringify(probe.stackBackground)}`);
+        check(`${page.name}.html paints no band: the stack is a floating cluster, not a bar`,
+          clear(probe.stackBackground),
+          `the stack resolved to ${JSON.stringify(probe.stackBackground)}, which is a full-width dead strip`);
         // ---- the card's body stacks its blocks --------------------------------
         // Read off geometry rather than source, because the fault was a class whose
         // rule had gone: the card still carried it and the page still drew. The
@@ -740,21 +736,22 @@ app.whenReady().then(async () => {
             && Boolean(body.message) && Boolean(body.detail)
             && body.detail.top >= body.message.bottom - 0.5,
           JSON.stringify(body));
-        // ---- the bar draws notices and nothing else --------------------------
-        // ★ Anything on this page shares the bar rectangle, which its view claims
-        // whole, so a control drawn here would make the rest of its line a dead zone
-        // over the Control UI. That is why the sweep is a page of its own, and this
-        // is the assertion that keeps it off the bar.
-        check(page.name + '.html draws no sweep: the bar rectangle is its cards plus padding',
+        // ---- the cluster draws notices and nothing else ----------------------
+        // ★ The view is sized to the cards, so a control drawn on this page outside
+        // a card would put itself in the view's rectangle and claim a click there.
+        // The sweep is a page of its own for that reason, and this keeps it off the
+        // cluster.
+        check(page.name + '.html draws no sweep: the cluster is its cards plus padding',
           probe.sweep === null && !probe.readall,
           JSON.stringify({ sweep: probe.sweep, readall: probe.readall }));
-        // And off the composited pixels: the bar own padding above the first card is
-        // its surface. The colour is reported beside the alpha, so a strip painted
-        // with a fully transparent colour cannot pass by looking painted.
+        // And off the composited pixels: the stack's own padding above the first
+        // card must be TRANSPARENT now (alpha 0), because it is no longer a bar's
+        // surface but the see-through area the click passes through. The colour is
+        // reported beside the alpha, so a strip that looks painted cannot pass.
         if (probe.pixels) {
           const alpha = (value) => Number(String(value).split(' a').pop());
-          check(page.name + '.html paints the bar own strip',
-            alpha(probe.pixels.aboveTheCard) > 0, JSON.stringify(probe.pixels));
+          check(page.name + '.html leaves the area above the cards transparent, so a click passes through',
+            alpha(probe.pixels.aboveTheCard) === 0, JSON.stringify(probe.pixels));
         }
       }
 
