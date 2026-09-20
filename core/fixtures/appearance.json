@@ -1,0 +1,40 @@
+{
+  "description": "pageColorScheme() golden pairs: given the appearance a page resolved for its own palette, the colour scheme a client should give its web view. 'light'/'dark' pin the view to that mode; 'system' leaves the device to answer prefers-color-scheme (iOS .unspecified, desktop nativeTheme.themeSource='system'). The decision is core/appearance.js; core/test/fixtures.test.js asserts it in JS and mobile/ClawTests/AppearanceParityTests.swift asserts the Swift adapter reproduces it, so the two clients cannot diverge. Regenerate is manual.",
+  "cases": [
+    {
+      "name": "explicit light stays light",
+      "input": {
+        "mode": "light"
+      },
+      "output": "light"
+    },
+    {
+      "name": "explicit dark stays dark",
+      "input": {
+        "mode": "dark"
+      },
+      "output": "dark"
+    },
+    {
+      "name": "no mode resolved -> device answers",
+      "input": {
+        "mode": null
+      },
+      "output": "system"
+    },
+    {
+      "name": "unknown string -> device answers",
+      "input": {
+        "mode": "sepia"
+      },
+      "output": "system"
+    },
+    {
+      "name": "empty string -> device answers",
+      "input": {
+        "mode": ""
+      },
+      "output": "system"
+    }
+  ]
+}

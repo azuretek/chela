@@ -23,6 +23,7 @@ import * as updates from '../updates.js';
 import {
   clean, clientIdentity, formatBlock, inject, shouldInject, transformFrame,
 } from '../prompt-metadata.js';
+import { pageColorScheme } from '../appearance.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(HERE, '..', 'fixtures');
@@ -30,6 +31,18 @@ const FIXTURES = path.join(HERE, '..', 'fixtures');
 function load(name) {
   return JSON.parse(readFileSync(path.join(FIXTURES, name), 'utf8'));
 }
+
+test('appearance.pageColorScheme() reproduces every fixture', () => {
+  const { cases } = load('appearance.json');
+  assert.ok(cases.length > 0, 'expected appearance fixtures');
+  for (const { input, output } of cases) {
+    assert.strictEqual(
+      pageColorScheme(input.mode),
+      output,
+      `pageColorScheme(${JSON.stringify(input.mode)}) should be ${JSON.stringify(output)}`,
+    );
+  }
+});
 
 test('progress.percent() reproduces every fixture', () => {
   const { cases } = load('progress.json');

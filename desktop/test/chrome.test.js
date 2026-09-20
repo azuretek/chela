@@ -315,9 +315,14 @@ test('the injected sheet is a single :root rule and nothing else', () => {
   assert.match(css, /^:root \{/);
   assert.ok(css.includes('--bg: rgb(250, 249, 245) !important;'));
   assert.ok(css.includes('--scrollbar-size: 12px !important;'));
+  // The resolved mode as an explicit color-scheme, from the shared decision
+  // (core/appearance.js pageColorScheme), so our own pages draw their form chrome
+  // in the palette's mode. This is the per-page appearance signal, the desktop's
+  // equivalent of iOS injecting root.style.colorScheme via applyScript.
+  assert.ok(css.includes('color-scheme: light !important;'), 'the resolved mode is carried as an explicit color-scheme');
   // ui.css declares every one of these as a literal fallback, and those would
-  // win on source order without the flag.
-  assert.strictEqual((css.match(/!important/g) || []).length, 2);
+  // win on source order without the flag: the two tokens plus the color-scheme.
+  assert.strictEqual((css.match(/!important/g) || []).length, 3);
   assert.strictEqual((css.match(/\{/g) || []).length, 1, 'exactly one rule may be emitted');
 
   // No tokens means no stylesheet at all, so a themeless page is left with its
