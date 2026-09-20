@@ -665,6 +665,15 @@ a  { color: var(--accent); }
   max-width: none;
   flex-wrap: wrap;
 }
+/* ★ A centred action cluster, for a row whose buttons are the section's own
+   subject rather than a trailing action on a form. Abi, 2026-09-20: the About
+   page's "Check for updates / Release notes" and "Clear cache and refresh" should
+   be centred, not hung on the right edge, because those cards are ABOUT their
+   buttons. A form's trailing Test/Add cluster stays right-aligned (the default),
+   so this is a per-row opt-in rather than a change to every action row. */
+.settings-row--actions-center .settings-row__control {
+  justify-content: center;
+}
 /* The hairline between two rows in one group: 60%, not a full border, which is
    what keeps a group reading as one surface with rows on it. */
 .settings-row + .settings-row {
@@ -1064,6 +1073,24 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
   padding-top: 0;
 }
 .editor > .result:last-child { padding-bottom: var(--space-4); }
+
+/* ★ The SAME inset for a result line that is a bare child of a settings group
+   rather than of an editor. Abi, 2026-09-20, on the new-gateway form: "Enter an
+   address first." and the Test-connection answer sat hard against the card's
+   leading edge, out of line with every row above them, because the form's rows
+   are .settings-row (which the group insets) while the .result is a direct child
+   of .settings-group and took no row padding. This is the same fault the editor
+   rule above answers, one container over: the new-gateway form (settings.js
+   renderAddForm) appends its `out` straight into #add-gateway, a .settings-group.
+   So a .result that is a group's own child takes a row's horizontal inset, and
+   the foot's extra room when it is the last thing in the group. :empty stays out
+   of the flow via the rule above, so an answered form gains the padding and an
+   unanswered one adds no gap. */
+.settings-group > .result {
+  padding: var(--space-3) var(--space-4);
+  padding-top: 0;
+}
+.settings-group > .result:last-child { padding-bottom: var(--space-4); }
 
 /* --------------------------------------------------------------- gateway search */
 

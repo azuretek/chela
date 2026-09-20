@@ -357,6 +357,28 @@ test('★ the stack paints no band, so the floating-card view claims only the ca
     'the stack does not hug its cards (width should be max-content), so its reported box would be full-width');
   assert.equal(stack.decls.get('margin-left'), 'auto',
     'the stack has no margin-left: auto, so it does not pin to the trailing edge the way the cluster should');
+
+  // ★ The card takes a FIXED width, not a fraction of the view. Abi, 2026-09-20,
+  // on Windows: the banner collapsed to a ~30px column, one word per line, because
+  // the card was `max-width: min(420px, 100%)` -- capped at 100% of the VIEW, and
+  // the view is sized FROM the card (banner.js report() measures the card, main.js
+  // sizes the view to it). That is a feedback loop: a view momentarily narrow
+  // clamps the card, the host sizes the view to the clamped card, and they lock at
+  // min-content. Measured: 153px. The card width must therefore be its own,
+  // independent of the view, so `width: 420px`; `max-width: 100%` may stay only as
+  // a small-window guard, which cannot start the loop because the basis is 420px.
+  // The rendered guard is desktop/scripts/prove-banner-width.mjs, which drives the
+  // real report/resize loop; this is the fast source half that keeps the loop
+  // from being reintroduced.
+  const card = rules.find((rule) => rule.selector.split(',').map((s) => s.trim()).includes('.banner'));
+  assert.ok(card, 'banner.css has no .banner rule');
+  assert.equal(card.decls.get('width'), '420px',
+    'the card no longer takes a fixed width, so its size can depend on the view it is sized to: '
+    + 'that is the feedback loop that collapsed the banner to a sliver on Windows (2026-09-20)');
+  const cardMax = card.decls.get('max-width');
+  assert.ok(!cardMax || !/\bmin\s*\(/.test(cardMax),
+    `the card's max-width is ${cardMax}, a min() against the view: a percentage of the view in the card's `
+    + 'width is exactly the loop that collapsed it. Keep the width fixed and cap only at 100% for a small window');
 });
 
 test('★ the sweep is a plain button in a view of its own, so it adds no dead zone', () => {

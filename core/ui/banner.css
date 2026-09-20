@@ -166,14 +166,24 @@ body.banner-body {
   display: flex;
   align-items: flex-start;
   gap: var(--notice-gap);
-  /* A floating card now hugs its content rather than stretching across a bar, so
-     it takes a max-width of its own: without it a card with a long message would
-     grow to the whole window and the cluster with it, which is the full-width bar
-     by another name. 420px is the Control UI's own floating attention-card width;
-     max-width, not width, so a short card stays short. Combined with the stack's
-     right alignment, the cards read as a stack of cards at the top-trailing
-     corner. */
-  max-width: min(420px, 100%);
+  /* ★ A floating card is 420px wide, FULL STOP, not a fraction of the view.
+     Abi, 2026-09-20, on Windows: with `max-width: min(420px, 100%)` the card was
+     capped at 100% of the VIEW, and the view is sized FROM the card (banner.js
+     report() measures the card, main.js sizes the view to it). That is a feedback
+     loop: a view that is momentarily narrow clamps the card, the host sizes the
+     view to the clamped card, and the two lock at min-content, one word per line.
+     Measured: the card settled at 153px. So the card takes a fixed WIDTH: its
+     size is its own, the view is sized to it, and there is no fraction of the
+     view in the loop to collapse. 420px is the Control UI's own floating
+     attention-card width.
+
+     `max-width: 100%` stays ONLY as a genuine small-window guard, for a window
+     narrower than a card, where clamping to the window is correct because there
+     is no room for 420px. That case cannot start the collapse, because the width
+     basis is 420px and the cap only ever engages below it. The stack's own
+     `max-content`/`max-width: 100%` then reports the card's real 420px. */
+  width: 420px;
+  max-width: 100%;
   /* The card is furniture too. It states a condition and offers controls; the
      card itself does nothing when it is clicked, so it must not be the reason a
      click on the page beneath is lost. Its buttons carry their own
@@ -284,6 +294,11 @@ body.banner-body {
   font-size: var(--control-ui-text-sm);
   font-weight: var(--notice-weight-headline);
   color: var(--text-strong);
+  /* Wrap long words within the card rather than forcing the card wider (or, when
+     the card had a percentage width, collapsing it). The card owns its width now,
+     so this only governs how a long unbroken token behaves inside 420px. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* The subject line under it: --muted at the card's own text size, the pairing
