@@ -14,19 +14,20 @@
  *
  * Three things about the page this styles:
  *
- * - ★ THE BAR PAINTS ITS WHOLE RECTANGLE, and that is the rule the whole file is
- *   built around rather than a look. It lives in a view sized to exactly the
- *   stack's height (see refreshBanner in src/main.js), and a view claims every
- *   mouse event inside its own rectangle whatever is drawn there, so any pixel of
- *   that rectangle this page does not paint is a dead zone over the Control UI:
- *   the reader can see the page underneath and cannot click it. The stack
- *   therefore carries its own surface (see .banner-stack), which covers its
- *   padding and the gaps between its cards as well as the cards themselves, and
- *   every child of it, which is a card and only ever a card, sits on a pixel the
- *   bar paints. The sweep control (Mark all read) is NOT a child of the stack: it
- *   hangs on the last card's own line, so it needs no strip of its own painted
- *   behind it. The body must still add nothing of its own: a margin here would be
- *   inside the view and outside the bar.
+ * - ★ FLOATING CARDS, NOT A BAR. Abi, 2026-09-19: "floating cards no full width
+ *   bar that's pointless". The view is sized to the CARD CLUSTER (width and
+ *   height, see report() in banner.js and layoutViews in src/main.js), not to the
+ *   window, and a view claims every mouse event inside its own rectangle whatever
+ *   is drawn there. So the way to stop the empty strip eating clicks is to make
+ *   the view no bigger than the cards: the cluster hugs its widest card, sits at
+ *   the top-trailing corner, and everything beside and below it is the Control UI,
+ *   which now gets the click. The stack paints NOTHING (no surface, no band); each
+ *   card carries its own surface. This replaces the old rule, "the bar paints its
+ *   whole rectangle", which was the other way of living with a full-width view:
+ *   paint the whole strip so at least the dead zone is not invisible. Shrinking
+ *   the view is the honest fix, and it is the same shape the sweep chip already
+ *   had. The sweep (Mark all read) is a view of its own too, sized to the button,
+ *   hanging under the cluster's foot.
  * - It runs under `style-src 'self'`, so no style attribute may be written
  *   through the DOM. Everything an element needs is a class or a property set
  *   from a stylesheet.
@@ -119,37 +120,33 @@ body.banner-body {
   pointer-events: auto;
 }
 
-/* ★ THE BAR. One surface across the whole rectangle the view is sized to, which
-   is what makes every pixel inside that rectangle the bar's rather than a hole:
-   the padding, the gaps between the cards, and the corners the cards' own radii
-   round off are all painted here.
+/* ★ THE STACK IS NO LONGER A BAR. Abi, 2026-09-19: "floating cards no full width
+   bar that's pointless". It paints NOTHING of its own now: no surface, no blur,
+   no hairline, no shadow. Those were the full-width band, and a band is a
+   full-width dead strip over the Control UI, because the view claims every click
+   in its rectangle whatever the page draws there. Each card carries its own
+   surface (below), so the cluster is just cards with gaps, and main.js sizes the
+   view to the cluster's own box (see report() in banner.js and layoutViews in
+   main.js) so only the cards' pixels claim a click and the rest of the screen
+   passes through.
 
-   The surface, the blur and the hairline are the CARD's own material, from the
-   same tokens (--notice-surface at --notice-surface-alpha, --notice-blur), and
-   deliberately so rather than for want of a second colour: the bar and the cards
-   on it are one object, and the cards are read off it by their tone stripe, their
-   hairline and their shadow rather than by a second shade of glass. It is also
-   what keeps the two clients honest, since there is no bar-colour token in
-   spec/tokens.json for them to disagree about.
-
-   No border-radius: the bar spans the window under the title strip, so its
-   corners are the window's. Its bottom hairline is the edge the reader sees over
-   the page.
-
-   `pointer-events: none` stays: the bar is not a control, it is the surface the
-   reader's controls sit on, and its controls turn hit testing back on for
-   themselves. */
+   Right-aligned (`align-items: flex-end`) so the cards hug the trailing edge the
+   way the sweep chip and the phone's stack do, and the view is placed at the
+   top-trailing corner to match. The padding is the cluster's inset from the
+   window edge; the gap between cards is the shared value. `width: max-content` and
+   `margin-left: auto` keep the cluster only as wide as its widest card and pinned
+   to the trailing edge, which is what makes the reported width tight. */
 .banner-stack {
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: 8px;
   padding: 10px 12px;
+  width: max-content;
+  max-width: 100%;
+  margin-left: auto;
   pointer-events: none;
-  background: color-mix(in srgb, var(--notice-surface) var(--notice-surface-alpha), transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--notice-border) var(--notice-border-alpha), transparent);
-  box-shadow: var(--notice-shadow);
-  backdrop-filter: blur(var(--notice-blur));
-  -webkit-backdrop-filter: blur(var(--notice-blur));
+  background: transparent;
 }
 
 /* The card. Surface, hairline, radius, shadow and blur are the Control UI's
@@ -169,6 +166,14 @@ body.banner-body {
   display: flex;
   align-items: flex-start;
   gap: var(--notice-gap);
+  /* A floating card now hugs its content rather than stretching across a bar, so
+     it takes a max-width of its own: without it a card with a long message would
+     grow to the whole window and the cluster with it, which is the full-width bar
+     by another name. 420px is the Control UI's own floating attention-card width;
+     max-width, not width, so a short card stays short. Combined with the stack's
+     right alignment, the cards read as a stack of cards at the top-trailing
+     corner. */
+  max-width: min(420px, 100%);
   /* The card is furniture too. It states a condition and offers controls; the
      card itself does nothing when it is clicked, so it must not be the reason a
      click on the page beneath is lost. Its buttons carry their own

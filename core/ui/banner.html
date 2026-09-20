@@ -17,17 +17,18 @@
        and a dialog would be dismissed while the condition carried on being true
        with nothing on screen to say so.
 
-       This page lives in a view sized to exactly the height it reports, because
-       a view swallows every mouse event inside its bounds no matter what is
-       drawn there: an over-tall banner would be an invisible strip eating clicks
-       on the UI underneath. ★ So the two things must be the same rectangle, and
-       the bar paints ALL of it: see the rule at the top of banner.css. See also
-       refreshBanner in src/main.js, which loads this page BEFORE putting the
-       view on the window, because a view loaded while it is attached takes the
-       reader's keyboard and nothing here asks it to.
+       This page lives in a view sized to exactly the CARD CLUSTER's box, width
+       and height, because a view swallows every mouse event inside its bounds no
+       matter what is drawn there: a view any bigger than the cards would be an
+       invisible strip eating clicks on the UI underneath. ★ So the cards float
+       (Abi, 2026-09-19: "floating cards no full width bar"), the view hugs them at
+       the top-trailing corner, and everything beside and below them is the Control
+       UI. See the rule at the top of banner.css, report() in banner.js for the box
+       it reports, and refreshBanner in src/main.js, which loads this page BEFORE
+       putting the view on the window, because a view loaded while it is attached
+       takes the reader's keyboard and nothing here asks it to.
 
-       Its one job to the host is that height, reported on every render, and the
-       bar's footer row is part of it. -->
+       Its one job to the host is that box, reported on every render. -->
   <div class="banner-stack" id="stack"></div>
   <script src="surface.js"></script>
   <script src="banner.js"></script>

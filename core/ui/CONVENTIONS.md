@@ -333,6 +333,34 @@ both clients' notice raisers rather than the desktop update lane alone, so each
 application is a place someone decided a state
 was transient rather than a global default that freezes something live.
 
+## ★ The ninth rule: no surface scrolls sideways
+
+Abi, 2026-09-19: the About card *"made the whole settings page have to scroll sideways, I do not want that"*, and the standard *"should apply to all design surfaces"*.
+
+**The horizontal axis is never a scroll axis on our own surfaces.** A reader scrolls a long page down; a paragraph that runs off the right edge and has to be dragged left to read is a layout that failed, not a feature. So long content WRAPS within the padding it was given, and no descendant may establish a width wider than the surface.
+
+**The trap, because it is where this keeps coming from: a long, near-unbreakable string.** A dev build line (`1.0.1-dev.291.<sha> (<sha>-dirty, built …Z)`), a Windows config path (`C:\\Users\\…\\config.json`), a tailnet URL. None of them has a space to break at, so by default each one sets a min-content width wider than the card and takes the whole surface into a sideways scroll. It was reported on the settings footer's build line, which reached 511px at scale 1 and 652px at 1.5 in a 400px window, measured through electron with `desktop/scripts/prove-settings-overflow.mjs` rather than reasoned about.
+
+**Three things make it hold, and a surface needs all three where it applies:**
+
+| Where | What |
+|---|---|
+| The long text element itself | `overflow-wrap: anywhere`, so the string breaks mid-word rather than pushing width. `.mono`, `.url`, `.fact__value`, `.sub`, `.about-footer__build` carry it. |
+| Every flex or grid ANCESTOR between it and the surface | `min-width: 0` (flex) or `minmax(0, …)` (grid track). A flex item and a grid track both default to a min of their content, so the wrap above cannot engage while an ancestor refuses to shrink below the word. This is the half that gets missed, because the element with the wrap looks correct in isolation. |
+| The scroll container, as the guard | `overflow-x: hidden` on `.modal__body`, so a missed one is impossible rather than merely unlikely: a descendant that still cannot shrink is clipped, never scrolled. |
+
+**Do NOT reach for `white-space: nowrap` plus ellipsis as the general answer.** That is the gateway URL's deliberate exception (`#gateways .settings-row__text .url`), where the row stacks below a breakpoint and the whole address reads there; it is a truncation the reader can recover, chosen for one row. The default is to WRAP and show the whole string, because a build line or a path truncated to `…config.json` is the part a bug report needed.
+
+Guarded by `desktop/scripts/prove-settings-overflow.mjs` and `prove-about-overflow.mjs` (the rendered before/after, which a source scan cannot give): every element's right edge is measured against the viewport at scale 1 and 1.5, and none may exceed it.
+
+## ★ The tenth rule: a fixed pixel box never clips scaled text
+
+The interface has a reading-size setting (`--control-ui-text-scale`, 1 through 1.5), and our pages grow with it (every `font-size` is `calc(… * var(--control-ui-text-scale))`; `desktop/scripts/measure-text-scale.mjs` proves the rendered result). **Accessibility is a first-class constraint here, not a mode:** a person who turns the text up is not asking for a broken layout, so nothing our pages draw may clip, cut or overlap when the text grows.
+
+**The specific trap is a box sized in fixed px around text sized in scaled px.** They track apart: `.result` reserved `min-height: 17px` for a 12px line, and at 1.5 the line is 18px and clips against the 17px box, so the reply the reader most needs, a failure in red or a confirmation in green, was the one cut off. The fix is to size the box in the SAME scaled unit as its text: `min-height: 1.4em` with a stated `line-height`, so the reserved space is the text's own height at every scale.
+
+**The check, and the reason it is here rather than left to a source scan:** a fixed `height` or `min-height` on anything holding text is the smell, but the failure is what a source scan cannot see, so it is measured on the rendered page. `desktop/scripts/prove-about-overflow.mjs` reads each text element's `scrollHeight` against its `clientHeight` at scale 1 and 1.5 and asserts nothing is clipped. A fixed height on an ICON, a logo or a progress bar is fine: those hold no text, and every other fixed height in `ui.css` is one of those.
+
 ## ★ What counts as a transition
 
 **A transition is any change the reader can SEE, and it does not have to change the

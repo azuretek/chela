@@ -33,13 +33,33 @@ function el(tag, props = {}, children = []) {
 }
 
 function report() {
-  // Synchronous on purpose. `getBoundingClientRect` forces layout, so the
-  // number is right immediately -- and waiting for a frame would deadlock: the
-  // view starts at a provisional height, requestAnimationFrame does not fire
-  // for content that has not painted, and the height that would make it paint
-  // is the one being reported.
-  const height = stack.childElementCount ? stack.getBoundingClientRect().height : 0;
-  void api.bannerHeight(height);
+  // ★ The card cluster's own BOUNDING BOX, width and height, not just a height.
+  // The bar is gone (Abi, 2026-09-19: "floating cards no full width bar"): each
+  // notice is a card sized to itself, and the view is sized to the cards rather
+  // than to the window, so only the cards' pixels claim a click and everything
+  // beside them passes through to the Control UI. That is the same shape the
+  // sweep chip already has, applied to the whole stack. A view sized to the
+  // window would be a full-width dead strip whatever it painted, which is the
+  // fault this removes.
+  //
+  // Synchronous on purpose. `getBoundingClientRect` forces layout, so the numbers
+  // are right immediately -- and waiting for a frame would deadlock: the view
+  // starts at a provisional size, requestAnimationFrame does not fire for content
+  // that has not painted, and the size that would make it paint is the one being
+  // reported.
+  //
+  // The width is the WIDEST card's, because the cards are right-aligned and a view
+  // narrower than one would clip it. Measured off each card rather than off the
+  // stack, whose own box can be wider than its widest child under some flex
+  // arrangements. Rounded up so a sub-pixel width never clips the last column.
+  if (!stack.childElementCount) { void api.bannerBounds({ width: 0, height: 0 }); return; }
+  const box = stack.getBoundingClientRect();
+  let widest = 0;
+  for (const child of stack.children) {
+    const w = child.getBoundingClientRect().width;
+    if (w > widest) widest = w;
+  }
+  void api.bannerBounds({ width: Math.ceil(widest), height: Math.ceil(box.height) });
 }
 
 function card(notice) {

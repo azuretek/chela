@@ -31,18 +31,25 @@ struct NoticeStack: View {
     var body: some View {
         let style = NoticeCardStyle.forMode(mode)
         VStack(alignment: .trailing, spacing: 0) {
-            // ★ THE BAR, painted behind what it holds and hugging it: the cards
-            // above, the sweep row at the bottom, and one surface behind them all.
-            // That is the same shape the desktop's banner has (see the rule at the
-            // top of core/ui/banner.css), where the bar must paint every pixel of
-            // the rectangle its view is sized to or the rest is a dead strip over
-            // the Control UI.
+            // ★ FLOATING CARDS, NOT A BAR. Abi, 2026-09-19: "floating cards no
+            // full width bar that's pointless". This VStack hugs its cards rather
+            // than stretching across the screen: no `maxWidth: .infinity` and no
+            // band `.background` of its own, so it is only as wide as its widest
+            // card, sits at the top-trailing corner, and every touch beside and
+            // below it reaches the web view underneath. Each card carries its own
+            // surface (NoticeCard's `.background(style.surface)`), so a floating
+            // card is still legible over the page. This is the same shape the
+            // desktop banner now has (see the rule at the top of core/ui/
+            // banner.css and layoutViews in src/main.js, which sizes the view to
+            // the card cluster).
             //
             // It is INSIDE the full-screen frame and not on it, and that
             // distinction is this client's whole safety: the frame is the screen so
-            // that the bar can sit at its top, and a surface, a contentShape or a
-            // gesture on the frame would claim every touch on the page underneath.
-            // See NoticeStackHitTests.
+            // that the cards can sit at its top-trailing corner, and a surface, a
+            // contentShape or a gesture on the frame would claim every touch on the
+            // page underneath. The cards hug their content precisely so the frame
+            // stays touch-transparent everywhere they are not. See
+            // NoticeStackHitTests.
             VStack(alignment: .trailing, spacing: style.stackGap) {
                 ForEach(board.unread, id: \.id) { notice in
                     NoticeCard(
@@ -59,15 +66,17 @@ struct NoticeStack: View {
             }
             .padding(.horizontal, style.inset)
             .padding(.vertical, style.inset)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .background(style.surface)
-            // Trailing filler rather than a fixed height, so the bar is only as
+            // Trailing filler rather than a fixed height, so the cluster is only as
             // tall as what it holds and the web view underneath keeps every touch
             // outside it. A view that covered the page to draw nothing on it would
             // eat taps the way an over-tall desktop banner view does.
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // The whole stack is pinned to the TOP-TRAILING corner and takes no width
+        // it does not need: `alignment: .topTrailing` keeps the cards at the edge
+        // the desktop cluster hugs, and with the inner VStack no longer stretched
+        // the frame is transparent to touch everywhere the cards are not.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         .animation(style.arrival, value: board.unread.map(\.id))
     }
 }

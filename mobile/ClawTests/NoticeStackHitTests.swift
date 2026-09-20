@@ -10,11 +10,12 @@ import XCTest
 ///
 /// On the desktop the banner is a page in a WebContentsView, and a view claims
 /// every mouse event inside its own RECTANGLE whatever the page draws there. That
-/// is why the sweep's own row now lives inside the last card: a bare row of its
-/// own was a full-width strip the reader saw the page through and could not
-/// click, measured by clicking it at a real screen point. See core/ui/banner.js,
-/// core/ui/banner.css and desktop/scripts/test-banner-clicks.js, and
-/// desktop/test/banner.test.js for the guard that keeps a strip from coming back.
+/// is why the desktop now sizes that view to the CARD CLUSTER rather than the
+/// window (Abi, 2026-09-19: "floating cards no full width bar"): only the cards'
+/// pixels claim a click, and the strip beside and below them passes through. See
+/// core/ui/banner.js, core/ui/banner.css and desktop/scripts/prove-floating-
+/// cards.mjs, and desktop/test/banner.test.js for the guard that keeps a
+/// full-width strip from coming back.
 ///
 /// Here there is no rectangle to speak of. The banner is SwiftUI in the same
 /// hosting view as the page it covers, hit testing is per LEAF, and a `Spacer`,
@@ -97,35 +98,38 @@ final class NoticeStackHitTests: XCTestCase {
         }
     }
 
-    func testTheBarPaintsItselfAndNotTheScreen() throws {
-        // The one paint this view has, and where it may land. The desktop's bar
-        // paints its whole rectangle because its view is sized to it and a view
-        // claims every mouse event inside that rectangle whatever the page draws
-        // there (see core/ui/banner.css), and this client now draws the same bar:
-        // one surface behind the cards and the sweep row, which is what makes the
-        // two clients one design.
-        //
-        // It may NOT be on the full-screen frame. The frame is the screen so the
-        // bar can sit at its top, so a surface there would claim every touch on
-        // the page underneath and the empty half of the screen would stop being
-        // the page. Asserted by ORDER, because that is the difference and it is
-        // not visible in a screenshot of a banner that happens to look right.
+    func testTheStackPaintsNoBandOfItsOwn() throws {
+        // ★ Floating cards, not a bar. Abi, 2026-09-19: "floating cards no full
+        // width bar that's pointless". The stack must paint NO surface of its own,
+        // because a band is a full-width strip and this stack's frame is the whole
+        // screen: a `.background` on it would paint (and, being a drawn surface,
+        // claim) every pixel the cards do not, which is the dead zone the desktop
+        // removed by sizing its view to the cards. Each CARD keeps its own surface
+        // (testWhatTheBannerDrawsItAlsoKeeps), so the cluster is legible while its
+        // empty area stays the page. This replaces testTheBarPaintsItselfAndNotThe
+        // Screen, which asserted the opposite for the old full-width bar.
         let text = try source("NoticeBanner.swift")
         let stack = code(try body(of: "NoticeStack", in: text))
-        XCTAssertTrue(stack.contains(".background("),
-            "the bar paints nothing, so it no longer matches the desktop bar it is a copy of")
-        let surface = try XCTUnwrap(stack.range(of: ".background(")?.lowerBound,
-            "the bar's surface is gone")
-        let filler = try XCTUnwrap(stack.range(of: "Spacer(minLength: 0)")?.lowerBound,
-            "the trailing filler is gone, so this test can no longer tell where the surface is applied")
-        XCTAssertLessThan(surface, filler, "the bar's surface is applied after the trailing filler")
-        // No closing bracket in the search: the real line continues with the
-        // alignment, and a search string that includes it matches nothing.
-        let screen = try XCTUnwrap(stack.range(of: ".frame(maxWidth: .infinity, maxHeight: .infinity")?.lowerBound,
-            "the full-screen frame is gone")
-        XCTAssertLessThan(filler, screen,
-            "the full-screen frame is applied before the trailing filler, so the surface may be on the screen "
-            + "rather than on the bar it belongs to")
+        XCTAssertFalse(stack.contains(".background("),
+            "NoticeStack paints a surface of its own. Its frame is the screen, so a band claims every touch on "
+            + "the page the cards do not cover: the bar is gone, and only the cards may paint.")
+    }
+
+    func testTheCardsHugTheTopTrailingCorner() throws {
+        // The cards float at the top-trailing corner, the edge the desktop cluster
+        // hugs, so the two clients read alike. The frame still fills its container
+        // (that is what keeps the empty area the page, below), but its alignment is
+        // topTrailing rather than top, and the inner card VStack is no longer
+        // stretched to full width.
+        let text = try source("NoticeBanner.swift")
+        let stack = code(try body(of: "NoticeStack", in: text))
+        XCTAssertTrue(stack.contains(".frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)"),
+            "NoticeStack no longer pins its cards to the top-trailing corner, so it does not match the desktop "
+            + "cluster's placement")
+        // The inner card cluster must NOT stretch to full width any more, or it is
+        // a bar again in all but the background.
+        XCTAssertFalse(stack.contains(".frame(maxWidth: .infinity, alignment: .trailing)"),
+            "the inner card cluster still stretches to full width, so it is a full-width bar without the paint")
     }
 
     func testTheStackKeepsItsCardsAtTheTopAndItselfOutOfTheWay() throws {
@@ -133,7 +137,8 @@ final class NoticeStackHitTests: XCTestCase {
         let stack = try body(of: "NoticeStack", in: text)
         // The two things that make the transparent region real: the stack IS the
         // screen (so what it does not draw is the page), and its trailing filler
-        // is a Spacer, which draws nothing.
+        // is a Spacer, which draws nothing. With the cards floating, the empty area
+        // is even larger, so this matters more, not less.
         XCTAssertTrue(stack.contains(".frame(maxWidth: .infinity, maxHeight: .infinity"),
             "NoticeStack no longer fills its container, so \"everything outside the cards is the page\" is no "
             + "longer the reason its empty area is safe")
