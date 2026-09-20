@@ -384,16 +384,27 @@ struct WebView: UIViewRepresentable {
     ///
     /// Not private: `WebViewSafeAreaTests` reads it through `@testable import` to
     /// assert the rule and to install the exact bytes the app installs.
+    /// The pure CSS the standalone body inset applies, split out from the injector
+    /// below so its "names no Control UI class" invariant can be asserted on the
+    /// selectors alone (WebViewSafeAreaTests), without the DOM calls whose dots a
+    /// blanket check would trip over. It touches only \`html\` and \`body\` and reads
+    /// the page's own \`--safe-area-*\` tokens, so it couples to nothing the page
+    /// draws.
+    static var safeAreaCss: String {
+        "html,body{height:100dvh}"
+        + "body{"
+        + "padding-top:var(--safe-area-top,env(safe-area-inset-top,0px)) !important;"
+        + "padding-right:var(--safe-area-right,env(safe-area-inset-right,0px)) !important;"
+        + "padding-bottom:var(--safe-area-bottom,env(safe-area-inset-bottom,0px)) !important;"
+        + "padding-left:var(--safe-area-left,env(safe-area-inset-left,0px)) !important;"
+        + "position:fixed;inset:0}"
+    }
+
     static var safeAreaScript: String {
+        // The CSS has no single quote, so a single-quoted JS literal carries it verbatim.
         """
         (function () {
-          var css = 'html,body{height:100dvh}'
-            + 'body{'
-            + 'padding-top:var(--safe-area-top,env(safe-area-inset-top,0px)) !important;'
-            + 'padding-right:var(--safe-area-right,env(safe-area-inset-right,0px)) !important;'
-            + 'padding-bottom:var(--safe-area-bottom,env(safe-area-inset-bottom,0px)) !important;'
-            + 'padding-left:var(--safe-area-left,env(safe-area-inset-left,0px)) !important;'
-            + 'position:fixed;inset:0}';
+          var css = '\(Self.safeAreaCss)';
           var style = document.createElement('style');
           style.setAttribute('data-claw-safe-area', '');
           style.textContent = css;

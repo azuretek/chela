@@ -34,26 +34,34 @@ final class WebViewSafeAreaTests: XCTestCase {
     // MARK: - The rule the script sets
 
     func testTheScriptSetsTheStandaloneBodyInsetFromThePagesOwnTokens() {
-        let script = WebView.safeAreaScript
+        // Assert on the CSS the injector installs, not the injector's JS: the
+        // "names no Control UI class" invariant is a property of the CSS selectors,
+        // and a blanket "no dot" check on the JS would trip over its own DOM calls
+        // (document.createElement and the like), not a class. safeAreaScript embeds
+        // exactly this CSS.
+        let css = WebView.safeAreaCss
+        XCTAssertTrue(WebView.safeAreaScript.contains(css),
+            "the injector does not install the safe-area CSS verbatim")
 
         // The four edges, each from the page's own --safe-area token, marked
         // !important so it wins over the browser-mode default the page draws with.
         for edge in ["top", "right", "bottom", "left"] {
             XCTAssertTrue(
-                script.contains("padding-" + edge + ":var(--safe-area-" + edge + ","),
+                css.contains("padding-" + edge + ":var(--safe-area-" + edge + ","),
                 "the body inset does not read the page's own --safe-area-" + edge + " token"
             )
         }
-        XCTAssertTrue(script.contains("!important"),
+        XCTAssertTrue(css.contains("!important"),
             "the body inset is not marked important, so the page's browser-mode default wins")
         // The shell fills the viewport, which is what the drawer slides up.
-        XCTAssertTrue(script.contains("height:100dvh"),
-            "the script does not size the shell to the viewport, so 100dvh surfaces would not fill the screen")
-        XCTAssertTrue(script.contains("position:fixed"),
+        XCTAssertTrue(css.contains("height:100dvh"),
+            "the CSS does not size the shell to the viewport, so 100dvh surfaces would not fill the screen")
+        XCTAssertTrue(css.contains("position:fixed"),
             "the body is not pinned, which is part of the standalone rule the Control UI ships")
-        // It couples to no Control UI class: it touches html and body only.
-        XCTAssertFalse(script.contains("."),
-            "the script names a selector class, which would couple it to the Control UI's markup")
+        // It couples to no Control UI class: the CSS touches html and body only, so
+        // it carries no class selector (and, being pure CSS, no dot at all).
+        XCTAssertFalse(css.contains("."),
+            "the CSS names a selector class, which would couple it to the Control UI's markup")
     }
 
     // MARK: - The rule actually applies
