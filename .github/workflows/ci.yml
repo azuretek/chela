@@ -169,19 +169,24 @@ jobs:
         run: pnpm run test:js
       - name: Import audit
         run: pnpm run check:imports
-      # NOT check:package here: that audits the PACKAGED artifact (app.asar under
-      # dist/), so it needs `npm run pack` to have run first. It is a post-build
-      # check and belongs in release.yml after the build, and in the local hooks;
-      # a PR gate that deliberately does not build the full artifact (Abi,
-      # 2026-09-20: "just not our full build unless it's needed for tests") has no
-      # asar to audit. check:imports above is the source-level half and runs fine
-      # here.
-      # The boot smoke needs a display for Electron; xvfb-run gives the Linux
-      # runner one, and it ships on the ubuntu image so no external action is
-      # added. It runs the app from the working tree (scripts/smoke.js --instance
-      # source), so it is a boot test, not a packaged build.
-      - name: Boot smoke (working tree)
-        run: xvfb-run --auto-servernum pnpm run smoke
+      # Two checks are deliberately NOT in this gate, both because they need
+      # something a generic runner cannot give, and both already run where they
+      # can:
+      #
+      #   check:package  audits the PACKAGED artifact (app.asar under dist/), so it
+      #                  needs `npm run pack` first. It belongs in release.yml
+      #                  after the build, and in the local hooks. A PR gate that
+      #                  does not build the full artifact (Abi, 2026-09-20: "just
+      #                  not our full build unless it's needed for tests") has no
+      #                  asar to audit.
+      #   smoke          boots the real Electron app, which needs a GUI session
+      #                  the runner does not have: it fails in ~0.5s under xvfb for
+      #                  a reason that has nothing to do with the code, exactly as
+      #                  mobile-pipeline.yml already records for the macOS runners.
+      #                  It is the strongest desktop check and it runs in the local
+      #                  pre-push hook (npm run verify), where there is a session.
+      #
+      # check:imports above is the source-level audit and runs fine here.
 
   # The iOS half: swiftlint and the build-for-testing. This compiles the Swift and
   # runs the unit tests (xcodegen generate + xcodebuild build-for-testing), which
