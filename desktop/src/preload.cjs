@@ -124,13 +124,15 @@ if (isLocalPage) {
     onAboutChanged: (fn) => ipcRenderer.on('app:about-changed', () => fn()),
     onStateChanged: (fn) => ipcRenderer.on('app:state-changed', () => fn()),
 
-    /* The banner: conditions that stay until they are fixed. `bannerHeight` is
-       the page telling main how tall to make its view, see ui/banner.js. */
+    /* The banner: conditions that stay until they are fixed. `bannerBounds` is
+       the page telling main how big to make its view, see ui/banner.js. The bar
+       is gone: the view is sized to the card cluster (width AND height) so only
+       the cards claim clicks and the rest of the strip passes through. */
     // Unread only: the banner draws what has not been acknowledged. Everything
     // still true, read or not, is liveNotices.
     notices: () => ipcRenderer.invoke('app:notices'),
     liveNotices: () => ipcRenderer.invoke('app:live-notices'),
-    bannerHeight: (height) => ipcRenderer.invoke('app:banner-height', height),
+    bannerBounds: (bounds) => ipcRenderer.invoke('app:banner-bounds', bounds),
     // The sweep, in a view of its own, telling main how big to make it. See
     // ui/sweep.js and refreshSweep in src/main.js for why the control cannot
     // live on the bar's own page.

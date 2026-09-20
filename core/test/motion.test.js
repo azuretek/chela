@@ -444,6 +444,18 @@ test('the minimum-visible floor comes from the token spec, and is a real dwell',
   // drift this primitive exists to remove.
   assert.strictEqual(MIN_VISIBLE_MS, tokenSpec.motion.minVisibleMs,
     'MIN_VISIBLE_MS does not read spec/tokens.json motion.minVisibleMs');
+  // ★ The CSS custom property a sandboxed page reads (surface.js minVisibleMs)
+  // is the SAME value. A page cannot import the module, so ui.css restates the
+  // number as `--motion-min-visible`, and this is the one place that restatement
+  // is checked against the owner. Without it the page's floor and the module's
+  // could drift silently, which is the exact fault the primitive exists to remove.
+  const cssFloor = /--motion-min-visible:\s*(\d+)ms/.exec(UI_CSS);
+  assert.ok(cssFloor, 'ui.css declares no --motion-min-visible, so a page has no floor to read');
+  assert.strictEqual(Number(cssFloor[1]), tokenSpec.motion.minVisibleMs,
+    'the --motion-min-visible CSS token disagrees with spec/tokens.json motion.minVisibleMs');
+  // And surface.js actually exposes it, so the token has a reader.
+  assert.match(SURFACE_JS, /--motion-min-visible/,
+    'surface.js does not read --motion-min-visible, so a page cannot reach the floor');
   // It is a dwell a reader can use, and it is longer than the longest ANIMATION
   // token: the two are different questions (how long a thing STAYS versus how it
   // MOVES), and a floor shorter than a single animation would be no floor at all.
