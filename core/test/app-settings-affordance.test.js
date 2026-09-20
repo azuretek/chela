@@ -374,7 +374,31 @@ test('the fallback click target cannot match an unrelated settings button', () =
 /* ---------------------------------------------------- one copy in the tree */
 
 test('the injected script exists in exactly one file: the spec', () => {
-  const distinctive = spec.script.filter((line) => line.trim().length >= 30);
+  // ★ "Distinctive" has to mean distinctive to THIS script, not merely long. Two
+  // kinds of long line are shared by unrelated code and matching one is a false
+  // copy rather than evidence of one:
+  //
+  //   - generic DOM boilerplate. `var style = document.createElement('style');`
+  //     is how every stylesheet injector starts, and it also appears in
+  //     mobile/Claw/WebView.swift's safe-area injector, a different script.
+  //   - a bare function SIGNATURE. `function openControlUiSettings() {` is a
+  //     name, and desktop/src/main.js has its own async function of the same
+  //     name doing the host's native navigation, which the substring match caught
+  //     inside `async function openControlUiSettings() {`.
+  //
+  // The guard's real claim is that the affordance SCRIPT BODY was not copied, so
+  // a line only counts as evidence when it carries something specific to this
+  // script rather than a construction or a name any code could share. A real copy
+  // trips many of the remaining distinctive lines at once, so excluding these two
+  // shapes does not blind it.
+  const BOILERPLATE = [
+    /^var \w+ = document\.createElement\('[a-z]+'\);$/, // createElement of any tag
+    /^(async )?function \w+\(\) \{$/,                   // a bare function signature
+  ];
+  const distinctive = spec.script
+    .map((line) => line.trim())
+    .filter((line) => line.length >= 30)
+    .filter((line) => !BOILERPLATE.some((re) => re.test(line)));
   assert.ok(distinctive.length >= 3, 'expected distinctive lines in the script to search for');
 
   const tracked = execFileSync(
