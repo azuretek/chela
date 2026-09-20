@@ -117,8 +117,54 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - name: Install (frozen lockfile, workspace)
         run: pnpm install --frozen-lockfile
+      # Electron 44 downloads its binary lazily on first require, so the first
+      # test that touches it can race the download and flake (measured: certs,
+      # tokens and theme-store suites fail intermittently on a cold runner). This
+      # forces the download up front, the same step release.yml runs before its
+      # Test step, so the flake cannot make the gate red.
+      - name: Ensure Electron is usable
+        working-directory: desktop
+        run: |
+          electron_usable() {
+            node -e "const fs=require('fs'),p=require('electron');if(!fs.existsSync(p))throw new Error('electron binary missing at '+p)"
+          }
+          if ! electron_usable 2>/dev/null; then
+            echo "electron install incomplete; fetching"
+            node node_modules/electron/install.js || true
+          fi
+          electron_usable >/dev/null && echo "electron loads"
       - name: Lint (js)
         run: pnpm run lint:js
+      # ★ The upstream reference the class/value guards check against, fetched at
+      # the pinned commit so CI runs them for real. This is the release safety
+      # (Abi, 2026-09-20): the guards break when upstream has renamed or
+      # redeclared a class our own pages borrow, so we do not ship a build that
+      # renders broken against the OpenClaw version we target. It is NOT vendored
+      # (core/spec/upstream-reference.json says it must not be); it is fetched
+      # on demand, from UPSTREAM openclaw/openclaw and never our fork, at the
+      # exact commit the pin names, so there is still one source of truth for the
+      # version. A blobless sparse fetch of just ui/ is ~14s and ~160MB, public
+      # over https, no token: measured 2026-09-20.
+      - name: Fetch the pinned OpenClaw UI (read-only, for the class guards)
+        run: |
+          set -eo pipefail
+          commit="$(node -e "process.stdout.write(require('./core/spec/upstream-reference.json').upstream.commit)")"
+          repo='https://github.com/openclaw/openclaw.git'
+          echo "fetching openclaw/openclaw@$commit (ui/ only) for the upstream class guards"
+          dir="$RUNNER_TEMP/openclaw"
+          rm -rf "$dir"; mkdir -p "$dir"; cd "$dir"
+          git init -q
+          git remote add origin "$repo"
+          git config extensions.partialClone origin
+          # The pinned tree, blobless, and only ui/ checked out. If upstream ever
+          # drops this commit (a rebase of their history), this step fails, which
+          # is a real signal that the pin points at a tree upstream no longer has.
+          git fetch --depth 1 --filter=blob:none origin "$commit"
+          git sparse-checkout init --cone
+          git sparse-checkout set ui
+          git checkout -q FETCH_HEAD
+          test -f ui/src/styles/layout.css || { echo '::error::upstream ui/ did not check out; the class guards cannot run'; exit 1; }
+          echo "CLAW_OPENCLAW_UI=$dir/ui" >> "$GITHUB_ENV"
       - name: Unit tests (core + desktop)
         run: pnpm run test:js
       - name: Import audit
