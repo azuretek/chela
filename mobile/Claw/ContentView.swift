@@ -38,22 +38,35 @@ import UIKit
 /// query. So the page was half insetting itself, and only the half that showed
 /// was the half that did not.
 ///
-/// There is no API that makes a web view report `standalone`, so the app
-/// supplies the inset instead: the web view is laid out INSIDE the safe area,
-/// which makes the page's own `height: 100dvh` mean the safe height, exactly as
-/// it does in the mode the page is written for. The content is where the page
-/// intended it and nothing is injected into a page this client does not own.
+/// There is no API that makes a web view report `standalone`. The first fix
+/// insetting the whole web view into the safe area, which made `100dvh` mean the
+/// safe height, put the content where the page intended, but it also confined
+/// every `100dvh` surface to the safe height, so the Control UI's slide-open
+/// navigation drawer stopped at the status bar instead of reaching the top of the
+/// screen. Reported 2026-09-19: "when the menu bar slides open it doesn't follow
+/// all the way up the screen."
+///
+/// So the web view now covers the WHOLE screen (`ignoresSafeArea` in
+/// `controlUiPage`), which makes `100dvh` the whole screen and lets the drawer
+/// slide all the way up, AND the app supplies the page the standalone body inset
+/// it would apply for itself if it could report `display-mode: standalone`: see
+/// `WebView.safeAreaScript`. That script sets exactly the rule the Control UI
+/// ships in its own `@media (display-mode: standalone)` block, so the page insets
+/// its content while its `100dvh` surfaces fill the screen. The two together are
+/// what makes the content sit in the safe area and the drawer reach the top.
 ///
 /// What this deliberately is not, and why:
 ///
-/// - **Not injected CSS.** Patching the page's layout from here would couple
-///   this client to the gateway's class names, and a page is free to change its
-///   own markup at any release. The one script this app does inject reports the
-///   page's theme colour and changes nothing about the page.
+/// - **Not layout CSS coupled to the page's markup.** `safeAreaScript` names no
+///   class of the Control UI's: it sets `html, body` sizing and a `body` padding
+///   from the page's OWN `:root` `--safe-area-*` tokens, which are the W3C
+///   safe-area contract the page already declares support for. It is the page's
+///   own standalone rule, applied because a WKWebView cannot report the mode that
+///   would apply it, not a patch that assumes anything about the page's elements.
 /// - **Not a content inset on the web view's scroll view.** The page's shell
-///   sizes itself with `100dvh`, so a body padding or a scroll inset would push
-///   that shell past the bottom edge rather than shrink it, moving the composer
-///   off screen to fix the top.
+///   sizes itself with `100dvh`, so a scroll inset would push that shell past the
+///   bottom edge rather than shrink it. The body padding is inside the page's own
+///   box model, so it insets content without moving the `100dvh` shell.
 ///
 /// The strip above and below the page is painted with the page's own
 /// background, which it publishes as its `theme-color`; WebView relays that back
@@ -263,6 +276,23 @@ struct ContentView: View {
             pageControl: gatewayPage
         )
         page
+            // Edge to edge, so the Control UI's own `100dvh` means the whole
+            // screen and a full-height overlay it slides open, its navigation
+            // drawer, reaches the top rather than stopping at the safe-area
+            // inset. Reported 2026-09-19 as "when the menu bar slides open it
+            // doesn't follow all the way up the screen": the page was laid out
+            // INSIDE the safe area, so `100dvh` was the safe height and the
+            // drawer stopped short of the status bar.
+            //
+            // The content does NOT spill under the status bar as a result,
+            // which is the fault this replaces rather than reintroduces: the
+            // web view now feeds the page real `env(safe-area-inset-*)` values
+            // (it covers the unsafe regions, so WebKit reports them), and
+            // `WebView` injects the standalone body inset the Control UI itself
+            // ships for exactly this, so the page insets its own content while
+            // its `100dvh` surfaces fill the screen. See `WebView.safeAreaScript`
+            // and the note at the top of this file.
+            .ignoresSafeArea()
         // The pairing screen sits over the page while the gateway is
         // refusing this device. Full cover rather than a banner, because
         // there is no Control UI behind it to reach: the gateway held the
