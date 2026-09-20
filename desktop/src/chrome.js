@@ -7,6 +7,7 @@ import { product } from '../../core/naming.js';
 // how the iOS settings and About surfaces ended up wearing ui.css's fallback
 // type and colours instead of the interface's.
 import { LIVE_TOKENS } from '../../core/tokens.js';
+import { pageColorScheme } from '../../core/appearance.js';
 
 // `nativeTheme` is the only Electron surface this module touches, and only
 // applyTheme() uses it. Imported as the default so this module loads under
@@ -363,7 +364,26 @@ export function themeCss(theme) {
     .map(([name, value]) => `  ${name}: ${value} !important;`)
     .join('\n');
   if (!body) return '';
-  return `:root {\n${body}\n}\n`;
+  // ★ The resolved mode as an explicit `color-scheme`, so our file:// pages draw
+  // their form controls, scrollbars and text-field chrome in the palette's mode
+  // WITHOUT depending on `prefers-color-scheme`. This is what lets applyTheme
+  // stop pinning nativeTheme.themeSource once a palette exists: the Control UI's
+  // own page pins its `root.style.colorScheme` the same way (openclaw ui
+  // bootstrap-theme.ts), and iOS gives its WKWebView the palette rather than the
+  // device trait for exactly this reason. Only for a resolved mode; a token-only
+  // caller with no mode is left alone.
+  // The per-page colour scheme, from the SHARED decision (core/appearance.js),
+  // the same function iOS's pageTrait is proven against. This is the desktop's
+  // equivalent of iOS pinning a WebView's trait: our own file:// pages carry the
+  // palette's mode explicitly so they draw their form chrome in it, exactly as
+  // iOS's pageTrait pins .light/.dark for a page with a resolved scheme. It is
+  // injected PER PAGE, which is the whole reason the global themeSource can stay
+  // 'system' (see applyTheme): on iOS each WKWebView has its own trait, but
+  // nativeTheme.themeSource is global, so a per-page scheme is how the desktop
+  // pins our pages without pinning the Control UI's OS detection with them.
+  const resolved = pageColorScheme(theme && theme.mode);
+  const scheme = resolved === 'system' ? '' : `  color-scheme: ${resolved} !important;\n`;
+  return `:root {\n${scheme}${body}\n}\n`;
 }
 
 /**
@@ -510,13 +530,61 @@ export function fallbackTheme(mode) {
  * same answer, so ui.css needs no IPC of its own.
  */
 export function applyTheme(theme, windows = []) {
-  // `system` rather than a mode when nothing has resolved one, so the platform
-  // answers the question we cannot: pinning it to the dark fallback is what
-  // made a first run on a light machine dark, and it also overrode the reader's
-  // own OS setting for our pages' `prefers-color-scheme`. A theme that carries
-  // no opinion (an older caller, a harness) is treated as resolved, because
-  // every caller that has a mode at all has read it.
-  electron.nativeTheme.themeSource = theme.resolved === false ? 'system' : theme.mode;
+  // ★ Leave the device to drive `prefers-color-scheme` whenever a real palette
+  // exists, so the Control UI's own "System" appearance tracks the OS the way it
+  // does on the phone. This is the convergence Abi asked for on 2026-09-20: the
+  // iOS client never pins its WebView trait (WebView.swift sets
+  // overrideUserInterfaceStyle = .unspecified, which is `system`), and the page
+  // reads the device and resolves its own theme; the client only paints the
+  // native chrome from what the page reports. Electron was diverging by pinning
+  // nativeTheme.themeSource to the resolved mode, which changes what
+  // `prefers-color-scheme` reports INSIDE the web view, so the Control UI's
+  // System mode read our pin back instead of the OS and froze (measured on
+  // Windows: a live OS change never reached the page, and the first-load mode
+  // won regardless of the OS setting).
+  //
+  // Our own file:// pages do not lose their mode by this: themeCss above injects
+  // an explicit `color-scheme` alongside the tokens, so they draw in the
+  // palette's mode without consulting `prefers-color-scheme` at all. The pin is
+  // therefore only needed for the ONE case with no palette to inject: the
+  // cold-start fallback, where ui.css's own `@media (prefers-color-scheme)` is
+  // the only palette and the resolved fallback mode has to reach it. A theme
+  // carrying tokens is a resolved palette; a theme with none (the cold-start
+  // fallback, an older caller, a harness) still pins its mode so that path is
+  // unchanged.
+  //
+  // The DECISION is core/appearance.js pageColorScheme, the same function iOS's
+  // pageTrait is proven against, so "the same feature" is the same code and not
+  // two copies that happen to agree. This is the desktop's one-line adapter:
+  // map its answer onto nativeTheme.themeSource, iOS maps the same answer onto
+  // overrideUserInterfaceStyle.
+  //
+  // The one desktop-only wrinkle is the cold-start fallback: when NO palette has
+  // been injected, ui.css's own `@media (prefers-color-scheme)` block is the only
+  // palette our pages have, so the resolved mode has to reach it through the pin.
+  // iOS has no equivalent because it always injects a token map. With a palette
+  // present (or nothing resolved at all), we take the shared answer, which is
+  // 'system' for a page that resolved a mode -- our pages carry that mode
+  // explicitly via themeCss's `color-scheme`, so the pin is not theirs to need,
+  // and the Control UI is then free to read the real OS.
+  //
+  // nativeTheme.themeSource is GLOBAL: it drives prefers-color-scheme for every
+  // WebContentsView at once, the Control UI's included. iOS has no equivalent to
+  // pin here (each WKWebView carries its own trait), and its main Control UI
+  // WebView is always .unspecified so the device drives it. The desktop matches
+  // that by keeping themeSource on 'system' whenever a palette exists: our own
+  // pages get the mode through themeCss's per-page color-scheme above, so they do
+  // not need the global pin, and leaving it on 'system' is what lets the Control
+  // UI's own "System" appearance read the real OS. The pin is kept for the ONE
+  // case with no palette to inject per-page: the cold-start fallback, where
+  // ui.css's own `@media (prefers-color-scheme)` block is the only palette and
+  // the resolved mode has to reach it globally.
+  const hasPalette = theme.tokens && Object.keys(theme.tokens).length > 0;
+  if (theme.resolved !== false && !hasPalette) {
+    electron.nativeTheme.themeSource = theme.mode;
+  } else {
+    electron.nativeTheme.themeSource = 'system';
+  }
 
   for (const win of windows) {
     if (!win || win.isDestroyed()) continue;
