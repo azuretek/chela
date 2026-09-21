@@ -79,6 +79,11 @@ struct WebView: UIViewRepresentable {
     /// the page back into this app until Phase 4's certificate pinning gives
     /// the navigation delegate a reason to exist.
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+        /// The last app frame inset handed to the page, so the push from
+        /// `updateUIView` is one call per actual move rather than one per
+        /// layout pass. The web view covers the whole screen and the inset is the
+        /// safe area, so a rotation is the only thing that moves it.
+        var appliedFrameInset: String?
         var requested: URL?
         /// The last appearance pushed down to this web view, so `updateUIView`
         /// only touches the view and the page when it actually changed.
@@ -413,6 +418,22 @@ struct WebView: UIViewRepresentable {
         """
     }
 
+    /// The region this app's own chrome leaves for the page: the status-bar band
+    /// and the home indicator, which the web view covers so that the Control UI
+    /// 100dvh surfaces can fill the screen, and which are nonetheless ours.
+    ///
+    /// Read from the window rather than handed down, because this view is the
+    /// thing that knows its own window. At `makeUIView` time the view may
+    /// not be in one yet, which is why the installation is not the only word on
+    /// it: the push from `updateUIView` runs once the view is on screen
+    /// and settles the value, so a first pass that knew nothing is corrected
+    /// rather than silent.
+    static func windowSafeAreaInsets(for view: UIView?) -> UIEdgeInsets {
+        if let window = view?.window { return window.safeAreaInsets }
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        return scene?.windows.first { $0.isKeyWindow }?.safeAreaInsets ?? .zero
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(
             themeColour: $themeColour,
@@ -446,6 +467,21 @@ struct WebView: UIViewRepresentable {
         // paint rather than reflowing after it. See safeAreaScript.
         scripts.addUserScript(WKUserScript(
             source: Self.safeAreaScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
+        // The app frame inset, and the half the body padding above cannot do.
+        // That padding insets the page's CONTENT, which is all a padding can do: a
+        // fixed-position overlay is not bounded by its ancestor's padding, so the
+        // Control UI's Ask Open Claw surface anchors to the display edges and takes
+        // its height from the window's inner height, which puts it across the
+        // status bar and the home indicator. This publishes the region our chrome
+        // leaves, and the shared script clamps the page's viewport-anchored
+        // overlays to it. At document START, like the others, because the page
+        // computes that geometry as it renders. See AppFrameInset.
+        let frameInsets = Self.windowSafeAreaInsets(for: nil)
+        scripts.addUserScript(WKUserScript(
+            source: AppFrameInset.installation(top: Double(frameInsets.top), bottom: Double(frameInsets.bottom)),
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         ))
@@ -615,6 +651,20 @@ struct WebView: UIViewRepresentable {
             // them. The hook is installed by `themeScript`, and the `&&` is what
             // makes this a no-op on a page that has not run it yet.
             webView.evaluateJavaScript("window.\(Self.themeReportHook) && window.\(Self.themeReportHook)()")
+        }
+
+        // The frame our chrome leaves, pushed rather than only installed, because
+        // the installation at document start may have run before this view was in
+        // a window and before a rotation moved the insets. Skipped when they have
+        // not moved, for the same reason the appearance above is.
+        let frameInsets = Self.windowSafeAreaInsets(for: webView)
+        let frameKey = "\(frameInsets.top)/\(frameInsets.bottom)"
+        if context.coordinator.appliedFrameInset != frameKey {
+            context.coordinator.appliedFrameInset = frameKey
+            webView.evaluateJavaScript(AppFrameInset.setStatement(
+                top: Double(frameInsets.top),
+                bottom: Double(frameInsets.bottom)
+            ))
         }
 
         // The pairing reconnect beat. Before the load guard below, because a

@@ -69,6 +69,7 @@ targets:
       # a WKUserScript, and AppSettingsAffordanceParityTests asserts the bundled
       # copy is byte for byte the repository's.
       - path: ../core/spec/app-settings-affordance.json
+      - path: ../core/spec/app-frame-inset.json
         buildPhase: resources
       # The native token handoff, bundled rather than mirrored for its shape.
       #

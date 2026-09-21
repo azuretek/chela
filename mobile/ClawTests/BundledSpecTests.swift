@@ -34,6 +34,7 @@ final class BundledSpecTests: XCTestCase {
         Reader(name: "connection", decoded: ConnectionState.decodedKeys, ignored: ConnectionState.ignoredKeys),
         Reader(name: "release", decoded: Release.decodedKeys, ignored: Release.ignoredKeys),
         Reader(name: "tokens", decoded: NoticeTokens.decodedKeys, ignored: NoticeTokens.ignoredKeys),
+        Reader(name: "app-frame-inset", decoded: AppFrameInset.decodedKeys, ignored: AppFrameInset.ignoredKeys),
     ]
 
     func testEachReaderAccountsForEveryKeyItsSpecCarries() throws {

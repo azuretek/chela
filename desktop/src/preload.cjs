@@ -82,6 +82,29 @@ if (!isLocalPage) {
     report = { ok: false, error: (err && err.message) || String(err) };
   }
   try { ipcRenderer.send('pairing:injected', report); } catch { /* nothing left to report it to */ }
+
+  /* The app frame inset, published at the same moment and for the same reason.
+     The page's viewport-anchored overlays take their geometry from
+     window.innerHeight as they render, so a value published after the first paint
+     is a visible jump from full bleed to bounded. The bytes are the shared module
+     (core/app-frame-inset.js, read from core/spec/app-frame-inset.json), and they
+     come over their own SYNCHRONOUS channel for exactly the reason the observer's
+     do: an async read resolves after the page's own first script, which is the
+     frame the rule has to precede.
+
+     Reported the same way and for the same reason as the observer above: a silent
+     non-installation is how this failed before, so the app's own stdout says
+     whether the page was told where our frame is. */
+  let frameReport = { ok: false, error: 'no script from main' };
+  try {
+    const frameScript = ipcRenderer.sendSync('frame:inset-script') || '';
+    if (!frameScript) throw new Error('no script from main');
+    webFrame.executeJavaScript(frameScript);
+    frameReport = { ok: true, error: '' };
+  } catch (err) {
+    frameReport = { ok: false, error: (err && err.message) || String(err) };
+  }
+  try { ipcRenderer.send('frame:injected', frameReport); } catch { /* nothing left to report it to */ }
 }
 
 if (isLocalPage) {
