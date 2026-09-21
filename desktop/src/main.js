@@ -66,6 +66,13 @@ import { product, repo, releasesUrl } from '../../core/naming.js';
 // bridge in preload.cjs; the iOS client installs the same script through a
 // WKUserScript. See core/app-settings-affordance.js.
 import * as appSettingsAffordance from '../../core/app-settings-affordance.js';
+// The app frame inset: the region our own chrome leaves for the page, published
+// on the page's root as custom properties, plus the rule that binds the page's
+// viewport-anchored overlays to it. Installed from the preload at document start
+// (see the frame:inset-script channel below) and moved from the layout pass, so a
+// notice band appearing takes the frame with it. The phone installs the same bytes
+// from the same spec. See core/app-frame-inset.js.
+import * as appFrameInset from '../../core/app-frame-inset.js';
 // The URL shape of a release's own notes. Shared rather than built here, because
 // the phone puts the same link behind the same button and a link that says
 // "release notes" has to land where the notes are.
@@ -337,6 +344,32 @@ function page() {
  * The strip's height is the only thing the page gives up, and it is zero on
  * Linux, which keeps its OS frame.
  */
+/**
+ * Move the published frame when the client's own chrome moves.
+ *
+ * The frame is not fixed: a notice banner appears over the page's top-trailing corner
+ * and takes a band, and goes away again, so the inset the page is holding has to
+ * follow. Nothing is re-installed to do that, the page's setter sits on the global
+ * the script left, and this only pushes new numbers, which is why it can ride the
+ * layout pass the app already runs rather than a watcher of its own.
+ *
+ * Only sent when the numbers CHANGE, because a window resize fires this pass
+ * constantly and a statement evaluated in the page per event is a cost with no
+ * effect. A fresh document needs no reset here: its own preload installed the current
+ * numbers at its document start.
+ */
+let lastFrameInsetKey = '';
+function publishFrameInsets() {
+  const wc = page();
+  if (!wc || wc.isDestroyed() || originOf(wc.getURL()) !== activeOrigin()) return;
+  const insets = frameInsets();
+  const key = `${insets.top}/${insets.bottom}`;
+  if (key === lastFrameInsetKey) return;
+  lastFrameInsetKey = key;
+  wc.executeJavaScript(appFrameInset.setStatement(insets), true)
+    .catch((err) => console.warn(`[claw-desktop] app frame inset not published: ${err.message}`));
+}
+
 function layoutViews() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const [width, height] = mainWindow.getContentSize();
@@ -377,6 +410,10 @@ function layoutViews() {
   // A modal covers everything including the strip: the scrim is meant to dim
   // the whole window, and each overlay page carries its own drag band.
   for (const view of overlayViews.values()) view.setBounds({ x: 0, y: 0, width, height });
+  // And the page is told where our chrome now is. Last, because it reads what the
+  // banner above was just placed as: a band that appears, moves or goes away takes
+  // the published frame with it.
+  publishFrameInsets();
 }
 
 function trayImage() {
@@ -1119,6 +1156,44 @@ ipcMain.on('pairing:injected', (_event, report) => {
     return;
   }
   console.warn(`[claw-desktop] pairing observer did not install (${(report && report.error) || 'no reason given'}); a pairing refusal will not surface`);
+});
+
+/**
+ * The app frame inset's bytes, read by the preload at document start.
+ *
+ * Synchronous for the same reason the observer's are: the preload runs before the
+ * page has a document, and an async read would come back after the page's own first
+ * script, which is exactly the frame the rule has to precede.
+ *
+ * What the numbers ARE is the part of the page's viewport our chrome occupies, and on
+ * this client it is small on purpose. The title strip is not in there at all: the page
+ * view is a child view placed BELOW the strip, so the strip cannot be painted over and
+ * contributes nothing. What the page genuinely cannot see is the notice band, which is
+ * drawn over the page's own top-trailing corner as a separate view. That is what this
+ * publishes, and it publishes zeros rather than omitting them, so the page's own value
+ * is replaced by "nothing" rather than left in place.
+ */
+function frameInsets() {
+  const band = bannerView && !bannerView.webContents.isDestroyed() ? Math.max(0, bannerSize.height) : 0;
+  return { top: band, bottom: 0 };
+}
+
+ipcMain.on('frame:inset-script', (event) => {
+  event.returnValue = appFrameInset.installation(frameInsets());
+});
+
+/**
+ * The preload's word that the frame was published, for the same reason the
+ * observer's is logged: a silent non-installation is how that shipped broken once,
+ * and a full-bleed Control UI surface painting across our own notice band is the
+ * shape of this one.
+ */
+ipcMain.on('frame:injected', (_event, report) => {
+  if (report && report.ok) {
+    console.log('[claw-desktop] app frame inset installed (document start)');
+    return;
+  }
+  console.warn(`[claw-desktop] app frame inset did not install (${(report && report.error) || 'no reason given'}); a full-bleed Control UI surface can paint across our own notice band`);
 });
 
 /**
