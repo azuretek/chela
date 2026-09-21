@@ -259,3 +259,44 @@ test('running the script the way the workflow does writes the release output', (
   const written = fs.readFileSync(out, 'utf8');
   assert.match(written, /^release=true$/m, 'the script must write release=true for a shipping change; empty output means the entry guard never fired');
 });
+
+test('the shared gate requires every job its verdict names', () => {
+  // ★ The class this catches, measured on main 2026-09-21. release.yml passes
+  // an alternation as its verdict for the mobile pipeline, and a run's job list
+  // is written as the run GOES: the mobile run for c8d9db5675 had iOS 26, iOS 27
+  // and swiftlint concluded SUCCESS while its release job (the TestFlight upload
+  // and the wait for VALID) had not registered at all. The gate read 'every
+  // matching job is complete', passed, and the desktop published; one second
+  // later the iOS marker step read the same verdict, saw an empty conclusion,
+  // and left the release unmarked, so no phone could be offered an update and
+  // the whole 'update available' banner was dead while every leg reported
+  // success.
+  //
+  // Both halves are asserted, because both are load-bearing: the gate must
+  // require EVERY alternative rather than a subset, and a verdict must be a
+  // flat alternation for 'every alternative' to be a claim at all.
+  const gate = read('platforms-gate.yml');
+  assert.match(
+    gate,
+    /EVERY alternative in the verdict must be represented/,
+    'platforms-gate.yml no longer requires every alternative in a verdict, so a subset of the jobs it names can satisfy it before the job the release actually waits for has registered',
+  );
+  assert.match(
+    gate,
+    /missing="\$missing\$pattern "/,
+    'platforms-gate.yml does not compute which verdict alternatives have no job listed yet',
+  );
+  assert.match(
+    gate,
+    /carries a group, and a verdict must be a flat alternation/,
+    'platforms-gate.yml no longer refuses a grouped verdict, which cannot be split into the jobs each of which must run',
+  );
+
+  // The desktop publishes only once the phone's upload has concluded, so the
+  // verdict it passes for the mobile pipeline must name that job.
+  assert.match(
+    read('release.yml'),
+    /^\s*verdict:\s*'.*\^release\$.*'\s*$/m,
+    'release.yml no longer names the mobile release job in its verdict, so the desktop can publish before TestFlight holds the build',
+  );
+});
