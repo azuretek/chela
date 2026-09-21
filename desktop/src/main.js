@@ -617,6 +617,29 @@ function showConnectionFailure(detail) {
 // credential over identically. See core/gateway-url.js for the why; it is
 // imported as withTokenHandoff at the top of this file.
 
+/**
+ * Whether a document may be on screen while an attempt is made.
+ *
+ * * ONE RULE, TWO CALLERS. The attempt raises the cover before its identity probe
+ * when this is false (see loadActiveGateway) and decides whether the load happens
+ * in place or beside the document already on screen when it is true (see
+ * beginGatewayConnect), so the two halves read the same answer rather than one
+ * restating the other's rule.
+ *
+ * connectionState.mayPresentGatewayView owns the rule: the document must belong to
+ * the gateway being connected and the connection it belongs to must not have
+ * failed. The two cases it refuses are both measured faults -- a document from
+ * ANOTHER gateway held through the attempt, and a document belonging to a
+ * connection that has already failed.
+ */
+function mayPresentPayload(gw) {
+  return Boolean(connectionState.mayPresentGatewayView({
+    gatewayId: gw.id,
+    heldGatewayId: payloadGateway,
+    phase: connection.phase,
+  }) && pageView && !pageView.webContents.isDestroyed());
+}
+
 function loadActiveGateway() {
   const gw = config.activeGateway();  if (!gw) {
     // Nothing to lay a modal over, so settings *is* the window's content. Also
@@ -636,6 +659,18 @@ function loadActiveGateway() {
   // retries) both want the answer rather than a blocking pause. The gateway is
   // re-read when the probe lands: a reader who changed gateway or left Settings
   // while it was in flight must not be connected to the one they were on.
+  //
+  // * AND THE COVER COMES UP BEFORE THE PROBE, NOT AFTER IT. A probe is a network
+  // round trip with its own timeout, and until either the cover or the gateway's
+  // page is on the window there is nothing to paint: the window is a rectangle of
+  // its own background colour. Raising the cover only in beginGatewayConnect left
+  // the whole probe as a black window, and when the probe REFUSED, no cover was
+  // raised at all -- so the app sat there black, with nothing on screen to act on
+  // and nothing saying it was trying. Abi, 2026-09-20: "I'm also seeing black
+  // pages". Whether a cover may go up at all is not restated here: it is the same
+  // rule beginGatewayConnect uses, so a reconnect beside a document already on
+  // screen still does not blink it.
+  if (!mayPresentPayload(gw)) showLoadingCover();
   void identifyBeforeConnect(gw).then((ok) => {
     if (!ok) return;
     const current = config.activeGateway();
@@ -702,11 +737,7 @@ function beginGatewayConnect(gw) {
   // not have failed. `mayPresentGatewayView` owns it, and the two cases it refuses
   // are both measured faults -- a document from ANOTHER gateway held through the
   // attempt, and a document belonging to a connection that has already failed.
-  const hasPayload = connectionState.mayPresentGatewayView({
-    gatewayId: gw.id,
-    heldGatewayId: payloadGateway,
-    phase: connection.phase,
-  }) && pageView && !pageView.webContents.isDestroyed();
+  const hasPayload = mayPresentPayload(gw);
   if (!hasPayload) {
     // From here nothing on screen may be presented, so the view's own record of
     // what it holds goes with it: whatever it has is covered now, and only a load
@@ -2514,13 +2545,32 @@ function refreshBanner() {
     // never paints, and a view that never paints cannot run the script that would
     // tell us how big to make it. A width too, now that the view hugs the cards
     // rather than spanning the window.
-    bannerSize = { width: 420, height: 72 };
+    //
+    // * THE PROVISIONAL WIDTH IS THE WINDOW'S, AND THE VIEW IS LAID OUT BEFORE ITS
+    // PAGE IS LOADED. Both halves are the fix for the collapse Abi reported on
+    // Windows (2026-09-20: "the banners still collapse to the right"). A fresh
+    // WebContentsView has NO bounds, and this one is loaded while it is off the
+    // window, so the page's first report() was measured in a 0x0 viewport. The
+    // cards are capped at max-width: 100% OF that viewport, so the report was 0
+    // wide, and the host adopted 0 as the view's width: a width the page can never
+    // exceed and so never reports again, leaving the two locked at nothing until
+    // the view was torn down -- which is why only restarting the app recovered the
+    // banner. Measured on the real sequence: bounds before load {0,0,0,0}, first
+    // report {width: 0, height: 600}, cards 32px wide with one character per line.
+    // The window's own width is the one honest starting point: it is wider than the
+    // cluster, so the first measurement is taken in a viewport that can hold it,
+    // and it cannot be derived from the answer.
+    bannerSize = { width: mainWindow.getContentSize()[0], height: 72 };
     bannerView = new WebContentsView({
       webPreferences: { preload: PRELOAD, contextIsolation: true, nodeIntegration: false, sandbox: true },
     });
     bannerView.setBackgroundColor('#00000000');
     const wc = bannerView.webContents;
     attachContextMenu(wc);
+    // * Laid out NOW, before the load, for the reason above: the page reports its
+    // own size the moment it runs, and a report taken before the view has ever had
+    // bounds is a report taken in a viewport that cannot hold anything.
+    layoutViews();
     // ★ LOADED BEFORE IT IS PUT ON THE WINDOW, and that order is a FOCUS rule
     // rather than a tidy-up. A WebContentsView added to the window and then
     // loaded takes the window's keyboard the moment its document commits,
@@ -4581,7 +4631,16 @@ async function identifyBeforeConnect(gw) {
 
   const observed = await probeGateway(gw.url);
   const verdict = gatewayIdentity.identify(observed);
-  identifiedGateways.set(identityKey(gw), { accepted: verdict.ok, strength: verdict.strength, message: verdict.message });
+  // * ONLY AN ACCEPTANCE IS REMEMBERED. A refusal is a statement about the moment
+  // rather than about the address: a gateway that is restarting answers nothing,
+  // and one mid-upgrade answers the wrong thing. Remembering it made every later
+  // attempt short-circuit at knownIdentity and return false WITHOUT a probe, so
+  // pressing Try again did nothing at all until the process restarted -- Abi,
+  // 2026-09-20: "the loading and try again pages seem to never work or I need to
+  // restart the app before things will recover". The retry IS the moment to ask
+  // again, so only the acceptance is kept, and a refusal clears any earlier one.
+  if (verdict.ok) identifiedGateways.set(identityKey(gw), { accepted: true, strength: verdict.strength, message: verdict.message });
+  else identifiedGateways.delete(identityKey(gw));
 
   if (verdict.ok) {
     // The weaker acceptance is logged where a support question would look, and it
@@ -4849,6 +4908,15 @@ function registerIpc() {
     // here is generous of that so a future wider card is not clipped.
     const width = Math.max(0, Math.min(560, Math.ceil(Number(bounds && bounds.width) || 0)));
     const height = Math.max(0, Math.min(600, Math.ceil(Number(bounds && bounds.height) || 0)));
+    // * A report of cards with NO width is a measurement taken in a viewport too
+    // small to measure in, and it must not be adopted. The page reports {0, 0} when
+    // the cluster is empty, and that is a real answer; a zero WIDTH with a height is
+    // the cluster clamped by a view that has not been laid out yet, and adopting it
+    // is what made the collapse one-way: the view became 0 wide, the page could
+    // never report anything else out of it, and only a restart recovered the banner
+    // (Abi, 2026-09-20: "I need to restart the app before things will recover"). So
+    // the previous size stands until a measurement taken in a real viewport arrives.
+    if (width === 0 && height > 0) return;
     if (width === bannerSize.width && height === bannerSize.height) return;
     bannerSize = { width, height };
     layoutViews();

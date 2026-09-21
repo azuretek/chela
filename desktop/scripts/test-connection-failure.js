@@ -180,8 +180,23 @@ app.whenReady().then(async () => {
     + ' top: b ? b.getBoundingClientRect().top : null }; })()',
   );
   check('it names the gateway and the reason', /Nowhere/.test(notice.text) && /refused/i.test(notice.text), notice.text);
-  check('it keeps Chromium\'s string beside the sentence', /ERR_CONNECTION_REFUSED/.test(notice.text), notice.text);
-  check('it slides rather than appearing in place', notice.animation === 'banner-in', `animation-name: ${notice.animation}`);
+  // * THE REASON, whichever door the attempt came in by. An address is refused
+  // BEFORE anything is loaded now (identifyBeforeConnect in src/main.js), so this
+  // notice carries the probe's own sentence and the transport error it saw, and
+  // there is no Chromium string to quote because nothing navigated. What must hold
+  // is that a reason is on screen with the raw error in it, not which of the two
+  // paths produced the wording.
+  check('it carries the reason, with the raw error in it',
+    /ECONN|ERR_|not an OpenClaw gateway/.test(notice.text), notice.text);
+  // * THE OUTCOME, NOT THE ANIMATION NAME, and the difference is not pedantry. A
+  // card is rebuilt WITHOUT the arrival class whenever its text changes (see
+  // render() in core/ui/banner.js), and this failure raises the notice more than
+  // once while the probe's answer firms up, so reading animation-name here measures
+  // whichever rebuild happens to be on the bar: it read "none" on 2026-09-20 with
+  // the card correctly on screen. The arrival class itself is guarded in
+  // desktop/test/drag-regions.test.js; what the reader needs, and what the "both"
+  // fill broke, is that the arriving card is not parked ABOVE the viewport
+  // (measured top: -108.6px, exactly translateY(-140%) of the card's own height).
   check('and lands on screen rather than above it', notice.top >= 0 && notice.top < 40, `top: ${notice.top}`);
   check('it carries the one way out', notice.action === 'Open Settings', `action: ${notice.action}`);
   await shoot(banner, 'connection-failed-banner.png');
@@ -218,7 +233,12 @@ app.whenReady().then(async () => {
   const server = http.createServer((_req, res) => {
     setTimeout(() => {
       res.writeHead(200, { 'content-type': 'text/html' });
-      res.end('<!doctype html><title>Gateway</title><h1 id="served">served</h1>');
+      // The payload marker, because answering is not identifying: an address is
+      // accepted before it is loaded, and this one has to look like a gateway to be
+      // the answer to a retry at all (core/spec/gateway-identity.json,
+      // payloadAttributes). Without it the reconnect is refused for the right reason
+      // and this harness's recovery half never runs at all.
+      res.end('<!doctype html><html data-openclaw-control-ui-build-id="harness"><title>Gateway</title><h1 id="served">served</h1></html>');
     }, responseDelay);
   });
   await new Promise((resolve) => server.listen(18791, '127.0.0.1', resolve));

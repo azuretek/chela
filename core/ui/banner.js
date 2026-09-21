@@ -48,18 +48,21 @@ function report() {
   // that has not painted, and the size that would make it paint is the one being
   // reported.
   //
-  // The width is the WIDEST card's, because the cards are right-aligned and a view
-  // narrower than one would clip it. Measured off each card rather than off the
-  // stack, whose own box can be wider than its widest child under some flex
-  // arrangements. Rounded up so a sub-pixel width never clips the last column.
+  // ★ The cluster's OWN box, insets included, and that is the whole of what this
+  // number has to be. The view is sized to exactly what this reports, and the
+  // card's width is `max-width: 100%` OF that view, so the report and the view
+  // are two halves of one loop: whatever this says becomes the width the next
+  // report is clamped by, and the loop's fixed point is the card's own width.
+  // Reporting the widest CARD (until 2026-09-20) was 24px short of the cluster,
+  // because the stack's padding is inside the view too: every report shrank the
+  // view by that padding, so a window resize, a theme change or a new notice took
+  // another 24px off. Measured on that loop: 420 -> 396 -> 372. The stack's box is
+  // `width: max-content` (card + padding, see .banner-stack), so reporting it is a
+  // FIXED POINT: the view becomes the cluster, and the cluster at that width is
+  // the same cluster. Rounded up so a sub-pixel width never clips the last column.
   if (!stack.childElementCount) { void api.bannerBounds({ width: 0, height: 0 }); return; }
   const box = stack.getBoundingClientRect();
-  let widest = 0;
-  for (const child of stack.children) {
-    const w = child.getBoundingClientRect().width;
-    if (w > widest) widest = w;
-  }
-  void api.bannerBounds({ width: Math.ceil(widest), height: Math.ceil(box.height) });
+  void api.bannerBounds({ width: Math.ceil(box.width), height: Math.ceil(box.height) });
 }
 
 function card(notice) {
