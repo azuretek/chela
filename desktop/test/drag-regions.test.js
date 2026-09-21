@@ -439,3 +439,57 @@ test('the pages that cover the strip are the ones that may move the window', () 
   assert.ok(hasClass(pages.find((p) => p.name === 'titlebar.html').text, 'strip-body'),
     'the title strip must keep its own drag surface');
 });
+
+test('* the notice cluster is what the banner reports, and its loop cannot ratchet', () => {
+  // The collapse Abi reported on Windows on 2026-09-20 ("the banners still collapse
+  // to the right"), which is a property of the LOOP between the page and its host
+  // rather than a look: the host sizes the view to what the page reports, and the
+  // page's cards are capped at 100% of that view, so a report taken in a viewport
+  // that cannot hold the cluster becomes the width the page can never exceed again.
+  //
+  //   1. The report must be the CLUSTER's box -- cards plus the stack's padding --
+  //      because the view holds the cluster. Reporting the widest CARD was 24px
+  //      short, and every re-measure took that much off again: measured
+  //      420 -> 396 -> 372 on the real report/resize loop.
+  //   2. The view must be laid out BEFORE its page is loaded, and a report of cards
+  //      with no width must not be adopted. This view is created with no bounds (a
+  //      fresh WebContentsView has none) and loaded while it is OFF the window, so
+  //      its first report was measured in a 0x0 viewport: measured {width: 0,
+  //      height: 600} with the cards 32px wide and one character per line, and that
+  //      0 became the view's width for good. Only restarting the app cleared it.
+  //   3. The arrival keyframes START off-screen, so a fill of "both" applies that
+  //      FROM keyframe before the animation runs, and a card whose animation never
+  //      runs rests ABOVE the viewport. Measured: top: -108.6px, exactly
+  //      translateY(-140%) of the card's own height.
+  // The rendered guard is desktop/scripts/prove-banner-width.mjs, which drives the
+  // real sequence and asserts the loop has a fixed point; this is the fast source
+  // half that keeps either half from being reintroduced without Electron.
+  const page = read(path.join(UI, 'banner.js'));
+  assert.ok(/api\.bannerBounds\(\{ width: Math\.ceil\(box\.width\)/.test(page),
+    'banner.js must report the cluster box width: the view is sized from it, and the widest card is short '
+    + 'by the stack padding, which is the ratchet that collapsed the banner to a column of single characters');
+  assert.ok(!/let widest/.test(page),
+    'banner.js is measuring the widest CARD again, which is the ratchet: every report loses the padding');
+
+  const main = read(path.join(SRC, 'main.js'));
+  const create = main.slice(
+    main.indexOf('if (!bannerView) {'),
+    main.indexOf("wc.loadFile(path.join(UI_DIR, 'banner.html')"),
+  );
+  assert.ok(create.includes('layoutViews();'),
+    'the banner view must be laid out before its page is loaded: it is created with no bounds, its page '
+    + 'reports its size the moment it runs, and a report from a 0x0 viewport is what locked the view at '
+    + 'nothing until the app was restarted');
+  assert.ok(/if \(width === 0 && height > 0\) return;/.test(main),
+    'the banner bounds handler must refuse a report of cards with no width: that is a measurement taken in '
+    + 'a viewport too small to measure in, and adopting it is what made the collapse one-way');
+
+  const enter = rules(path.join(UI, 'banner.css'))
+    .find((rule) => rule.selector.split(',').map((s) => s.trim()).includes('.banner--enter'));
+  assert.ok(enter, 'banner.css has no .banner--enter rule');
+  const animation = declarations(enter.inner).get('animation') || '';
+  assert.ok(!/\bboth\b/.test(animation),
+    'the arrival animation is "' + animation + '": a fill of both applies the FROM keyframe before the '
+    + 'animation starts, so a card whose animation never runs rests above the viewport (measured top: '
+    + '-108.6px). It must be forwards, so that visible is the failure mode');
+});
