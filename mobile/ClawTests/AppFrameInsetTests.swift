@@ -27,6 +27,10 @@ final class AppFrameInsetTests: XCTestCase {
             AppFrameInset.clampSelectors.contains("openclaw-assistant-panel"),
             "the surface that was reported is the one the rule names"
         )
+        XCTAssertTrue(
+            AppFrameInset.boundSelectors.contains(".shell"),
+            "the page's own viewport-height container is bounded too: it is sized in dvh, which is the display rather than the padded box the client insets"
+        )
     }
 
     func testTheInstallationHandsOverTheSpecThenTheNumbersThenTheScript() throws {

@@ -44,8 +44,23 @@ export const FRAME_INSET_MARKER = spec.marker;
 /** The four published property names, by edge. The spec is their one owner. */
 export const FRAME_INSET_PROPERTIES = spec.properties;
 
-/** The page's viewport-anchored overlays the clamp names. */
+/**
+ * The page's viewport-anchored overlays the clamp names, plus the page's own
+ * viewport-height container, which the same height cap bounds on its own: an
+ * in-flow box ignores the rule's top and bottom, so max-height is what puts the
+ * page's shell inside the frame rather than past its bottom edge. Read the
+ * spec's why for the shell and the measurement behind it.
+ */
 export const FRAME_INSET_SELECTORS = spec.clampSelectors;
+
+/**
+ * The page's own viewport-height containers, which the frame's height bounds.
+ *
+ * They are in flow, so the frame is met by the cap alone: they already sit at the
+ * frame's leading edge because the client padded the content box they are in, and
+ * an offset here would apply that padding a second time.
+ */
+export const FRAME_INSET_BOUND_SELECTORS = spec.boundSelectors;
 
 /** The four edges, in the order the script publishes them. */
 export const FRAME_INSET_EDGES = ['top', 'right', 'bottom', 'left'];
@@ -76,6 +91,7 @@ export function configStatement() {
       marker: spec.marker,
       properties: spec.properties,
       selectors: spec.clampSelectors,
+      boundSelectors: spec.boundSelectors,
     }) + ';'
   );
 }
