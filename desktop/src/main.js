@@ -1567,7 +1567,20 @@ function createGatewayView({ attempt = false } = {}) {
       // ONLY here: the swap happens on a loaded document rather than on the intent
       // to load one, which is what keeps a failed attempt from having already
       // destroyed the payload it was replacing.
+      //
+      // * AND A HELD ATTEMPT IS ONE OF THESE, which is the leg a device awaiting
+      // approval is picked up on. While the pairing screen is up the phase is held
+      // `pending` and `mayPresentGatewayView` holds the gateway document with it,
+      // so every retry beat loads its fresh document BESIDE the one on screen. A
+      // finished load that did not count there could never be promoted, and the
+      // document nobody was looking at held the only socket that could report the
+      // approval: the screen stayed up for the life of the process, and Try again
+      // repeated the same dead attempt. core/connection.js's `shouldMarkConnected`
+      // owns the rule that decides it.
       if (attempt) promoteGatewayView(view);
+      if (attempt && connection.phase === connectionState.PENDING) {
+        console.log('[claw-desktop] the attempt answered while this device awaited approval; taking its document into the window');
+      }
       // The document on screen is this gateway's from here, and it stays
       // presentable while this connection does. The phase move below is the other
       // half of that: `connectionState.mayPresentGatewayView` reads the two
