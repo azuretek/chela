@@ -208,10 +208,8 @@ struct ContentView: View {
                 isPresented: $showingAbout,
                 host: aboutHost,
                 appearance: AppearanceMode.system,
-                tokens: liveTokens,
-                notices: notices
+                tokens: liveTokens
             )
-            .noticeBanner(notices)
     }
 
     /// Whether this client holds a credential for `gateway`, a token or a password,
@@ -315,18 +313,16 @@ struct ContentView: View {
         Group {
             if let gateway = controlUiGateway {
                 controlUiPage(gateway)
-                // The notice stack is the last overlay this branch applies, so
-                // no other overlay can be drawn over a card's own dismiss
-                // control. Measured on an iPhone 17 simulator on 2026-09-16,
-                // where an overlay applied after this one left the first card
-                // with no X at all and no way to close a notice.
-                .noticeBanner(notices)
                 // Settings, and About over it. Both fill the screen, presented the
                 // one way this client presents a shared web surface: the surface
                 // carries its own safe area, and the sheet is pinned to the whole
                 // screen so a page's own height never sizes it. See
-                // `fullScreenSurfaceSheet`.
-                .fullScreenSurfaceSheet(isPresented: $showingSettings, notices: notices) {
+                // fullScreenSurfaceSheet.
+                //
+                // Neither sheet draws a notice stack, and neither does the page
+                // under them: the stack is drawn once, for the whole app, on a
+                // layer above all three. See noticeLayer and NoticeWindow.
+                .fullScreenSurfaceSheet(isPresented: $showingSettings) {
                     if let host { settingsSheetContent(host) }
                 }
             } else if let host {
@@ -334,10 +330,10 @@ struct ContentView: View {
                 // go back to, and nothing to draw the sheet over. About is still
                 // reached from here, so the About sheet rides the surface itself.
                 //
-                // The notice stack is drawn here too, and that is not symmetry for
-                // its own sake: the launch update check runs whether or not a
-                // gateway is configured, so a build that finds a release with no
-                // gateway set would raise a notice into a board nothing draws.
+                // The notice stack is NOT drawn in this branch: it is one surface
+                // for the whole app, installed once at the root of this view. The
+                // launch update check still runs whether or not a gateway is
+                // configured, which is why that root application has to exist.
                 SettingsAsApp(host: host)
             } else {
                 // One frame, while the host is built in `onAppear`.
@@ -362,6 +358,14 @@ struct ContentView: View {
         // live, and the Control UI's own theme resolves inside its own page. See the
         // sixth rule in core/ui/CONVENTIONS.md.
         .preferredColorScheme(AppearanceMode.system.colorScheme)
+        // ★ ONE notice surface for the whole app, installed at the root rather than
+        // on a page. Abi, 2026-09-21: the same up-to-date notice appeared on the
+        // Settings surface and on the About surface, and it should "only show up
+        // once for the whole app and be pinned over everything not to one specific
+        // page". A sheet is presented above the view that raises it, so the copies
+        // were what made a banner visible on whichever layer was in front; the layer
+        // that replaces them is a window above the app's own. See NoticeWindow.
+        .noticeLayer(notices)
         // The strips above and below the page, from ONE place.
         //
         // ★ The colour at the top of the screen and the colour at the bottom must
@@ -721,7 +725,6 @@ private struct LiveTokenRefresh: ViewModifier {
 
 private struct FullScreenSurfaceSheet<Surface: View>: ViewModifier {
     @Binding var isPresented: Bool
-    let notices: NoticeBoard
     @ViewBuilder let surface: () -> Surface
 
     func body(content: Content) -> some View {
@@ -729,7 +732,6 @@ private struct FullScreenSurfaceSheet<Surface: View>: ViewModifier {
             surface()
                 .ignoresSafeArea()
                 .presentationDetents([.large])
-                .noticeBanner(notices)
         }
     }
 }
@@ -739,10 +741,9 @@ extension View {
     /// presents a shared web surface; see `FullScreenSurfaceSheet`.
     func fullScreenSurfaceSheet<Surface: View>(
         isPresented: Binding<Bool>,
-        notices: NoticeBoard,
         @ViewBuilder surface: @escaping () -> Surface
     ) -> some View {
-        modifier(FullScreenSurfaceSheet(isPresented: isPresented, notices: notices, surface: surface))
+        modifier(FullScreenSurfaceSheet(isPresented: isPresented, surface: surface))
     }
 
     /// Present the About surface as a full-screen sheet over the settings surface.
@@ -761,15 +762,13 @@ extension View {
         isPresented: Binding<Bool>,
         host: AboutHost?,
         appearance: AppearanceMode,
-        tokens: [String: String],
-        notices: NoticeBoard
+        tokens: [String: String]
     ) -> some View {
         modifier(AboutSheetModifier(
             isPresented: isPresented,
             host: host,
             appearance: appearance,
-            tokens: tokens,
-            notices: notices
+            tokens: tokens
         ))
     }
 }
@@ -780,7 +779,6 @@ private struct AboutSheetModifier: ViewModifier {
     let host: AboutHost?
     let appearance: AppearanceMode
     let tokens: [String: String]
-    let notices: NoticeBoard
 
     func body(content: Content) -> some View {
         content.sheet(isPresented: $isPresented) {
@@ -788,7 +786,6 @@ private struct AboutSheetModifier: ViewModifier {
                 AboutSurface(host: host, appearance: appearance, tokens: tokens)
                     .ignoresSafeArea()
                     .presentationDetents([.large])
-                    .noticeBanner(notices)
             }
         }
     }
