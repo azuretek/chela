@@ -351,3 +351,47 @@ test('every workflow run block is a shell program bash can parse', () => {
   }
   assert.ok(blocks >= 4, `only ${blocks} run blocks were checked, so this guard is not covering the workflows`);
 });
+
+test('every jq program the workflows run parses', () => {
+  // ★ The class this catches, measured 2026-09-21. The rewritten gate shipped
+  // with an over-escaped jq program (`// \"\"` inside a single-quoted shell
+  // string), which `bash -n` cannot see: the shell parses, and jq rejects it at
+  // RUN time with 'unexpected token', so both gates died on their first API call
+  // and nothing published from main. The same shape as the shell syntax error
+  // above, one layer in.
+  //
+  // A jq program is checked by handing it to jq with no input: a valid one
+  // produces nothing and exits 0, a broken one exits 3 saying where.
+  let haveJq = true;
+  try {
+    execFileSync('jq', ['--version'], { stdio: ['ignore', 'ignore', 'pipe'] });
+  } catch {
+    haveJq = false;
+  }
+  if (!haveJq) {
+    // Named rather than silent: a runner without jq cannot make this claim.
+    console.log('jq is not on PATH here, so the jq programs in the workflows were NOT parsed');
+    return;
+  }
+  let programs = 0;
+  for (const file of WORKFLOWS) {
+    for (const match of read(file).matchAll(/--jq\s+("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g)) {
+      const literal = match[1];
+      programs += 1;
+      try {
+        // The literal is a SHELL string, so its own escaping is decoded first:
+        // a double-quoted one writes \" for a quote jq should see as a quote,
+        // and handing jq the backslash instead is what made this guard fail on
+        // a program that is correct.
+        const program = literal.startsWith('"')
+          ? literal.slice(1, -1).replace(/\\(["\\$`])/g, '$1')
+          : literal.slice(1, -1);
+        execFileSync('jq', [program], { input: '', stdio: ['pipe', 'ignore', 'pipe'] });
+      } catch (error) {
+        const said = error.stderr ? error.stderr.toString().trim() : error.message;
+        assert.fail(`${file}: the jq program ${literal} does not parse: ${said}`);
+      }
+    }
+  }
+  assert.ok(programs >= 4, `only ${programs} jq programs were found, so this guard is not covering the workflows`);
+});
