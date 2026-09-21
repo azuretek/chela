@@ -184,6 +184,14 @@ export function mayPresentGatewayView({ gatewayId = null, heldGatewayId = null, 
   // connection the reader is making. `pending` does too: the gateway answered and
   // is holding this device's approval, which is a state of ours drawn OVER that
   // document rather than a reason to replace it.
+  //
+  // * AND THE HOLD IS ONLY HONEST BECAUSE THE ATTEMPT CAN STILL LAND. Holding the
+  // document here is what stops a retry blinking a cover over a working page, but
+  // it also means every retry beat loads BESIDE it, so a finished attempt has to
+  // be able to take the hold's place: see `shouldMarkConnected`, which counts a
+  // load that finishes while `pending` as the gateway answering. Read the two as
+  // one rule. Holding the document with no way for the attempt to arrive is how an
+  // approved device sat on the pairing screen for the life of the process.
   return phase === CONNECTED || phase === CONNECTING || phase === PENDING;
 }
 
@@ -197,14 +205,31 @@ export function mayPresentGatewayView({ gatewayId = null, heldGatewayId = null, 
  * green, the heading went back to "Settings", and the only trace of the failure
  * was the certificate warning that happened to survive on its own.
  *
- * So the phase is the guard. `loadActiveGateway` sets CONNECTING before every
- * attempt and `did-fail-load` sets FAILED, so an error-page commit arrives with
- * the phase already off CONNECTING and is ignored. A `file:` URL is one of the
+ * So the phase is the guard, and what it has to name is AN ATTEMPT IN FLIGHT
+ * rather than a bare connect: the connect path starts every attempt and
+ * `did-fail-load` sets FAILED, so an error-page commit arrives with the phase
+ * already off both phases below and is ignored. A `file:` URL is one of the
  * app's own pages and never means a gateway answered.
+ *
+ * * PENDING IS ONE OF THEM, because it is a phase the client deliberately goes on
+ * attempting in. An unapproved device is served the page and refused at the
+ * socket, and the retry cadence reissues the connect every few seconds to pick up
+ * an approval; each of those beats is an attempt, and the phase HOLDS `pending`
+ * across it (see `nextPhase`) so the settings row does not flicker. Leaving
+ * PENDING out therefore did not make a held attempt more careful, it made the
+ * attempt UNOBSERVABLE: `mayPresentGatewayView` holds the gateway document on
+ * this same phase, so the retry loads its fresh document BESIDE the one on
+ * screen, and a finished load that never counted could never be promoted into the
+ * window either. The document nobody could see then held the only socket that
+ * could report the approval, and a report is read from the view on screen, so the
+ * pairing screen stayed up for the life of the process: measured 2026-09-21, an
+ * approved device (`connected: true`, `device-token-auth`) with this client
+ * still showing "Approve this device" until it was relaunched, and Try again
+ * repeating the same dead attempt rather than reaching live state.
  */
 export function shouldMarkConnected({ phase, url }) {
   if (typeof url === 'string' && url.startsWith('file:')) return false;
-  return phase === CONNECTING;
+  return phase === CONNECTING || phase === PENDING;
 }
 
 /**
@@ -248,6 +273,13 @@ export function isRealFailure({ code, isMainFrame }) {
  * row flickered once per retry. The device is still unapproved until the socket
  * proves otherwise, so the honest answer through a retry is the state it was
  * already showing, and the attempt happens underneath it.
+ *
+ * The hold is on the VISIBLE phase, and deliberately not on the attempt: a load
+ * that finishes while `pending` still counts as the gateway answering (see
+ * `shouldMarkConnected`), so the document a held attempt loads is promoted into
+ * the window and the socket behind it can be heard. Holding both is what stranded
+ * an approved device on the pairing screen; the two are one rule and are read
+ * together.
  *
  * @param {string} phase   current phase
  * @param {{type: string}} event
