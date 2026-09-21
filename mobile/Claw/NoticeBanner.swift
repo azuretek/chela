@@ -66,6 +66,18 @@ struct NoticeStack: View {
             }
             .padding(.horizontal, style.inset)
             .padding(.vertical, style.inset)
+            // The cluster publishes the box it drew in, which is the only area the
+            // notice layer claims for touch. On the cluster rather than on the stack,
+            // so the box is the cards plus their inset and never the screen. See
+            // \`NoticeWindow\`.
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: NoticeClusterBox.self,
+                        value: proxy.frame(in: .named(NoticeWindow.coordinateSpace))
+                    )
+                }
+            )
             // Trailing filler rather than a fixed height, so the cluster is only as
             // tall as what it holds and the web view underneath keeps every touch
             // outside it. A view that covered the page to draw nothing on it would
@@ -77,6 +89,10 @@ struct NoticeStack: View {
         // the desktop cluster hugs, and with the inner VStack no longer stretched
         // the frame is transparent to touch everywhere the cards are not.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        // And the cluster reports its own box, which is what the notice layer claims
+        // for touch: the window above everything takes a point only inside this, so
+        // the claimed area is the cards rather than the screen they float on. See
+        // `NoticeWindow`.
         .animation(style.arrival, value: board.unread.map(\.id))
     }
 }
