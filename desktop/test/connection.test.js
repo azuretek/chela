@@ -115,6 +115,25 @@ test('a real load while connecting does count', () => {
   );
 });
 
+test('a finished load while the gateway holds this device counts, so the attempt can land', () => {
+  // An unapproved device is served the page and refused at the socket, and the
+  // retry cadence goes on attempting while `mayPresentGatewayView` holds the
+  // document on screen on that same held phase. A finished load there is the
+  // attempt answering, not an error document: `did-fail-load` moves the phase
+  // to FAILED before an error document's commit fires this. Measured 2026-09-21:
+  // leaving PENDING out meant a held attempt could never be promoted, so an
+  // approved device stayed on the pairing screen until the app was relaunched.
+  assert.equal(
+    connection.shouldMarkConnected({ phase: connection.PENDING, url: 'https://gw.example/' }),
+    true,
+  );
+  // And a held phase still cannot launder one of our own pages into a connect.
+  assert.equal(
+    connection.shouldMarkConnected({ phase: connection.PENDING, url: 'file:///app/core/ui/pairing.html' }),
+    false,
+  );
+});
+
 test('one of the app’s own pages never means a gateway answered', () => {
   assert.equal(
     connection.shouldMarkConnected({ phase: connection.CONNECTING, url: 'file:///app/core/ui/settings.html' }),
