@@ -102,17 +102,81 @@ final class NoticeStackHitTests: XCTestCase {
         // ★ Floating cards, not a bar. Abi, 2026-09-19: "floating cards no full
         // width bar that's pointless". The stack must paint NO surface of its own,
         // because a band is a full-width strip and this stack's frame is the whole
-        // screen: a `.background` on it would paint (and, being a drawn surface,
-        // claim) every pixel the cards do not, which is the dead zone the desktop
-        // removed by sizing its view to the cards. Each CARD keeps its own surface
-        // (testWhatTheBannerDrawsItAlsoKeeps), so the cluster is legible while its
-        // empty area stays the page. This replaces testTheBarPaintsItselfAndNotThe
-        // Screen, which asserted the opposite for the old full-width bar.
+        // screen: a background that draws on it would cover (and, being a drawn
+        // surface, claim) every pixel the cards do not, which is the dead zone the
+        // desktop removed by sizing its view to the cards. Each CARD keeps its own
+        // surface (testWhatTheBannerDrawsItAlsoKeeps), so the cluster is legible
+        // while its empty area stays the page. This replaces
+        // testTheBarPaintsItselfAndNotTheScreen, which asserted the opposite for
+        // the old full-width bar.
+        //
+        // ★ The rule is about what a background DRAWS, not about the modifier
+        // being present, and 2026-09-21 is why. The notice layer (see
+        // `NoticeWindow`) claims a touch only inside the box the cards drew, and
+        // the stack is what reports that box: a `Color.clear` probe read by a
+        // `GeometryReader`. That background paints nothing, so it is a measurement
+        // rather than the band this test forbids, but a scan for the modifier's
+        // name reported it as the fault and took both iOS legs of run 35626768078
+        // down with it. What is asserted now is the rule's own content: every
+        // background the stack carries is that transparent probe, and a surface
+        // that draws is still the failure.
         let text = try source("NoticeBanner.swift")
         let stack = code(try body(of: "NoticeStack", in: text))
-        XCTAssertFalse(stack.contains(".background("),
-            "NoticeStack paints a surface of its own. Its frame is the screen, so a band claims every touch on "
-            + "the page the cards do not cover: the bar is gone, and only the cards may paint.")
+        for argument in backgroundArguments(in: stack) {
+            XCTAssertTrue(argument.contains("Color.clear"),
+                "NoticeStack carries a background that is not the transparent box probe: " + argument + ". Its frame "
+                + "is the screen, so a surface that draws there covers every touch on the page the cards do not: only "
+                + "the cards may paint.")
+            for paint in ["style.", ".fill(", "Gradient", "Rectangle", "Material", "Image("] {
+                XCTAssertFalse(argument.contains(paint),
+                    "NoticeStack's background paints with " + paint + ": " + argument + ". The only background the "
+                    + "stack may carry is the transparent probe that reports the cluster box for the notice layer's "
+                    + "touch rule, so a painted one is the band the cards' own surfaces replaced.")
+            }
+        }
+    }
+
+    /// Every `.background` a piece of source applies, as the text of its argument.
+    ///
+    /// Both spellings SwiftUI accepts are read, `.background(...)` and the trailing
+    /// closure `.background { ... }`, and the argument is taken by balancing its own
+    /// delimiters so that a nested call does not end it early. Deliberately crude,
+    /// like `body(of:in:)` above: what is being read is the text an argument draws
+    /// with, and that text is short enough to read whole.
+    private func backgroundArguments(in text: String) -> [String] {
+        let source = Array(text)
+        let marker = Array(".background")
+        var arguments: [String] = []
+        var index = 0
+        while index + marker.count <= source.count {
+            guard source[index..<(index + marker.count)].elementsEqual(marker) else {
+                index += 1
+                continue
+            }
+            var at = index + marker.count
+            while at < source.count, source[at] == " " || source[at] == "\n" {
+                at += 1
+            }
+            guard at < source.count, source[at] == "(" || source[at] == "{" else {
+                index += marker.count
+                continue
+            }
+            let opener = source[at]
+            let closing: Character = opener == "(" ? ")" : "}"
+            var depth = 0
+            var end = at
+            while end < source.count {
+                if source[end] == opener { depth += 1 }
+                if source[end] == closing {
+                    depth -= 1
+                    if depth == 0 { break }
+                }
+                end += 1
+            }
+            arguments.append(String(source[at..<Swift.min(end + 1, source.count)]))
+            index = end + 1
+        }
+        return arguments
     }
 
     func testTheCardsHugTheTopTrailingCorner() throws {
