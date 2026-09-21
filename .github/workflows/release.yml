@@ -56,8 +56,8 @@ on:
 # mobile pipeline too, because a release needs the whole matrix green rather than
 # each platform's own jobs: on 2026-09-16 this workflow published a release for a
 # commit whose mobile pipeline was red, and no job in either file could see the
-# other. The `platforms` job below reads the mobile pipeline's verdict for this
-# commit and is part of the release job's `needs`, so a red mobile leg skips
+# other. The `platforms` job below reads the mobile pipeline's whole job list for
+# this commit and is part of the release job's `needs`, so a red mobile leg skips
 # publishing here exactly as a red leg of our own does. `platforms-gate.yml` owns
 # what is waited on; `CONVENTIONS.md` in this directory owns the rule and where to
 # look when a release did not happen.
@@ -165,33 +165,33 @@ jobs:
       actions: read
     uses: ./.github/workflows/platforms-gate.yml
     with:
-      # The other pipeline, by the name GitHub's run list reports it under, and
-      # the jobs that must be green before anything here is published: the mobile
-      # test matrix (one leg per iOS version), its lint, and its `release` job.
+      # The other pipeline, by the name GitHub's run list reports it under.
       #
-      # ★ `^release$` is what makes "all builds and the TestFlight release
-      # READY before publishing" true. That job is where the upload to TestFlight
-      # and the wait for the build to reach VALID live, so requiring it green
-      # means the GitHub Release (the feed both clients read) is not published
-      # until the phone build is actually installable. Without it, publishing
-      # waited only on the iOS TEST legs, and the feed could appear while
-      # TestFlight was still Processing. That is the gap Abi named 2026-09-18:
-      # "CI should ensure all builds and the testflight release is ready before
-      # publishing."
+      # ★ NOTHING is exempt here, and that is the point: EVERY job the mobile
+      # pipeline lists must be green before anything is published, the `release`
+      # job included. That job is where the TestFlight upload and the wait for the
+      # build to reach VALID live, so requiring it means the GitHub Release (the
+      # feed both clients read) is not published until the phone build is actually
+      # installable. That is the gap Abi named 2026-09-18: "CI should ensure all
+      # builds and the testflight release is ready before publishing." And it is
+      # Abi's rule of 2026-09-21: "require all jobs to finish successfully before
+      # we publish, so that we can never have something claiming to be deployed
+      # and not." A list of job names could only ever promise a subset of that;
+      # the gate reads the whole job list instead.
       #
-      # `^swiftlint$` is included so a red mobile lint cannot slip through: a
-      # failed lint skips the mobile `release` job, and an absent job is not a
-      # red one, so without this the gate would read "nothing wrong" from a lint
-      # that never ran the upload.
+      # A red mobile lint cannot slip through either, and it no longer needs to be
+      # named to be caught: a failed lint skips the mobile `release` job, and this
+      # gate requires every job it lists, so a skipped one refuses exactly as a
+      # failed one does.
       #
-      # NOT a deadlock, and this replaces an earlier note here that said the
-      # release job waits on this workflow in turn. It does not: the mobile gate
-      # waits on THIS workflow's `^build` jobs only, which depend on nothing in
-      # the mobile run. So the order is desktop build -> mobile gate -> mobile
-      # release (upload + VALID) -> this gate -> desktop publish, with no cycle.
+      # NOT a deadlock. The mobile gate waits on THIS workflow's jobs that do not
+      # wait on the mobile upload (the ship check, the version, the lint and the
+      # build legs), which depend on nothing in the mobile run. So the order is
+      # desktop build -> mobile gate -> mobile release (upload + VALID) -> this
+      # gate -> desktop publish, with no cycle.
       platform: claw-mobile pipeline
-      verdict: '^iOS |^swiftlint$|^release$'
-      # ★ 90 minutes, because of what this now waits for. The verdict names the
+      exempt: ''
+      # ★ 90 minutes, because of what this now waits for. The gate requires the
       # mobile `release` job, and that job's own budget is 60 minutes: an archive,
       # an export, an upload, and then a wait of up to 45 minutes for the build to
       # reach VALID in App Store Connect. The gate's default of 45 would give up
