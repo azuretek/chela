@@ -213,13 +213,16 @@ jobs:
       actions: read
     uses: ./.github/workflows/platforms-gate.yml
     with:
-      # The other pipeline, by the name GitHub's run list reports it under, and
-      # the jobs that are its builds and tests: one `build` leg per platform,
-      # each of which runs the desktop suite before it packages. Its release job
-      # is deliberately not named here, because it waits on this workflow in
-      # turn.
+      # The other pipeline, by the name GitHub's run list reports it under. EVERY
+      # job it lists must be green before anything here is uploaded, except the
+      # two that cannot conclude until this pipeline has published: its release
+      # job, which needs its own gate in turn, and its own call of this gate,
+      # which waits on this run and so can never finish first. Naming those two
+      # and no others is what makes the requirement complete: a job added to that
+      # pipeline is inside this gate by default, which a list of job names could
+      # never promise.
       platform: claw-desktop release
-      verdict: '^build'
+      exempt: '^release$|^every platform must be green'
 
   # ★ SwiftLint, the mobile platform's half of the root lint. It runs once, on
   # the oldest stable image, and it is the peer of the JS import lint in
