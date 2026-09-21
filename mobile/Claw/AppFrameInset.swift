@@ -43,6 +43,8 @@ enum AppFrameInset {
         let properties: [String: String]
         /// The page's viewport-anchored overlays the clamp names.
         let clampSelectors: [String]
+        /// The page's own viewport-height containers the frame's height bounds.
+        let boundSelectors: [String]
         let script: [String]
     }
 
@@ -50,7 +52,7 @@ enum AppFrameInset {
 
     private static func loadSpec() -> Spec {
         let empty = Spec(global: "", configGlobal: "", initialGlobal: "", marker: "",
-                         properties: [:], clampSelectors: [], script: [])
+                         properties: [:], clampSelectors: [], boundSelectors: [], script: [])
         guard let url = Bundle.main.url(forResource: "app-frame-inset", withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let spec = try? JSONDecoder().decode(Spec.self, from: data),
@@ -73,6 +75,11 @@ enum AppFrameInset {
     /// rather than by this client: the rule is the script's to build.
     static var clampSelectors: [String] { spec.clampSelectors }
 
+    /// The page's own viewport-height containers, which the frame's height bounds.
+    /// Read by the tests rather than by this client: the rule is the script's to
+    /// build, and these are the boxes the cap alone can hold.
+    static var boundSelectors: [String] { spec.boundSelectors }
+
     /// The published property names, by edge.
     static var properties: [String: String] { spec.properties }
 
@@ -81,7 +88,8 @@ enum AppFrameInset {
     /// silence, and a client that quietly knows less is the failure that test exists
     /// to catch.
     static let decodedKeys: Set<String> = [
-        "global", "configGlobal", "initialGlobal", "marker", "properties", "clampSelectors", "script",
+        "global", "configGlobal", "initialGlobal", "marker", "properties", "clampSelectors",
+        "boundSelectors", "script",
     ]
 
     /// Nothing is deliberately left on the floor. Said out loud because the test
@@ -98,6 +106,7 @@ enum AppFrameInset {
             "marker": spec.marker,
             "properties": spec.properties,
             "selectors": spec.clampSelectors,
+            "boundSelectors": spec.boundSelectors,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: config, options: [.sortedKeys]),
               let json = String(data: data, encoding: .utf8)
