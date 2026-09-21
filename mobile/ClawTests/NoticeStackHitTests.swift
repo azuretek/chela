@@ -164,13 +164,18 @@ final class NoticeStackHitTests: XCTestCase {
             "the sweep row's label no longer carries a contentShape, so only its drawn glyphs would be tappable")
     }
 
-    func testTheBannerIsAnOverlaySoThePageKeepsItsLayout() throws {
-        // The page is the gateway's and this client does not reflow it: the
-        // banner floats above it, which is what makes "the region the banner
-        // does not draw is the page" true in the first place.
-        let text = try source("ContentView.swift")
-        XCTAssertTrue(text.contains("content.overlay(alignment: .top) { NoticeStack(board: board) }"),
-            "the banner is no longer an overlay at the top of the surface, so it may now take layout from the "
-            + "page it is drawn over")
+    func testThePageKeepsItsLayoutBecauseTheStackIsNotDrawnInIt() throws {
+        // The page is the gateway's and this client does not reflow it: the banner
+        // floats above it, which is what makes "the region the banner does not draw
+        // is the page" true in the first place. Since 2026-09-21 that floating
+        // surface is the notice layer (a window above the app's own) rather than an
+        // overlay applied per layer, which is what drew a copy on every screen and
+        // is what Abi reported. See NoticeLayerTests.
+        let text = try source("NoticeBanner.swift")
+        let stack = code(try body(of: "NoticeStack", in: text))
+        XCTAssertFalse(stack.contains("content.overlay"),
+            "the stack is applied as an overlay again, which is the per-layer shape the notice layer replaced")
+        XCTAssertTrue(text.contains("NoticeWindow.coordinateSpace"),
+            "the stack no longer reports the box it drew, so the notice layer would have nothing to claim")
     }
 }
