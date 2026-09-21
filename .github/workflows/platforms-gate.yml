@@ -194,7 +194,40 @@ jobs:
           while :; do
             jobs="$(gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100" \
               --jq ".jobs[] | select(.name | test(\"$VERDICT\"))
-                    | \"\(.name)|\(.status)|\(.conclusion)\"")"
+                    | \"\(.name)|\(.status)|\(.conclusion)\""
+
+            # ★ EVERY alternative in the verdict must be represented, not merely
+            # one of them. A verdict is a flat alternation of whole job-name
+            # patterns, and a run's job list is written as the run GOES, so the
+            # jobs it names do not appear together: on 2026-09-21 the mobile run
+            # for c8d9db5675 had iOS 26, iOS 27 and swiftlint all concluded
+            # success while its release job (the TestFlight upload and the wait
+            # for VALID) had not registered at all. This gate read that as "every
+            # matching job is complete", passed, and the desktop published; one
+            # second later the iOS marker step in release.yml read the same
+            # verdict, saw an empty conclusion, and left the release unmarked, so
+            # no phone could ever be offered an update from it and the whole
+            # "update available" banner was dead. A named job that has not
+            # appeared yet is a reason to WAIT; a run that concludes without one
+            # refuses, which is the rule the empty match below already follows.
+            #
+            # A group in the verdict would make splitting it on the pipe character
+            # a lie about which patterns are named, so it refuses rather than
+            # guessing.
+            missing=''
+            if [ -n "$jobs" ]; then
+              case "$VERDICT" in
+                *'('*|*')'*)
+                  echo "::error::refusing to publish: the verdict /$VERDICT/ carries a group, and a verdict must be a flat alternation of whole job-name patterns (p1|p2|p3) so that every named job is required. Give each job its own pattern."
+                  exit 1
+                  ;;
+              esac
+              names="$(printf '%s\n' "$jobs" | cut -d'|' -f1)"
+              while IFS= read -r pattern; do
+                [ -n "$pattern" ] || continue
+                printf '%s\n' "$names" | grep -qE "$pattern" || missing="$missing$pattern "
+              done <<< "$(printf '%s' "$VERDICT" | tr '|' '\n')"
+            fi
 
             if [ -z "$jobs" ]; then
               # The run's own state, read rather than assumed: it is what tells
@@ -209,10 +242,20 @@ jobs:
                   ;;
               esac
               echo "$OTHER's run is up and has no job satisfying /$VERDICT/ listed yet; waiting for one to register."
+            elif [ -n "$missing" ]; then
+              state="$(gh api "repos/$REPO/actions/runs/$run_id" \
+                --jq '.status + " " + (.conclusion // "pending")')"
+              case "$state" in
+                completed\ *)
+                  echo "::error::refusing to publish: $OTHER's run has concluded ${state#completed } and never listed a job matching:${missing%,}. A verdict names every job this release waits for, and a job that never ran is not evidence that its platform built and tested."
+                  echo "Look at $run_url, and at the verdict argument this pipeline passes."
+                  exit 1
+                  ;;
+              esac
+              echo "$OTHER's run is up and has no job matching ${missing%,} listed yet; waiting for it to register."
             elif [ -z "$(printf '%s\n' "$jobs" | grep -v '|completed|' || true)" ]; then
               break
             fi
-
             if [ $SECONDS -ge $overall ]; then
               if [ -z "$jobs" ]; then
                 echo "::error::refusing to publish: $OTHER's run has no job matching /$VERDICT/ after ${WINDOW_MINUTES%%.*} minutes, so this gate cannot see whether it built and tested. A gate that cannot see the other platform must not pass it."
