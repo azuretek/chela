@@ -170,7 +170,7 @@ jobs:
             # took them past this would still be caught by the empty-list refusal
             # below rather than by passing.
             all="$(gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100" \
-              --jq '.jobs[] | "\(.name)|\(.status)|\(.conclusion // \"\")\"')"
+              --jq '.jobs[] | "\(.name)|\(.status)|\(.conclusion // "")"')"
 
             # Split it: `required` is every job this gate must see pass, and
             # `exempted` is the named few that wait on this pipeline instead.
