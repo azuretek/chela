@@ -193,8 +193,7 @@ struct ContentView: View {
                 isPresented: $showingAbout,
                 host: aboutHost,
                 appearance: AppearanceMode.system,
-                tokens: liveTokens,
-                notices: notices
+                tokens: liveTokens
             )
     }
 
