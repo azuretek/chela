@@ -220,8 +220,15 @@ body.banner-body {
    second frame to animate away from, and the frame never arrives if the view
    has not painted yet, which is exactly the state a brand new banner view is
    in. That left the card parked above the viewport, permanently invisible, in a
-   view that was still eating clicks. An animation with `both` fill runs from its
-   own keyframes and, if it never runs at all, leaves the element at its ordinary
+   view that was still eating clicks. An animation whose keyframes START off-screen
+   does the same thing when it never runs, which is the state a view that has not
+   painted yet is in: `both` fill applies the FROM keyframe before the animation
+   starts, so an animation that stalls leaves the card parked above the viewport
+   with its view still claiming the rectangle underneath it. Measured 2026-09-20 by
+   desktop/scripts/test-connection-failure.js, in the failure state this page is
+   really used in: the card read `top: -108.6px`, which is translateY(-140%) of its
+   own height to the pixel. So the fill is `forwards`: the end state is kept when
+   the animation runs, and a card whose animation never runs rests at its ordinary
    un-transformed position. Visible is the failure mode.
 
    It is on this class rather than on `.banner` because a card is rebuilt
@@ -229,7 +236,7 @@ body.banner-body {
    percent: animating every rebuild replayed the slide on each one, which reads
    as a flicker. Only a card that is new to the stack slides. */
 .banner--enter {
-  animation: banner-in var(--duration-normal) var(--ease-out) both;
+  animation: banner-in var(--duration-normal) var(--ease-out) forwards;
 }
 @keyframes banner-in {
   from { transform: translateY(-140%); opacity: 0; }
