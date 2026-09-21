@@ -260,43 +260,94 @@ test('running the script the way the workflow does writes the release output', (
   assert.match(written, /^release=true$/m, 'the script must write release=true for a shipping change; empty output means the entry guard never fired');
 });
 
-test('the shared gate requires every job its verdict names', () => {
-  // ★ The class this catches, measured on main 2026-09-21. release.yml passes
-  // an alternation as its verdict for the mobile pipeline, and a run's job list
-  // is written as the run GOES: the mobile run for c8d9db5675 had iOS 26, iOS 27
-  // and swiftlint concluded SUCCESS while its release job (the TestFlight upload
-  // and the wait for VALID) had not registered at all. The gate read 'every
-  // matching job is complete', passed, and the desktop published; one second
-  // later the iOS marker step read the same verdict, saw an empty conclusion,
-  // and left the release unmarked, so no phone could be offered an update and
-  // the whole 'update available' banner was dead while every leg reported
-  // success.
+test('the shared gate requires every job the other pipeline lists', () => {
+  // ★ Abi's rule, 2026-09-21: "require all jobs to finish successfully before we
+  // publish, so that we can never have something claiming to be deployed and not."
   //
-  // Both halves are asserted, because both are load-bearing: the gate must
-  // require EVERY alternative rather than a subset, and a verdict must be a
-  // flat alternation for 'every alternative' to be a claim at all.
+  // The class this closes: the gate used to require a VERDICT, a hand-written
+  // alternation of job-name patterns, so a job the pattern did not name sat
+  // outside the gate for as long as nobody remembered to add it, and silently,
+  // because a pattern that names everything looks exactly like one that does
+  // not. Measured on main the same day: the mobile run for c8d9db5675 had iOS 26,
+  // iOS 27 and swiftlint concluded success while its release job (the TestFlight
+  // upload and the wait for VALID) had not registered at all, the gate read that
+  // as 'every matching job is complete', passed, and the desktop published a
+  // release the phone could never be offered.
+  //
+  // Asserted here: the job list is read UNFILTERED, the passing conclusion is
+  // `success` and nothing else, and the only exemptions are the named jobs that
+  // cannot conclude before the other pipeline publishes.
   const gate = read('platforms-gate.yml');
-  assert.match(
-    gate,
-    /EVERY alternative in the verdict must be represented/,
-    'platforms-gate.yml no longer requires every alternative in a verdict, so a subset of the jobs it names can satisfy it before the job the release actually waits for has registered',
+  assert.ok(
+    gate.includes('.jobs[] | "'),
+    'platforms-gate.yml does not read the other run\'s job list unfiltered, so a job it does not name is outside the gate',
   );
-  assert.match(
-    gate,
-    /missing="\$missing\$pattern "/,
-    'platforms-gate.yml does not compute which verdict alternatives have no job listed yet',
+  assert.ok(
+    !gate.includes('VERDICT') && !gate.includes('test('),
+    'platforms-gate.yml still filters the other run\'s job list by a pattern: the required set must be every job that run lists',
   );
-  assert.match(
-    gate,
-    /carries a group, and a verdict must be a flat alternation/,
-    'platforms-gate.yml no longer refuses a grouped verdict, which cannot be split into the jobs each of which must run',
+  assert.ok(
+    gate.includes('grep -Ev') && gate.includes('|success$'),
+    'platforms-gate.yml no longer requires success and nothing else: a skipped, cancelled or timed-out job must refuse',
+  );
+  assert.ok(
+    gate.includes('exempt:') && gate.includes('EXEMPT:'),
+    'platforms-gate.yml no longer takes an exempt list, which is the only thing that can break the mutual wait between the two pipelines',
   );
 
-  // The desktop publishes only once the phone's upload has concluded, so the
-  // verdict it passes for the mobile pipeline must name that job.
-  assert.match(
-    read('release.yml'),
-    /^\s*verdict:\s*'.*\^release\$.*'\s*$/m,
-    'release.yml no longer names the mobile release job in its verdict, so the desktop can publish before TestFlight holds the build',
+  // The desktop publishes only once the phone's upload has concluded, and the
+  // mobile upload only once the desktop built, so release.yml exempts NOTHING
+  // and mobile-pipeline.yml exempts exactly the two desktop jobs that wait on it.
+  assert.ok(
+    /^\s*exempt:\s*''\s*$/m.test(read('release.yml')),
+    'release.yml exempts something: the mobile release job, where the TestFlight upload and the wait for VALID live, must be inside the gate',
   );
+  assert.ok(
+    /^\s*exempt:\s*'\^release\$\|\^every platform must be green'\s*$/m.test(read('mobile-pipeline.yml')),
+    'mobile-pipeline.yml no longer exempts exactly the two desktop jobs that cannot conclude before the upload: its publish job and its own call of the gate',
+  );
+  assert.ok(
+    !/^\s*verdict:/m.test(read('release.yml')) && !/^\s*verdict:/m.test(read('mobile-pipeline.yml')),
+    'a pipeline still passes a verdict, so the required set is a named subset rather than the other run\'s whole job list',
+  );
+});
+
+test('every workflow run block is a shell program bash can parse', () => {
+  // ★ The class this catches, measured on main 2026-09-21. The change that made
+  // the gate require every job merged on green CI while its `run` block did not
+  // parse: `bash` died with 'syntax error near unexpected token' a second into the
+  // gate job, both gates refused, and NOTHING published from main while every
+  // workflow's own checks reported success. No test ran the shell at all, because
+  // the guards around it match strings, and a string that matches can still be a
+  // program that cannot run.
+  //
+  // So every `run: |` block of every workflow goes through the parser. `bash -n`
+  // reads the whole program and reports a syntax error without running any of it,
+  // so this needs no credentials, no network and no side effects.
+  let blocks = 0;
+  for (const file of WORKFLOWS) {
+    const lines = read(file).split('\n');
+    for (let i = 0; i < lines.length; i += 1) {
+      if (lines[i].trim() !== 'run: |') continue;
+      const indent = lines[i].length - lines[i].trimStart().length;
+      const body = [];
+      for (let j = i + 1; j < lines.length; j += 1) {
+        if (lines[j].trim() && lines[j].length - lines[j].trimStart().length <= indent) break;
+        body.push(lines[j].slice(indent + 2));
+        i = j;
+      }
+      blocks += 1;
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-shell-'));
+      const script = path.join(dir, `${file}.sh`);
+      fs.writeFileSync(script, `${body.join('\n')}\n`);
+      try {
+        execFileSync('bash', ['-n', script], { stdio: ['ignore', 'ignore', 'pipe'] });
+      } catch (error) {
+        const said = error.stderr ? error.stderr.toString().trim() : error.message;
+        assert.fail(`${file}: the run block starting at line ${i + 1} is not a shell program bash can parse: ${said}`);
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  assert.ok(blocks >= 4, `only ${blocks} run blocks were checked, so this guard is not covering the workflows`);
 });
