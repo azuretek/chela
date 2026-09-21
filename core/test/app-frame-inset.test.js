@@ -17,6 +17,7 @@ import {
   FRAME_INSET_PROPERTIES,
   FRAME_INSET_MARKER,
   FRAME_INSET_SELECTORS,
+  FRAME_INSET_BOUND_SELECTORS,
 } from '../app-frame-inset.js';
 
 function makeDom() {
@@ -62,12 +63,48 @@ test('the first paint is bounded: installation publishes the frame and installs 
   for (const selector of FRAME_INSET_SELECTORS) {
     assert.ok(css.includes(':root[' + FRAME_INSET_MARKER + '] ' + selector), selector + ' is named in the rule');
   }
-  assert.ok(css.includes('top: var(' + FRAME_INSET_PROPERTIES.top + ', 0px) !important'), 'the leading edge lands on the frame');
-  assert.ok(css.includes('bottom: var(' + FRAME_INSET_PROPERTIES.bottom + ', 0px) !important'), 'and so does the trailing edge');
+  assert.ok(
+    css.includes('margin-block-start: var(' + FRAME_INSET_PROPERTIES.top + ', 0px) !important'),
+    'the leading edge is taken with a MARGIN, which insets a box without over-constraining one the page anchored by its own edges',
+  );
+  assert.ok(
+    css.includes('margin-block-end: var(' + FRAME_INSET_PROPERTIES.bottom + ', 0px) !important'),
+    'and so is the trailing edge',
+  );
+  assert.ok(
+    !/\btop: var\(|\bbottom: var\(|\btop:|\bbottom:/.test(css),
+    'no edge is forced, because forcing the leading edge of a box the page anchored by its trailing one reparents it to the frame top',
+  );
   assert.ok(css.includes('max-height: calc(100dvh'), 'the height cap is the visible viewport, not the largest one');
   assert.ok(!/(^|[^d])100vh/.test(css), 'a phone 100vh is the LARGEST viewport, so it must not decide the height');
   assert.ok(!css.includes('body'), 'the page shell keeps the whole display: the nav drawer is a 100dvh surface');
   assert.equal(created[0].attributes[FRAME_INSET_MARKER], '', 'the sheet is marked like the global it pairs with');
+
+  for (const selector of FRAME_INSET_BOUND_SELECTORS) {
+    assert.ok(
+      css.includes(':root[' + FRAME_INSET_MARKER + '] ' + selector + ' {'),
+      selector + ' is named in the bounded group',
+    );
+  }
+  const bounded = css.slice(css.indexOf(':root[' + FRAME_INSET_MARKER + '] .shell {'));
+  assert.ok(bounded.includes('max-height: calc(100dvh'), 'the page shell is capped to the frame');
+  assert.ok(
+    !bounded.includes('margin'),
+    'and takes no offset: it sits inside the content box the client already padded, so an offset would apply that padding twice',
+  );
+});
+
+test('the bounded group is the pages own viewport-height container, which the cap alone can hold', () => {
+  const { created } = run(installation({ top: 59, bottom: 34 }));
+  const css = created[0].textContent;
+  assert.ok(
+    css.includes('.shell'),
+    "the page's shell is sized in dvh, which is the DISPLAY: padding the body pushes its block end past the frame's bottom edge",
+  );
+  assert.ok(
+    !css.includes('body'),
+    'the cap is not written against the body, whose own box is the frame the client already padded',
+  );
 });
 
 test('a client whose page already excludes its chrome publishes zeros and stays inert', () => {
@@ -113,6 +150,7 @@ test('the spec fields reach the script as data, so neither client restates them'
   const config = JSON.parse(statement.slice(statement.indexOf('{'), statement.lastIndexOf(';')));
   assert.deepEqual(config.properties, FRAME_INSET_PROPERTIES);
   assert.deepEqual(config.selectors, FRAME_INSET_SELECTORS);
+  assert.deepEqual(config.boundSelectors, FRAME_INSET_BOUND_SELECTORS);
   assert.equal(config.marker, FRAME_INSET_MARKER);
 });
 
