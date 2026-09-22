@@ -7,7 +7,7 @@ import SwiftUI
 /// surface, notices, the gateway picker) hangs off `ContentView`, because this
 /// scene owns a window and nothing else.
 @main
-struct ClawApp: App {
+struct ChelaApp: App {
     init() {
         #if DEBUG
         // A debug run may be launched pointed at a gateway with a token in the

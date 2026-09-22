@@ -72,11 +72,11 @@ final class NamingParityTests: XCTestCase {
     /// The two keys a home screen, TestFlight and the App Store read.
     func testThePlistNamesMirrorTheSpec() throws {
         let plist = try Fixtures.root()
-            .appendingPathComponent("mobile/Claw/Info.plist")
+            .appendingPathComponent("mobile/Chela/Info.plist")
         let data = try Data(contentsOf: plist)
         let raw = try PropertyListSerialization.propertyList(from: data, format: nil)
         guard let entries = raw as? [String: Any] else {
-            return XCTFail("mobile/Claw/Info.plist is not a dictionary")
+            return XCTFail("mobile/Chela/Info.plist is not a dictionary")
         }
 
         let expected = try spec().product
@@ -106,15 +106,15 @@ final class NamingParityTests: XCTestCase {
     /// The app's own version, which is the plist the release workflow stamps
     /// rather than a second place to keep the number in step.
     func testTheBuildVersionComesFromTheBundle() throws {
-        let plist = try Fixtures.root().appendingPathComponent("mobile/Claw/Info.plist")
+        let plist = try Fixtures.root().appendingPathComponent("mobile/Chela/Info.plist")
         let data = try Data(contentsOf: plist)
         let raw = try PropertyListSerialization.propertyList(from: data, format: nil)
-        let entries = try XCTUnwrap(raw as? [String: Any], "mobile/Claw/Info.plist is not a dictionary")
+        let entries = try XCTUnwrap(raw as? [String: Any], "mobile/Chela/Info.plist is not a dictionary")
 
         // The source plist names the build setting rather than a literal, so the
         // built bundle is the only place a value exists.
-        XCTAssertEqual(entries["ClawBuildVersion"] as? String, "$(CLAW_BUILD_VERSION)")
-        let stamped = Bundle.main.object(forInfoDictionaryKey: "ClawBuildVersion") as? String
+        XCTAssertEqual(entries["ChelaBuildVersion"] as? String, "$(CLAW_BUILD_VERSION)")
+        let stamped = Bundle.main.object(forInfoDictionaryKey: "ChelaBuildVersion") as? String
         XCTAssertFalse(Naming.buildVersion.isEmpty)
         XCTAssertNotEqual(Naming.buildVersion, "0", "the build was not stamped with a version")
         XCTAssertEqual(Naming.buildVersion, stamped ?? "", "the reader and the bundle disagree")

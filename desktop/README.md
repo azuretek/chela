@@ -27,7 +27,7 @@ away.
 ## 1. Get the app
 
 **From a release.** Take the installer for your platform from
-[Releases](https://github.com/azuretek/claw-control-ui/releases):
+[Releases](https://github.com/azuretek/chela/releases):
 
 - **Windows.** `chela-desktop-Setup-<version>-<arch>.exe`. Per-user, no admin.
 - **macOS.** Open the `.dmg` and drag to Applications.
@@ -39,7 +39,7 @@ away.
 kept current on a machine you already develop on:
 
 ```sh
-git clone https://github.com/azuretek/claw-control-ui.git
+git clone https://github.com/azuretek/chela.git
 cd claw-control-ui
 pnpm install             # the workspace install, at the repo root
 pnpm --filter chela-desktop run build:mac   # or build:win / build:linux

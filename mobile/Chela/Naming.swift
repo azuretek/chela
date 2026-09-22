@@ -101,7 +101,7 @@ enum Naming {
     /// update check compares against a feed. The fallback is for a build the
     /// workflow did not stamp.
     static var buildVersion: String {
-        if let identity = Bundle.main.object(forInfoDictionaryKey: "ClawBuildVersion") as? String,
+        if let identity = Bundle.main.object(forInfoDictionaryKey: "ChelaBuildVersion") as? String,
            !identity.isEmpty {
             return identity
         }

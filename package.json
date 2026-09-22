@@ -8,11 +8,11 @@
   "packageManager": "pnpm@12.1.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/azuretek/claw-control-ui.git"
+    "url": "git+https://github.com/azuretek/chela.git"
   },
-  "homepage": "https://github.com/azuretek/claw-control-ui",
+  "homepage": "https://github.com/azuretek/chela",
   "bugs": {
-    "url": "https://github.com/azuretek/claw-control-ui/issues"
+    "url": "https://github.com/azuretek/chela/issues"
   },
   "engines": {
     "node": ">=22"

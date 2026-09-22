@@ -157,7 +157,7 @@ named as deliberate rather than left to be discovered by a report.
 | `settings.js`, the filter's clear control | `gatewayFilter.focus()` | The reader pressed it, and the cursor goes back to the field they were filtering by. |
 | `settings.js`, the tab bar | `tab-<name>.focus()` on arrow, Home and End | The reader pressed the key, and moving focus within the tab list is the convention for a tab bar. |
 | `banner.js`, `banner.html` | No `focus()` call and no `autofocus` anywhere. Its controls are focusable | The reader may tab into the bar, which is an action and is why the bar must stay reachable by keyboard; nothing is ever pressed on them. |
-| `mobile/Claw/NoticeBanner.swift`, `ContentView.swift` | The banner is a plain SwiftUI overlay: no `@FocusState`, no `becomeFirstResponder`, no sheet for a notice | The phone's half of the same rule. A SwiftUI overlay appearing does not move focus, so nothing had to change; this client's fault was the desktop's view hierarchy, not a shared page. |
+| `mobile/Chela/NoticeBanner.swift`, `ContentView.swift` | The banner is a plain SwiftUI overlay: no `@FocusState`, no `becomeFirstResponder`, no sheet for a notice | The phone's half of the same rule. A SwiftUI overlay appearing does not move focus, so nothing had to change; this client's fault was the desktop's view hierarchy, not a shared page. |
 
 ## ★ The fourth rule: one gap between two blocks, and it comes from the scale
 
@@ -259,7 +259,7 @@ are painted from ONE background, so the top of the screen and the bottom are the
 colour by construction.** Reported 2026-09-18: "the color on the top and bottom of my
 screen being different, it should always flow".
 
-- **The page is laid out INSIDE the safe area** (see `mobile/Claw/ContentView.swift`),
+- **The page is laid out INSIDE the safe area** (see `mobile/Chela/ContentView.swift`),
   so neither strip is the page's to draw: it cannot paint a band the reader sees above
   or below itself, and whatever appears there is the app's paint.
 - **One painter, at the root, outside the safe area.** A `background` rather than an
@@ -283,7 +283,7 @@ design language and apply it to everything in our ui."*
 and the floor is the same everywhere.** The floor is `motion.minVisibleMs` in
 `spec/tokens.json` (900ms), and the primitive that applies it is
 `core/ui/motion.js` (`remainingVisibleMs`, `heldLongEnough`) on the desktop, with
-`mobile/Claw/Motion.swift` its iOS mirror so the two clients hold a transient the
+`mobile/Chela/Motion.swift` its iOS mirror so the two clients hold a transient the
 same length. A transient state shown at time T may be replaced no earlier than T +
 the floor: a caller with something newer to show waits out the remainder and then
 shows it; a caller with nothing newer ignores it.
@@ -313,7 +313,7 @@ was on a control, here it is on the banner, and the floor is what both need.
 
 **The primitive is clock-free and takes `now`**, so the rule can be exercised for
 every timing from one test run (`core/test/motion.test.js`, and the iOS mirror in
-`mobile/ClawTests/MotionParityTests.swift`) rather than by waiting real seconds. A
+`mobile/ChelaTests/MotionParityTests.swift`) rather than by waiting real seconds. A
 surface that owns a live timer (the desktop update lane, and the phone's
 `NoticeBoard`) reads the remainder and schedules its own replacement; a surface
 that cannot (a page) reads the same constant through the token layer.

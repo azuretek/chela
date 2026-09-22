@@ -1,6 +1,6 @@
-# Claw Core
+# Chela Core
 
-The platform-agnostic rules every Claw client shares. No Electron, no SwiftUI,
+The platform-agnostic rules every Chela client shares. No Electron, no SwiftUI,
 no disk, no clock: pure functions and the data they read, so the desktop app and
 the iOS app behave identically where it counts and cannot drift apart.
 
