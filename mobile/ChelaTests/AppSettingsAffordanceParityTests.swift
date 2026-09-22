@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import Claw
+@testable@testable import Chela
 
 /// Parity with `core/spec/app-settings-affordance.json`, the ONE owner of the
 /// injected script that adds the "App settings" control to the Control UI's
@@ -217,7 +217,7 @@ final class AppSettingsAffordanceParityTests: XCTestCase {
     }
 
     private func appSourceDirectory() throws -> URL {
-        try Fixtures.root().appendingPathComponent("mobile").appendingPathComponent("Claw")
+        try Fixtures.root().appendingPathComponent("mobile").appendingPathComponent("Chela")
     }
 }
 

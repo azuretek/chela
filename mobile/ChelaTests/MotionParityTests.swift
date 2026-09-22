@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import Claw
+@testable@testable import Chela
 
 /// Parity with `core/ui/motion.js` and the assertions in `core/test/motion.test.js`.
 ///

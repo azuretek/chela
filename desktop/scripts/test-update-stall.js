@@ -1,6 +1,6 @@
 // Prove the update download card is HONEST and CLEARABLE, on the real app.
 //
-// Abi, 2026-09-17, on the macOS desktop: a banner reading "Downloading Claw
+// Abi, 2026-09-17, on the macOS desktop: a banner reading "Downloading Chela
 // Control UI <version>. Starting the download." with the bar stuck at 0% and no
 // way to clear it. Two faults in one card, and this harness is the behavioural
 // proof of both, driven through the real UI:

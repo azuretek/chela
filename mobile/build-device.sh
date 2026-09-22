@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build Claw and install it on a connected iPhone.
+# Build Chela and install it on a connected iPhone.
 #
 # Why this exists rather than a team id in project.yml: the team is a personal
 # identifier, and project.yml is committed and shared. A team encoded there is a

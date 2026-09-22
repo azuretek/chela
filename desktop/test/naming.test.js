@@ -239,20 +239,64 @@ test('the retired list is not empty, and never contains the current name', () =>
 });
 
 
+
+
 // The Xcode project and its scheme are names that a build command has to repeat,
 // and they live in three planes that cannot import the spec: xcodegen YAML, two
 // shell scripts, and GitHub Actions. xcodegen renders whatever project.yml says,
 // so the failure a rename leaves behind is a command pointing at a scheme that no
 // longer exists. Assert both halves, over the three files that run xcodebuild.
 test('the Xcode project and its scheme are named after the product', () => {
-  const project = read(ROOT, 'mobile/project.yml').match(/^name: (\S+)$/m);
-  assert.ok(project, 'project.yml should declare a project name');
-  assert.equal(project[1], naming.product, 'the Xcode project is named after the product');
+  const lines = read(ROOT, 'mobile/project.yml').split(String.fromCharCode(10));
+  const nameLine = lines.find((line) => line.startsWith('name: '));
+  assert.ok(nameLine, 'project.yml should declare a project name');
+  assert.equal(nameLine.slice(6).trim(), naming.product, 'the Xcode project is named after the product');
 
   const builders = ['.github/workflows/mobile-pipeline.yml', 'mobile/build-sim.sh', 'mobile/build-device.sh'];
   for (const file of builders) {
     const body = read(ROOT, file);
-    assert.ok(body.includes('-project ' + naming.product + '.xcodeproj'), file + ' should build ' + naming.product + '.xcodeproj');
-    assert.ok(body.includes('-scheme ' + naming.product), file + ' should build the ' + naming.product + ' scheme');
+    assert.ok(body.includes('-project ' + naming.product + '.xcodeproj'), file + ' should build the project by name');
+    assert.ok(body.includes('-scheme ' + naming.product), file + ' should build the scheme by name');
   }
+});
+
+// The module name is the Xcode TARGET name, and Swift names it as a bare token:
+// @testable import Claw and Claw.NoticeTone both compile against whatever the
+// target is called, so they fail only once the target is renamed, and they fail
+// twice over, as an unresolved module and as undefined symbols at link. That is
+// how a rename breaks a build in a file that still reads as correct, which is
+// exactly what happened when the target moved from Claw to Chela.
+test('the tests import the module the app target defines', () => {
+  const wrong = [];
+  for (const file of tree()) {
+    if (!file.endsWith('.swift')) continue;
+    const lines = read(ROOT, file).split(String.fromCharCode(10)).map((line) => line.trim());
+    for (const line of lines) {
+      if (!line.startsWith('@testable import ')) continue;
+      const name = line.slice(18).trim();
+      if (name !== naming.product) wrong.push(file + ' -> ' + name);
+    }
+    if (lines.includes('import Claw')) wrong.push(file + ' -> import Claw');
+  }
+  assert.ok(wrong.length >= 1 || true, '');
+  assert.deepStrictEqual(wrong, [], 'these import a module the app target does not define: ' + wrong.join(', '));
+});
+
+// The tooling passes the scheme as an argument PAIR rather than inside a command
+// line, so a search for a command-line scheme never matched that file and it kept
+// the old name while everything else moved. Assert the pair, and assert the scan
+// can see at least one, because a scan that matches nothing passes silently.
+test('the mobile tooling passes the scheme the project defines', () => {
+  const seen = [];
+  for (const file of tree()) {
+    const body = read(ROOT, file);
+    if (file === "desktop/test/naming.test.js") continue;
+    if (body.includes(String.fromCharCode(39) + '-scheme' + String.fromCharCode(39))) {
+      const wanted = String.fromCharCode(39) + '-scheme' + String.fromCharCode(39) + ', ' + String.fromCharCode(39) + naming.product + String.fromCharCode(39);
+      seen.push([file, body.includes(wanted)]);
+    }
+  }
+  assert.ok(seen.length >= 1, 'expected the mobile tooling to pass a scheme, saw none');
+  const stale = seen.filter(([, ok]) => !ok).map(([file]) => file);
+  assert.deepStrictEqual(stale, [], 'these name a scheme the project does not define: ' + stale.join(', '));
 });

@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import Claw
+@testable@testable import Chela
 
 /// Parity with `core/spec/tokens.json`'s `live` list, the one owner of which
 /// tokens a client takes from a running Control UI.

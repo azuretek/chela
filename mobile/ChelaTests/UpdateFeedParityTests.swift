@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import Claw
+@testable@testable import Chela
 
 /// Parity with `core/feed.js`, proven against the same golden fixture the JS side
 /// asserts in `core/test/feed.test.js` (`core/fixtures/feed.json`).

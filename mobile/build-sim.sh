@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build the current Claw app, run it in the iOS Simulator, and drive it all the
+# Build the current Chela app, run it in the iOS Simulator, and drive it all the
 # way to a CONNECTED, paired state against the gateway, in one command, using a
 # REVOCABLE credential it cleans up afterward. Repeatable sim test harness.
 #

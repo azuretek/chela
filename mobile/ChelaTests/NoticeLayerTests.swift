@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import Claw
+@testable@testable import Chela
 
 /// Where the notice banner is drawn, which is what Abi reported on 2026-09-21: the
 /// same up-to-date notice appeared on the Settings surface and on the About
@@ -18,7 +18,7 @@ final class NoticeLayerTests: XCTestCase {
     /// The same `#filePath` walk the parity fixtures use, because an absolute path
     /// would pass on one machine and fail everywhere else.
     private func source(_ name: String) throws -> String {
-        let file = try Fixtures.root().appendingPathComponent("mobile").appendingPathComponent("Claw")
+        let file = try Fixtures.root().appendingPathComponent("mobile").appendingPathComponent("Chela")
             .appendingPathComponent(name)
         return try String(contentsOf: file, encoding: .utf8)
     }

@@ -344,7 +344,7 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
 
     /// The pin that records which Control UI this build targets, as it is read.
     ///
-    /// Claw wraps the Control UI and our own pages borrow ITS components, so the
+    /// Chela wraps the Control UI and our own pages borrow ITS components, so the
     /// revision those came out of is a fact about a reference rather than about
     /// this client, which is why it lives in one file both clients read
     /// (`core/spec/upstream-reference.json`) instead of a constant here. Bundled
