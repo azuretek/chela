@@ -7,8 +7,11 @@
     "`keychainItem` is an identity, not a name, which is why it holds a RETIRED product name on purpose. Electron's safeStorage finds its key through a Keychain item named `<app name> Safe Storage`; the item is found by name, so renaming the app does not move it, it looks up a different one and cannot read the credentials already on disk. It stays pinned to the name the item was created under, the same way the bundle ids below stay put when the product name changes.",
     "repo.name moved in its own change, right after the product rename, and the two rules are worth keeping apart. A PRODUCT rename must never move the slug: every clone URL, CI checkout and gh invocation points at it. When the SLUG does move it is its own change, with its own sweep (the azuretek-reference test in test/naming.test.js) and a git remote set-url in every checkout.",
     "The product is named Chela, the crustacean term for a claw: the same animal as OpenClaw, without adding to the pile of third-party dashboards whose names begin with it, and nothing like any product already in this space."
+,
+    "The full name exists for exactly one reason: the App Store and TestFlight record has to be a unique string, and the plain name is held by another developer. Everything a person reads inside the app is product, so this value is not wired into any surface a test asserts. It is recorded here because this file owns every name a person can read, and because whoever next finds a store listing under a different name needs to know that difference is deliberate rather than drift."
   ],
   "product": "Chela",
+  "fullName": "Chela Assistant",
   "repo": {
     "owner": "azuretek",
     "name": "chela"
