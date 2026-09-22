@@ -1,5 +1,5 @@
 {
-  "description": "sentence() and the keyed notice store as golden pairs. Both clients reproduce these: core/test/fixtures.test.js asserts them against core/notices.js, and mobile/ClawTests/NoticesParityTests.swift asserts them against the Swift port. Regenerate is manual; this pins the four tones, their rank, the replace-don't-stack rule and the read/clear split.",
+  "description": "sentence() and the keyed notice store as golden pairs. Both clients reproduce these: core/test/fixtures.test.js asserts them against core/notices.js, and mobile/ChelaTests/NoticesParityTests.swift asserts them against the Swift port. Regenerate is manual; this pins the four tones, their rank, the replace-don't-stack rule and the read/clear split.",
   "tones": {
     "error": "error",
     "warn": "warn",

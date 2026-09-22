@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The home-screen label and the name TestFlight shows. It is the product
+	     name, which is Chela, and the Xcode target, the generated project and the
+	     directory all follow it, so nothing here restates a name the build already
+	     knows.
+
+	     CFBundleName is a literal rather than a PRODUCT_NAME substitution only
+	     because this plist is a file in the repo rather than generated, and the
+	     parity test asserts both keys against core/spec/naming.json.
+
+	     The bundle identifier below deliberately does NOT follow the name: the App
+	     Store record, the provisioning profiles and the Keychain access group are
+	     all found by it, so renaming the product leaves it alone. -->
+	<key>CFBundleDisplayName</key>
+	<string>Chela</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<!-- Which app icon this bundle uses, and it is here because App Store
+	     Connect rejected an upload without it (ITMS-90713).
+
+	     Xcode writes this key itself when the asset catalog holds a real app
+	     icon, but it writes it nested under CFBundleIcons, and an app whose
+	     AppIcon set is empty gets neither copy: the build succeeds, the
+	     plist looks fine, and Apple is the first thing to notice. Declaring
+	     it here means the key exists in the source rather than appearing as
+	     a side effect of the catalog, and the comment in project.yml next to
+	     ASSETCATALOG_COMPILER_APPICON_NAME is still the place the icon set is
+	     chosen.
+
+	     The value is the build setting rather than the literal `AppIcon`, so
+	     there is one owner: renaming the icon set in project.yml moves this
+	     key with it instead of leaving a stale name that Apple would reject
+	     for naming an icon the bundle does not contain. -->
+	<key>CFBundleIconName</key>
+	<string>$(ASSETCATALOG_COMPILER_APPICON_NAME)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Chela</string>
+	<key>CFBundlePackageType</key>
+	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- The app's own identity, `X.Y.Z-dev.<count>.<sha>` on a dev build and
+	     `X.Y.Z` on a release. CFBundleShortVersionString cannot hold it: App
+	     Store Connect accepts only three dot separated integers there, so a dev
+	     build and the release it precedes would otherwise be indistinguishable
+	     to the app itself. The release workflow supplies the value; a local
+	     build reports its marketing version instead. -->
+	<key>ChelaBuildVersion</key>
+	<string>$(CLAW_BUILD_VERSION)</string>
+	<!-- Export compliance, answered here so a build does not sit in TestFlight
+	     asking for it. `false` means the app uses no encryption that is not
+	     exempt, which is the case: the only cryptography in the app is what
+	     WebKit and the operating system provide for HTTPS and the Keychain, and
+	     neither is something we implemented. Adding a bundled cryptographic
+	     implementation would make this answer wrong, not stale. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+
+	<!-- No NSAppTransportSecurity key, and that is a decision rather than an
+	     oversight. The gateway this app loads is a Tailscale Serve address whose
+	     certificate is a real one, so nothing needs an exception, and
+	     NSAllowsArbitraryLoads would weaken every other load in the app to solve
+	     a problem this phase does not have. The gateway's own :18789 listener is
+	     self-signed and is Phase 4's problem; pinning a fingerprint is the fix
+	     for it, not turning ATS off. -->
+
+	<!-- SwiftUI's App lifecycle brings its own scene; this only declares that
+	     the app is single-window, which is what a phone client is. -->
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+
+	<!-- An empty launch screen is a real one. Without the key at all, iOS
+	     assumes the app cannot size itself to the display and letterboxes it at
+	     an old device size. -->
+	<key>UILaunchScreen</key>
+	<dict/>
+
+	<!-- Up is a phone orientation and upside-down is not, the same default
+	     Apple's own iOS template ships. The web view is laid out by the page, so
+	     it rotates with the device without any native work. -->
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+
+	<!-- An iPad key: it opts the app out of multitasking. The app is iPhone only
+	     (TARGETED_DEVICE_FAMILY = 1), so this is inert today and here to keep
+	     that intent explicit if a tablet build is ever considered. -->
+	<key>UIRequiresFullScreen</key>
+	<true/>
+
+	<key>UIStatusBarStyle</key>
+	<string>UIStatusBarStyleDefault</string>
+</dict>
+</plist>

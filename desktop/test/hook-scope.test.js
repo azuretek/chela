@@ -10,8 +10,8 @@ import assert from 'node:assert/strict';
 import { needsDesktopWork, decisionFor } from '../../scripts/hook-scope.mjs';
 
 test('a mobile-only change needs no desktop hook work', () => {
-  assert.equal(needsDesktopWork(['mobile/Claw/App.swift', 'mobile/project.yml']), false);
-  assert.equal(decisionFor(['mobile/Claw/App.swift']), 'skip');
+  assert.equal(needsDesktopWork(['mobile/Chela/App.swift', 'mobile/project.yml']), false);
+  assert.equal(decisionFor(['mobile/Chela/App.swift']), 'skip');
 });
 
 test('docs, CI and a JSON-only change need no desktop hook work', () => {

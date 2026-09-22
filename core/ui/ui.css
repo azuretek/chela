@@ -241,7 +241,7 @@ html, body {
 
    The two safe-area lines below are for the phone, where this page is laid out
    edge to edge in a web view that covers the whole screen (see
-   mobile/Claw/SettingsView.swift) and has to inset its own content from the
+   mobile/Chela/SettingsView.swift) and has to inset its own content from the
    status bar and the home indicator. They resolve to zero in every Electron
    window, which has no safe area, so the desktop keeps exactly the 58px and 24px
    above: `env()` is 0 there, and `max()` picks the literal. Written as an

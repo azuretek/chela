@@ -43,7 +43,7 @@ test('inside an AppImage the entry points at the AppImage, not execPath', () => 
   // exists by the time the next login reads it, and fails silently forever.
   const cmd = autostart.launchCommand({
     env: { APPIMAGE: '/home/example-user/Apps/chela-desktop-1.0.1-x86_64.AppImage' },
-    execPath: '/tmp/.mount_ClawDe7fA2x/chela-desktop',
+    execPath: '/tmp/.mount_chela-d7fA2x/chela-desktop',
   });
   assert.equal(cmd, '/home/example-user/Apps/chela-desktop-1.0.1-x86_64.AppImage');
 });
@@ -54,11 +54,11 @@ test('outside an AppImage it falls back to the running executable', () => {
 });
 
 test('the body is a valid desktop entry that runs the app', () => {
-  const body = autostart.entryBody({ exec: '/home/example-user/Claw.AppImage' });
+  const body = autostart.entryBody({ exec: '/home/example-user/chela-desktop.AppImage' });
   assert.match(body, /^\[Desktop Entry\]$/m);
   assert.match(body, /^Type=Application$/m);
   assert.match(body, /^Name=Chela$/m);
-  assert.match(body, /^Exec="\/home\/example-user\/Claw\.AppImage"$/m);
+  assert.match(body, /^Exec="\/home\/example-user\/chela-desktop\.AppImage"$/m);
   assert.match(body, /^Terminal=false$/m);
   // Redundant per the spec, but it is what GNOME Tweaks writes, and some
   // versions read its absence as disabled.
@@ -73,7 +73,7 @@ test('start-hidden reaches the entry as the flag main.js parses', () => {
 
 test('a path with spaces stays one argument', () => {
   // "~/My Apps/Chela.AppImage" unquoted would be read as three.
-  assert.match(autostart.entryBody({ exec: '/home/example-user/My Apps/Claw.AppImage' }), /^Exec="\/home\/example-user\/My Apps\/Claw\.AppImage"$/m);
+  assert.match(autostart.entryBody({ exec: '/home/example-user/My Apps/chela-desktop.AppImage' }), /^Exec="\/home\/example-user\/My Apps\/chela-desktop\.AppImage"$/m);
 });
 
 test('shell metacharacters in a path are escaped, not executed', () => {
@@ -103,12 +103,12 @@ function fakeFs() {
 test('enabling writes the entry', () => {
   const fs = fakeFs();
   const r = autostart.apply({
-    enabled: true, fs, env: { APPIMAGE: '/home/example-user/Claw.AppImage' }, home: '/home/example-user',
+    enabled: true, fs, env: { APPIMAGE: '/home/example-user/chela-desktop.AppImage' }, home: '/home/example-user',
   });
   assert.equal(r.ok, true);
   assert.equal(r.wrote, true);
   assert.deepEqual(fs.dirs, [path.join('/home/example-user', '.config', 'autostart')]);
-  assert.match(fs.files.get(r.path), /Exec="\/home\/example-user\/Claw\.AppImage"/);
+  assert.match(fs.files.get(r.path), /Exec="\/home\/example-user\/chela-desktop\.AppImage"/);
 });
 
 test('disabling removes it rather than writing a disabled one', () => {
@@ -124,9 +124,9 @@ test('enabling rewrites even when already enabled', () => {
   // The AppImage's path changes the moment someone moves or renames it, and a
   // stale Exec is precisely the silent failure this module exists to avoid.
   const fs = fakeFs();
-  autostart.apply({ enabled: true, fs, env: { APPIMAGE: '/old/Claw.AppImage' }, home: '/home/example-user' });
-  const r = autostart.apply({ enabled: true, fs, env: { APPIMAGE: '/new/Claw.AppImage' }, home: '/home/example-user' });
-  assert.match(fs.files.get(r.path), /Exec="\/new\/Claw\.AppImage"/);
+  autostart.apply({ enabled: true, fs, env: { APPIMAGE: '/old/chela-desktop.AppImage' }, home: '/home/example-user' });
+  const r = autostart.apply({ enabled: true, fs, env: { APPIMAGE: '/new/chela-desktop.AppImage' }, home: '/home/example-user' });
+  assert.match(fs.files.get(r.path), /Exec="\/new\/chela-desktop\.AppImage"/);
 });
 
 test('a write failure is reported, not swallowed', () => {

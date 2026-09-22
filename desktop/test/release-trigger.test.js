@@ -150,7 +150,7 @@ test('the non-release list covers what the rule names, and nothing else does', (
     'core/spec/feed.json',
     'core/ui/settings.js',
     'desktop/src/main.js',
-    'mobile/Claw/UpdateFeed.swift',
+    'mobile/Chela/UpdateFeed.swift',
     'mobile/project.yml',
     'package.json',
     'pnpm-lock.yaml',

@@ -6,7 +6,7 @@
 // tooling (desktop/scripts/version.js) re-exports these and adds the build-only
 // pieces on top (the dev-version scheme, the tag/package.json check); core/feed.js
 // reads a feed and asks "is this newer" with `release`/`compareRelease`; and the
-// iOS client ports the same rule (mobile/Claw/Version.swift), proven against the
+// iOS client ports the same rule (mobile/Chela/Version.swift), proven against the
 // golden fixture in fixtures/version.json that desktop/test/version.test.js
 // asserts. One rule, one comparator, three consumers.
 //

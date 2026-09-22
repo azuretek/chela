@@ -1,6 +1,6 @@
 # The Xcode project, described once and generated.
 #
-# `Claw.xcodeproj` is build output, not source. This file is the single source of
+# `Chela.xcodeproj` is build output, not source. This file is the single source of
 # truth for the project's shape: xcodegen renders the project from it, and the
 # rendered copy is gitignored, so there is exactly one owner. A committed
 # project file would drift the first time someone changed a setting in the Xcode
@@ -12,7 +12,7 @@
 #
 #     cd mobile && xcodegen generate
 
-name: Claw
+name: Chela
 
 options:
   bundleIdPrefix: com.azuretek
@@ -40,11 +40,11 @@ settings:
     SWIFT_VERSION: "6.0"
 
 targets:
-  Claw:
+  Chela:
     type: application
     platform: iOS
     sources:
-      - path: Claw
+      - path: Chela
       # The client-context spec, bundled rather than mirrored.
       #
       # Nine of the specs this app shares with the desktop are mirrored as Swift
@@ -146,7 +146,7 @@ targets:
       # The spec travels with them because the page cannot read it at runtime any
       # more than it can here: it is a file:// document with `default-src 'none'`,
       # so the split arrives through the host instead, as it stands. See
-      # mobile/Claw/SettingsSpec.swift.
+      # mobile/Chela/SettingsSpec.swift.
       - path: ../core/ui/settings.html
         buildPhase: resources
       - path: ../core/ui/settings.js
@@ -243,7 +243,7 @@ targets:
         # The plist is a file in the repo rather than generated, because Phase 3
         # and 4 add entitlement-adjacent keys (Keychain access groups, ATS
         # notes) that are easier to review as a diff than as build settings.
-        INFOPLIST_FILE: Claw/Info.plist
+        INFOPLIST_FILE: Chela/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
@@ -252,33 +252,33 @@ targets:
         # and claiming support would mean supporting it.
         TARGETED_DEVICE_FAMILY: "1"
 
-  ClawTests:
+  ChelaTests:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - path: ClawTests
+      - path: ChelaTests
     dependencies:
-      - target: Claw
+      - target: Chela
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.azuretek.claw-mobile.tests
         GENERATE_INFOPLIST_FILE: YES
 
 schemes:
-  Claw:
+  Chela:
     build:
       targets:
-        Claw: all
+        Chela: all
         # Built for the test action only: the verify step builds the app, and
         # pulling the test bundle in would make that build do work no one asked
         # for.
-        ClawTests: [test]
+        ChelaTests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
-        - ClawTests
+        - ChelaTests
     profile:
       config: Release
     analyze:

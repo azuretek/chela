@@ -16,8 +16,8 @@
 // asset comment, a doc, and the README's own release filenames).
 //
 // Two surfaces are deliberately not asserted here, because they already have a
-// better witness: `mobile/Claw/Info.plist` and the Swift mirror are asserted
-// from the Swift side, where the value is used (mobile/ClawTests/
+// better witness: `mobile/Chela/Info.plist` and the Swift mirror are asserted
+// from the Swift side, where the value is used (mobile/ChelaTests/
 // NamingParityTests.swift), and the profile-migration constants are asserted
 // through the behaviour they cause in test/profile.test.js.
 
@@ -236,4 +236,47 @@ test('every azuretek reference in the tree names the repo the spec names', () =>
 test('the retired list is not empty, and never contains the current name', () => {
   assert.ok(naming.retired.length > 0, 'a rename that leaves this empty has nothing to sweep for');
   assert.ok(!naming.retired.includes(naming.product), 'the current name cannot also be retired');
+});
+
+
+
+
+// The Xcode project and its scheme are names that a build command has to repeat,
+// and they live in three planes that cannot import the spec: xcodegen YAML, two
+// shell scripts, and GitHub Actions. xcodegen renders whatever project.yml says,
+// so the failure a rename leaves behind is a command pointing at a scheme that no
+// longer exists. Assert both halves, over the three files that run xcodebuild.
+test('the Xcode project and its scheme are named after the product', () => {
+  const lines = read(ROOT, 'mobile/project.yml').split(String.fromCharCode(10));
+  const nameLine = lines.find((line) => line.startsWith('name: '));
+  assert.ok(nameLine, 'project.yml should declare a project name');
+  assert.equal(nameLine.slice(6).trim(), naming.product, 'the Xcode project is named after the product');
+
+  const builders = ['.github/workflows/mobile-pipeline.yml', 'mobile/build-sim.sh', 'mobile/build-device.sh'];
+  for (const file of builders) {
+    const body = read(ROOT, file);
+    assert.ok(body.includes('-project ' + naming.product + '.xcodeproj'), file + ' should build the project by name');
+    assert.ok(body.includes('-scheme ' + naming.product), file + ' should build the scheme by name');
+  }
+});
+
+
+
+// The tooling passes the scheme as an argument PAIR rather than inside a command
+// line, so a search for a command-line scheme never matched that file and it kept
+// the old name while everything else moved. Assert the pair, and assert the scan
+// can see at least one, because a scan that matches nothing passes silently.
+test('the mobile tooling passes the scheme the project defines', () => {
+  const seen = [];
+  for (const file of tree()) {
+    const body = read(ROOT, file);
+    if (file === "desktop/test/naming.test.js") continue;
+    if (body.includes(String.fromCharCode(39) + '-scheme' + String.fromCharCode(39))) {
+      const wanted = String.fromCharCode(39) + '-scheme' + String.fromCharCode(39) + ', ' + String.fromCharCode(39) + naming.product + String.fromCharCode(39);
+      seen.push([file, body.includes(wanted)]);
+    }
+  }
+  assert.ok(seen.length >= 1, 'expected the mobile tooling to pass a scheme, saw none');
+  const stale = seen.filter(([, ok]) => !ok).map(([file]) => file);
+  assert.deepStrictEqual(stale, [], 'these name a scheme the project does not define: ' + stale.join(', '));
 });

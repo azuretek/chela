@@ -15,10 +15,10 @@
 //   desktop  nativeTheme.themeSource   = 'light' | 'dark' | 'system'
 //            (desktop/src/chrome.js applyTheme)
 //   iOS      overrideUserInterfaceStyle = .light | .dark | .unspecified
-//            (mobile/Claw/ThemeTokens.swift pageTrait, .unspecified IS 'system')
+//            (mobile/Chela/ThemeTokens.swift pageTrait, .unspecified IS 'system')
 //
 // The mapping is a one-line adapter on each side; the DECISION is here, and
-// mobile/ClawTests/AppearanceParityTests.swift runs the same inputs through the
+// mobile/ChelaTests/AppearanceParityTests.swift runs the same inputs through the
 // Swift adapter and asserts the same answers, so the two cannot drift: a change
 // here fails there until it moves too, the same contract core/tokens.js has with
 // ThemeTokensParityTests.

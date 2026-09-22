@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build Claw and install it on a connected iPhone.
+# Build Chela and install it on a connected iPhone.
 #
 # Why this exists rather than a team id in project.yml: the team is a personal
 # identifier, and project.yml is committed and shared. A team encoded there is a
@@ -91,14 +91,14 @@ echo "== generating the Xcode project from project.yml"
 xcodegen generate
 
 echo "== building for the device"
-xcodebuild -project Claw.xcodeproj -scheme Claw \
+xcodebuild -project Chela.xcodeproj -scheme Chela \
   -destination "platform=iOS,id=$DEVICE" \
   -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
   DEVELOPMENT_TEAM="$TEAM" \
   -derivedDataPath ./build-device \
   build
 
-APP=./build-device/Build/Products/Debug-iphoneos/Claw.app
+APP=./build-device/Build/Products/Debug-iphoneos/Chela.app
 if [ ! -d "$APP" ]; then
   echo "error: build reported success but $APP is missing" >&2
   exit 1

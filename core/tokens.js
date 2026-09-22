@@ -12,7 +12,7 @@
 //
 // Platform-free: this derives CSS text and resolves names, and knows nothing
 // about Electron, a window or a web view. desktop/src/chrome.js decides when to
-// put the CSS on a page; mobile/Claw/NoticeTokens.swift mirrors the data.
+// put the CSS on a page; mobile/Chela/NoticeTokens.swift mirrors the data.
 //
 // One boundary worth stating plainly: these are *fallbacks*. Where a token name
 // is also in desktop/src/chrome.js THEME_TOKENS, a live Control UI theme

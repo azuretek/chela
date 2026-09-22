@@ -1,7 +1,7 @@
 {
   "name": "claw-core",
   "version": "1.0.0",
-  "description": "Platform-agnostic rules shared by every Claw client: gateway config model, token handoff, connection state, loading progress, notices, the client-context prompt block.",
+  "description": "Platform-agnostic rules shared by every Chela client: gateway config model, token handoff, connection state, loading progress, notices, the client-context prompt block.",
   "type": "module",
   "private": true,
   "author": "Abi Renhart",

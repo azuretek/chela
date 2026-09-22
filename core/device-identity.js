@@ -25,8 +25,8 @@
 // spec/device-identity.json so a Swift port and a later Android one share the
 // exact same source of truth and run identical injected bytes.
 //
-// Consumers: mobile/Claw/DeviceIdentityStore.swift (the Keychain that holds the
-// persisted identity) and mobile/Claw/DeviceIdentityBridge.swift (the capture
+// Consumers: mobile/Chela/DeviceIdentityStore.swift (the Keychain that holds the
+// persisted identity) and mobile/Chela/DeviceIdentityBridge.swift (the capture
 // handler) port these rules and prove themselves against
 // core/fixtures/device-identity.json; the desktop needs no bridge, because
 // Chromium already persists the page's localStorage across launches.

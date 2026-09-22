@@ -11,7 +11,7 @@
 //      the section's top;
 //   2. what the page paints behind and around its card. The page draws its card on
 //      a translucent wash (--scrim is --bg at 70%), and on the phone the web view
-//      behind it is painted by the HOST (mobile/Claw/AboutView.swift sets the
+//      behind it is painted by the HOST (mobile/Chela/AboutView.swift sets the
 //      web view and its scroll view to .systemBackground while the page reports its
 //      own --bg). Two shades meeting at the card's edge is what that composits to,
 //      so this reads the wash's own alpha and the two colours that meet;

@@ -4,7 +4,7 @@
 // The page marks the first chat.send after a reconnect with a reserved property
 // on its params (`__controlUiReconnectResume`), and the gateway accepts that
 // marker only from a client it counts as an operator UI. This client's page
-// connects with a NATIVE descriptor (mobile/Claw/NativeControlAuth.swift), so
+// connects with a NATIVE descriptor (mobile/Chela/NativeControlAuth.swift), so
 // the marker is never stripped for it, the field then fails chat.send's own
 // parameter validation, and the whole send is refused: the reader sees a message
 // that will never send, on a connection that is otherwise healthy.
@@ -20,9 +20,9 @@
 // on and the script itself live in spec/reconnect-resume-shim.json, so the
 // desktop, the phone and a later Android client run one copy of one script
 // rather than a port each. The iOS client bundles the spec and installs the
-// script through a WKUserScript; see mobile/Claw/ReconnectResumeShim.swift.
+// script through a WKUserScript; see mobile/Chela/ReconnectResumeShim.swift.
 //
-// Consumers: mobile/Claw/ReconnectResumeShim.swift installs these bytes at
+// Consumers: mobile/Chela/ReconnectResumeShim.swift installs these bytes at
 // document start, and core/test/reconnect-resume-shim.test.js drives them
 // against a fake window and WebSocket.
 
