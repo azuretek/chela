@@ -31,6 +31,11 @@ final class AppFrameInsetTests: XCTestCase {
             AppFrameInset.boundSelectors.contains(".shell"),
             "the page's own viewport-height container is bounded too: it is sized in dvh, which is the display rather than the padded box the client insets"
         )
+        XCTAssertEqual(
+            AppFrameInset.boundCapEdges,
+            ["top"],
+            "an in-flow container is bounded by the start edge alone: the far edge is the page's own to clear, and taking it off here leaves a second band under the composer"
+        )
     }
 
     func testTheInstallationHandsOverTheSpecThenTheNumbersThenTheScript() throws {
