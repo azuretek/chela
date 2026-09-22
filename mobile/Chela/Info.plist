@@ -2,7 +2,18 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	undefined
+	<!-- The home-screen label and the name TestFlight shows. It is the product
+	     name, which is Chela, and the Xcode target, the generated project and the
+	     directory all follow it, so nothing here restates a name the build already
+	     knows.
+
+	     CFBundleName is a literal rather than a PRODUCT_NAME substitution only
+	     because this plist is a file in the repo rather than generated, and the
+	     parity test asserts both keys against core/spec/naming.json.
+
+	     The bundle identifier below deliberately does NOT follow the name: the App
+	     Store record, the provisioning profiles and the Keychain access group are
+	     all found by it, so renaming the product leaves it alone. -->
 	<key>CFBundleDisplayName</key>
 	<string>Chela</string>
 	<key>CFBundleExecutable</key>
