@@ -1,6 +1,6 @@
 import XCTest
 
-@testable@testable import Chela
+@testable import Chela
 
 /// Parity with `core/updates.js`, proven against the same golden fixtures the JS
 /// side asserts in `core/test/updates.test.js`.

@@ -1,7 +1,7 @@
 import XCTest
 import UIKit
 
-@testable@testable import Chela
+@testable import Chela
 
 /// The one action that leaves this app.
 ///

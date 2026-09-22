@@ -1,7 +1,7 @@
 import SwiftUI
 import XCTest
 
-@testable@testable import Chela
+@testable import Chela
 
 /// Parity with `core/spec/tokens.json`, the one owner of the values both banners
 /// draw with.

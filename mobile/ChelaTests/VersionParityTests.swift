@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable@testable import Chela
+@testable import Chela
 
 /// Parity with `compare()`/`isNewer()` in `core/version.js`, proven
 /// against the same golden fixture the JS side asserts

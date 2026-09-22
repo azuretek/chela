@@ -1,6 +1,6 @@
 import XCTest
 
-@testable@testable import Chela
+@testable import Chela
 
 /// Where the notice banner is drawn, which is what Abi reported on 2026-09-21: the
 /// same up-to-date notice appeared on the Settings surface and on the About

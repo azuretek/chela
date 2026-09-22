@@ -1,6 +1,6 @@
 import XCTest
 
-@testable@testable import Chela
+@testable import Chela
 
 /// Parity with `core/spec/app-settings-affordance.json`, the ONE owner of the
 /// injected script that adds the "App settings" control to the Control UI's

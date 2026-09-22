@@ -1,6 +1,6 @@
 import XCTest
 
-@testable@testable import Chela
+@testable import Chela
 
 /// Parity with `core/spec/naming.json`, which is the ONE owner of the product
 /// name and of each client's shorthand.

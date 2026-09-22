@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable@testable import Chela
+@testable import Chela
 
 /// The gateway config model, against the golden cases both clients share.
 ///

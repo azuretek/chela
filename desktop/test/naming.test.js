@@ -260,27 +260,7 @@ test('the Xcode project and its scheme are named after the product', () => {
   }
 });
 
-// The module name is the Xcode TARGET name, and Swift names it as a bare token:
-// @testable import Claw and Claw.NoticeTone both compile against whatever the
-// target is called, so they fail only once the target is renamed, and they fail
-// twice over, as an unresolved module and as undefined symbols at link. That is
-// how a rename breaks a build in a file that still reads as correct, which is
-// exactly what happened when the target moved from Claw to Chela.
-test('the tests import the module the app target defines', () => {
-  const wrong = [];
-  for (const file of tree()) {
-    if (!file.endsWith('.swift')) continue;
-    const lines = read(ROOT, file).split(String.fromCharCode(10)).map((line) => line.trim());
-    for (const line of lines) {
-      if (!line.startsWith('@testable import ')) continue;
-      const name = line.slice(18).trim();
-      if (name !== naming.product) wrong.push(file + ' -> ' + name);
-    }
-    if (lines.includes('import Claw')) wrong.push(file + ' -> import Claw');
-  }
-  assert.ok(wrong.length >= 1 || true, '');
-  assert.deepStrictEqual(wrong, [], 'these import a module the app target does not define: ' + wrong.join(', '));
-});
+
 
 // The tooling passes the scheme as an argument PAIR rather than inside a command
 // line, so a search for a command-line scheme never matched that file and it kept

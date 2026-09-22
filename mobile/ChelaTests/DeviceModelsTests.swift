@@ -1,6 +1,6 @@
 import XCTest
 
-@testable@testable import Chela
+@testable import Chela
 
 /// The device name, where the About sheet and the client-context block take it from
 /// one table rather than two.

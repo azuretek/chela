@@ -1,6 +1,6 @@
 import XCTest
 
-@testable@testable import Chela
+@testable import Chela
 
 /// Parity with `core/appearance.js` `pageColorScheme`, proven against the same
 /// golden pairs the JS side asserts in `core/test/fixtures.test.js` from

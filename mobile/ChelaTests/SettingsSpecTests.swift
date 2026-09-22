@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable@testable import Chela
+@testable import Chela
 
 /// The shared settings surface, as this client carries and answers it.
 ///

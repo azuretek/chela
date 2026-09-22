@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable@testable import Chela
+@testable import Chela
 
 /// The shared About page, as this client carries and answers it.
 ///

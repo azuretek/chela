@@ -1,6 +1,6 @@
 import XCTest
 
-@testable@testable import Chela
+@testable import Chela
 
 /// Parity with `core/spec/reconnect-resume-shim.json`, the ONE owner of the
 /// reserved reconnect-resume property and of the injected script that drops it
