@@ -186,7 +186,7 @@ test('the block, framing and all, is still stripped from what the user reads', (
   const block = formatBlock({
     host: 'example-host', os: 'macOS 26.6.2 (arm64)', user: 'example-user',
     home: '/home/example-user', locale: 'en-US', timezone: 'Europe/London',
-    client: 'Claw Control UI (claw-desktop) 1.0.1',
+    client: 'Chela (chela-desktop) 1.0.1',
   });
   const sent = inject('what time is it?', block);
 
@@ -226,7 +226,7 @@ test('the model receives the block plus closing on the active turn, at frame lev
   const block = formatBlock({
     host: 'example-host', os: 'macOS 26.6.2 (arm64)', user: 'example-user',
     home: '/home/example-user', locale: 'en-US', timezone: 'Europe/London',
-    client: 'Claw Control UI (claw-desktop) 1.0.1',
+    client: 'Chela (chela-desktop) 1.0.1',
   });
   const socket = hookedSocket({ enabled: true, block });
   const sent = sentMessage(socket, 'what time is it?');
@@ -256,7 +256,7 @@ test('the model receives the block plus closing on the active turn, at frame lev
 const SAMPLE_FACTS = {
   host: 'example-host', os: 'macOS 26.6.2 (arm64)', user: 'example-user',
   home: '/home/example-user', locale: 'en-US', timezone: 'Europe/London',
-  client: 'Claw Control UI (claw-desktop) 1.0.1',
+  client: 'Chela (chela-desktop) 1.0.1',
 };
 
 /** The answer the gateway sends for one request id, with `editorText` on it. */
@@ -411,7 +411,7 @@ const WINDOWS_BLOCK_LINES = [
   'home: C:\\Users\\azure',
   'locale: en-US',
   'timezone: America/Los_Angeles',
-  'client: Claw Control UI (claw-desktop) 1.0.1-dev.279.9a58115cb1',
+  'client: Chela (chela-desktop) 1.0.1-dev.279.9a58115cb1',
   "----- end of client context; the user's message follows below -----",
 ];
 
@@ -568,8 +568,8 @@ test('the hook both clients install is the spec text, byte for byte', () => {
 });
 
 test('installing the script twice updates the configuration and hooks send once', () => {
-  const first = formatBlock({ host: 'example-host', client: 'Claw Control UI (claw-desktop) 1.0.0' });
-  const second = formatBlock({ host: 'example-host', client: 'Claw Control UI (claw-desktop) 1.0.0' });
+  const first = formatBlock({ host: 'example-host', client: 'Chela (chela-desktop) 1.0.0' });
+  const second = formatBlock({ host: 'example-host', client: 'Chela (chela-desktop) 1.0.0' });
   const context = { window: {}, WebSocket: class { send() {} } };
 
   vm.runInNewContext(clientScript({ enabled: true, block: first }), context);

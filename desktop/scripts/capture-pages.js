@@ -492,7 +492,7 @@ const PROBE = `(() => {
 // page, no back control, notices instead.
 const PAGES = [
   { name: 'settings', file: 'settings.html', state: SMALL_STATE, title: 'Settings', back: true },
-  { name: 'about', file: 'about.html', state: ABOUT_STATE, title: 'Claw Control UI', back: true, reference: true, clear: true },
+  { name: 'about', file: 'about.html', state: ABOUT_STATE, title: 'Chela', back: true, reference: true, clear: true },
   { name: 'banner', file: 'banner.html', state: BANNER_STATE, title: null, back: false, cards: true },
   // The sweep, which is a page of its own: a view sized to exactly one control. The
   // sweep flag is that half of the harness, and it is the only page here whose

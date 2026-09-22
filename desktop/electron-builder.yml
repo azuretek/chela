@@ -1,5 +1,5 @@
 appId: com.azuretek.claw-desktop
-productName: Claw Control UI
+productName: Chela
 copyright: Copyright © 2026 Abi Renhart
 
 directories:
@@ -107,7 +107,7 @@ mac:
   category: public.app-category.productivity
   icon: build/icon.png
   notarize: false
-  artifactName: claw-desktop-${version}-${arch}.${ext}
+  artifactName: chela-desktop-${version}-${arch}.${ext}
   target:
     - target: dmg
       arch: [arm64, x64]
@@ -155,7 +155,7 @@ win:
   # Default is "${productName} Setup ${version}.exe". Spaces make the file painful
   # to script against, notably over the Windows node exec, which splits argv
   # without honouring quotes.
-  artifactName: claw-desktop-Setup-${version}-${arch}.${ext}
+  artifactName: chela-desktop-Setup-${version}-${arch}.${ext}
 
 nsis:
   # Without this every release carried THREE installers: one per architecture,
@@ -178,7 +178,7 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: Claw Control UI
+  shortcutName: Chela
 
 # AppImage is the only Linux target, and that is an update decision rather than a
 # packaging preference. electron-updater ships four Linux updaters; AppImage is
@@ -194,19 +194,19 @@ nsis:
 # host CPU never has to match.
 #
 # artifactName matches the other two platforms. The default carries a space
-# ("Claw Control UI-1.0.0.AppImage"), and the released filename is what people type
+# ("Chela-1.0.0.AppImage"), and the released filename is what people type
 # into chmod.
 #
 # syncDesktopName pairs with `desktopName` in package.json, and matters more for
 # this app than for most. Electron sets WM_CLASS from the desktop entry name, and
 # that is how a desktop environment links a running window back to its .desktop
-# file. Without the pair, GNOME and KDE show Claw Control UI under a generic Electron
+# file. Without the pair, GNOME and KDE show Chela under a generic Electron
 # icon in the dock and in alt-tab, for an app that lives in the tray for weeks,
 # the icon is most of what anyone sees of it.
 linux:
   icon: build/icon.png
   category: Utility
-  artifactName: claw-desktop-${version}-${arch}.${ext}
+  artifactName: chela-desktop-${version}-${arch}.${ext}
   synopsis: Desktop shell for the OpenClaw Control UI
   syncDesktopName: true
   target:

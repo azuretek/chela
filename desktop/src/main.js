@@ -131,11 +131,11 @@ const buildStamp = buildInfo.read();
     // which none of them redirect, so running it here would move the profile of
     // whoever happens to be on this machine, which is the opposite of what an
     // isolated run is for. Leave the directory alone and use theirs.
-    console.log('[claw-desktop] isolated userData; not migrating the profile');
+    console.log('[chela-desktop] isolated userData; not migrating the profile');
   } else {
     const migration = profile.migrate(app.getPath('appData'));
-    if (migration.status === 'migrated') console.log(`[claw-desktop] migrated profile: ${migration.from} -> ${migration.to}`);
-    if (migration.status === 'failed') console.warn(`[claw-desktop] could not migrate profile (${migration.error}); starting fresh`);
+    if (migration.status === 'migrated') console.log(`[chela-desktop] migrated profile: ${migration.from} -> ${migration.to}`);
+    if (migration.status === 'failed') console.warn(`[chela-desktop] could not migrate profile (${migration.error}); starting fresh`);
     // Explicit rather than left to the default, which Electron derives from the
     // app name: the name is about to be overridden below, and a path that
     // silently follows it is how the profile ends up in two places.
@@ -151,7 +151,7 @@ const buildStamp = buildInfo.read();
   // design (see src/secrets.js): the item name is the whole diagnosis, and this
   // is the one line that shows which one the app is looking in.
   app.setName(profile.KEYCHAIN_NAME);
-  console.log(`[claw-desktop] credentials keychain item: ${profile.KEYCHAIN_NAME} Safe Storage`);
+  console.log(`[chela-desktop] credentials keychain item: ${profile.KEYCHAIN_NAME} Safe Storage`);
 }
 
 let mainWindow = null;
@@ -285,7 +285,7 @@ function promptMetadataConfig() {
 function installPromptMetadata(wc) {
   if (!wc || wc.isDestroyed() || originOf(wc.getURL()) !== activeOrigin()) return;
   wc.executeJavaScript(promptMetadata.clientScript(promptMetadataConfig()), true)
-    .catch((err) => console.warn(`[claw-desktop] prompt metadata hook failed: ${err.message}`));
+    .catch((err) => console.warn(`[chela-desktop] prompt metadata hook failed: ${err.message}`));
 }
 
 /**
@@ -324,7 +324,7 @@ function appSettingsAffordanceOptions() {
 function installAppSettingsAffordance(wc) {
   if (!wc || wc.isDestroyed() || originOf(wc.getURL()) !== activeOrigin()) return;
   wc.executeJavaScript(appSettingsAffordance.installation(appSettingsAffordanceOptions()), true)
-    .catch((err) => console.warn(`[claw-desktop] app settings affordance failed: ${err.message}`));
+    .catch((err) => console.warn(`[chela-desktop] app settings affordance failed: ${err.message}`));
 }
 
 /**
@@ -367,7 +367,7 @@ function publishFrameInsets() {
   if (key === lastFrameInsetKey) return;
   lastFrameInsetKey = key;
   wc.executeJavaScript(appFrameInset.setStatement(insets), true)
-    .catch((err) => console.warn(`[claw-desktop] app frame inset not published: ${err.message}`));
+    .catch((err) => console.warn(`[chela-desktop] app frame inset not published: ${err.message}`));
 }
 
 function layoutViews() {
@@ -623,7 +623,7 @@ function showConnectionFailure(detail) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const gw = config.activeGateway();
   const label = gw ? gw.label || gw.url : null;
-  console.warn(`[claw-desktop] cannot reach ${label || 'the gateway'}: ${detail.errorCode} ${detail.errorDescription}`);
+  console.warn(`[chela-desktop] cannot reach ${label || 'the gateway'}: ${detail.errorCode} ${detail.errorDescription}`);
   connection = {
     gatewayId: gw ? gw.id : null,
     phase: connectionState.nextPhase(connection.phase, { type: 'failed' }),
@@ -712,7 +712,7 @@ function loadActiveGateway() {
     if (!ok) return;
     const current = config.activeGateway();
     if (!current || current.id !== gw.id || current.url !== gw.url) {
-      console.log(`[claw-desktop] the active gateway changed while ${gw.url} was being identified; not connecting`);
+      console.log(`[chela-desktop] the active gateway changed while ${gw.url} was being identified; not connecting`);
       return;
     }
     beginGatewayConnect(gw);
@@ -785,7 +785,7 @@ function beginGatewayConnect(gw) {
   const creds = secrets.load(gw.id);
   const supplied = [creds.token && 'token', creds.password && 'password', creds.headers.length && `${creds.headers.length} header(s)`]
     .filter(Boolean).join(', ');
-  console.log(`[claw-desktop] connecting to ${gw.label || gw.url} <${gw.url}>${supplied ? ` (supplying ${supplied})` : ''}`);
+  console.log(`[chela-desktop] connecting to ${gw.label || gw.url} <${gw.url}>${supplied ? ` (supplying ${supplied})` : ''}`);
   const url = withTokenHandoff(gw.url, creds.token);
   // A payload on screen is never navigated away from just to find out whether a
   // fresh one exists: see createGatewayView for what a failed navigation does to
@@ -892,7 +892,7 @@ async function maybeRefreshForNewBuild(wc) {
   config.update({ swVersions: { ...config.get().swVersions, [origin]: version } });
   if (decision.action === 'record') return;
 
-  console.log(`[claw-desktop] control ui build changed at ${origin} (${seen} -> ${version}); clearing cache`);
+  console.log(`[chela-desktop] control ui build changed at ${origin} (${seen} -> ${version}); clearing cache`);
   selfReloading = true;
   await cache.clear(session.defaultSession, [origin]);
   loadActiveGateway();
@@ -907,7 +907,7 @@ async function clearCacheAndReload() {
   const gw = config.activeGateway();
   const active = activeOrigin();
   const origins = active ? [active] : gatewayOrigins();
-  console.log(`[claw-desktop] clearing cache for ${origins.join(', ') || '(no gateway)'}`);
+  console.log(`[chela-desktop] clearing cache for ${origins.join(', ') || '(no gateway)'}`);
   const results = await cache.clear(session.defaultSession, origins);
   // Drop the recorded ids too, so the load that follows records what it finds
   // instead of comparing against a build whose cache no longer exists.
@@ -989,7 +989,7 @@ async function clearOnAppUpgrade() {
   if (previous === current) return;
   config.update({ appBuild: current, swVersions: {} });
   if (!previous) return;
-  console.log(`[claw-desktop] app build changed (${previous} -> ${current}); clearing web cache`);
+  console.log(`[chela-desktop] app build changed (${previous} -> ${current}); clearing web cache`);
   await cache.clear(session.defaultSession, gatewayOrigins());
 }
 
@@ -1054,8 +1054,8 @@ function maybeAutofill(wc) {
   if (!creds.token && !creds.password) return;
   autofilled = true;
   wc.executeJavaScript(autofillScript(creds), true)
-    .then((result) => console.log(`[claw-desktop] login gate autofill: ${result}`))
-    .catch((err) => console.warn(`[claw-desktop] login gate autofill failed: ${err.message}`));
+    .then((result) => console.log(`[chela-desktop] login gate autofill: ${result}`))
+    .catch((err) => console.warn(`[chela-desktop] login gate autofill failed: ${err.message}`));
 }
 
 /* ------------------------------------------------------------ device pairing */
@@ -1115,7 +1115,7 @@ const pairingState = pairing.createState({
   // through a report. One place sees both.
   onChange: () => {
     const pairingNow = pairingState.isPairing();
-    if (pairingWasUp && !pairingNow) console.log('[claw-desktop] device pairing cleared; the pairing screen is down');
+    if (pairingWasUp && !pairingNow) console.log('[chela-desktop] device pairing cleared; the pairing screen is down');
     pairingWasUp = pairingNow;
     syncPairing();
   },
@@ -1152,10 +1152,10 @@ ipcMain.on('pairing:script', (event) => {
  */
 ipcMain.on('pairing:injected', (_event, report) => {
   if (report && report.ok) {
-    console.log('[claw-desktop] pairing observer installed (document start)');
+    console.log('[chela-desktop] pairing observer installed (document start)');
     return;
   }
-  console.warn(`[claw-desktop] pairing observer did not install (${(report && report.error) || 'no reason given'}); a pairing refusal will not surface`);
+  console.warn(`[chela-desktop] pairing observer did not install (${(report && report.error) || 'no reason given'}); a pairing refusal will not surface`);
 });
 
 /**
@@ -1190,10 +1190,10 @@ ipcMain.on('frame:inset-script', (event) => {
  */
 ipcMain.on('frame:injected', (_event, report) => {
   if (report && report.ok) {
-    console.log('[claw-desktop] app frame inset installed (document start)');
+    console.log('[chela-desktop] app frame inset installed (document start)');
     return;
   }
-  console.warn(`[claw-desktop] app frame inset did not install (${(report && report.error) || 'no reason given'}); a full-bleed Control UI surface can paint across our own notice band`);
+  console.warn(`[chela-desktop] app frame inset did not install (${(report && report.error) || 'no reason given'}); a full-bleed Control UI surface can paint across our own notice band`);
 });
 
 /**
@@ -1257,7 +1257,7 @@ function syncPairing() {
     // the rule and the tab come from the shared contract, and the pairing screen
     // is still there behind this for the approve command.
     if (!wasPairing && snap.route === ROUTE_SETTINGS_GATEWAYS) {
-      console.warn('[claw-desktop] this device has had its approval revoked; opening settings on the gateway list');
+      console.warn('[chela-desktop] this device has had its approval revoked; opening settings on the gateway list');
       openSettings({ tab: ROUTE_SETTINGS_TAB });
     }
     return;
@@ -1286,7 +1286,7 @@ function notifyPairingChanged() {
 function retryPairingConnect() {
   if (!pairingState.isPairing()) return;
   pairingState.connecting();
-  console.log('[claw-desktop] pairing: retrying the connect');
+  console.log('[chela-desktop] pairing: retrying the connect');
   loadActiveGateway();
 }
 
@@ -1316,7 +1316,7 @@ function retryPairingConnect() {
 function handleSocketDropped() {
   if (connection.phase !== connectionState.CONNECTED) return;
   if (pageReloading) return;
-  console.warn('[claw-desktop] the gateway closed the connection; showing the failure surface');
+  console.warn('[chela-desktop] the gateway closed the connection; showing the failure surface');
   payloadGateway = null;
   // Recorded so the OTHER half of this can happen: a socket that opens again on
   // its own means the gateway is back, and this app has no business sitting on its
@@ -1355,12 +1355,12 @@ function handlePairingReport(event, payload) {
     // cover was up. A load that fails leaves the failure surface exactly as it was.
     if (socketDropped) {
       socketDropped = false;
-      console.log('[claw-desktop] the gateway socket is open again; reconnecting');
+      console.log('[chela-desktop] the gateway socket is open again; reconnecting');
       loadActiveGateway();
     }
   } else {
     pairingState.closed(report.refusal);
-    console.warn(`[claw-desktop] gateway refused this device: ${report.refusal.reason}` +
+    console.warn(`[chela-desktop] gateway refused this device: ${report.refusal.reason}` +
       `${report.refusal.requestId ? ` (requestId: ${report.refusal.requestId})` : ''}; showing the pairing screen`);
   }
   // The screen and the recovery line both follow the phase through createState's
@@ -1579,7 +1579,7 @@ function createGatewayView({ attempt = false } = {}) {
       // owns the rule that decides it.
       if (attempt) promoteGatewayView(view);
       if (attempt && connection.phase === connectionState.PENDING) {
-        console.log('[claw-desktop] the attempt answered while this device awaited approval; taking its document into the window');
+        console.log('[chela-desktop] the attempt answered while this device awaited approval; taking its document into the window');
       }
       // The document on screen is this gateway's from here, and it stays
       // presentable while this connection does. The phase move below is the other
@@ -1696,7 +1696,7 @@ function startGatewayAttempt(gw, url) {
   if (attemptView && !attemptView.webContents.isDestroyed()) destroyGatewayView(attemptView);
   const view = createGatewayView({ attempt: true });
   attemptView = view;
-  console.log(`[claw-desktop] loading ${gw.label || gw.url} beside the payload on screen; a failure ends that payload's stay rather than leaving it up`);
+  console.log(`[chela-desktop] loading ${gw.label || gw.url} beside the payload on screen; a failure ends that payload's stay rather than leaving it up`);
   view.webContents.loadURL(url, FRESH_DOCUMENT);
 }
 
@@ -1833,7 +1833,7 @@ function applyStoredTheme(gatewayId) {
   const mode = config.themeFor(gatewayId);
   if (!mode || mode === currentTheme.mode) return;
   currentTheme = chrome.fallbackTheme(mode);
-  console.log(`[claw-desktop] theme: ${currentTheme.mode} (stored for this gateway)`);
+  console.log(`[chela-desktop] theme: ${currentTheme.mode} (stored for this gateway)`);
   chrome.applyTheme(currentTheme, mainWindow && !mainWindow.isDestroyed() ? [mainWindow] : []);
   refreshThemedPages();
 }
@@ -1856,7 +1856,7 @@ function adoptTheme(theme) {
   if (!changed) return;
 
   const modeChanged = theme.mode !== currentTheme.mode;
-  console.log(`[claw-desktop] theme: ${theme.mode} ${theme.surface} (${Object.keys(theme.tokens).length} tokens)`);
+  console.log(`[chela-desktop] theme: ${theme.mode} ${theme.surface} (${Object.keys(theme.tokens).length} tokens)`);
   // A resolved palette replaces the stated fallback, so the next time our pages
   // have nothing to draw from the line is printed again rather than suppressed
   // for the life of the process.
@@ -1969,7 +1969,7 @@ function openOverlay(name, opts = {}) {
   overlay.supervise(wc, {
     isCurrent: () => overlayViews.get(name) === view,
     close: () => closeOverlay(name),
-    log: (msg) => console.error(`[claw-desktop] ${name} overlay: ${msg}`),
+    log: (msg) => console.error(`[chela-desktop] ${name} overlay: ${msg}`),
   });
   mainWindow.contentView.addChildView(view);
   attachedViews.add(view);
@@ -2132,10 +2132,10 @@ async function openControlUiSettings() {
   try {
     asked = await wc.executeJavaScript(appSettingsAffordance.controlUiSettingsSource(), true);
   } catch (err) {
-    console.warn(`[claw-desktop] could not open the Control UI settings: ${err.message}`);
+    console.warn(`[chela-desktop] could not open the Control UI settings: ${err.message}`);
   }
   if (asked === true) await waitForControlUiSettings(wc);
-  else console.warn('[claw-desktop] the Control UI has no footer settings control to press; the reader stays on the page');
+  else console.warn('[chela-desktop] the Control UI has no footer settings control to press; the reader stays on the page');
   closeSettings();
 }
 
@@ -2177,13 +2177,13 @@ function waitForControlUiSettings(wc) {
     const deadline = Date.now() + appSettingsAffordance.CONTROL_UI_SETTINGS_READY_TIMEOUT_MS;
     const ask = () => {
       if (wc.isDestroyed()) {
-        console.warn('[claw-desktop] the gateway page went away while waiting for the Control UI settings');
+        console.warn('[chela-desktop] the gateway page went away while waiting for the Control UI settings');
         resolve(false);
         return;
       }
       const again = () => {
         if (Date.now() >= deadline) {
-          console.warn(`[claw-desktop] the Control UI did not render its settings page within ${appSettingsAffordance.CONTROL_UI_SETTINGS_READY_TIMEOUT_MS}ms; revealing anyway`);
+          console.warn(`[chela-desktop] the Control UI did not render its settings page within ${appSettingsAffordance.CONTROL_UI_SETTINGS_READY_TIMEOUT_MS}ms; revealing anyway`);
           resolve(false);
           return;
         }
@@ -2776,7 +2776,7 @@ let statedFallback = false;
 function stateFallbackPalette() {
   if (statedFallback) return;
   statedFallback = true;
-  console.log(`[claw-desktop] theme: no resolved palette, so our pages are using their own ${currentTheme.mode} fallback palette from ui.css`);
+  console.log(`[chela-desktop] theme: no resolved palette, so our pages are using their own ${currentTheme.mode} fallback palette from ui.css`);
 }
 
 async function applyThemeCss(wc) {
@@ -2963,7 +2963,7 @@ function beginBootAttempt() {
   const previous = config.get().bootMarker || null;
   bootVerdict = bootstrapHealth.assess(previous, { version });
   if (bootVerdict.bad) {
-    console.warn(`[claw-desktop] bootstrap: ${version} failed to come up ${bootVerdict.attempts} times in a row (last stage ${bootVerdict.stage || 'unknown'})`);
+    console.warn(`[chela-desktop] bootstrap: ${version} failed to come up ${bootVerdict.attempts} times in a row (last stage ${bootVerdict.stage || 'unknown'})`);
   }
   config.update({ bootMarker: bootstrapHealth.beginAttempt(previous, version) });
 }
@@ -3005,7 +3005,7 @@ function recordLastKnownGood() {
   const record = config.get().lastKnownGood;
   if (record && record.version === version) return;
   config.update({ lastKnownGood: { version, at: Date.now() } });
-  console.log(`[claw-desktop] bootstrap: ${version} came up cleanly; pinned as last-known-good`);
+  console.log(`[chela-desktop] bootstrap: ${version} came up cleanly; pinned as last-known-good`);
 }
 
 const BROKEN_BUILD = 'broken-build';
@@ -3102,7 +3102,7 @@ function maybeAutoRollBack() {
     auto: true,
   });
   if (!plan.rollBack) {
-    if (plan.skip === 'already-tried') console.log('[claw-desktop] rollback: already attempted for this build; leaving the manual offer up');
+    if (plan.skip === 'already-tried') console.log('[chela-desktop] rollback: already attempted for this build; leaving the manual offer up');
     return;
   }
   rollBackToLastKnownGood();
@@ -3110,7 +3110,7 @@ function maybeAutoRollBack() {
 
 function rollBackToLastKnownGood() {
   if (!canRollBack()) {
-    console.warn('[claw-desktop] rollback: asked for, but this install cannot roll back');
+    console.warn('[chela-desktop] rollback: asked for, but this install cannot roll back');
     return;
   }
   const good = config.get().lastKnownGood;
@@ -3119,7 +3119,7 @@ function rollBackToLastKnownGood() {
   // offer it back over the good one we are about to install.
   suppressUpdate(broken, 'broken');
   config.update({ rollback: { from: broken, to: good.version, at: Date.now() } });
-  console.log(`[claw-desktop] rollback: ${broken} -> ${good.version} (last-known-good)`);
+  console.log(`[chela-desktop] rollback: ${broken} -> ${good.version} (last-known-good)`);
   issueReporter.report('rollback', { rolledBackFrom: broken, rolledBackTo: good.version });
   if (updater) {
     updater.allowDowngrade = true;
@@ -3142,7 +3142,7 @@ function rollBackToLastKnownGood() {
 function suppressUpdate(version, reason) {
   if (!version) return;
   config.update({ updateSuppression: { version, reason, at: Date.now() } });
-  console.log(`[claw-desktop] updates: ${version} will not be fetched on its own again (${reason})`);
+  console.log(`[chela-desktop] updates: ${version} will not be fetched on its own again (${reason})`);
 }
 
 /**
@@ -3196,7 +3196,7 @@ function applyUpdatePreference() {
  */
 function initUpdates() {
   const plan = updatePolicy();
-  console.log(`[claw-desktop] updates: ${plan.action} (${plan.reason})`);
+  console.log(`[chela-desktop] updates: ${plan.action} (${plan.reason})`);
   if (!plan.check) return;
 
   const { autoUpdater } = require('electron-updater');
@@ -3209,7 +3209,7 @@ function initUpdates() {
   // Installing behind the user's back on quit is the wrong default for an app
   // they close to the tray dozens of times a day; the restart is offered.
   updater.autoInstallOnAppQuit = false;
-  updater.logger = { info: () => {}, warn: () => {}, error: (m) => console.error(`[claw-desktop] updater: ${m}`), debug: () => {} };
+  updater.logger = { info: () => {}, warn: () => {}, error: (m) => console.error(`[chela-desktop] updater: ${m}`), debug: () => {} };
 
   // The plan is re-read on every event rather than captured here: the
   // automatic-updates preference can change while the app runs, and a handler
@@ -3231,7 +3231,7 @@ function initUpdates() {
   updater.on('error', (err) => {
     // Never unprompted. A machine that is offline, or behind a proxy, or hitting
     // a rate limit must not interrupt whatever the user was doing to say so.
-    console.error(`[claw-desktop] update check failed: ${err && err.message}`);
+    console.error(`[chela-desktop] update check failed: ${err && err.message}`);
     // The last outcome was a failure; a manual re-press re-presents that rather
     // than flashing, and the live re-check may then replace it with a better answer.
     setLastCheck('check failed', { outcome: updates.FAILED, version: null });
@@ -3301,7 +3301,7 @@ function initUpdates() {
   });
 
   const every = updates.checkIntervalMs(app.getVersion());
-  console.log(`[claw-desktop] updates: checking every ${Math.round(every / 60000)} min`);
+  console.log(`[chela-desktop] updates: checking every ${Math.round(every / 60000)} min`);
   setTimeout(() => void checkForUpdates('startup'), UPDATE_FIRST_CHECK_MS);
   updateTimer = setInterval(() => void checkForUpdates('scheduled'), every);
 }
@@ -3918,7 +3918,7 @@ function onDownloadStall() {
     return;
   }
   const percent = lastProgressPercent;
-  console.warn(`[claw-desktop] update download stalled at ${percent}% after ${Math.round(updates.STALL_MS / 1000)}s with no progress event`);
+  console.warn(`[chela-desktop] update download stalled at ${percent}% after ${Math.round(updates.STALL_MS / 1000)}s with no progress event`);
   showUpdateNotice(stalledNotice(downloadVersion || 'the update'));
 }
 
@@ -3980,9 +3980,9 @@ function declineFetchedTransfer() {
   if (!token) return;
   try {
     token.cancel();
-    console.log('[claw-desktop] update download given up: this version is not fetched on its own');
+    console.log('[chela-desktop] update download given up: this version is not fetched on its own');
   } catch (err) {
-    console.warn(`[claw-desktop] could not give up the declined update download: ${err && err.message}`);
+    console.warn(`[chela-desktop] could not give up the declined update download: ${err && err.message}`);
   }
 }
 
@@ -4028,11 +4028,11 @@ function abandonUpdateDownload() {
   if (!token) return;
   try {
     token.cancel();
-    console.log('[claw-desktop] update download cancelled at the reader\'s request');
+    console.log('[chela-desktop] update download cancelled at the reader\'s request');
   } catch (err) {
     // Already settled, which is the ordinary case for a download that finished
     // between the card being drawn and the X being pressed.
-    console.warn(`[claw-desktop] could not cancel the update download: ${err && err.message}`);
+    console.warn(`[chela-desktop] could not cancel the update download: ${err && err.message}`);
   }
 }
 
@@ -4734,12 +4734,12 @@ async function identifyBeforeConnect(gw) {
     // The weaker acceptance is logged where a support question would look, and it
     // is the only place the two strengths are told apart in the field.
     if (verdict.strength === gatewayIdentity.CORROBORATED) {
-      console.warn(`[claw-desktop] ${gw.url} answers like an OpenClaw gateway but did not identify itself as one; accepted on its health marker and headers`);
+      console.warn(`[chela-desktop] ${gw.url} answers like an OpenClaw gateway but did not identify itself as one; accepted on its health marker and headers`);
     }
     return true;
   }
 
-  console.warn(`[claw-desktop] refusing to load ${gw.url}: ${verdict.message}`);
+  console.warn(`[chela-desktop] refusing to load ${gw.url}: ${verdict.message}`);
   // FAILED rather than a new phase, because the connection really did not
   // establish: the row's own words (Cannot connect) are true, and the banner
   // carries the sentence that says why and what to do about it.
@@ -5107,7 +5107,7 @@ function registerIpc() {
     // 2026-09-17 as the settings surface "using the default dark", from a build
     // whose report was fine and whose token LIST was short. See themeRefusal().
     if (chrome.themeRefusal(report)) {
-      console.warn(`[claw-desktop] theme: refusing this report because ${chrome.themeRefusal(report)}; our surfaces keep the ${currentTheme.mode} palette in force`);
+      console.warn(`[chela-desktop] theme: refusing this report because ${chrome.themeRefusal(report)}; our surfaces keep the ${currentTheme.mode} palette in force`);
       return;
     }
     // The app's theme comes from the Control UI, never from one of our own
@@ -5152,14 +5152,14 @@ if (!app.requestSingleInstanceLock()) {
     // and the failed load becomes the app's own error page pointing at it.
     certs.install(app, {
       onOffer: (offer) => {
-        console.warn(`[claw-desktop] refused ${offer.changed ? 'CHANGED' : 'untrusted'} certificate for ${offer.host} (${offer.fingerprint})`);
+        console.warn(`[chela-desktop] refused ${offer.changed ? 'CHANGED' : 'untrusted'} certificate for ${offer.host} (${offer.fingerprint})`);
         refreshCertNotice();
         notifyStateChanged();
       },
     });
 
     if (!secrets.available()) {
-      console.warn(`[claw-desktop] ${secrets.unavailableReason()}`);
+      console.warn(`[chela-desktop] ${secrets.unavailableReason()}`);
       // True for the whole run and the reason saving a token appears to do
       // nothing, so it belongs on screen rather than in a log nobody reads.
       setNotice('secrets', {
@@ -5177,7 +5177,7 @@ if (!app.requestSingleInstanceLock()) {
     reportLaunchAtLogin();
 
     const shortcut = registerShortcut();
-    if (!shortcut.ok) console.warn(`[claw-desktop] global shortcut not registered: ${shortcut.error}`);
+    if (!shortcut.ok) console.warn(`[chela-desktop] global shortcut not registered: ${shortcut.error}`);
 
     initUpdates();
 
@@ -5186,7 +5186,7 @@ if (!app.requestSingleInstanceLock()) {
     // Before the first load, not after: clearing a service worker out from
     // under a page it is already controlling leaves that page on the old
     // bundle until something reloads it.
-    await clearOnAppUpgrade().catch((err) => console.warn(`[claw-desktop] cache clear failed: ${err.message}`));
+    await clearOnAppUpgrade().catch((err) => console.warn(`[chela-desktop] cache clear failed: ${err.message}`));
 
     reachBootStage('window-create');
     createMainWindow();

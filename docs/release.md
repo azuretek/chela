@@ -50,8 +50,8 @@ One owner for the package set: `core/spec/release.json` for the names and
 
 | Interface | Packages |
 |---|---|
-| Desktop | `claw-desktop-<version>-arm64.dmg`, `-x64.dmg`, `-arm64.zip`, `-x64.zip`, `-arm64.AppImage`, `-x86_64.AppImage`, `claw-desktop-Setup-<version>-arm64.exe`, `-x64.exe`, and the updater metadata (`dev-mac.yml`, `dev.yml`, `dev-linux.yml`, `dev-linux-arm64.yml`) |
-| iOS | `claw-mobile-<version>.ipa` and `claw-mobile-<version>.manifest.plist` |
+| Desktop | `chela-desktop-<version>-arm64.dmg`, `-x64.dmg`, `-arm64.zip`, `-x64.zip`, `-arm64.AppImage`, `-x86_64.AppImage`, `chela-desktop-Setup-<version>-arm64.exe`, `-x64.exe`, and the updater metadata (`dev-mac.yml`, `dev.yml`, `dev-linux.yml`, `dev-linux-arm64.yml`) |
+| iOS | `chela-mobile-<version>.ipa` and `chela-mobile-<version>.manifest.plist` |
 
 The check is mechanical. The release is created as a **draft**, each interface
 attaches its own assets, and the last one to finish publishes it once the

@@ -24,11 +24,11 @@ name: every platform
 # while this gate is deciding, so waiting on it would deadlock both runs. `exempt`
 # names those, per call site, and nothing else is outside the rule:
 #
-#   release.yml          platform: claw-mobile pipeline   exempt: '' (none, and
+#   release.yml          platform: chela-mobile pipeline   exempt: '' (none, and
 #                        that is the point: the mobile `release` job, where the
 #                        TestFlight upload and the wait for VALID live, is
 #                        required like every other job it lists)
-#   mobile-pipeline.yml  platform: claw-desktop release   exempt: the desktop
+#   mobile-pipeline.yml  platform: chela-desktop release   exempt: the desktop
 #                        publish job and the desktop's own call of this gate
 #
 # BOTH DIRECTIONS, deliberately. A red mobile leg must stop the desktop release and

@@ -76,12 +76,12 @@ test('the preload exposes the open bridge on the REMOTE gateway page, not only l
 });
 
 test('the composed installation sets the config global, and never assigns the frozen bridge', () => {
-  const out = installation({ label: 'App settings', tooltip: 'Claw Control UI settings' });
+  const out = installation({ label: 'App settings', tooltip: 'Chela settings' });
   assert.ok(out.includes(`window.${AFFORDANCE_CONFIG_GLOBAL} =`), 'the installation sets the config global');
   // The bridge global is a frozen contextBridge object on the desktop, so the
   // installation must never assign to it: that threw in the real renderer.
   assert.ok(!out.includes(`window.${AFFORDANCE_GLOBAL} =`), 'the installation never assigns the bridge global');
   // The desktop passes a label and tooltip; both reach the config.
   assert.ok(out.includes('App settings'), 'the label is carried into the page');
-  assert.ok(out.includes('Claw Control UI settings'), 'the tooltip is carried into the page');
+  assert.ok(out.includes('Chela settings'), 'the tooltip is carried into the page');
 });

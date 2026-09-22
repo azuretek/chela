@@ -1,4 +1,4 @@
-name: claw-desktop release
+name: chela-desktop release
 
 # The Electron app lives in desktop/ since the repo became the product monorepo
 # (core/ shared, desktop/ this app, mobile/ the iOS client). Every npm/script
@@ -189,7 +189,7 @@ jobs:
       # build legs), which depend on nothing in the mobile run. So the order is
       # desktop build -> mobile gate -> mobile release (upload + VALID) -> this
       # gate -> desktop publish, with no cycle.
-      platform: claw-mobile pipeline
+      platform: chela-mobile pipeline
       exempt: ''
       # ★ 90 minutes, because of what this now waits for. The gate requires the
       # mobile `release` job, and that job's own budget is 60 minutes: an archive,
@@ -946,7 +946,7 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
           TAG: v${{ needs.version.outputs.version }}
-          MOBILE_PIPELINE: claw-mobile pipeline
+          MOBILE_PIPELINE: chela-mobile pipeline
         run: |
           set -eo pipefail
 

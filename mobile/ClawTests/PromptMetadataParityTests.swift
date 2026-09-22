@@ -229,7 +229,7 @@ final class PromptMetadataParityTests: XCTestCase {
         }
         // If either client's own name were in the script, the two clients could
         // not run the same bytes and this whole arrangement would be a fiction.
-        for platform in [Naming.mobileToken, "claw-desktop", "UIKit", "Node"] {
+        for platform in [Naming.mobileToken, "chela-desktop", "UIKit", "Node"] {
             XCTAssertFalse(script.contains(platform), "\(platform) does not belong in the shared script")
         }
     }
@@ -242,7 +242,7 @@ final class PromptMetadataParityTests: XCTestCase {
         XCTAssertTrue(installation.hasSuffix(PromptMetadata.script), "the shared script is installed unchanged")
         XCTAssertTrue(installation.hasPrefix("window.__clawPromptMetadata = {"), installation)
         XCTAssertTrue(installation.contains("Mobile client context"), "the facts are this client's own")
-        XCTAssertTrue(installation.contains("Claw Control UI (claw-mobile) 9.9.9"))
+        XCTAssertTrue(installation.contains("Chela (chela-mobile) 9.9.9"))
         XCTAssertTrue(installation.contains("WebSocket.prototype.send"))
     }
 

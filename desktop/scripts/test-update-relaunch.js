@@ -233,7 +233,7 @@ async function phase(n) {
     await new Promise((r) => setTimeout(r, 50));
     token = new FakeToken();
     record('check', 'the feed named ' + APP_VERSION_FROM_FEED);
-    fakeUpdater.emit('update-available', { version: APP_VERSION_FROM_FEED, releaseName: 'Claw Control UI ' + APP_VERSION_FROM_FEED });
+    fakeUpdater.emit('update-available', { version: APP_VERSION_FROM_FEED, releaseName: 'Chela ' + APP_VERSION_FROM_FEED });
     // The library starts the download itself when autoDownload is set, and hands
     // it the same token it returns. This one never moves and never settles:
     // nothing is emitted, nothing rejects. That is the reported state.

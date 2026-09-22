@@ -348,7 +348,7 @@ app.whenReady().then(async () => {
       measured.group === 'rgb(22, 25, 32)', `group is ${measured.group}`);
   } else {
     check(`${CASE}/${APPEARANCE}: the app adopted a palette from the page`,
-      lines.some((l) => /^\[claw-desktop\] theme: (light|dark) .*\(\d+ tokens\)$/.test(l)),
+      lines.some((l) => /^\[chela-desktop\] theme: (light|dark) .*\(\d+ tokens\)$/.test(l)),
       JSON.stringify(lines.filter((l) => /theme/.test(l))));
 
     // THE guard. Every colour ui.css declares, as the settings surface resolves it.

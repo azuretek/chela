@@ -100,7 +100,7 @@ sleep 30
 say "results"
 grep -E '^\[claw\] updates:' "$WORK/app.log" || echo "   (no update policy line -- did the app start?)"
 
-PENDING="$HOME/.cache/claw-desktop-updater/pending"
+PENDING="$HOME/.cache/chela-desktop-updater/pending"
 if [ -d "$PENDING" ]; then
   echo "   downloaded: $(ls "$PENDING" | grep AppImage || echo none)"
 else

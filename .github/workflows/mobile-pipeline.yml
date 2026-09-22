@@ -1,4 +1,4 @@
-name: claw-mobile pipeline
+name: chela-mobile pipeline
 
 # The whole mobile pipeline in one file: version, test, release.
 #
@@ -221,7 +221,7 @@ jobs:
       # and no others is what makes the requirement complete: a job added to that
       # pipeline is inside this gate by default, which a list of job names could
       # never promise.
-      platform: claw-desktop release
+      platform: chela-desktop release
       exempt: '^release$|^every platform must be green'
 
   # ★ SwiftLint, the mobile platform's half of the root lint. It runs once, on

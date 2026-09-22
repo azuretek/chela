@@ -48,7 +48,7 @@ module.exports = {
     requireUpstream: true,
     commitMessage: 'Release v${version}',
     tagName: 'v${version}',
-    tagAnnotation: 'Claw Control UI v${version}',
+    tagAnnotation: 'Chela v${version}',
     push: true,
   },
 

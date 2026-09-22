@@ -11,35 +11,35 @@
   "children": {
     "desktop": {
       "assets": [
-        "claw-desktop-{version}-arm64.dmg",
-        "claw-desktop-{version}-x64.dmg",
-        "claw-desktop-{version}-arm64.zip",
-        "claw-desktop-{version}-x64.zip",
-        "claw-desktop-{version}-arm64.AppImage",
-        "claw-desktop-{version}-x86_64.AppImage",
-        "claw-desktop-Setup-{version}-arm64.exe",
-        "claw-desktop-Setup-{version}-x64.exe",
+        "chela-desktop-{version}-arm64.dmg",
+        "chela-desktop-{version}-x64.dmg",
+        "chela-desktop-{version}-arm64.zip",
+        "chela-desktop-{version}-x64.zip",
+        "chela-desktop-{version}-arm64.AppImage",
+        "chela-desktop-{version}-x86_64.AppImage",
+        "chela-desktop-Setup-{version}-arm64.exe",
+        "chela-desktop-Setup-{version}-x64.exe",
         "{channel}-mac.yml",
         "{channel}.yml",
         "{channel}-linux.yml",
         "{channel}-linux-arm64.yml"
       ],
-      "prefix": "claw-desktop",
+      "prefix": "chela-desktop",
       "why": "Eight artifacts from one build matrix: dmg and zip for mac arm64 and x64, AppImage for linux arm64 and x86_64, an NSIS installer for windows arm64 and x64. The prefix is what attributes a companion file, a blockmap, to this child when it matches no required name exactly."
     },
     "mobile": {
       "assets": [
-        "claw-mobile-{version}.ipa",
-        "claw-mobile-{version}.manifest.plist"
+        "chela-mobile-{version}.ipa",
+        "chela-mobile-{version}.manifest.plist"
       ],
-      "prefix": "claw-mobile",
+      "prefix": "chela-mobile",
       "why": "One app and the manifest that installs it. The manifest is what makes the .ipa actionable on a device, so the two are required together."
     }
   },
   "ota": {
     "urlScheme": "itms-services://?action=download-manifest&url=",
-    "appAsset": "claw-mobile-{version}.ipa",
-    "manifestAsset": "claw-mobile-{version}.manifest.plist",
+    "appAsset": "chela-mobile-{version}.ipa",
+    "manifestAsset": "chela-mobile-{version}.manifest.plist",
     "kind": "software-package",
     "metadataKind": "software",
     "why": "iOS installs an app from a manifest rather than from a file, which is what makes an OTA install possible without TestFlight. The scheme is a system one: the app asks, iOS shows one Install prompt, and the app is replaced in place with its container kept. Apple has narrowed it over time, so the fallback is the release page and the same prompt."
