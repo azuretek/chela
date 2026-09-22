@@ -79,8 +79,8 @@ test('requiredAssets() is the two children together, in spec order', () => {
 });
 
 test('childOf() attributes an asset to its child, and null for a stranger', () => {
-  assert.equal(childOf('claw-desktop-1.0.1-dev.215.583ac26c1f-arm64.dmg'), 'desktop');
-  assert.equal(childOf('claw-desktop-1.0.1-dev.215.583ac26c1f-x64.zip.blockmap'), 'desktop',
+  assert.equal(childOf('chela-desktop-1.0.1-dev.215.583ac26c1f-arm64.dmg'), 'desktop');
+  assert.equal(childOf('chela-desktop-1.0.1-dev.215.583ac26c1f-x64.zip.blockmap'), 'desktop',
     'a companion file is attributed by the child prefix');
   assert.equal(childOf('dev-mac.yml'), 'desktop', 'the updater metadata is required, so it is claimed');
   assert.equal(childOf(fixture.published.missing[0]), 'mobile');
@@ -114,7 +114,7 @@ test('the manifest names the app asset, the bundle and the app', () => {
 
 test('the install URL is the release manifest, and the manifest is an asset of the release', () => {
   assert.equal(otaInstallUrl(fixture.version), fixture.installUrl);
-  assert.equal(otaManifestAsset(fixture.version), 'claw-mobile-' + fixture.version + '.manifest.plist');
+  assert.equal(otaManifestAsset(fixture.version), 'chela-mobile-' + fixture.version + '.manifest.plist');
   assert.equal(otaInstallUrl(fixture.version),
     'itms-services://?action=download-manifest&url=' + assetUrl(fixture.version, otaManifestAsset(fixture.version)));
   assert.ok(assetUrl(fixture.version, 'x').startsWith('https://github.com/' + repo + '/releases/download/'),

@@ -151,7 +151,7 @@ app.whenReady().then(async () => {
   const before = await gatewayPage.executeJavaScript(PAGE_MEASURE);
   console.log(`note before: ${JSON.stringify({ ...before, url: undefined })}`);
 
-  const about = menuItem('About Claw Control UI');
+  const about = menuItem('About Chela');
   check('the app can open its About surface', Boolean(about), 'no About menu item');
   if (about) { about.click(); await delay(2500); }
   const aboutView = view('/about.html');

@@ -72,7 +72,7 @@ enum Naming {
 
     /// The per-client shorthand, for anything that has to tell this client apart
     /// from the desktop in one string: a User-Agent token is the only such place
-    /// here, and the desktop's equivalent is `claw-desktop`.
+    /// here, and the desktop's equivalent is `chela-desktop`.
     static var mobileToken: String { spec.clients.mobile.shorthand }
 
     /// The repo slug, which is what the public update feed URL is built from

@@ -43,8 +43,8 @@ Both pipelines call `platforms-gate.yml`, and both publish jobs need it:
 
 | Pipeline | Waits on | Because |
 |---|---|---|
-| `release.yml` | `claw-mobile pipeline`, every job it lists | a desktop release must not ship a commit the phone failed, and must not go out before the TestFlight build is VALID |
-| `mobile-pipeline.yml` | `claw-desktop release`, every job it lists except the two that wait on this pipeline (its publish job and its own call of the gate) | a TestFlight upload must not ship a commit the desktop failed |
+| `release.yml` | `chela-mobile pipeline`, every job it lists | a desktop release must not ship a commit the phone failed, and must not go out before the TestFlight build is VALID |
+| `mobile-pipeline.yml` | `chela-desktop release`, every job it lists except the two that wait on this pipeline (its publish job and its own call of the gate) | a TestFlight upload must not ship a commit the desktop failed |
 
 **Both directions, with no asymmetry.** Each client ships from its own pipeline, so a commit that broke one of them is not a commit to hand anyone either client from. There is nothing to weigh; the two directions are the same claim.
 
@@ -67,7 +67,7 @@ What the gate reads, and what it deliberately does not:
 
 A release that silently does not happen is its own bug, so a refusal is written where the question gets asked rather than only into a log:
 
-1. **The run list, first.** The gate job is named after what it waits for, so a blocked run reads `claw-mobile pipeline must be green` with a red mark, and the publish job beside it is skipped.
+1. **The run list, first.** The gate job is named after what it waits for, so a blocked run reads `chela-mobile pipeline must be green` with a red mark, and the publish job beside it is skipped.
 2. **The failing job's annotation**, which names every leg that was not green and links the other pipeline's run.
 3. **Its step summary**, which says the same in one block: which platform, which jobs, which run.
 4. **The other pipeline's run**, linked above, for the actual failure.

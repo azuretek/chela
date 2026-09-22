@@ -81,7 +81,7 @@ function installCrashReporter() {
       ignoreSystemCrashHandler: false,
     });
   } catch (err) {
-    console.warn(`[claw-desktop] crashReporter not started: ${err && err.message}`);
+    console.warn(`[chela-desktop] crashReporter not started: ${err && err.message}`);
   }
 }
 
@@ -133,7 +133,7 @@ export function report(kind, extra = {}) {
     });
     void send(built);
   } catch (err) {
-    console.warn(`[claw-desktop] issue report dropped: ${err && err.message}`);
+    console.warn(`[chela-desktop] issue report dropped: ${err && err.message}`);
   }
 }
 
@@ -172,7 +172,7 @@ function writeQueue(items) {
     const tmp = `${queueFile}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(items), { mode: 0o600 });
     fs.renameSync(tmp, queueFile);
-  } catch (err) { console.warn(`[claw-desktop] issue queue write failed: ${err && err.message}`); }
+  } catch (err) { console.warn(`[chela-desktop] issue queue write failed: ${err && err.message}`); }
 }
 
 function enqueue(reportBody) {

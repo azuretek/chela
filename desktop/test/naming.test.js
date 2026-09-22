@@ -152,7 +152,7 @@ test('the app pages carry the product name the way the spec spells it', () => {
 const RETIRED_ALLOWED = new Map([
   ['core/spec/naming.json', 'the owner: the pinned Keychain item, the profile names to migrate from, and the retired list itself'],
   ['desktop/README.md', 'the upgrade note and the Keychain note, which explain what moved and what deliberately did not'],
-  ['desktop/test/profile.test.js', 'seeds a profile under the previous name, because the chain from it is the thing under test'],
+  ['desktop/test/profile.test.js', 'pins the Keychain item to the name the credentials were written under, which is a retired name ON PURPOSE and must not follow a rename'],
 ]);
 
 // Where a name is generated rather than written: build output, dependencies, and
@@ -193,7 +193,12 @@ test('no file outside the allowlist still carries a retired name', () => {
   for (const file of files) {
     const body = read(ROOT, file);
     for (const retired of naming.retired) {
-      if (body.includes(retired)) hits.push(`${file} (${retired})`);
+      // Matched at a word boundary, because a retired name can be a
+      // SUBSTRING of a name we do not own: upstream names its own surface
+      // OpenClaw Control UI, and prose about that surface is not a place this
+      // rename missed. Without the boundary, this sweep would demand edits to
+      // descriptions of someone elses product.
+      if (new RegExp('\\b' + retired).test(body)) hits.push(`${file} (${retired})`);
     }
   }
 

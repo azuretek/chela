@@ -95,7 +95,7 @@ test('a detail that moved on a notice about something arriving is not news', () 
   // anything since and must not see it again.
   const store = create();
   const downloading = {
-    tone: OK, message: 'Downloading Claw Control UI 1.0.1.', detail: '25 MB of 130 MB, 2 MB/s.', progress: 0.2,
+    tone: OK, message: 'Downloading Chela 1.0.1.', detail: '25 MB of 130 MB, 2 MB/s.', progress: 0.2,
   };
   store.set('update-available', downloading);
   store.markRead('update-available');
@@ -124,7 +124,7 @@ test('a raise the reader asked for is unread even when nothing changed', () => {
   // belongs on screen whether or not that same card was read before. The passive
   // check is the other half and leaves it where it was.
   const store = create();
-  const card = { tone: INFO, message: 'Claw Control UI 1.0.1 is available.', detail: 'You are on 1.0.0.' };
+  const card = { tone: INFO, message: 'Chela 1.0.1 is available.', detail: 'You are on 1.0.0.' };
   store.set('update-available', card);
   store.markRead('update-available');
 

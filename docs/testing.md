@@ -8,7 +8,7 @@ covers.
 | the root | `pnpm run lint` | ESLint over core + desktop and SwiftLint over mobile, run in parallel, each platform with its own tool. |
 | the root | `pnpm run test` | Every platform's tests through the root fan-out (core and desktop via pnpm, mobile via its own toolchain). |
 | `core/` | `pnpm --filter claw-core test` | The shared rules and every parity fixture, by `node --test`. |
-| `desktop/` | `pnpm --filter claw-desktop test`, `run measure`, `run check:imports`, `run smoke`, `run check:package` | The Electron interface, the pages and the forms as RENDERED, the static import audit, a real GUI boot, and the packaged artifact. |
+| `desktop/` | `pnpm --filter chela-desktop test`, `run measure`, `run check:imports`, `run smoke`, `run check:package` | The Electron interface, the pages and the forms as RENDERED, the static import audit, a real GUI boot, and the packaged artifact. |
 | `mobile/` | `node scripts/mobile.mjs lint` (SwiftLint), and the CI legs, one per iOS version | Style, and compile and unit tests on a simulator plus the Swift parity tests. |
 | `scripts/release/` | `node scripts/release/release.mjs check --version <v>` | Whether a release carries every package it must. |
 | all three | `.github/workflows/` | The same suites headless, on every push and pull request. |

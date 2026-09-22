@@ -1,6 +1,6 @@
 # Documentation
 
-Shared documentation for Claw Control UI. This is one project with three trees,
+Shared documentation for Chela. This is one project with three trees,
 not three projects that live together, so everything that is true of more than
 one interface is written once here.
 

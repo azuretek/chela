@@ -223,7 +223,7 @@ app.whenReady().then(async () => {
   const settingsItem = menuItem('Settings…');
   check('the Settings menu item exists', Boolean(settingsItem), 'no menu item labelled "Settings…"');
   const settings = settingsItem;
-  const aboutItem = menuItem('About Claw Control UI');
+  const aboutItem = menuItem('About Chela');
   check('the About menu item exists', Boolean(aboutItem), 'no About menu item');
 
   // The ORDER checks below do not need an image, and they used to sit behind

@@ -77,7 +77,7 @@ const WINDOWS_BLOCK_LINES = [
   'home: C:\\Users\\azure',
   'locale: en-US',
   'timezone: America/Los_Angeles',
-  'client: Claw Control UI (claw-desktop) 1.0.1-dev.279.9a58115cb1',
+  'client: Chela (chela-desktop) 1.0.1-dev.279.9a58115cb1',
   "----- end of client context; the user's message follows below -----",
 ];
 
@@ -297,7 +297,7 @@ test('the desktop gathers this machine with Node and renders it as the block', (
   assert.match(block, /^home: \S+$/m);
   assert.match(block, /^locale: \S+$/m);
   assert.match(block, /^timezone: \S+$/m);
-  assert.match(block, /^client: Claw Control UI \(claw-desktop\) 9\.9\.9$/m);
+  assert.match(block, /^client: Chela \(chela-desktop\) 9\.9\.9$/m);
 });
 
 /* -------------------------------------------------------------- settings wiring */

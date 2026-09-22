@@ -1,8 +1,8 @@
-# Claw Control UI (claw-mobile)
+# Chela (chela-mobile)
 
 The native iOS client for the OpenClaw Control UI. SwiftUI wrapping the Control
 UI in a `WKWebView`, signed with an Apple Developer account and delivered via
-TestFlight. The home-screen label is **Claw Control UI**.
+TestFlight. The home-screen label is **Chela**.
 
 Status: **in development**. The design and phased plan live in the Projects
 database; this directory fills in as the phases land.
@@ -139,7 +139,7 @@ rasterised from, and `desktop/scripts/make-icons.mjs` emits every platform's
 icon from it with one command, from the repo root:
 
 ```
-pnpm --filter claw-desktop run icons
+pnpm --filter chela-desktop run icons
 ```
 
 That writes `Claw/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png`, which is

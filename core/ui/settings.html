@@ -19,7 +19,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;">
-  <title>Claw Control UI Settings</title>
+  <title>Chela Settings</title>
   <link rel="stylesheet" href="ui.css">
 </head>
 <body>
@@ -172,7 +172,7 @@
       <label class="settings-row settings-row--toggle" data-setting="launchAtLogin">
         <span class="settings-row__text">
           <span class="settings-row__title">Open at login</span>
-          <span class="settings-row__desc">Start Claw Control UI automatically when you sign in.</span>
+          <span class="settings-row__desc">Start Chela automatically when you sign in.</span>
         </span>
         <span class="settings-row__control">
           <input type="checkbox" id="launchAtLogin">
@@ -207,7 +207,7 @@
                client's, and core/spec/prompt-metadata.json owns them: a phone
                sends fewer of these than a desktop does, and a list here would
                be wrong on one of the two. -->
-          <span class="settings-row__desc">Send facts about this device, such as its name and operating system, with ordinary chat prompts, so Claw Control UI knows which machine is talking. Off by default.</span>
+          <span class="settings-row__desc">Send facts about this device, such as its name and operating system, with ordinary chat prompts, so Chela knows which machine is talking. Off by default.</span>
         </span>
         <span class="settings-row__control">
           <input type="checkbox" id="promptMetadata">
@@ -317,7 +317,7 @@
          opening anything. The version is written by settings.js out of the state
          the host already sends, so the string has one owner. -->
     <button class="about-footer__link" id="open-about" type="button">
-      <span id="about-footer-label">About Claw Control UI</span>
+      <span id="about-footer-label">About Chela</span>
       <span class="about-footer__build" id="about-footer-build"></span>
     </button>
   </footer>

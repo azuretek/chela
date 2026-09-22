@@ -7,7 +7,7 @@
 //
 // The problem this fixes: `artifactName` in electron-builder.yml interpolates
 // `${version}` from package.json, which only moves on a release. So every local
-// build produced `claw-desktop-1.0.0-arm64.dmg`, the same filename as an actual
+// build produced `chela-desktop-1.0.0-arm64.dmg`, the same filename as an actual
 // 1.0.0 release, and the same filename as every other local build. CI grew a
 // `--config.extraMetadata.version` flag to fix that for itself, and local builds
 // kept the old behaviour, which is the worst arrangement: the machine you
