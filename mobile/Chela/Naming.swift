@@ -33,6 +33,13 @@ enum Naming {
         }
 
         let product: String
+
+        /// The formal name: what App Store Connect and TestFlight show, because the
+        /// short name is held by another developer. No surface in the app prints
+        /// it, and it is decoded rather than ignored so that a rename of it stays
+        /// visible here and is asserted by parity, instead of being a value the
+        /// file carries and this client silently drops.
+        let fullName: String
         let repo: Repo
         let clients: Clients
     }
@@ -40,7 +47,7 @@ enum Naming {
     /// The top-level keys this decodes. `BundledSpecTests` asserts they are the
     /// keys the file carries: a key the file gains and this does not name is a
     /// value the app silently does not have.
-    static let decodedKeys: Set<String> = ["product", "repo", "clients"]
+    static let decodedKeys: Set<String> = ["product", "fullName", "repo", "clients"]
 
     /// The keys this deliberately does not decode: `retired` lists product
     /// names this one replaced, which is the desktop's rename sweep and not a
@@ -53,6 +60,7 @@ enum Naming {
     private static func loadSpec() -> Spec {
         let empty = Spec(
             product: "",
+            fullName: "",
             repo: Spec.Repo(owner: "", name: ""),
             clients: Spec.Clients(
                 desktop: Spec.Client(shorthand: ""),
@@ -65,10 +73,15 @@ enum Naming {
         return spec
     }
 
-    /// What a person calls this app. Longer than iOS draws under an icon, so
-    /// Springboard shows it truncated and TestFlight shows it whole.
+    /// What a person calls this app, and what the home screen, the app switcher
+    /// and notification titles show. Short, which is what iOS draws under an icon.
     /// `Info.plist` carries the same value for both plist keys.
     static var product: String { spec.product }
+
+    /// The formal name, for the one place a unique string is required: the App
+    /// Store and TestFlight record, because the short name is held by another
+    /// developer. No surface in the app prints it.
+    static var fullName: String { spec.fullName }
 
     /// The per-client shorthand, for anything that has to tell this client apart
     /// from the desktop in one string: a User-Agent token is the only such place
