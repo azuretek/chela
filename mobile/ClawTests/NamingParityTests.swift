@@ -100,7 +100,7 @@ final class NamingParityTests: XCTestCase {
     func testTheClientLabelIsTheProductAndTheShorthand() throws {
         let spec = try spec()
         XCTAssertEqual(Naming.clientLabel, "\(spec.product) (\(spec.clients.mobile.shorthand))")
-        XCTAssertTrue(Naming.clientLabel.hasSuffix("(claw-mobile)"))
+        XCTAssertTrue(Naming.clientLabel.hasSuffix("(chela-mobile)"))
     }
 
     /// The app's own version, which is the plist the release workflow stamps

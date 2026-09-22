@@ -1,4 +1,4 @@
-# Claw Control UI
+# Chela
 
 A standalone desktop window for the OpenClaw Control UI: its own icon, its own
 Dock/taskbar entry, a tray icon and a global shortcut. Electron, one codebase,
@@ -29,9 +29,9 @@ away.
 **From a release.** Take the installer for your platform from
 [Releases](https://github.com/azuretek/claw-control-ui/releases):
 
-- **Windows.** `claw-desktop-Setup-<version>-<arch>.exe`. Per-user, no admin.
+- **Windows.** `chela-desktop-Setup-<version>-<arch>.exe`. Per-user, no admin.
 - **macOS.** Open the `.dmg` and drag to Applications.
-- **Linux.** `claw-desktop-<version>-<arch>.AppImage`. `chmod +x` it and run it;
+- **Linux.** `chela-desktop-<version>-<arch>.AppImage`. `chmod +x` it and run it;
   there is nothing to install. Keep it somewhere writable, because that file is
   what an update replaces in place.
 
@@ -42,7 +42,7 @@ kept current on a machine you already develop on:
 git clone https://github.com/azuretek/claw-control-ui.git
 cd claw-control-ui
 pnpm install             # the workspace install, at the repo root
-pnpm --filter claw-desktop run build:mac   # or build:win / build:linux
+pnpm --filter chela-desktop run build:mac   # or build:win / build:linux
 ```
 
 The installer lands in `dist/`. Build on the platform you are targeting. Windows
@@ -61,7 +61,7 @@ reason. Both architectures of a given platform do cross-build fine.
 
 - **Windows.** SmartScreen will warn, because Windows builds are still
   unsigned. *More info, Run anyway.* Installs to
-  `%LOCALAPPDATA%\Programs\Claw Control UI`.
+  `%LOCALAPPDATA%\Programs\Chela`.
 
 - **Linux.** Nothing to do, and nothing installed. An AppImage is one
   self-contained executable; it appears in the applications menu only if you add
@@ -76,7 +76,7 @@ reason. Both architectures of a given platform do cross-build fine.
   through. Click **Always Allow** once. Later signed releases share the same
   identity and never ask again.
 
-  That item keeps the *Claw Desktop* name, in a build called Claw Control UI and
+  That item keeps the *Claw Desktop* name, in a build called Chela and
   under any later name too, and that is deliberate. `safeStorage` finds its key
   by the item's **name**, so renaming the app does not move the item: it looks up
   a different one, gets a fresh random password, and can read none of the
@@ -91,7 +91,7 @@ reason. Both architectures of a given platform do cross-build fine.
 - **Upgrading from a *Claw Desktop* build.** Install over it as usual; the
   `appId` is unchanged, so the installer replaces it rather than adding a second
   copy. On first launch the profile directory moves to its new name,
-  `…/Application Support/Claw Control UI`, carrying `config.json`, the notice log
+  `…/Application Support/Chela`, carrying `config.json`, the notice log
   and the paired device identity with it, and stored credentials keep working
   because the Keychain item they were sealed under is pinned, as the note above
   explains.
@@ -150,7 +150,7 @@ otherwise.
   not install one anyway.
 - **Include this computer's context in prompts** is off by default. When enabled,
   ordinary chat prompts include the hostname, operating system and architecture,
-  user, home folder, locale, time zone, and Claw Control UI version. It never sends
+  user, home folder, locale, time zone, and Chela version. It never sends
   network addresses, environment variables, credentials, or device identifiers.
 - **Global shortcut.** `CommandOrControl+Shift+O` by default, shows or hides
   the window from anywhere. Clear the field to disable.
@@ -161,9 +161,9 @@ otherwise.
 
 | Platform | Directory |
 |---|---|
-| macOS | `~/Library/Application Support/Claw Control UI/` |
-| Windows | `%APPDATA%\Claw Control UI\` |
-| Linux | `~/.config/Claw Control UI/` |
+| macOS | `~/Library/Application Support/Chela/` |
+| Windows | `%APPDATA%\Chela\` |
+| Linux | `~/.config/Chela/` |
 
 - `config.json`: gateway list, window bounds, preferences, pinned certificate
   fingerprints. Written atomically, and **holds no secrets**, so it is safe to
@@ -318,7 +318,7 @@ The line at the bottom of Settings names the commit the app was packaged from,
 during first-run setup as well as afterwards:
 
 ```
-Claw Control UI 1.0.0 (a1b2c3d4e5, built 2026-09-02 08:41Z) · Electron 44.1.1 · …
+Chela 1.0.0 (a1b2c3d4e5, built 2026-09-02 08:41Z) · Electron 44.1.1 · …
 ```
 
 | Shown | Means |
@@ -353,7 +353,7 @@ release it follows rather than below it.
 
 The app checks for a new release a minute after launch and every six hours
 after, and on demand from **Check for updates…** in **Help**, on the tray
-menu, and on macOS in the application menu as well. **About Claw Control UI**, in
+menu, and on macOS in the application menu as well. **About Chela**, in
 those same places, says which channel this build follows, what it does about a
 new version, and when it last looked. Updating is otherwise invisible, which is
 a fair reason to doubt it is happening at all.
@@ -444,18 +444,18 @@ still builds.
 # Contributing
 
 The desktop is a package in the workspace, so every command is either a root
-script or a `pnpm --filter claw-desktop run` of this package's script. Install
+script or a `pnpm --filter chela-desktop run` of this package's script. Install
 once at the repo root, then:
 
 ```sh
 pnpm install                                # at the repo root, once
-pnpm --filter claw-desktop run test          # unit tests, no Electron needed
-pnpm --filter claw-desktop run start         # run from source
-pnpm --filter claw-desktop run pack          # unpacked build into dist/, no installer
-pnpm --filter claw-desktop run build:mac     # dmg + zip (arm64, x64)
-pnpm --filter claw-desktop run build:win     # nsis installer (x64, arm64)
-pnpm --filter claw-desktop run icons         # regenerate every platform's icon from src/assets/claw*.svg
-pnpm --filter claw-desktop run release       # bump, tag, push; CI publishes (see .release-it.cjs)
+pnpm --filter chela-desktop run test          # unit tests, no Electron needed
+pnpm --filter chela-desktop run start         # run from source
+pnpm --filter chela-desktop run pack          # unpacked build into dist/, no installer
+pnpm --filter chela-desktop run build:mac     # dmg + zip (arm64, x64)
+pnpm --filter chela-desktop run build:win     # nsis installer (x64, arm64)
+pnpm --filter chela-desktop run icons         # regenerate every platform's icon from src/assets/claw*.svg
+pnpm --filter chela-desktop run release       # bump, tag, push; CI publishes (see .release-it.cjs)
 ```
 
 From the root, `pnpm run lint`, `pnpm run test` and `pnpm run build` fan out to

@@ -256,7 +256,7 @@ test('the sweep leaves NOTHING on the bar for the run, a dismissClears card incl
   n.set('conn', { tone: notices.ERROR, message: 'Cannot connect' });
   n.set('update-available', {
     tone: notices.INFO,
-    message: 'Downloading Claw Control UI 1.0.1.',
+    message: 'Downloading Chela 1.0.1.',
     detail: '25 MB of 130 MB.',
     progress: 0.2,
     dismissible: true,
@@ -294,7 +294,7 @@ test('a progress tick does not re-unread a read notice, a changed message does',
   // acknowledged; a sentence that CHANGES is news and must.
   const n = notices.create();
   const downloading = {
-    tone: notices.INFO, message: 'Downloading Claw Control UI 1.0.1.', detail: '25 MB of 130 MB.', progress: 0.2,
+    tone: notices.INFO, message: 'Downloading Chela 1.0.1.', detail: '25 MB of 130 MB.', progress: 0.2,
   };
   n.set('update-available', downloading);
   assert.equal(n.markRead('update-available'), true);
@@ -305,7 +305,7 @@ test('a progress tick does not re-unread a read notice, a changed message does',
 
   n.set('update-available', {
     tone: notices.WARN,
-    message: 'Downloading Claw Control UI 1.0.1. has stopped making progress.',
+    message: 'Downloading Chela 1.0.1. has stopped making progress.',
     detail: 'Nothing has arrived for 45 seconds.',
   });
   assert.deepEqual(n.unread().map((x) => x.id), ['update-available'], 'a changed message is news');
@@ -316,7 +316,7 @@ test('a user-initiated check re-raises the update card, a passive check does not
   // The asker is owed the answer on screen; a background check that finds the same
   // release again says nothing new and leaves a read card read.
   const n = notices.create();
-  const card = { tone: notices.INFO, message: 'Claw Control UI 1.0.1 is available.', detail: 'You are on 1.0.0.' };
+  const card = { tone: notices.INFO, message: 'Chela 1.0.1 is available.', detail: 'You are on 1.0.0.' };
   n.set('update-available', card);
   n.markRead('update-available');
 

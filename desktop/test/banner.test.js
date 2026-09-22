@@ -167,7 +167,7 @@ const pinned = { id: 'update-available', tone: 'info', message: 'Downloading', p
 const downloading = {
   id: 'update-available',
   tone: 'info',
-  message: 'Downloading Claw Control UI 1.0.2.',
+  message: 'Downloading Chela 1.0.2.',
   detail: 'Starting the download.',
   progress: 0.4,
   dismissible: true,
@@ -178,7 +178,7 @@ const downloading = {
 const stalled = {
   id: 'update-available',
   tone: 'warn',
-  message: 'Downloading Claw Control UI 1.0.2 has stopped making progress.',
+  message: 'Downloading Chela 1.0.2 has stopped making progress.',
   detail: 'Nothing has arrived for 45 seconds. It has not been cancelled, so it may still finish on its own.',
   dismissible: true,
   dismissClears: true,

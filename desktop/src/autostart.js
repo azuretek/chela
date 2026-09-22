@@ -44,7 +44,7 @@ export function entryPath({ env = process.env, home = os.homedir() } = {}) {
  *
  * An AppImage is the case that matters, and the case that would otherwise
  * break. `process.execPath` inside a running AppImage points into the
- * temporary mount the runtime made (/tmp/.mount_ClawDeXXXXXX/claw-desktop),
+ * temporary mount the runtime made (/tmp/.mount_ClawDeXXXXXX/chela-desktop),
  * which is unmounted the moment the app exits, so an entry written from
  * execPath names a path that does not exist by the time anything reads it, and
  * fails silently at every login. APPIMAGE is the AppImage runtime's own pointer

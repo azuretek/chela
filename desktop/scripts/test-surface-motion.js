@@ -438,7 +438,7 @@ app.whenReady().then(async () => {
   // changes nothing and why the first version of this step measured nothing at all.
   // About's manual update check raises the "updates are not available in this build"
   // notice instead, which is a card the reader can genuinely clear.
-  const aboutItem = menuItem('About Claw Control UI');
+  const aboutItem = menuItem('About Chela');
   check('the About surface can be opened for the notice step', Boolean(aboutItem), 'no About menu item');
   if (aboutItem) {
     aboutItem.click();

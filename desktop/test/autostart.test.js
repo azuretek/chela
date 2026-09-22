@@ -18,12 +18,12 @@ import * as autostart from '../src/autostart.js';
 
 test('the entry goes where every desktop environment looks', () => {
   const p = autostart.entryPath({ env: {}, home: '/home/example-user' });
-  assert.equal(p, path.join('/home/example-user', '.config', 'autostart', 'claw-desktop.desktop'));
+  assert.equal(p, path.join('/home/example-user', '.config', 'autostart', 'chela-desktop.desktop'));
 });
 
 test('XDG_CONFIG_HOME wins when it is absolute', () => {
   const p = autostart.entryPath({ env: { XDG_CONFIG_HOME: '/home/example-user/cfg' }, home: '/home/example-user' });
-  assert.equal(p, path.join('/home/example-user/cfg', 'autostart', 'claw-desktop.desktop'));
+  assert.equal(p, path.join('/home/example-user/cfg', 'autostart', 'chela-desktop.desktop'));
 });
 
 test('a relative XDG_CONFIG_HOME is ignored, as the spec requires', () => {
@@ -31,7 +31,7 @@ test('a relative XDG_CONFIG_HOME is ignored, as the spec requires', () => {
   // should be considered invalid." Honouring one would put the entry somewhere
   // relative to whatever directory the app happened to be launched from.
   const p = autostart.entryPath({ env: { XDG_CONFIG_HOME: 'cfg' }, home: '/home/example-user' });
-  assert.equal(p, path.join('/home/example-user', '.config', 'autostart', 'claw-desktop.desktop'));
+  assert.equal(p, path.join('/home/example-user', '.config', 'autostart', 'chela-desktop.desktop'));
 });
 
 /* ---------------------------------------------------------------- what */
@@ -42,22 +42,22 @@ test('inside an AppImage the entry points at the AppImage, not execPath', () => 
   // the app exits, so an entry written from it names a path that no longer
   // exists by the time the next login reads it, and fails silently forever.
   const cmd = autostart.launchCommand({
-    env: { APPIMAGE: '/home/example-user/Apps/claw-desktop-1.0.1-x86_64.AppImage' },
-    execPath: '/tmp/.mount_ClawDe7fA2x/claw-desktop',
+    env: { APPIMAGE: '/home/example-user/Apps/chela-desktop-1.0.1-x86_64.AppImage' },
+    execPath: '/tmp/.mount_ClawDe7fA2x/chela-desktop',
   });
-  assert.equal(cmd, '/home/example-user/Apps/claw-desktop-1.0.1-x86_64.AppImage');
+  assert.equal(cmd, '/home/example-user/Apps/chela-desktop-1.0.1-x86_64.AppImage');
 });
 
 test('outside an AppImage it falls back to the running executable', () => {
-  const cmd = autostart.launchCommand({ env: {}, execPath: '/opt/claw-desktop/claw-desktop' });
-  assert.equal(cmd, '/opt/claw-desktop/claw-desktop');
+  const cmd = autostart.launchCommand({ env: {}, execPath: '/opt/chela-desktop/chela-desktop' });
+  assert.equal(cmd, '/opt/chela-desktop/chela-desktop');
 });
 
 test('the body is a valid desktop entry that runs the app', () => {
   const body = autostart.entryBody({ exec: '/home/example-user/Claw.AppImage' });
   assert.match(body, /^\[Desktop Entry\]$/m);
   assert.match(body, /^Type=Application$/m);
-  assert.match(body, /^Name=Claw Control UI$/m);
+  assert.match(body, /^Name=Chela$/m);
   assert.match(body, /^Exec="\/home\/example-user\/Claw\.AppImage"$/m);
   assert.match(body, /^Terminal=false$/m);
   // Redundant per the spec, but it is what GNOME Tweaks writes, and some
@@ -72,7 +72,7 @@ test('start-hidden reaches the entry as the flag main.js parses', () => {
 });
 
 test('a path with spaces stays one argument', () => {
-  // "~/My Apps/Claw Control UI.AppImage" unquoted would be read as three.
+  // "~/My Apps/Chela.AppImage" unquoted would be read as three.
   assert.match(autostart.entryBody({ exec: '/home/example-user/My Apps/Claw.AppImage' }), /^Exec="\/home\/example-user\/My Apps\/Claw\.AppImage"$/m);
 });
 

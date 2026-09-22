@@ -79,7 +79,7 @@ fakeUpdater.checkForUpdates = async () => {
   await new Promise((r) => setTimeout(r, 50));
   token = new FakeToken();
   record('check', 'the feed named ' + APP_VERSION_FROM_FEED);
-  fakeUpdater.emit('update-available', { version: APP_VERSION_FROM_FEED, releaseName: 'Claw Control UI ' + APP_VERSION_FROM_FEED });
+  fakeUpdater.emit('update-available', { version: APP_VERSION_FROM_FEED, releaseName: 'Chela ' + APP_VERSION_FROM_FEED });
   // ★ The library starts the download ITSELF here when autoDownload is set --
   // `doCheckForUpdates` returns `downloadPromise: this.autoDownload ?
   // this.downloadUpdate(cancellationToken) : null` -- and hands it the same token
@@ -284,7 +284,7 @@ async function waitFor(predicate, timeoutMs, label) {
 app.whenReady().then(async () => {
   await delay(6000);
 
-  const aboutItem = menuItem('About Claw Control UI');
+  const aboutItem = menuItem('About Chela');
   check('the About menu item exists', Boolean(aboutItem), 'no About menu item');
   if (!aboutItem) { app.exit(1); return; }
   aboutItem.click();

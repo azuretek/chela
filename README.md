@@ -1,4 +1,4 @@
-# Claw Control UI
+# Chela
 
 Native clients for the [OpenClaw](https://github.com/openclaw/openclaw) Control
 UI. **One project, one shared core, one interface per form factor.**
@@ -6,8 +6,8 @@ UI. **One project, one shared core, one interface per form factor.**
 | Tree | What it is |
 |---|---|
 | [`core/`](core/) | The platform-agnostic rules both interfaces share: gateway config model, token handoff, connection state, loading progress, notices, the release primitives, and the app's own pages. No Electron, no SwiftUI. |
-| [`desktop/`](desktop/) | The desktop interface (`claw-desktop`), an Electron app for macOS, Windows and Linux. Ships today. |
-| [`mobile/`](mobile/) | The iOS interface (`claw-mobile`), native SwiftUI. Distributed through our own releases. |
+| [`desktop/`](desktop/) | The desktop interface (`chela-desktop`), an Electron app for macOS, Windows and Linux. Ships today. |
+| [`mobile/`](mobile/) | The iOS interface (`chela-mobile`), native SwiftUI. Distributed through our own releases. |
 | [`docs/`](docs/) | The shared documentation: how the trees fit together, how a release works, and what runs where. |
 
 These are not separate projects that happen to share code. The interfaces differ

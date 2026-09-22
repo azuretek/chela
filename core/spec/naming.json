@@ -4,27 +4,29 @@
     "A name here is read in five planes that cannot import each other: JavaScript at runtime, electron-builder's YAML, Xcode's plist, GitHub Actions' names, and prose in a README. One edit per rename is not achievable by importing, so the rule is: import where you can, assert where you cannot, and sweep the tree for what is left. A rename is then one edit in this file plus whatever the assertions name.",
     "NOT an environment variable, and that is deliberate rather than an omission. `productName` decides where Electron puts userData and which Keychain item safeStorage looks in (see spec/clients/desktop/keychainItem below), so a name that could differ between two launches on one machine, or between two builds of one commit, would split a profile or orphan credentials. A build-time override has the same problem one step earlier: two machines would produce differently named artifacts from the same commit, and an unset variable would silently produce a wrong one.",
     "The migration reads `profileNames` and `keychainItem` from here too, which is the part that must never drift: they are what carry an existing profile and its credentials across a rename, and a stale copy of either one loses a user's settings with no error.",
-    "`keychainItem` is an identity, not a name, which is why it holds a RETIRED product name on purpose. Electron's safeStorage finds its key through a Keychain item named `<app name> Safe Storage`; the item is found by name, so renaming the app does not move it, it looks up a different one and cannot read the credentials already on disk. It stays pinned to the name the item was created under, the same way the bundle ids below stay put when the product name changes."
+    "`keychainItem` is an identity, not a name, which is why it holds a RETIRED product name on purpose. Electron's safeStorage finds its key through a Keychain item named `<app name> Safe Storage`; the item is found by name, so renaming the app does not move it, it looks up a different one and cannot read the credentials already on disk. It stays pinned to the name the item was created under, the same way the bundle ids below stay put when the product name changes.",
+    "The repo slug is an identifier of the same kind, and it is deliberately NOT moved by a product rename: it is what every clone URL, CI checkout and `gh` invocation already points at, so moving it is its own change with its own sweep, never a side effect of this one.",
+    "The product is named Chela, the crustacean term for a claw: the same animal as OpenClaw, without adding to the pile of third-party dashboards whose names begin with it, and nothing like any product already in this space."
   ],
-  "product": "Claw Control UI",
+  "product": "Chela",
   "repo": {
     "owner": "azuretek",
     "name": "claw-control-ui"
   },
   "clients": {
     "desktop": {
-      "shorthand": "claw-desktop",
+      "shorthand": "chela-desktop",
       "bundleId": "com.azuretek.claw-desktop",
-      "profileNames": ["Claw Desktop", "OpenClaw"],
+      "profileNames": ["Claw Control UI", "Claw Desktop", "OpenClaw"],
       "keychainItem": "Claw Desktop"
     },
     "mobile": {
-      "shorthand": "claw-mobile",
+      "shorthand": "chela-mobile",
       "bundleId": "com.azuretek.claw-mobile"
     }
   },
   "retired": {
-    "products": ["Claw Desktop"],
+    "products": ["Claw Desktop", "Claw Control UI"],
     "why": "Product names this one replaced, swept for across the tree by desktop/test/naming.test.js. A hit outside the allowlist in that test is a surface a rename missed, which is the failure this list exists to make impossible to overlook. Add the old value here in the same commit that changes `product`."
   }
 }

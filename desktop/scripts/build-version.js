@@ -11,7 +11,7 @@
 //   untagged build  there is no version, so one is derived from the commit.
 //                   Otherwise every dispatch build is named for whatever
 //                   package.json last said, and three different installers
-//                   arrive called claw-desktop-Setup-1.0.0-x64.exe.
+//                   arrive called chela-desktop-Setup-1.0.0-x64.exe.
 //
 // Prints a GitHub Actions output line (`version=...`) plus a human line, and
 // exits non-zero with an explanation when a tag build is inconsistent.
