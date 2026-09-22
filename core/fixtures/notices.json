@@ -818,7 +818,7 @@
           "id": "download",
           "notice": {
             "tone": "info",
-            "message": "Downloading Claw Control UI 1.0.2.",
+            "message": "Downloading Chela 1.0.2.",
             "dismissible": true,
             "dismissClears": true,
             "progress": 0.4
@@ -888,7 +888,7 @@
           "id": "download",
           "notice": {
             "tone": "info",
-            "message": "Downloading Claw Control UI 1.0.2.",
+            "message": "Downloading Chela 1.0.2.",
             "dismissible": true,
             "dismissClears": true,
             "progress": 0
@@ -911,7 +911,7 @@
         "notice": {
           "download": {
             "tone": "info",
-            "message": "Downloading Claw Control UI 1.0.2.",
+            "message": "Downloading Chela 1.0.2.",
             "detail": null,
             "dismissible": true,
             "progress": 0,
@@ -929,7 +929,7 @@
           "id": "update-available",
           "notice": {
             "tone": "info",
-            "message": "Downloading Claw Control UI 1.0.2.",
+            "message": "Downloading Chela 1.0.2.",
             "detail": "25 MB of 130 MB.",
             "progress": 0.2
           }
@@ -943,7 +943,7 @@
           "id": "update-available",
           "notice": {
             "tone": "info",
-            "message": "Downloading Claw Control UI 1.0.2.",
+            "message": "Downloading Chela 1.0.2.",
             "detail": "60 MB of 130 MB.",
             "progress": 0.46
           }
@@ -963,7 +963,7 @@
         "notice": {
           "update-available": {
             "tone": "info",
-            "message": "Downloading Claw Control UI 1.0.2.",
+            "message": "Downloading Chela 1.0.2.",
             "detail": "60 MB of 130 MB.",
             "dismissible": true,
             "progress": 0.46,
@@ -981,7 +981,7 @@
           "id": "update-available",
           "notice": {
             "tone": "info",
-            "message": "Claw Control UI 1.0.2 is available.",
+            "message": "Chela 1.0.2 is available.",
             "detail": "You are on 1.0.1."
           }
         },
@@ -994,7 +994,7 @@
           "id": "update-available",
           "notice": {
             "tone": "info",
-            "message": "Claw Control UI 1.0.2 is available.",
+            "message": "Chela 1.0.2 is available.",
             "detail": "You are on 1.0.1."
           }
         },
@@ -1004,7 +1004,7 @@
           "announce": true,
           "notice": {
             "tone": "info",
-            "message": "Claw Control UI 1.0.2 is available.",
+            "message": "Chela 1.0.2 is available.",
             "detail": "You are on 1.0.1."
           }
         }
@@ -1026,7 +1026,7 @@
         "notice": {
           "update-available": {
             "tone": "info",
-            "message": "Claw Control UI 1.0.2 is available.",
+            "message": "Chela 1.0.2 is available.",
             "detail": "You are on 1.0.1.",
             "dismissible": true,
             "progress": null,

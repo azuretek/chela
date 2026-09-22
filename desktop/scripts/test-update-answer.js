@@ -61,7 +61,7 @@ fakeUpdater.checkForUpdates = async () => {
   if (feed === 'available') {
     fakeUpdater.emit('update-available', {
       version: APP_VERSION_FROM_FEED,
-      releaseName: `Claw Control UI ${APP_VERSION_FROM_FEED}`,
+      releaseName: `Chela ${APP_VERSION_FROM_FEED}`,
     });
   } else {
     fakeUpdater.emit('update-not-available', { version: '0.0.0' });
@@ -180,7 +180,7 @@ async function pressCheck(about) {
 app.whenReady().then(async () => {
   await delay(6000);
 
-  const aboutItem = menuItem('About Claw Control UI');
+  const aboutItem = menuItem('About Chela');
   check('the About menu item exists', Boolean(aboutItem), 'no About menu item');
   if (!aboutItem) { app.exit(1); return; }
   aboutItem.click();

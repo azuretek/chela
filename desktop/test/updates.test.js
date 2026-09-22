@@ -457,7 +457,7 @@ test('the About page still shows the full version, tail and all', () => {
 /* ---------------------------------------------- the download that sat at 0% */
 
 /*
- * Abi, 2026-09-17: "Downloading Claw Control UI <version>. Starting the download."
+ * Abi, 2026-09-17: "Downloading Chela <version>. Starting the download."
  * with the bar at 0% and no way to clear it.
  *
  * Three things had to be true for that card to be unkillable, and each one is

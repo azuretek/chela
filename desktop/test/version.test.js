@@ -200,7 +200,7 @@ test('a later commit gives a higher version, by a numeric identifier', () => {
 
 test('two commits give two different installer names', () => {
   // Three dispatch builds once produced three byte-different files all called
-  // claw-desktop-Setup-1.0.0-x64.exe.
+  // chela-desktop-Setup-1.0.0-x64.exe.
   const a = version.devVersion('1.0.0', SHA, { count: 148 });
   const b = version.devVersion('1.0.0', '93dbc4e1122334455667788990011223344556677', { count: 149 });
   assert.notEqual(a, b);

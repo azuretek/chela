@@ -1,6 +1,6 @@
 # Contributing
 
-Claw Control UI is one project with a shared core and one interface per form
+Chela is one project with a shared core and one interface per form
 factor, so a change usually belongs in one place and is consumed everywhere else.
 Where things belong is [layout.md](layout.md); what to run before you push is
 [testing.md](testing.md).

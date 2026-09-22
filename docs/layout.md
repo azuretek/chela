@@ -1,6 +1,6 @@
 # One project, three trees
 
-Claw Control UI is one project with a shared core and one interface per form
+Chela is one project with a shared core and one interface per form
 factor. The trees are parts of one product, and the test for whether something
 belongs where it is: if two interfaces need it, it is core's.
 

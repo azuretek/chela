@@ -97,7 +97,7 @@ final class ReconnectResumeShimParityTests: XCTestCase {
         // If this client's own name or engine were in the script, the two clients
         // could not run the same bytes and this arrangement is a fiction.
         let script = ReconnectResumeShim.script
-        for foreign in [Naming.mobileToken, "claw-desktop", "UIKit", "WKUserScript", "webkit.messageHandlers", "postMessage", "localStorage"] {
+        for foreign in [Naming.mobileToken, "chela-desktop", "UIKit", "WKUserScript", "webkit.messageHandlers", "postMessage", "localStorage"] {
             XCTAssertFalse(script.contains(foreign), "\(foreign) does not belong in the shared script")
         }
     }

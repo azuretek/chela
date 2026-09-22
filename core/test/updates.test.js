@@ -202,7 +202,7 @@ test('the outcome names come from the spec, like the action names', () => {
 /*
  * ★ The download that sat at 0% with no way out.
  *
- * Abi, 2026-09-17: a banner reading "Downloading Claw Control UI <version>.
+ * Abi, 2026-09-17: a banner reading "Downloading Chela <version>.
  * Starting the download." with the bar at zero and no control that would take it
  * away. Two faults, and both are covered here or in the desktop's own tests: a
  * surface reporting progress that was not happening, and a card with no way out.
@@ -256,7 +256,7 @@ test('the stalled card says what is known, and does not claim the download faile
 
 test('a download names the version and says how far it has got, or that it is starting', () => {
   const starting = downloadingMessage({ version: '1.0.2', current: '1.0.1' });
-  assert.equal(starting.message, 'Downloading Claw Control UI 1.0.2.');
+  assert.equal(starting.message, 'Downloading Chela 1.0.2.');
   assert.equal(starting.detail, 'Starting the download.');
   const moving = downloadingMessage({ version: '1.0.2', current: '1.0.1', transfer: '12 MB of 130 MB, 900 kB/s' });
   assert.equal(moving.detail, "12 MB of 130 MB, 900 kB/s", "the client's own arrival line is used as it stands");

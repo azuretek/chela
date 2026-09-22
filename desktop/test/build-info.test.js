@@ -99,7 +99,7 @@ test('a dirty build has no usable id', () => {
 /* ----------------------------------------------------------------------- read */
 
 test('a missing build-info.json is the source-build shape, not a crash', () => {
-  const missing = path.join(os.tmpdir(), 'claw-desktop-no-such-build-info.json');
+  const missing = path.join(os.tmpdir(), 'chela-desktop-no-such-build-info.json');
   fs.rmSync(missing, { force: true });
   assert.equal(buildInfo.read(missing).commit, null);
 });
@@ -176,7 +176,7 @@ test('About carries the build identity, the update line and the runtime', () => 
     platform: 'win32',
     arch: 'x64',
   });
-  assert.equal(about.message, 'Claw Control UI');
+  assert.equal(about.message, 'Chela');
   assert.match(about.detail, /1\.0\.1-dev\.40\.00aeecf142 \(a1b2c3d4e5, built 2026-09-02 08:41Z\)/);
   assert.match(about.detail, /dev channel/);
   assert.match(about.detail, /Electron 44\.1\.1, Chromium 140\.0\.0\.0/);

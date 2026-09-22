@@ -33,7 +33,7 @@ const STATE = {
     { label: 'Channel', value: 'dev' },
     { label: 'Electron', value: '44.4.1 \u00b7 Chromium 152.0.7977.78' },
     { label: 'Platform', value: 'Windows 10.0.26200 x64' },
-    { label: 'Config', value: 'C:\\Users\\azure\\AppData\\Roaming\\Claw Control UI\\config.json' },
+    { label: 'Config', value: 'C:\\Users\\azure\\AppData\\Roaming\\Chela\\config.json' },
   ],
   controlUI: { version: '2026.9.4', commit: '362492d734abcdef' },
 };

@@ -15,7 +15,7 @@
 	     built around it. The name a person sees does not have to be the name a
 	     build system uses, which is the same split as the bundle identifier below. -->
 	<key>CFBundleDisplayName</key>
-	<string>Claw Control UI</string>
+	<string>Chela</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -41,7 +41,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Claw Control UI</string>
+	<string>Chela</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>

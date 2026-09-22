@@ -69,7 +69,7 @@ final class AppSettingsAffordanceParityTests: XCTestCase {
         let script = AppSettingsAffordance.script
         // If either client's own name or engine were in the script, the two
         // clients could not run the same bytes and this arrangement is a fiction.
-        for platform in [Naming.mobileToken, "claw-desktop", "UIKit", "WKUserScript", "ipcRenderer", "webkit.messageHandlers"] {
+        for platform in [Naming.mobileToken, "chela-desktop", "UIKit", "WKUserScript", "ipcRenderer", "webkit.messageHandlers"] {
             XCTAssertFalse(script.contains(platform), "\(platform) does not belong in the shared script")
         }
     }
