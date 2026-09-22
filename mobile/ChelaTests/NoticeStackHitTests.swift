@@ -1,5 +1,5 @@
 import XCTest
-@testable@testable import Chela
+@testable import Chela
 
 /// What the phone's notice banner claims, and why it is a source rule here
 /// rather than a click test.

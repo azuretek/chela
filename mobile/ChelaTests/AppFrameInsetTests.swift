@@ -1,6 +1,6 @@
 import XCTest
 
-@testable@testable import Chela
+@testable import Chela
 
 /// The app frame inset at the phone's half: what the spec gave this client, and the
 /// statement the web view puts in the page.

@@ -1,7 +1,7 @@
 import XCTest
 import UIKit
 
-@testable@testable import Chela
+@testable import Chela
 
 /// Parity with `core/prompt-metadata.js`, proven against the same golden fixtures
 /// the JS asserts in `core/test/fixtures.test.js`.

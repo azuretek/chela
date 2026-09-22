@@ -1,7 +1,7 @@
 import Combine
 import XCTest
 
-@testable@testable import Chela
+@testable import Chela
 
 /// Device pairing, proven against the same golden cases the JS side asserts on.
 ///

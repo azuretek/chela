@@ -1,6 +1,6 @@
 import XCTest
 
-@testable@testable import Chela
+@testable import Chela
 
 /// The client's own gateway configuration.
 ///

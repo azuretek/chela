@@ -1,6 +1,6 @@
 import XCTest
 
-@testable@testable import Chela
+@testable import Chela
 
 /// Parity with `core/native-control-auth.js` and its fixture, the native token
 /// handoff: the object this client sets on the Control UI's window so the page

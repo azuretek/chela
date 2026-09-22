@@ -1,6 +1,6 @@
 import XCTest
 
-@testable@testable import Chela
+@testable import Chela
 
 /// Parity with `core/device-identity.js` and its fixture, the bridge that makes
 /// the Control UI's device keypair survive a reinstall.
