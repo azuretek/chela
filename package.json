@@ -1,5 +1,5 @@
 {
-  "name": "claw-control-ui",
+  "name": "chela",
   "version": "1.0.0",
   "description": "First-class monorepo root for the Chela clients: core (shared rules), desktop (Electron), mobile (iOS). No platform is the root; each is a peer.",
   "private": true,
