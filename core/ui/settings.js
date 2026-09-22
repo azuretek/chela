@@ -1546,41 +1546,56 @@ async function commitSetting(id, value, done = '') {
   render();
 }
 
-// The switches. Their own state is the confirmation, so they carry a line only
-// when something refused: a flip that looks flipped after the write is the answer,
-// and a "Saved." under every one of them would be five lines saying nothing.
-for (const id of ['closeToTray', 'launchAtLogin', 'startHidden', 'promptMetadata', 'autoUpdate']) {
-  const box = $(id);
-  // hasSetting because a client without the row must not be wired to it, and the
-  // element check because renderPrefs owns autoUpdate's disabled state: a build
-  // that cannot install its own updates has nothing to switch on.
-  if (!box || !hasSetting(id)) continue;
-  box.addEventListener('change', () => {
-    if (box.disabled) return;
-    void commitSetting(id, box.checked);
-  });
-}
+/**
+ * Wire the preference controls, ONCE, and only after the first state has arrived.
+ *
+ * Boot order is the whole reason this is a function rather than module scope.
+ * Everything it wires is gated on hasSetting(), which reads the surface out of
+ * `state`, and `state` stays null until the boot IIFE at the foot of this file
+ * has awaited its first `state` command. Wiring at module scope therefore ran
+ * against an empty surface, every hasSetting() answered false, and each control
+ * was left with no listener at all: the click still flipped the native box,
+ * nothing was sent, and the next render reset it from the host's own value.
+ * Reported as a checkbox that is unchecked again when the page is opened twice.
+ */
+function wirePreferences() {
+  // The switches. Their own state is the confirmation, so they carry a line only
+  // when something refused: a flip that looks flipped after the write is the
+  // answer, and a "Saved." under every one of them would be five lines saying
+  // nothing.
+  for (const id of ['closeToTray', 'launchAtLogin', 'startHidden', 'promptMetadata', 'autoUpdate']) {
+    const box = $(id);
+    // hasSetting because a client without the row must not be wired to it, and the
+    // element check because renderPrefs owns autoUpdate's disabled state: a build
+    // that cannot install its own updates has nothing to switch on.
+    if (!box || !hasSetting(id)) continue;
+    box.addEventListener('change', () => {
+      if (box.disabled) return;
+      void commitSetting(id, box.checked);
+    });
+  }
 
-// The shortcut is the one preference on this tab with nothing to show for itself:
-// a switch that is on looks on, and a field looks the same whether or not it was
-// sent. So its row reports the commit, and the commit is the reader's own gesture:
-// Enter, or leaving the field having changed it. Leaving counts because that is
-// the phone platforms' own answer for the same job, and Enter is what someone on
-// a keyboard reaches for.
-const shortcut = $('globalShortcut');
-if (shortcut && hasSetting('globalShortcut')) {
-  let atFocus = shortcut.value;
-  shortcut.addEventListener('focus', () => { atFocus = shortcut.value; });
-  shortcut.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    shortcut.blur();
-  });
-  shortcut.addEventListener('blur', () => {
-    if (shortcut.value === atFocus) return;
-    atFocus = shortcut.value;
-    void commitSetting('globalShortcut', shortcut.value.trim(), 'Saved.');
-  });
+  // The shortcut is the one preference on this tab with nothing to show for
+  // itself: a switch that is on looks on, and a field looks the same whether or
+  // not it was sent. So its row reports the commit, and the commit is the reader's
+  // own gesture: Enter, or leaving the field having changed it. Leaving counts
+  // because that is the phone platforms' own answer for the same job, and Enter is
+  // what someone on a keyboard reaches for.
+  const shortcut = $('globalShortcut');
+  if (shortcut && hasSetting('globalShortcut')) {
+    let atFocus = shortcut.value;
+    shortcut.addEventListener('focus', () => { atFocus = shortcut.value; });
+    shortcut.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      shortcut.blur();
+    });
+    shortcut.addEventListener('blur', () => {
+      if (shortcut.value === atFocus) return;
+      atFocus = shortcut.value;
+      void commitSetting('globalShortcut', shortcut.value.trim(), 'Saved.');
+    });
+  }
 }
 
 /* ----------------------------------------------------------------- dismiss */
@@ -1661,6 +1676,9 @@ on('state', async () => {
   // What this client has, before anything is drawn: the spec's split decides
   // both the rows and which of them the first render is allowed to touch.
   applySurface();
+  // Then the controls, which are gated on that surface. See wirePreferences for
+  // why this cannot happen at module scope.
+  wirePreferences();
   // The add form, from the field set this client has: it is built here because
   // which fields exist is the spec's answer, and only once because a form rebuilt
   // under a keyboard would lose what is being typed into it.
