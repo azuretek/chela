@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import Claw
+@testable@testable import Chela
 
 /// Parity with `core/spec/gateway-identity.json` and
 /// `core/fixtures/gateway-identity.json`, the ONE owner of what identifies an

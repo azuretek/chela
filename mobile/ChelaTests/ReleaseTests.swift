@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import Claw
+@testable@testable import Chela
 
 /// What the phone installs from, pinned against the repository's copy of the spec.
 ///

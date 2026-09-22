@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable import Claw
+@testable@testable import Chela
 
 /// The token handoff, against the golden cases both clients share.
 ///

@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import Claw
+@testable@testable import Chela
 
 /// The guard a runtime read needs, one entry per converted spec.
 ///

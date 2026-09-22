@@ -1,7 +1,7 @@
 import XCTest
 import UIKit
 
-@testable import Claw
+@testable@testable import Chela
 
 /// The one action that leaves this app.
 ///

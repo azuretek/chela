@@ -67,7 +67,7 @@ switch (task) {
     generateProject();
     run('xcodebuild', [
       '-project', 'Chela.xcodeproj',
-      '-scheme', 'Claw',
+      '-scheme', 'Chela',
       '-sdk', 'iphonesimulator',
       '-destination', 'generic/platform=iOS Simulator',
       'build-for-testing',
@@ -80,7 +80,7 @@ switch (task) {
     generateProject();
     run('xcodebuild', [
       '-project', 'Chela.xcodeproj',
-      '-scheme', 'Claw',
+      '-scheme', 'Chela',
       '-sdk', 'iphonesimulator',
       '-destination', 'generic/platform=iOS Simulator',
       'build',

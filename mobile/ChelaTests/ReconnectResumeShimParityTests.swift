@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import Claw
+@testable@testable import Chela
 
 /// Parity with `core/spec/reconnect-resume-shim.json`, the ONE owner of the
 /// reserved reconnect-resume property and of the injected script that drops it
@@ -110,7 +110,7 @@ final class ReconnectResumeShimParityTests: XCTestCase {
     /// `WKUserScript` behind it is a fix that never reaches the page.
     func testTheShimIsInstalledAtDocumentStart() throws {
         let webView = try String(
-            contentsOf: try Fixtures.root().appendingPathComponent("mobile").appendingPathComponent("Claw").appendingPathComponent("WebView.swift"),
+            contentsOf: try Fixtures.root().appendingPathComponent("mobile").appendingPathComponent("Chela").appendingPathComponent("WebView.swift"),
             encoding: .utf8
         )
         let installation = """

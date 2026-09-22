@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable import Claw
+@testable@testable import Chela
 
 /// The shared settings surface, as this client carries and answers it.
 ///
@@ -211,7 +211,7 @@ final class SettingsSpecTests: XCTestCase {
     }
 
     private func appSources() throws -> URL {
-        try Fixtures.root().appendingPathComponent("mobile").appendingPathComponent("Claw")
+        try Fixtures.root().appendingPathComponent("mobile").appendingPathComponent("Chela")
     }
 
     private func readSource(_ name: String) throws -> String {

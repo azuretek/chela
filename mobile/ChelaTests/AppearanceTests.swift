@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import Claw
+@testable@testable import Chela
 
 /// Where this client's appearance comes from, now that it does not choose one.
 ///

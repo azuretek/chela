@@ -337,7 +337,7 @@ jobs:
       # rebuilding them, and the restore-key below turns a commit that does change
       # them into an incremental build rather than a clean one.
       #
-      # ★ The source hash deliberately names only what this app compiles: `Claw`
+      # ★ The source hash deliberately names only what this app compiles: `Chela`
       # and `ChelaTests` are its own tree, and `core/spec` plus `core/ui` are the
       # shared files project.yml bundles into it. `mobile/**` itself is NOT the
       # pattern, because the generated project is restored into `mobile/`

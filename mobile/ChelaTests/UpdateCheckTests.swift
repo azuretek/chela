@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import Claw
+@testable@testable import Chela
 
 /// The fetch-and-raise flow, from a feed body to the notice on the board.
 ///

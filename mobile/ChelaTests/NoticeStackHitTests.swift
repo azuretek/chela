@@ -1,5 +1,5 @@
 import XCTest
-@testable import Claw
+@testable@testable import Chela
 
 /// What the phone's notice banner claims, and why it is a source rule here
 /// rather than a click test.
@@ -49,7 +49,7 @@ final class NoticeStackHitTests: XCTestCase {
     /// beside. The same `#filePath` walk the parity fixtures use, because an
     /// absolute path would pass on one machine and fail everywhere else.
     private func source(_ name: String) throws -> String {
-        let file = try Fixtures.root().appendingPathComponent("mobile").appendingPathComponent("Claw")
+        let file = try Fixtures.root().appendingPathComponent("mobile").appendingPathComponent("Chela")
             .appendingPathComponent(name)
         return try String(contentsOf: file, encoding: .utf8)
     }

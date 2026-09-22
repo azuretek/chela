@@ -1,7 +1,7 @@
 import XCTest
 import WebKit
 
-@testable import Claw
+@testable@testable import Chela
 
 /// The safe-area inset the app supplies to the Control UI, so the page insets its
 /// content while its \`100dvh\` surfaces fill the whole screen.

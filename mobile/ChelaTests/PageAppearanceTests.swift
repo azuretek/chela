@@ -1,7 +1,7 @@
 import XCTest
 import WebKit
 
-@testable import Claw
+@testable@testable import Chela
 
 /// The appearance our own pages are given, and the measured half of it.
 ///
