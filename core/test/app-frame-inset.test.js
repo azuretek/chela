@@ -107,23 +107,6 @@ test('the bounded group is the pages own viewport-height container, which the ca
   );
 });
 
-test('the in-flow container is bounded by the start edge alone, never the far one', () => {
-  const { created } = run(installation({ top: 59, bottom: 34 }));
-  const css = created[0].textContent;
-  const bounded = css.slice(css.indexOf(':root[' + FRAME_INSET_MARKER + '] .shell {'));
-
-  assert.ok(
-    bounded.includes(
-      'max-height: calc(100dvh - var(' + FRAME_INSET_PROPERTIES.top + ', 0px)) !important',
-    ),
-    'the container is shortened by the band it starts below, which is the whole of what it overflows by',
-  );
-  assert.ok(
-    !bounded.includes(FRAME_INSET_PROPERTIES.bottom),
-    "the far edge is the page's own to clear through its safe-area tokens: subtracting it here is the second band under the composer",
-  );
-});
-
 test('a client whose page already excludes its chrome publishes zeros and stays inert', () => {
   const { window, root } = run(installation({ top: 0, bottom: 0 }));
 

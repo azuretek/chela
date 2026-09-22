@@ -92,7 +92,6 @@ export function configStatement() {
       properties: spec.properties,
       selectors: spec.clampSelectors,
       boundSelectors: spec.boundSelectors,
-      boundCapEdges: spec.boundCapEdges,
     }) + ';'
   );
 }
