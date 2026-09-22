@@ -33,6 +33,7 @@ final class NamingParityTests: XCTestCase {
         }
 
         let product: String
+        let fullName: String
         let repo: Repo
         let clients: Clients
     }
@@ -46,6 +47,12 @@ final class NamingParityTests: XCTestCase {
             Naming.product,
             try spec().product,
             "Naming.product disagrees with core/spec/naming.json; move both together"
+        )
+
+        XCTAssertEqual(
+            Naming.fullName,
+            try spec().fullName,
+            "Naming.fullName disagrees with core/spec/naming.json; move both together"
         )
     }
 
