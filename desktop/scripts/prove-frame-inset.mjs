@@ -1,7 +1,7 @@
 // * Prove the app frame inset BOUNDS the page, and never moves an edge the page
 // anchored for itself.
 //
-// Abi, 2026-09-21, on the iOS Claw client: "For some reason it's not going into
+// Abi, 2026-09-21, on the iOS Chela client: "For some reason it's not going into
 // the top area anymore, but things are going off the bottom of the screen now".
 //
 // Measured against the real Control UI at a 390x844 viewport with the frame
@@ -29,6 +29,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+// The container's expectation is the DISPLAY's height, not the frame's bottom
+// edge, and that difference is the fault this pins. An in-flow container starts
+// below the top inset and overflows by exactly that band, so the top edge is all
+// the cap may take off it. Subtracting the far edge as well shortened it by the
+// home indicator a SECOND time, and the page's own block-end cluster, which
+// clears that band through its own safe-area tokens, was left with a band of dead
+// space under it. Reported as the bottom bar being too big.
 const VIEW = { width: 390, height: 844, top: 59, bottom: 34 };
 const DOCKED_HEIGHT = 420;
 const FRAME_BOTTOM = VIEW.height - VIEW.bottom;
@@ -134,10 +141,10 @@ try {
   if (framed.marked && framed.sheet) pass('the frame turns the rule on');
   else fail('the frame did not reach the page');
 
-  if (same(framed.shell.top, VIEW.top) && same(framed.shell.bottom, FRAME_BOTTOM)) {
-    pass('the page container is the frame (' + framed.shell.top + ' to ' + framed.shell.bottom + '), not the display');
+  if (same(framed.shell.top, VIEW.top) && same(framed.shell.bottom, VIEW.height)) {
+    pass('the page container starts at the frame top and ends at the display (' + framed.shell.top + ' to ' + framed.shell.bottom + '), which is all it overflows by');
   } else {
-    fail('the page container is ' + framed.shell.top + ' to ' + framed.shell.bottom + ', expected ' + VIEW.top + ' to ' + FRAME_BOTTOM);
+    fail('the page container is ' + framed.shell.top + ' to ' + framed.shell.bottom + ', expected ' + VIEW.top + ' to ' + VIEW.height);
   }
   if (framed.composer.bottom <= FRAME_BOTTOM && framed.actions.bottom <= FRAME_BOTTOM) {
     pass("the page's own block-end cluster is inside the frame (the action row ends at " + framed.actions.bottom + ')');

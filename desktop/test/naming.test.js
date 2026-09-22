@@ -16,8 +16,8 @@
 // asset comment, a doc, and the README's own release filenames).
 //
 // Two surfaces are deliberately not asserted here, because they already have a
-// better witness: `mobile/Claw/Info.plist` and the Swift mirror are asserted
-// from the Swift side, where the value is used (mobile/ClawTests/
+// better witness: `mobile/Chela/Info.plist` and the Swift mirror are asserted
+// from the Swift side, where the value is used (mobile/ChelaTests/
 // NamingParityTests.swift), and the profile-migration constants are asserted
 // through the behaviour they cause in test/profile.test.js.
 
@@ -236,4 +236,23 @@ test('every azuretek reference in the tree names the repo the spec names', () =>
 test('the retired list is not empty, and never contains the current name', () => {
   assert.ok(naming.retired.length > 0, 'a rename that leaves this empty has nothing to sweep for');
   assert.ok(!naming.retired.includes(naming.product), 'the current name cannot also be retired');
+});
+
+
+// The Xcode project and its scheme are names that a build command has to repeat,
+// and they live in three planes that cannot import the spec: xcodegen YAML, two
+// shell scripts, and GitHub Actions. xcodegen renders whatever project.yml says,
+// so the failure a rename leaves behind is a command pointing at a scheme that no
+// longer exists. Assert both halves, over the three files that run xcodebuild.
+test('the Xcode project and its scheme are named after the product', () => {
+  const project = read(ROOT, 'mobile/project.yml').match(/^name: (\S+)$/m);
+  assert.ok(project, 'project.yml should declare a project name');
+  assert.equal(project[1], naming.product, 'the Xcode project is named after the product');
+
+  const builders = ['.github/workflows/mobile-pipeline.yml', 'mobile/build-sim.sh', 'mobile/build-device.sh'];
+  for (const file of builders) {
+    const body = read(ROOT, file);
+    assert.ok(body.includes('-project ' + naming.product + '.xcodeproj'), file + ' should build ' + naming.product + '.xcodeproj');
+    assert.ok(body.includes('-scheme ' + naming.product), file + ' should build the ' + naming.product + ' scheme');
+  }
 });

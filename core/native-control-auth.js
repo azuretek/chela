@@ -24,7 +24,7 @@
 // identity beside it. Neither path weakens the gateway's auth: the token is
 // still checked, and a client id grants no admission of its own.
 //
-// Consumers: mobile/Claw/NativeControlAuth.swift ports these rules and proves
+// Consumers: mobile/Chela/NativeControlAuth.swift ports these rules and proves
 // itself against core/fixtures/native-control-auth.json; a later Android client
 // installs the same statement its own way.
 

@@ -1,7 +1,7 @@
 // Device pairing: reading the gateway's policy close into a state, keeping it
 // apart from an auth failure and a network drop, and moving through the four
 // phases. These are the contract the Swift port proves itself against
-// (mobile/ClawTests/PairingParityTests.swift), from the same golden cases, so
+// (mobile/ChelaTests/PairingParityTests.swift), from the same golden cases, so
 // both clients read one gateway close the same way rather than agreeing by luck.
 
 import test from 'node:test';

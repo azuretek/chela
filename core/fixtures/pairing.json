@@ -1,5 +1,5 @@
 {
-  "description": "The device-pairing contract's golden cases. core/test/pairing.test.js asserts the JS reproduces every one, and mobile/ClawTests/PairingParityTests.swift asserts the Swift port does, so both clients read the same gateway close into the same state, pull the same requestId out of the same reason, and move through the same four phases. The tokens and ids here are examples.",
+  "description": "The device-pairing contract's golden cases. core/test/pairing.test.js asserts the JS reproduces every one, and mobile/ChelaTests/PairingParityTests.swift asserts the Swift port does, so both clients read the same gateway close into the same state, pull the same requestId out of the same reason, and move through the same four phases. The tokens and ids here are examples.",
   "why": [
     "The `close` cases pin the one thing a client must not get wrong: pairing is code 1008 AND a pairing reason, so a 1008 with a non-pairing reason and a close on any other code are NOT pairing and stay ordinary failures. Getting that wrong would show a pairing screen for a dropped connection, or hide a real pairing gate behind a network message.",
     "The `requestId` cases pin the strict id pattern: a well-formed id is read, and a reason with no id, or with an id that would not pass the pattern, yields null rather than arbitrary text on a screen.",

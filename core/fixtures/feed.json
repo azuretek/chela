@@ -1,5 +1,5 @@
 {
-  "description": "Golden feed-reading cases, asserted by core/test/feed.test.js and reproduced by the iOS client's UpdateFeed.swift (mobile/ClawTests/UpdateFeedParityTests.swift). Each case is a fetched releases document and the build reading it: `newer` is the version newerVersion(document, current) must return, or null when the banner must stay absent. `throws` marks the one case a current version this build cannot parse must throw on rather than silently suppress. The document is the shape a client hands the reader after parsing releases.atom: `entries`, newest-first, each carrying the `id` (which ends in the release tag) and `title` of one Atom <entry>. THE SIGNAL THAT DECIDES \"NEWER\" IS THE FEED'S OWN ORDERING, never a ranking of the build and commit tail: that tail's basis has changed, so ranking it inverted and the check silently stopped offering builds (see compareRelease in core/version.js). The comparison is the release only, and an entry's position in this document is what says which build is the latest. The case named \"an older release is not newer\" used to carry an older BUILD of the same release, which the old rule could rank and the new one cannot: it now carries a genuinely older RELEASE, which is the one thing the comparison may still refuse. This is the contract that keeps the two clients reading one feed the same way.",
+  "description": "Golden feed-reading cases, asserted by core/test/feed.test.js and reproduced by the iOS client's UpdateFeed.swift (mobile/ChelaTests/UpdateFeedParityTests.swift). Each case is a fetched releases document and the build reading it: `newer` is the version newerVersion(document, current) must return, or null when the banner must stay absent. `throws` marks the one case a current version this build cannot parse must throw on rather than silently suppress. The document is the shape a client hands the reader after parsing releases.atom: `entries`, newest-first, each carrying the `id` (which ends in the release tag) and `title` of one Atom <entry>. THE SIGNAL THAT DECIDES \"NEWER\" IS THE FEED'S OWN ORDERING, never a ranking of the build and commit tail: that tail's basis has changed, so ranking it inverted and the check silently stopped offering builds (see compareRelease in core/version.js). The comparison is the release only, and an entry's position in this document is what says which build is the latest. The case named \"an older release is not newer\" used to carry an older BUILD of the same release, which the old rule could rank and the new one cannot: it now carries a genuinely older RELEASE, which is the one thing the comparison may still refuse. This is the contract that keeps the two clients reading one feed the same way.",
   "cases": [
     {
       "name": "a newer dev build is announced",
@@ -379,22 +379,22 @@
     {
       "name": "a version names that release's own notes",
       "version": "1.0.1-dev.149.abc1234567",
-      "output": "https://github.com/azuretek/claw-control-ui/releases/tag/v1.0.1-dev.149.abc1234567"
+      "output": "https://github.com/azuretek/chela/releases/tag/v1.0.1-dev.149.abc1234567"
     },
     {
       "name": "a stable version names its release too",
       "version": "1.0.2",
-      "output": "https://github.com/azuretek/claw-control-ui/releases/tag/v1.0.2"
+      "output": "https://github.com/azuretek/chela/releases/tag/v1.0.2"
     },
     {
       "name": "with no version to name, the channel's list of releases",
       "version": null,
-      "output": "https://github.com/azuretek/claw-control-ui/releases"
+      "output": "https://github.com/azuretek/chela/releases"
     },
     {
       "name": "an empty or blank version is the same as none",
       "version": "   ",
-      "output": "https://github.com/azuretek/claw-control-ui/releases"
+      "output": "https://github.com/azuretek/chela/releases"
     }
   ]
 }

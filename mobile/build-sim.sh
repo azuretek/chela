@@ -86,7 +86,7 @@ if [ "${SKIP_BUILD:-}" != "1" ]; then
   # A simulator build is unsigned (CODE_SIGNING_ALLOWED=NO), so no team id is
   # needed. Niced because minizilla also serves Plex/Ollama/the gateway.
   echo "== building for the simulator (the slow part)"
-  nice -n 19 xcodebuild -project Claw.xcodeproj -scheme Claw \
+  nice -n 19 xcodebuild -project Chela.xcodeproj -scheme Chela \
     -sdk iphonesimulator -configuration Debug \
     -destination "platform=iOS Simulator,id=$SIM" \
     CODE_SIGNING_ALLOWED=NO \
@@ -94,7 +94,7 @@ if [ "${SKIP_BUILD:-}" != "1" ]; then
     build
 fi
 
-APP="./build-sim/Build/Products/Debug-iphonesimulator/Claw.app"
+APP="./build-sim/Build/Products/Debug-iphonesimulator/Chela.app"
 if [ ! -d "$APP" ]; then
   echo "error: build reported success but $APP is missing" >&2
   exit 1

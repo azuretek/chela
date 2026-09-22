@@ -15,7 +15,7 @@
 //
 //   desktop/src/*.js        imports this module, for anything a person reads
 //   desktop/test/           asserts the surfaces that cannot import it at all
-//   mobile/Claw/Naming.swift mirrors it, and mobile/ClawTests proves the mirror
+//   mobile/Chela/Naming.swift mirrors it, and mobile/ChelaTests proves the mirror
 //
 // The one thing it is not: an environment variable, or anything else that can
 // differ between two launches or two builds of one commit. `productName` decides

@@ -20,14 +20,14 @@
 # clean on the current tree, and it stays clean.
 
 # Generated and build output are not source. The generated Xcode project
-# (mobile/Claw.xcodeproj) and everything under mobile/build/ are produced by
+# (mobile/Chela.xcodeproj) and everything under mobile/build/ are produced by
 # xcodegen and xcodebuild; linting them reports on files no one wrote and no one
 # can fix. This was a real finding: with no excluded list, SwiftLint scanned
 # mobile/build/.../GeneratedAssetSymbols.swift and flagged it.
 excluded:
   - build
   - .build
-  - Claw.xcodeproj
+  - Chela.xcodeproj
   - scripts
 
 disabled_rules:

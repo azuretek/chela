@@ -22,7 +22,7 @@
  * The host itself is `window.clawSettings`, installed before this script runs.
  * One door, `invoke(command, args)`, plus `on(event, handler)`: desktop builds it
  * in desktop/src/preload.cjs over IPC, and iOS builds it over a
- * WKScriptMessageHandler in mobile/Claw/SettingsHost.swift. A named method here
+ * WKScriptMessageHandler in mobile/Chela/SettingsHost.swift. A named method here
  * would have to be mirrored in Swift, which is why there is one.
  */
 
@@ -58,7 +58,7 @@ const firstRun = params.has('firstRun');
 // renders a blank document in its web view, which took a white screen and a
 // simulator to find. So its host states the same fact on the host object, at
 // document start, which lands at the same moment. See the bootstrap in
-// mobile/Claw/SettingsHost.swift.
+// mobile/Chela/SettingsHost.swift.
 const asPage = params.has('page') || host.asPage === true;
 const $ = (id) => document.getElementById(id);
 

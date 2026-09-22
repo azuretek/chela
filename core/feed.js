@@ -21,7 +21,7 @@
 //
 // Pure and platform-free, like every other core module: no fetch, no clock, no
 // URL session. The client supplies the bytes it fetched and this reads them, so
-// the parsing is testable from one run and the Swift port (mobile/Claw/
+// the parsing is testable from one run and the Swift port (mobile/Chela/
 // UpdateFeed.swift) has a fixture to prove itself against
 // (fixtures/feed.json). Fetching the URL is the client's job, because a network
 // call is exactly the part that is not portable and not pure.

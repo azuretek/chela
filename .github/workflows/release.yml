@@ -918,7 +918,7 @@ jobs:
       # commit. The phone reads releases.atom, which carries the release body as an
       # entry's <content> but carries no assets, so a body line is the one signal
       # the phone can read off the same release the desktop published. The reader
-      # (core/feed.js, mobile/Claw/UpdateFeed.swift) offers a release to the phone
+      # (core/feed.js, mobile/Chela/UpdateFeed.swift) offers a release to the phone
       # only when its entry carries this line, so a desktop-only or .github-only
       # commit, which produces a release but NO mobile run, is invisible to the
       # phone's "update available". That is the phantom-update bug: measured

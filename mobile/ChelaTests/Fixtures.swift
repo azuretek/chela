@@ -24,7 +24,7 @@ enum Fixtures {
     }
 
     /// How far up to look. The repo root is two directories above `mobile/`, so
-    /// this is slack for a deeper `ClawTests` group, not a guess.
+    /// this is slack for a deeper `ChelaTests` group, not a guess.
     private static let maxDepth = 8
 
     /// The directory holding `core/`, which is the repo root.

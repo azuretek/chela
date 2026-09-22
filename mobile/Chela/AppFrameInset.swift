@@ -45,6 +45,9 @@ enum AppFrameInset {
         let clampSelectors: [String]
         /// The page's own viewport-height containers the frame's height bounds.
         let boundSelectors: [String]
+        /// The edges those in-flow containers are bounded by, by name: the frame
+        /// takes them off the side a container starts from, never off the far edge.
+        let boundCapEdges: [String]
         let script: [String]
     }
 
@@ -52,7 +55,8 @@ enum AppFrameInset {
 
     private static func loadSpec() -> Spec {
         let empty = Spec(global: "", configGlobal: "", initialGlobal: "", marker: "",
-                         properties: [:], clampSelectors: [], boundSelectors: [], script: [])
+                         properties: [:], clampSelectors: [], boundSelectors: [],
+                         boundCapEdges: [], script: [])
         guard let url = Bundle.main.url(forResource: "app-frame-inset", withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let spec = try? JSONDecoder().decode(Spec.self, from: data),
@@ -80,6 +84,10 @@ enum AppFrameInset {
     /// build, and these are the boxes the cap alone can hold.
     static var boundSelectors: [String] { spec.boundSelectors }
 
+    /// The edges those in-flow containers are bounded by, by name: the frame takes
+    /// them off the side a container starts from, never off the far edge.
+    static var boundCapEdges: [String] { spec.boundCapEdges }
+
     /// The published property names, by edge.
     static var properties: [String: String] { spec.properties }
 
@@ -89,7 +97,7 @@ enum AppFrameInset {
     /// to catch.
     static let decodedKeys: Set<String> = [
         "global", "configGlobal", "initialGlobal", "marker", "properties", "clampSelectors",
-        "boundSelectors", "script",
+        "boundSelectors", "boundCapEdges", "script",
     ]
 
     /// Nothing is deliberately left on the floor. Said out loud because the test
@@ -107,6 +115,7 @@ enum AppFrameInset {
             "properties": spec.properties,
             "selectors": spec.clampSelectors,
             "boundSelectors": spec.boundSelectors,
+            "boundCapEdges": spec.boundCapEdges,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: config, options: [.sortedKeys]),
               let json = String(data: data, encoding: .utf8)

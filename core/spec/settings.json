@@ -13,7 +13,7 @@
       "host": "window.clawSettings, installed by desktop/src/preload.cjs over IPC"
     },
     "ios": {
-      "host": "window.clawSettings, installed by mobile/Claw/SettingsHost.swift over a WKScriptMessageHandler"
+      "host": "window.clawSettings, installed by mobile/Chela/SettingsHost.swift over a WKScriptMessageHandler"
     }
   },
 
@@ -32,7 +32,7 @@
       "id": "certificates",
       "clients": ["desktop"],
       "absent": {
-        "ios": "Pinning is decided where the handshake is refused, which on the desktop is Electron's certificate-error event and on iOS is the web view's navigation delegate. That delegate does not evaluate trust yet, so the tab would list an empty pin store and offer a decision nothing reads: present and doing nothing, which is worse than absent. The pin store's rules are already shared and already ported (trustCert in core/config-model.js and mobile/Claw/ConfigModel.swift), so turning this on is the delegate's work plus `ios` in this list."
+        "ios": "Pinning is decided where the handshake is refused, which on the desktop is Electron's certificate-error event and on iOS is the web view's navigation delegate. That delegate does not evaluate trust yet, so the tab would list an empty pin store and offer a decision nothing reads: present and doing nothing, which is worse than absent. The pin store's rules are already shared and already ported (trustCert in core/config-model.js and mobile/Chela/ConfigModel.swift), so turning this on is the delegate's work plus `ios` in this list."
       }
     },
     {
@@ -134,8 +134,8 @@
     {
       "id": "updateBanner",
       "clients": ["ios"],
-      "what": "A notice when a newer build exists. The policy is already shared (core/updates.js, mirrored in mobile/Claw/UpdatePolicy.swift) and already answers notify for iOS, and the banner that would draw it is built and has been looked at under the -claw-seed-notices launch argument.",
-      "hook": "Nothing invokes the check yet. The host that lands it is mobile/Claw/SettingsHost.swift, which already holds the NoticeBoard the page and the banner share, and, if the check should have a button, one command in the list above.",
+      "what": "A notice when a newer build exists. The policy is already shared (core/updates.js, mirrored in mobile/Chela/UpdatePolicy.swift) and already answers notify for iOS, and the banner that would draw it is built and has been looked at under the -claw-seed-notices launch argument.",
+      "hook": "Nothing invokes the check yet. The host that lands it is mobile/Chela/SettingsHost.swift, which already holds the NoticeBoard the page and the banner share, and, if the check should have a button, one command in the list above.",
       "why": "Named here because it is the one queued item that adds no setting, so nothing else in this file would record it."
     },
     {

@@ -158,7 +158,7 @@ enum ThemeTokens {
 
     /// The one appearance decision, mirrored from `core/appearance.js`
     /// `pageColorScheme`, and proven against the same golden pairs by
-    /// `mobile/ClawTests/AppearanceParityTests.swift`. It answers the abstract
+    /// `mobile/ChelaTests/AppearanceParityTests.swift`. It answers the abstract
     /// scheme ("light", "dark", or "system") for a page that resolved the given
     /// mode; `pageTrait` above is the iOS adapter that maps that answer onto a
     /// `UIUserInterfaceStyle` ("system" is `.unspecified`, which leaves the

@@ -54,7 +54,7 @@
 	     build and the release it precedes would otherwise be indistinguishable
 	     to the app itself. The release workflow supplies the value; a local
 	     build reports its marketing version instead. -->
-	<key>ClawBuildVersion</key>
+	<key>ChelaBuildVersion</key>
 	<string>$(CLAW_BUILD_VERSION)</string>
 	<!-- Export compliance, answered here so a build does not sit in TestFlight
 	     asking for it. `false` means the app uses no encryption that is not

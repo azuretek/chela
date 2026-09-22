@@ -380,7 +380,7 @@ test('the injected script exists in exactly one file: the spec', () => {
   //
   //   - generic DOM boilerplate. `var style = document.createElement('style');`
   //     is how every stylesheet injector starts, and it also appears in
-  //     mobile/Claw/WebView.swift's safe-area injector, a different script.
+  //     mobile/Chela/WebView.swift's safe-area injector, a different script.
   //   - a bare function SIGNATURE. `function openControlUiSettings() {` is a
   //     name, and desktop/src/main.js has its own async function of the same
   //     name doing the host's native navigation, which the substring match caught

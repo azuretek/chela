@@ -35,7 +35,7 @@ close-to-tray, and the self-updater (the App Store and TestFlight own updates).
 ## Building
 
 The Xcode project is generated, not committed. `project.yml` describes it and
-is the single source of truth; `Claw.xcodeproj` and `xcuserdata/` are gitignored
+is the single source of truth; `Chela.xcodeproj` and `xcuserdata/` are gitignored
 output, so the project's shape has exactly one owner and a change to it arrives
 in review as a readable diff rather than as an unreadable `pbxproj` one.
 
@@ -55,11 +55,11 @@ Then, from `mobile/`:
 
 ```
 # build for the simulator
-xcodebuild -project Claw.xcodeproj -scheme Claw -sdk iphonesimulator \
+xcodebuild -project Chela.xcodeproj -scheme Chela -sdk iphonesimulator \
   -destination 'generic/platform=iOS Simulator' build
 
 # run the shared-core parity tests
-xcodebuild test -project Claw.xcodeproj -scheme Claw \
+xcodebuild test -project Chela.xcodeproj -scheme Chela \
   -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
@@ -120,7 +120,7 @@ shortcut, automatic updates), and the extra request headers on a gateway, each w
 its reason written beside it in that spec.
 
 Every one of those absences is a decision recorded there rather than a gap, and
-`ClawTests/SettingsSpecTests.swift` asserts the split agrees with what this client
+`ChelaTests/SettingsSpecTests.swift` asserts the split agrees with what this client
 implements, in both directions. `-claw-settings-tab <id>` opens a named tab in a
 debug build, for the same reason `-claw-seed-notices` exists: a simulator cannot be
 tapped by a script, and a screen nobody has looked at is a screen nobody has
@@ -206,11 +206,11 @@ interface:
 |---|---|
 | `project.yml` | The xcodegen spec, and the project's only source of truth. |
 | `Claw/` | The app: the SwiftUI shell, the web view host, and the Swift port of the pieces of `core/` the client needs. |
-| `ClawTests/` | Parity tests, run against `core/fixtures/`. |
+| `ChelaTests/` | Parity tests, run against `core/fixtures/`. |
 
 ## Parity with the desktop client
 
-`ClawTests` reads `core/fixtures/*.json` and asserts that the Swift port
+`ChelaTests` reads `core/fixtures/*.json` and asserts that the Swift port
 reproduces them, which is the same contract `core/test/fixtures.test.js` asserts
 for the JS. A port that disagrees with a fixture fails the test; so does a
 checkout where the fixtures cannot be found, because a parity test that silently

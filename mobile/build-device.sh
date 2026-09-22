@@ -91,14 +91,14 @@ echo "== generating the Xcode project from project.yml"
 xcodegen generate
 
 echo "== building for the device"
-xcodebuild -project Claw.xcodeproj -scheme Claw \
+xcodebuild -project Chela.xcodeproj -scheme Chela \
   -destination "platform=iOS,id=$DEVICE" \
   -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
   DEVELOPMENT_TEAM="$TEAM" \
   -derivedDataPath ./build-device \
   build
 
-APP=./build-device/Build/Products/Debug-iphoneos/Claw.app
+APP=./build-device/Build/Products/Debug-iphoneos/Chela.app
 if [ ! -d "$APP" ]; then
   echo "error: build reported success but $APP is missing" >&2
   exit 1
