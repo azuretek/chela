@@ -35,7 +35,7 @@ close-to-tray, and the self-updater (the App Store and TestFlight own updates).
 ## Building
 
 The Xcode project is generated, not committed. `project.yml` describes it and
-is the single source of truth; `Claw.xcodeproj` and `xcuserdata/` are gitignored
+is the single source of truth; `Chela.xcodeproj` and `xcuserdata/` are gitignored
 output, so the project's shape has exactly one owner and a change to it arrives
 in review as a readable diff rather than as an unreadable `pbxproj` one.
 
@@ -55,11 +55,11 @@ Then, from `mobile/`:
 
 ```
 # build for the simulator
-xcodebuild -project Claw.xcodeproj -scheme Claw -sdk iphonesimulator \
+xcodebuild -project Chela.xcodeproj -scheme Chela -sdk iphonesimulator \
   -destination 'generic/platform=iOS Simulator' build
 
 # run the shared-core parity tests
-xcodebuild test -project Claw.xcodeproj -scheme Claw \
+xcodebuild test -project Chela.xcodeproj -scheme Chela \
   -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
@@ -81,11 +81,11 @@ Where it lives:
 
 | Where | What it does |
 |---|---|
-| `Claw/Gateway.swift` | Turns what someone typed into the address the web view loads, or refuses it. |
-| `Claw/ConfigModel.swift` | The list's rules: add, edit, remove, and which one is active. A port of `core/config-model.js`, proven against `core/fixtures/config-model.json`. |
-| `Claw/GatewayStore.swift` | The persistence, and the only reader and writer of the key. `UserDefaults`, and it reads the single address an older build left behind. |
-| `Claw/GatewayURL.swift` | Hands a stored token over on the URL fragment, ported from `core/gateway-url.js`. |
-| `Claw/SettingsCredentials.swift` | The token and password, in the Keychain, write-only from the page. |
+| `Chela/Gateway.swift` | Turns what someone typed into the address the web view loads, or refuses it. |
+| `Chela/ConfigModel.swift` | The list's rules: add, edit, remove, and which one is active. A port of `core/config-model.js`, proven against `core/fixtures/config-model.json`. |
+| `Chela/GatewayStore.swift` | The persistence, and the only reader and writer of the key. `UserDefaults`, and it reads the single address an older build left behind. |
+| `Chela/GatewayURL.swift` | Hands a stored token over on the URL fragment, ported from `core/gateway-url.js`. |
+| `Chela/SettingsCredentials.swift` | The token and password, in the Keychain, write-only from the page. |
 
 A bare host is accepted and given `https`, because that is what a phone keyboard
 makes easy to type. When a load fails the connection notice offers **Open
@@ -103,7 +103,7 @@ edits one.
 
 What differs between the clients is which tabs and which settings apply, and that
 is data in `core/spec/settings.json`, handed to the page at runtime by whichever
-host is running it. On this client the host is `Claw/SettingsHost.swift`: it
+host is running it. On this client the host is `Chela/SettingsHost.swift`: it
 answers the command names the desktop's preload answers, over a
 `WKScriptMessageHandler` instead of IPC, and the page never asks which client it is.
 
@@ -120,7 +120,7 @@ shortcut, automatic updates), and the extra request headers on a gateway, each w
 its reason written beside it in that spec.
 
 Every one of those absences is a decision recorded there rather than a gap, and
-`ClawTests/SettingsSpecTests.swift` asserts the split agrees with what this client
+`ChelaTests/SettingsSpecTests.swift` asserts the split agrees with what this client
 implements, in both directions. `-claw-settings-tab <id>` opens a named tab in a
 debug build, for the same reason `-claw-seed-notices` exists: a simulator cannot be
 tapped by a script, and a screen nobody has looked at is a screen nobody has
@@ -142,7 +142,7 @@ icon from it with one command, from the repo root:
 pnpm --filter chela-desktop run icons
 ```
 
-That writes `Claw/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png`, which is
+That writes `Chela/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png`, which is
 the file the icon set names in its `Contents.json`, alongside the desktop app's
 own PNGs. A bitmap copied from one platform to another would be a second owner
 of the artwork, and the two copies would disagree the first time only one of
@@ -170,7 +170,7 @@ requirement rather than a style choice:
   Hand-authoring the legacy sizes would be several files that can only disagree
   with each other.
 
-Styling comes from the same place as the desktop's. `Claw/Assets.xcassets/AccentColor`
+Styling comes from the same place as the desktop's. `Chela/Assets.xcassets/AccentColor`
 carries the desktop's own accent reds, `#c62828` in the light appearance and
 `#ff4d4d` in the dark one, which is what `desktop/src/ui/ui.css` declares for
 the same two appearances.
@@ -205,12 +205,12 @@ interface:
 | Path | What it is |
 |---|---|
 | `project.yml` | The xcodegen spec, and the project's only source of truth. |
-| `Claw/` | The app: the SwiftUI shell, the web view host, and the Swift port of the pieces of `core/` the client needs. |
-| `ClawTests/` | Parity tests, run against `core/fixtures/`. |
+| `Chela/` | The app: the SwiftUI shell, the web view host, and the Swift port of the pieces of `core/` the client needs. |
+| `ChelaTests/` | Parity tests, run against `core/fixtures/`. |
 
 ## Parity with the desktop client
 
-`ClawTests` reads `core/fixtures/*.json` and asserts that the Swift port
+`ChelaTests` reads `core/fixtures/*.json` and asserts that the Swift port
 reproduces them, which is the same contract `core/test/fixtures.test.js` asserts
 for the JS. A port that disagrees with a fixture fails the test; so does a
 checkout where the fixtures cannot be found, because a parity test that silently

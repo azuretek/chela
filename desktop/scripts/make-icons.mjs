@@ -79,7 +79,7 @@ const targets = [
   // needs from, so there is no AppIcon60x60@2x.png to keep in step with
   // anything. The filename is the one AppIcon.appiconset/Contents.json names.
   {
-    file: 'mobile/Claw/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png',
+    file: 'mobile/Chela/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png',
     size: 1024,
     svg: artwork.app,
     treatment: 'square',

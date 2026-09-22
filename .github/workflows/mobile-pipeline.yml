@@ -3,7 +3,7 @@ name: chela-mobile pipeline
 # The whole mobile pipeline in one file: version, test, release.
 #
 # There is no publish step for the app's update banner: the banner reads the
-# repository's GitHub Releases directly (core/feed.js, mobile/Claw/UpdateFeed.swift
+# repository's GitHub Releases directly (core/feed.js, mobile/Chela/UpdateFeed.swift
 # read releases.atom), and a release already exists per build, so there is
 # nothing to publish beside it. The desktop reads the same releases through
 # electron-updater. This replaced a hand-published GitHub Pages appcast that was
@@ -337,18 +337,18 @@ jobs:
       # rebuilding them, and the restore-key below turns a commit that does change
       # them into an incremental build rather than a clean one.
       #
-      # ★ The source hash deliberately names only what this app compiles: `Claw`
-      # and `ClawTests` are its own tree, and `core/spec` plus `core/ui` are the
+      # ★ The source hash deliberately names only what this app compiles: `Chela`
+      # and `ChelaTests` are its own tree, and `core/spec` plus `core/ui` are the
       # shared files project.yml bundles into it. `mobile/**` itself is NOT the
       # pattern, because the generated project is restored into `mobile/`
-      # Claw.xcodeproj by the step below and would then hash differently on every
+      # Chela.xcodeproj by the step below and would then hash differently on every
       # run, which is how a cache key becomes one that never hits.
       - name: Cache the generated Xcode project
         id: xcodeproj
         uses: actions/cache@v4
         with:
-          path: mobile/Claw.xcodeproj
-          key: xcodeproj-${{ hashFiles('mobile/project.yml') }}-${{ hashFiles('mobile/Claw/**', 'mobile/ClawTests/**') }}
+          path: mobile/Chela.xcodeproj
+          key: xcodeproj-${{ hashFiles('mobile/project.yml') }}-${{ hashFiles('mobile/Chela/**', 'mobile/ChelaTests/**') }}
 
       # The compile products. `build-for-testing` below makes the app and the test
       # bundle together and the test step runs exactly those products with
@@ -362,7 +362,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/DerivedData
-          key: deriveddata-${{ matrix.ios }}-${{ hashFiles('pnpm-lock.yaml', 'mobile/project.yml') }}-${{ hashFiles('mobile/Claw/**', 'mobile/ClawTests/**', 'core/spec/**', 'core/ui/**') }}
+          key: deriveddata-${{ matrix.ios }}-${{ hashFiles('pnpm-lock.yaml', 'mobile/project.yml') }}-${{ hashFiles('mobile/Chela/**', 'mobile/ChelaTests/**', 'core/spec/**', 'core/ui/**') }}
           restore-keys: |
             deriveddata-${{ matrix.ios }}-${{ hashFiles('pnpm-lock.yaml', 'mobile/project.yml') }}-
             deriveddata-${{ matrix.ios }}-
@@ -475,7 +475,7 @@ jobs:
           fi
           xcodegen --version
 
-      # Claw.xcodeproj is generated, not committed: mobile/project.yml is the
+      # Chela.xcodeproj is generated, not committed: mobile/project.yml is the
       # single source of truth for the project's shape and the .gitignore says
       # so. The checkout therefore has no project in it at all, and this step is
       # what makes the next two possible.
@@ -520,8 +520,8 @@ jobs:
           echo "DERIVED_DATA=$derived" >> "$GITHUB_ENV"
 
           xcodebuild \
-            -project Claw.xcodeproj \
-            -scheme Claw \
+            -project Chela.xcodeproj \
+            -scheme Chela \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$derived" \
@@ -619,8 +619,8 @@ jobs:
           set -eo pipefail
 
           xcodebuild \
-            -project Claw.xcodeproj \
-            -scheme Claw \
+            -project Chela.xcodeproj \
+            -scheme Chela \
             -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
             -derivedDataPath "$DERIVED_DATA" \
             test-without-building
@@ -746,7 +746,7 @@ jobs:
           "$bundle/Contents/Developer/usr/bin/xcodebuild" -version
 
       # The project is generated output, not source, and the checkout has no
-      # Claw.xcodeproj in it at all. Regenerating here means a stale copy can
+      # Chela.xcodeproj in it at all. Regenerating here means a stale copy can
       # never be what gets signed and uploaded.
       - name: Install xcodegen
         run: |
@@ -933,12 +933,12 @@ jobs:
           TEAM_ID: ${{ steps.preflight.outputs.team-id }}
         run: |
           set -eo pipefail
-          archive="$RUNNER_TEMP/Claw.xcarchive"
+          archive="$RUNNER_TEMP/Chela.xcarchive"
           echo "ARCHIVE_PATH=$archive" >> "$GITHUB_ENV"
 
           xcodebuild archive \
-            -project Claw.xcodeproj \
-            -scheme Claw \
+            -project Chela.xcodeproj \
+            -scheme Chela \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -archivePath "$archive" \
@@ -984,7 +984,7 @@ jobs:
           BUILD_VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -eo pipefail
-          app="$ARCHIVE_PATH/Products/Applications/Claw.app"
+          app="$ARCHIVE_PATH/Products/Applications/Chela.app"
           if [ ! -d "$app" ]; then
             echo "::error::the archive has no app in it at $app"
             find "$ARCHIVE_PATH/Products" -maxdepth 3 || true
@@ -997,10 +997,10 @@ jobs:
 
           short="$(read_key CFBundleShortVersionString)"
           bundle="$(read_key CFBundleVersion)"
-          identity="$(read_key ClawBuildVersion)"
+          identity="$(read_key ChelaBuildVersion)"
           echo "CFBundleShortVersionString: $short"
           echo "CFBundleVersion:            $bundle"
-          echo "ClawBuildVersion:           $identity"
+          echo "ChelaBuildVersion:           $identity"
 
           failed=0
           [ "$short" = "$MARKETING_VERSION" ] || { echo "::error::bundle short version is '$short', expected '$MARKETING_VERSION'"; failed=1; }
@@ -1029,13 +1029,13 @@ jobs:
           icon_name="$(read_key CFBundleIconName 2>/dev/null || true)"
           if [ -z "$icon_name" ]; then
             # Xcode writes this key under CFBundleIcons rather than at the top
-            # level; Claw/Info.plist declares it as well, so either location is
+            # level; Chela/Info.plist declares it as well, so either location is
             # a pass and the name is all this step cares about.
             icon_name="$(plutil -extract CFBundleIcons.CFBundlePrimaryIcon.CFBundleIconName raw -o - "$app/Info.plist" 2>/dev/null || true)"
           fi
           echo "CFBundleIconName:           ${icon_name:-<absent>}"
           if [ -z "$icon_name" ]; then
-            echo "::error::the archive carries no CFBundleIconName, so App Store Connect rejects the upload (ITMS-90713). Check ASSETCATALOG_COMPILER_APPICON_NAME in project.yml and the AppIcon set in Claw/Assets.xcassets."
+            echo "::error::the archive carries no CFBundleIconName, so App Store Connect rejects the upload (ITMS-90713). Check ASSETCATALOG_COMPILER_APPICON_NAME in project.yml and the AppIcon set in Chela/Assets.xcassets."
             failed=1
           elif [ ! -f "$app/Assets.car" ]; then
             echo "::error::the archive has no Assets.car, so nothing was compiled into the asset catalog and the bundle has no app icon at all"
@@ -1155,9 +1155,9 @@ jobs:
           echo "exported $ipa"
           rm -rf "$RUNNER_TEMP/ipa"
           unzip -q -o "$ipa" -d "$RUNNER_TEMP/ipa"
-          uploaded_app="$RUNNER_TEMP/ipa/Payload/Claw.app"
+          uploaded_app="$RUNNER_TEMP/ipa/Payload/Chela.app"
           if [ ! -d "$uploaded_app" ]; then
-            echo "::error::$ipa has no Payload/Claw.app in it"
+            echo "::error::$ipa has no Payload/Chela.app in it"
             exit 1
           fi
 

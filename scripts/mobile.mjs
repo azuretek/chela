@@ -66,8 +66,8 @@ switch (task) {
     if (!have('xcodebuild')) skip('xcodebuild is not available (no Xcode)');
     generateProject();
     run('xcodebuild', [
-      '-project', 'Claw.xcodeproj',
-      '-scheme', 'Claw',
+      '-project', 'Chela.xcodeproj',
+      '-scheme', 'Chela',
       '-sdk', 'iphonesimulator',
       '-destination', 'generic/platform=iOS Simulator',
       'build-for-testing',
@@ -79,8 +79,8 @@ switch (task) {
     if (!have('xcodebuild')) skip('xcodebuild is not available (no Xcode)');
     generateProject();
     run('xcodebuild', [
-      '-project', 'Claw.xcodeproj',
-      '-scheme', 'Claw',
+      '-project', 'Chela.xcodeproj',
+      '-scheme', 'Chela',
       '-sdk', 'iphonesimulator',
       '-destination', 'generic/platform=iOS Simulator',
       'build',

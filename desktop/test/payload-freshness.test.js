@@ -1,6 +1,6 @@
 // The Control UI payload the app renders must be the gateway's, not a cached one.
 //
-// Claw wraps someone else's product, and that product is served by the gateway.
+// Chela wraps someone else's product, and that product is served by the gateway.
 // The app must not PAINT a pre-loaded or previously-cached Control UI: a launch
 // after the gateway moved to a new build has to render what the gateway is serving
 // now, with no user action, and the manual Clear cache and reload has to reach the

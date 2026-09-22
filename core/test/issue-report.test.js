@@ -23,7 +23,7 @@ import {
 // takes and the shape the scrubber has to catch.
 const TOKEN = 'gk_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0'.repeat(2);
 const GATEWAY_URL = 'https://my-gateway.example.ts.net:18789/';
-const HOME_PATH = '/Users/abi/Library/Application Support/Claw/credentials.json';
+const HOME_PATH = '/Users/abi/Library/Application Support/Chela/credentials.json';
 
 test('a report built while the config holds a gateway token and URL carries NEITHER', () => {
   // The facts an over-eager caller might hand in: a stack and an error message

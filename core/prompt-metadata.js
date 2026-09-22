@@ -16,7 +16,7 @@
 // the phone runs are one copy rather than two that agree by convention.
 //
 // Consumers: desktop/src/prompt-metadata.js re-exports this plus its own Node
-// gathering; mobile/Claw/PromptMetadata.swift ports the same rules and proves
+// gathering; mobile/Chela/PromptMetadata.swift ports the same rules and proves
 // itself against core/fixtures/prompt-metadata.json.
 
 import spec from './spec/prompt-metadata.json' with { type: 'json' };

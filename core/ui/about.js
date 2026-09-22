@@ -10,7 +10,7 @@
 // two: the desktop loads it in an overlay view (`window.clawDesktop`, installed
 // over IPC in desktop/src/preload.cjs), and the iOS app loads the same file out
 // of its bundle in a sheet (`window.clawDesktop`, installed over a
-// WKScriptMessageHandler in mobile/Claw/AboutHost.swift). About was reachable
+// WKScriptMessageHandler in mobile/Chela/AboutHost.swift). About was reachable
 // only from a native menu bar before, which iOS has none of and the Windows
 // desktop hides behind an Alt press, so it now hangs off Settings, which every
 // client can reach. Nothing here branches on which client it is: the facts a

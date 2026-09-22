@@ -1,7 +1,7 @@
 // * Prove the app frame inset BOUNDS the page, and never moves an edge the page
 // anchored for itself.
 //
-// Abi, 2026-09-21, on the iOS Claw client: "For some reason it's not going into
+// Abi, 2026-09-21, on the iOS Chela client: "For some reason it's not going into
 // the top area anymore, but things are going off the bottom of the screen now".
 //
 // Measured against the real Control UI at a 390x844 viewport with the frame

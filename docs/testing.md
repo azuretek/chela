@@ -58,7 +58,7 @@ is a dead zone over the Control UI.
 ## Parity is proven, not asserted
 
 `core/fixtures/` holds input/output pairs, and both sides reproduce the same
-pairs: `core/test/` in JavaScript and `mobile/ClawTests/*ParityTests`
+pairs: `core/test/` in JavaScript and `mobile/ChelaTests/*ParityTests`
 in Swift. That is what turns "the two interfaces agree" into something a failing
 test can contradict, and it is why a spec change regenerates the fixtures in the
 same commit.

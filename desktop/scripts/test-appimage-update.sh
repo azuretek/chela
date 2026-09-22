@@ -32,7 +32,7 @@ set -euo pipefail
 
 FROM_TAG="${1:?usage: $0 <from-tag> [work-dir]}"
 WORK="${2:-${TMPDIR:-/tmp}/claw-appimage-update-test}"
-REPO="${CLAW_REPO:-azuretek/claw-control-ui}"
+REPO="${CLAW_REPO:-azuretek/chela}"
 DISPLAY_NUM="${CLAW_TEST_DISPLAY:-:77}"
 # The app's first update check is 60s after launch (UPDATE_FIRST_CHECK_MS), and
 # the download is ~125 MB, so the dialog cannot appear before then.
@@ -57,9 +57,9 @@ OLD_NAME="$(gh release view "$FROM_TAG" --repo "$REPO" --json assets \
 [ -n "$OLD_NAME" ] || fail "$FROM_TAG has no x86_64 AppImage asset"
 
 say "installing $OLD_NAME as the starting version"
-gh release download "$FROM_TAG" --repo "$REPO" -p "$OLD_NAME" -O "$WORK/app/Claw.AppImage" --clobber
-chmod +x "$WORK/app/Claw.AppImage"
-BEFORE="$(sha512b64 "$WORK/app/Claw.AppImage")"
+gh release download "$FROM_TAG" --repo "$REPO" -p "$OLD_NAME" -O "$WORK/app/Chela.AppImage" --clobber
+chmod +x "$WORK/app/Chela.AppImage"
+BEFORE="$(sha512b64 "$WORK/app/Chela.AppImage")"
 
 # --------------------------------------------------- what it should update to
 # Read from the published channel file rather than "the newest release": that is
@@ -84,7 +84,7 @@ XVFB_PID=$!
 trap 'kill "$XVFB_PID" 2>/dev/null || true' EXIT
 sleep 3
 
-( cd "$WORK/app" && ./Claw.AppImage >"$WORK/app.log" 2>&1 ) &
+( cd "$WORK/app" && ./Chela.AppImage >"$WORK/app.log" 2>&1 ) &
 APP_PID=$!
 trap 'kill "$APP_PID" 2>/dev/null || true; kill "$XVFB_PID" 2>/dev/null || true' EXIT
 sleep "$SETTLE_S"
@@ -107,7 +107,7 @@ else
   fail "no updater cache at $PENDING -- the check never downloaded anything"
 fi
 
-AFTER="$(sha512b64 "$WORK/app/Claw.AppImage")"
+AFTER="$(sha512b64 "$WORK/app/Chela.AppImage")"
 if [ "$AFTER" = "$BEFORE" ]; then
   fail "the AppImage is unchanged -- it downloaded but did not install"
 fi

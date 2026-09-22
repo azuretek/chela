@@ -100,7 +100,7 @@ test('the environment cannot change the answer', () => {
   // the machine it shipped to, and the desktop caller is the one place that can
   // honestly see that variable.
   const before = process.env.APPIMAGE;
-  process.env.APPIMAGE = '/tmp/Claw-1.0.0.AppImage';
+  process.env.APPIMAGE = '/tmp/chela-desktop-1.0.0.AppImage';
   try {
     const cap = capability({ platform: 'linux', packaged: true });
     assert.equal(cap.check, false, 'an omitted appImage means "not an AppImage", not "ask the environment"');

@@ -1,6 +1,6 @@
 // The native token handoff: the object a native client sets on the Control UI's
 // window, and the one assignment that installs it. These are the contract the
-// Swift port proves itself against (mobile/ClawTests/NativeControlAuthParityTests.swift),
+// Swift port proves itself against (mobile/ChelaTests/NativeControlAuthParityTests.swift),
 // and the same golden pairs are asserted on both sides, so "the two clients hand
 // over the same object" is checked rather than hoped for.
 

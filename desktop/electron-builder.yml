@@ -76,7 +76,7 @@ extraResources:
 publish:
   provider: github
   owner: azuretek
-  repo: claw-control-ui
+  repo: chela
 
 # Signing is credential-driven, not configured here.
 #

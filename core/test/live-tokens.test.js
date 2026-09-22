@@ -147,7 +147,7 @@ test('every palette colour ui.css declares is one the live theme can override, o
     [],
     'these colours are declared as a fallback but are not in core/spec/tokens.json\'s live list, so a page\n'
       + 'showing them keeps them whatever palette the Control UI is wearing. Either add each name to that list\n'
-      + '(and to the mirror in mobile/Claw/ThemeTokens.swift, which a parity test holds to it), or add it to\n'
+      + '(and to the mirror in mobile/Chela/ThemeTokens.swift, which a parity test holds to it), or add it to\n'
       + 'OURS in this file with the reason it is ours:\n'
       + offenders.map((line) => `  - ${line}`).join('\n'),
   );

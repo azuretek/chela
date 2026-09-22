@@ -15,7 +15,7 @@
 // both engines, for the same reason prompt-metadata's hook is: a page cannot
 // import a module, and two copies of a script fork the moment one is edited.
 //
-// Consumers: mobile/Claw/PairingState.swift ports these rules and proves itself
+// Consumers: mobile/Chela/PairingState.swift ports these rules and proves itself
 // against core/fixtures/pairing.json; the mobile web view installs the observer
 // through a WKUserScript. desktop/src/pairing.js consumes this module directly:
 // the desktop hosts the same page in an Electron WebContentsView, injects the
