@@ -51,7 +51,8 @@ import sharp from 'sharp';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { generatedFiles, appIcon } from './artwork.mjs';
+import { generatedFiles, appIcon, themedIcons, iosIconFile } from './artwork.mjs';
+import { iconFile } from '../../core/app-icons.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));   // desktop/
 const repo = path.dirname(root);                                            // the repo
@@ -65,6 +66,7 @@ const read = (p) => readFileSync(path.join(root, p));
 // runtime. desktop/test/artwork.test.js fails if a committed copy drifts.
 const generated = generatedFiles();
 for (const [file, text] of Object.entries(generated)) {
+  mkdirSync(path.dirname(path.join(repo, file)), { recursive: true });
   writeFileSync(path.join(repo, file), text);
   console.log(`wrote ${file}`);
 }
@@ -73,10 +75,6 @@ for (const [file, text] of Object.entries(generated)) {
 const artwork = {
   app: Buffer.from(generated['core/ui/assets/claw.svg'], 'utf8'),
   tray: Buffer.from(generated['core/ui/assets/claw-tray.svg'], 'utf8'),
-  // The same icon drawn with square corners, for the one target that must be a
-  // full-bleed square. See appIcon() for why it is drawn square rather than
-  // squared off afterwards.
-  appSquare: Buffer.from(appIcon({ square: true }), 'utf8'),
 };
 
 // One entry per file that ships. `file` is relative to the repo root rather
@@ -92,13 +90,19 @@ const targets = [
   // The iOS app icon, one 1024x1024 entry that Xcode derives every size the app
   // needs from, so there is no AppIcon60x60@2x.png to keep in step with
   // anything. The filename is the one AppIcon.appiconset/Contents.json names.
-  {
-    file: 'mobile/Chela/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png',
-    size: 1024,
-    svg: artwork.appSquare,
-    treatment: 'square',
-  },
 ];
+
+// Every theme's pair. The desktop swaps its Dock or window icon to one of these
+// at runtime (main.js applyAppIcon), so they ship under src/assets. iOS gets
+// each pair as an icon set: paper by default and neon under dark appearance, the
+// primary set being the default theme's (see iosContents in artwork.mjs). That
+// replaces the single neon AppIcon-1024.png, so the App Store icon is now paper.
+for (const { theme, mode, svg } of themedIcons()) {
+  targets.push({ file: 'desktop/src/assets/' + iconFile(theme.id, mode), size: 512, svg: Buffer.from(svg, 'utf8'), treatment: 'canvas' });
+}
+for (const { theme, mode, svg } of themedIcons({ square: true })) {
+  targets.push({ file: 'mobile/Chela/Assets.xcassets/' + iosIconFile(theme, mode), size: 1024, svg: Buffer.from(svg, 'utf8'), treatment: 'square' });
+}
 
 function fail(message) {
   console.error(`error: ${message}`);

@@ -166,6 +166,7 @@ struct ContentView: View {
     private func refreshLiveTokens() {
         gatewayPage.liveTokens { tokens in
             if tokens != liveTokens { liveTokens = tokens }
+            AppIconOffer.consider(tokens: tokens, board: notices)
         }
     }
 
@@ -512,7 +513,7 @@ struct ContentView: View {
                 // build is actually installed.
                 Task { await TestFlight.open() }
             default:
-                break
+                _ = AppIconOffer.run(command, board: notices)
             }
         }
         // A screenshot run on a simulator, which cannot press the button above.

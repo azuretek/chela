@@ -44,6 +44,7 @@ import updates from './updates.js';
 // fresher one may replace it, so a second press does not flash. See
 // core/ui/motion.js and the eighth rule in core/ui/CONVENTIONS.md.
 import { MIN_VISIBLE_MS, remainingVisibleMs } from '../../core/ui/motion.js';
+import * as appIcons from '../../core/app-icons.js';
 import secrets from './secrets.js';
 import defaults from './defaults.js';
 import { withTokenHandoff } from '../../core/gateway-url.js';
@@ -414,6 +415,28 @@ function layoutViews() {
   // banner above was just placed as: a band that appears, moves or goes away takes
   // the published frame with it.
   publishFrameInsets();
+}
+
+/* ---------------------------------------------------------------- app icon */
+
+// The icon that matches the live theme: neon for a dark palette, paper for a
+// light one, in the colours of whichever built-in theme the accent belongs to,
+// and the default pair for a custom palette. core/app-icons.js makes the choice
+// and the iOS client makes the same one. macOS shows it in the Dock; Windows and
+// Linux show the window's own icon, which is the taskbar's. The packaged icon is
+// what the OS shows while the app is not running, so that stays the default.
+let appliedIconFile = null;
+function applyAppIcon() {
+  const { file } = appIcons.choose(currentTheme.tokens?.['--accent'], currentTheme.mode);
+  if (file === appliedIconFile) return;
+  const img = nativeImage.createFromPath(path.join(ASSETS, file));
+  if (img.isEmpty()) {
+    console.warn(`[chela-desktop] no themed icon at ${file}; keeping the one showing`);
+    return;
+  }
+  appliedIconFile = file;
+  if (process.platform === 'darwin') app.dock?.setIcon(img);
+  else if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setIcon(img);
 }
 
 function trayImage() {
@@ -1791,6 +1814,9 @@ function createMainWindow() {
   // would otherwise sit in the store with nothing on screen. Also covers the
   // window being recreated after it was closed for good on macOS.
   refreshBanner();
+  // A new window has the packaged icon, so the themed one is set on it again.
+  appliedIconFile = null;
+  applyAppIcon();
   return mainWindow;
 }
 
@@ -1836,6 +1862,7 @@ function applyStoredTheme(gatewayId) {
   console.log(`[chela-desktop] theme: ${currentTheme.mode} (stored for this gateway)`);
   chrome.applyTheme(currentTheme, mainWindow && !mainWindow.isDestroyed() ? [mainWindow] : []);
   refreshThemedPages();
+  applyAppIcon();
 }
 
 // Adopt a theme reported by the page and repaint everything the page's own
@@ -1864,6 +1891,7 @@ function adoptTheme(theme) {
   currentTheme = theme;
   chrome.applyTheme(currentTheme, [mainWindow]);
   refreshThemedPages();
+  applyAppIcon();
   // Remembered against the gateway that reported it, because the Control UI's
   // theme belongs to that gateway and is chosen in that gateway's own UI. This
   // is one of the only two writes to the appearance store.

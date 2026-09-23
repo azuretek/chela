@@ -1,0 +1,77 @@
+{
+  "description": "Which app icon matches each built-in Control UI theme. This file is the ONE owner: core/app-icons.js reads it on the desktop, the iOS app bundles it (mobile/Chela/AppIcons.swift), and desktop/scripts/artwork.mjs draws each theme's neon (dark) and paper (light) icon from its dark accent.",
+  "why": [
+    "A theme is recognised by its accent, not its name. Neither client can read the theme's name, only the computed values it resolves to, and every built-in theme has a distinct accent in each mode. Both accents are listed so a theme is recognised whichever mode it is in.",
+    "The accents are copied from the Control UI's own theme files (ui/public/themes/*.css, and ui/src/styles/base.css for Claw). core/test/app-icons.test.js holds them to that checkout when one is present, the same arrangement as upstream-reference.json.",
+    "Claw is the primary icon because it is the default theme. A theme that is not listed, meaning a custom one, gets the primary icon too, since no icon can ship for a palette nobody has chosen yet."
+  ],
+  "themes": [
+    {
+      "id": "claw",
+      "label": "Claw",
+      "dark": "#ff5c5c",
+      "light": "#bd4531",
+      "primary": true
+    },
+    {
+      "id": "openknot",
+      "label": "Knot",
+      "dark": "#e5243b",
+      "light": "#c41e30"
+    },
+    {
+      "id": "dash",
+      "label": "Dash",
+      "dark": "#cf8b4d",
+      "light": "#8a512c"
+    },
+    {
+      "id": "absolutely",
+      "label": "Absolutely",
+      "dark": "#d97757",
+      "light": "#a8452a"
+    },
+    {
+      "id": "tide",
+      "label": "Tide",
+      "dark": "#5ab6d8",
+      "light": "#1f6f8f"
+    },
+    {
+      "id": "beacon",
+      "label": "Beacon",
+      "dark": "#ffc233",
+      "light": "#6e4a00"
+    },
+    {
+      "id": "phosphor",
+      "label": "Phosphor",
+      "dark": "#4ade80",
+      "light": "#10693a"
+    },
+    {
+      "id": "crt",
+      "label": "CRT",
+      "dark": "#e8e8e8",
+      "light": "#1f1f1f"
+    },
+    {
+      "id": "manuscript",
+      "label": "Manuscript",
+      "dark": "#8fa8e0",
+      "light": "#31549b"
+    },
+    {
+      "id": "rose",
+      "label": "Rosé",
+      "dark": "#ebbcba",
+      "light": "#9c4f66"
+    },
+    {
+      "id": "miami",
+      "label": "Miami",
+      "dark": "#f472b6",
+      "light": "#b0246f"
+    }
+  ]
+}
