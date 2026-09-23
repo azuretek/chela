@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generatedFiles, appIcon, paperIcon } from '../scripts/artwork.mjs';
 import { existsSync } from 'node:fs';
-import { THEMES, iconFile } from '../../core/app-icons.js';
+import { BUCKETS, iconFile, trayFile } from '../../core/app-icons.js';
 
 const repo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (p) => readFileSync(path.join(repo, p), 'utf8');
@@ -31,9 +31,10 @@ test('the application icon carries the one edge hairline the square treatment re
 test('every themed icon the desktop can switch to ships under src/assets', () => {
   // main.js applyAppIcon loads these by the name core/app-icons.js gives, and a
   // missing one is refused at runtime rather than drawn, so it would never show.
-  for (const theme of THEMES) {
-    for (const mode of ['dark', 'light']) {
-      const file = path.join(repo, 'desktop', 'src', 'assets', iconFile(theme.id, mode));
+  for (const bucket of BUCKETS) {
+    const tray = trayFile(bucket);
+    for (const rel of [iconFile(bucket, 'dark'), iconFile(bucket, 'light'), tray, tray.replace(/\.png$/, '@2x.png')]) {
+      const file = path.join(repo, 'desktop', 'src', 'assets', rel);
       assert.ok(existsSync(file), `${file} is missing: run npm run icons`);
     }
   }

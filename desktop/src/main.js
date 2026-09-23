@@ -420,23 +420,36 @@ function layoutViews() {
 /* ---------------------------------------------------------------- app icon */
 
 // The icon that matches the live theme: neon for a dark palette, paper for a
-// light one, in the colours of whichever built-in theme the accent belongs to,
-// and the default pair for a custom palette. core/app-icons.js makes the choice
-// and the iOS client makes the same one. macOS shows it in the Dock; Windows and
-// Linux show the window's own icon, which is the taskbar's. The packaged icon is
-// what the OS shows while the app is not running, so that stays the default.
+// light one, in the colours of the live accent's bucket. core/app-icons.js makes
+// the choice from the accent alone, so a theme added upstream is followed with
+// no change here, and the iOS client makes the same choice from the same rule.
+// macOS shows the icon in the Dock; Windows and Linux show the window's own
+// icon, which is the taskbar's. The tray glyph follows the same bucket. The
+// packaged icon is what the OS shows while the app is not running.
 let appliedIconFile = null;
+let appliedTrayFile = null;
 function applyAppIcon() {
-  const { file } = appIcons.choose(currentTheme.tokens?.['--accent'], currentTheme.mode);
-  if (file === appliedIconFile) return;
-  const img = nativeImage.createFromPath(path.join(ASSETS, file));
-  if (img.isEmpty()) {
-    console.warn(`[chela-desktop] no themed icon at ${file}; keeping the one showing`);
-    return;
+  const choice = appIcons.choose(currentTheme.tokens?.['--accent'], currentTheme.mode);
+  if (choice.file !== appliedIconFile) {
+    const img = nativeImage.createFromPath(path.join(ASSETS, choice.file));
+    if (img.isEmpty()) {
+      console.warn(`[chela-desktop] no themed icon at ${choice.file}; keeping the one showing`);
+    } else {
+      appliedIconFile = choice.file;
+      if (process.platform === 'darwin') app.dock?.setIcon(img);
+      else if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setIcon(img);
+    }
   }
-  appliedIconFile = file;
-  if (process.platform === 'darwin') app.dock?.setIcon(img);
-  else if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setIcon(img);
+  if (tray && !tray.isDestroyed() && choice.tray !== appliedTrayFile) {
+    const img = nativeImage.createFromPath(path.join(ASSETS, choice.tray));
+    if (img.isEmpty()) {
+      console.warn(`[chela-desktop] no themed tray glyph at ${choice.tray}; keeping the one showing`);
+    } else {
+      img.setTemplateImage(false);
+      tray.setImage(img);
+      appliedTrayFile = choice.tray;
+    }
+  }
 }
 
 function trayImage() {
@@ -4354,6 +4367,8 @@ function buildMenu() {
 function buildTray() {
   if (!tray) {
     tray = new Tray(trayImage());
+    appliedTrayFile = null;
+    applyAppIcon();
     tray.setToolTip(chrome.APP_NAME);
     tray.on('click', () => (process.platform === 'darwin' ? tray.popUpContextMenu() : toggleMainWindow()));
     tray.on('double-click', showMainWindow);

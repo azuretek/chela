@@ -51,8 +51,8 @@ import sharp from 'sharp';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { generatedFiles, appIcon, themedIcons, iosIconFile } from './artwork.mjs';
-import { iconFile } from '../../core/app-icons.js';
+import { generatedFiles, bucketIcons, bucketTrays, iosIconFile } from './artwork.mjs';
+import { iconFile, trayFile } from '../../core/app-icons.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));   // desktop/
 const repo = path.dirname(root);                                            // the repo
@@ -92,16 +92,22 @@ const targets = [
   // anything. The filename is the one AppIcon.appiconset/Contents.json names.
 ];
 
-// Every theme's pair. The desktop swaps its Dock or window icon to one of these
-// at runtime (main.js applyAppIcon), so they ship under src/assets. iOS gets
-// each pair as an icon set: paper by default and neon under dark appearance, the
-// primary set being the default theme's (see iosContents in artwork.mjs). That
-// replaces the single neon AppIcon-1024.png, so the App Store icon is now paper.
-for (const { theme, mode, svg } of themedIcons()) {
-  targets.push({ file: 'desktop/src/assets/' + iconFile(theme.id, mode), size: 512, svg: Buffer.from(svg, 'utf8'), treatment: 'canvas' });
+// Every bucket's pair (core/app-icons.js BUCKETS: hues round the wheel, not
+// themes). The desktop swaps its Dock or window icon and its tray glyph to the
+// live accent's bucket at runtime (main.js applyAppIcon), so they ship under
+// src/assets. iOS gets each pair as an icon set: paper by default and neon under
+// dark appearance, the primary set being the first bucket (see iosContents in
+// artwork.mjs), so the App Store icon is its paper icon.
+for (const { bucket, mode, svg } of bucketIcons()) {
+  targets.push({ file: 'desktop/src/assets/' + iconFile(bucket, mode), size: 512, svg: Buffer.from(svg, 'utf8'), treatment: 'canvas' });
 }
-for (const { theme, mode, svg } of themedIcons({ square: true })) {
-  targets.push({ file: 'mobile/Chela/Assets.xcassets/' + iosIconFile(theme, mode), size: 1024, svg: Buffer.from(svg, 'utf8'), treatment: 'square' });
+for (const { bucket, svg } of bucketTrays()) {
+  const file = 'desktop/src/assets/' + trayFile(bucket);
+  targets.push({ file, size: 16, svg: Buffer.from(svg, 'utf8'), treatment: 'canvas' });
+  targets.push({ file: file.replace(/\.png$/, '@2x.png'), size: 32, svg: Buffer.from(svg, 'utf8'), treatment: 'canvas' });
+}
+for (const { bucket, mode, svg } of bucketIcons({ square: true })) {
+  targets.push({ file: 'mobile/Chela/Assets.xcassets/' + iosIconFile(bucket, mode), size: 1024, svg: Buffer.from(svg, 'utf8'), treatment: 'square' });
 }
 
 function fail(message) {

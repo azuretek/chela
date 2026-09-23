@@ -2,9 +2,9 @@ import XCTest
 
 @testable import Chela
 
-/// The iOS half of the themed icon: the bundled spec is the repository's, and a
-/// theme is recognised from the accent forms the probe reports. core/test/
-/// app-icons.test.js holds the same rules for the desktop.
+/// The iOS half of the themed icon: the bundled spec is the repository's, and an
+/// accent picks the same bucket the desktop's core/app-icons.js picks, checked
+/// against the samples that module wrote into the spec.
 final class AppIconsTests: XCTestCase {
     func testTheBundledSpecIsTheRepositorysByteForByte() throws {
         let bundled = try XCTUnwrap(Bundle.main.url(forResource: "app-icons", withExtension: "json"), "app-icons.json is not in the bundle")
@@ -12,8 +12,8 @@ final class AppIconsTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: bundled), try Data(contentsOf: repo))
     }
 
-    func testThereIsOnePrimaryThemeAndItHasNoAlternateName() throws {
-        XCTAssertEqual(AppIcons.themes.filter(\.isPrimary).count, 1)
+    func testThereIsOnePrimaryBucketAndItHasNoAlternateName() throws {
+        XCTAssertEqual(AppIcons.buckets.filter(\.primary).count, 1)
         XCTAssertNil(try XCTUnwrap(AppIcons.primary).alternateIconName)
     }
 
@@ -27,17 +27,22 @@ final class AppIconsTests: XCTestCase {
         XCTAssertNil(AppIcons.hex(nil))
     }
 
-    func testAThemeIsRecognisedInEitherModeAndItsIconIsBundled() throws {
-        let tide = try XCTUnwrap(AppIcons.theme(forAccent: "#1f6f8f"))
-        XCTAssertEqual(tide.id, "tide")
-        XCTAssertEqual(tide.alternateIconName, "AppIcon-tide")
-        XCTAssertNil(AppIcons.theme(forAccent: "rgb(1, 2, 3)"))
-        // actool lists every icon set under CFBundleAlternateIcons; a theme missing
+    func testEverySampleChoosesTheBucketTheDesktopChose() throws {
+        let spec = try XCTUnwrap(AppIcons.spec)
+        XCTAssertFalse(spec.samples.isEmpty)
+        for sample in spec.samples {
+            XCTAssertEqual(AppIcons.bucket(forAccent: sample.accent)?.id, sample.bucket, "\(sample.accent)")
+        }
+        XCTAssertEqual(AppIcons.bucket(forAccent: nil), AppIcons.primary)
+    }
+
+    func testEveryBucketIsAnAlternateIconInTheBuiltApp() {
+        // actool lists every icon set under CFBundleAlternateIcons; a bucket missing
         // there could be offered and then refused.
         let icons = Bundle.main.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any]
         let alternates = (icons?["CFBundleAlternateIcons"] as? [String: Any]) ?? [:]
-        for theme in AppIcons.themes where !theme.isPrimary {
-            XCTAssertNotNil(alternates[theme.alternateIconName ?? ""], "\(theme.id) has no alternate icon in the built app")
+        for bucket in AppIcons.buckets where !bucket.primary {
+            XCTAssertNotNil(alternates[bucket.alternateIconName ?? ""], "\(bucket.id) has no alternate icon in the built app")
         }
     }
 }
