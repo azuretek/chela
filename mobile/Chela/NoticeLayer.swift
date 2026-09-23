@@ -119,21 +119,41 @@ struct NoticeLayerContent: View {
 /// exists to find the scene, and everything visible is drawn by the window it
 /// installs. The coordinator owns that window, because a window nothing retains is
 /// gone the moment it is created.
-private struct NoticeLayerInstaller: UIViewRepresentable {
+struct NoticeLayerInstaller: UIViewRepresentable {
     let board: NoticeBoard
 
-    func makeUIView(context: Context) -> UIView {
-        let anchor = UIView(frame: .zero)
+    func makeUIView(context: Context) -> Anchor {
+        let anchor = Anchor(frame: .zero)
         anchor.isUserInteractionEnabled = false
         anchor.backgroundColor = .clear
+        let coordinator = context.coordinator
+        anchor.onWindow = { [board] scene in coordinator.attach(to: scene, board: board) }
         return anchor
     }
 
-    func updateUIView(_ anchor: UIView, context: Context) {
-        // The scene exists only once this view is in one, which is one pass after
-        // the first update.
+    func updateUIView(_ anchor: Anchor, context: Context) {
+        // A later pass can still find the scene here, and attach is idempotent.
         guard let scene = anchor.window?.windowScene else { return }
         context.coordinator.attach(to: scene, board: board)
+    }
+
+    /// The anchor attaches the window from didMoveToWindow, not from an update.
+    ///
+    /// The scene exists only once this view is in a window, and the first update
+    /// runs before that. Waiting for a second update was the bug: nothing
+    /// re-renders the root when the board's first notices arrive, because the root
+    /// does not observe the board, so on a launch with no state change after the
+    /// first pass the window was never created and no notice was ever drawn. Seen
+    /// on 2026-09-23 with `-claw-seed-notices` in the simulator: four seeded
+    /// notices and an empty screen. didMoveToWindow fires exactly when the scene
+    /// becomes reachable, whatever SwiftUI does next.
+    final class Anchor: UIView {
+        var onWindow: ((UIWindowScene) -> Void)?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if let scene = window?.windowScene { onWindow?(scene) }
+        }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }

@@ -87,4 +87,23 @@ final class NoticeLayerTests: XCTestCase {
             "the stack's box is reported in a space the notice window does not share, so the claim would be "
             + "measured against the wrong origin")
     }
+
+    /// The window is attached the moment the anchor enters a window, with no
+    /// second SwiftUI update needed. Reported 2026-09-23: the attach used to wait
+    /// for an update that a launch with no state change never produced, so no
+    /// notice was drawn at all. This drives the anchor the way UIKit does and
+    /// fails if the attach goes back to depending on an update.
+    @MainActor
+    func testTheAnchorAttachesWhenItEntersAWindowWithoutAnUpdate() throws {
+        let scene = try XCTUnwrap(
+            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first,
+            "the test host has no window scene to attach to"
+        )
+        let anchor = NoticeLayerInstaller.Anchor(frame: .zero)
+        var attached: UIWindowScene?
+        anchor.onWindow = { attached = $0 }
+        let host = UIWindow(windowScene: scene)
+        host.addSubview(anchor)
+        XCTAssertTrue(attached === scene, "entering a window did not attach the notice surface")
+    }
 }
