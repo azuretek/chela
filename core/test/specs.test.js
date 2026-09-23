@@ -38,6 +38,7 @@ const MIRRORED = {};
 
 // Shipped as a resource and read at runtime through BundledSpec.
 const BUNDLED = {
+  'app-icons.json': 'read at runtime to recognise the live theme by its accent and offer its alternate icon',
   'app-settings-affordance.json': 'holds the one injected script that adds the footer control',
   'app-frame-inset.json': 'holds the one injected script that publishes our chrome as a frame the page overlays are clamped to',
   'connection.json': 'read at runtime for the two sentences a pending row shows',

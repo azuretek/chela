@@ -190,6 +190,8 @@ targets:
         buildPhase: resources
       - path: ../core/spec/tokens.json
         buildPhase: resources
+      - path: ../core/spec/app-icons.json
+        buildPhase: resources
       # The shared About page, bundled rather than mirrored, for the same reason
       # the settings page is: it is the desktop's own About page (core/ui), so
       # this client renders it instead of a native screen. About was reachable
@@ -246,6 +248,10 @@ targets:
         INFOPLIST_FILE: Chela/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Every theme's icon set ships as an alternate icon, so AppIconOffer can
+        # switch to it. actool writes CFBundleAlternateIcons into the built
+        # Info.plist from these; nothing is listed by hand.
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         # iPhone only. The Control UI is responsive, so an iPad build is
         # possible, but nothing in this project has been designed for a tablet
