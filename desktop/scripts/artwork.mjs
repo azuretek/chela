@@ -18,14 +18,16 @@
 // which is then stroked and clipped to its own inside. The result is
 // deterministic: same primitives, same outline, to the hundredth of a unit.
 //
-// Two palettes, on purpose. The application icon is a static bitmap on every
-// platform, so it carries the fixed sunset palette it was designed in. The
-// in-app mark (loading cover, About, pairing) is painted by ui.css from the
-// SELECTED theme's accent, through the masks written here, so it follows the
-// palette the Control UI is actually running; the sunset values are only its
-// fallback when no theme is attached.
+// The colours are not decided here. core/app-icons.js owns the design's two
+// original palettes and the one rule that recolours them for any accent (the
+// accent's hue first, a near-complement second as a small accent). This file
+// only draws: every icon from palettesFor(), and the in-app mark as CSS that
+// applies the same rule to the live --accent, so no theme is named anywhere.
 
-import { THEMES } from '../../core/app-icons.js';
+import {
+  PALETTE, PAPER, BUCKETS, PRIMARY, ROLES, KEY, SECOND_OFFSET, NEUTRAL, LIFT, PAPER_FADE,
+  palettesFor, mix, spec,
+} from '../../core/app-icons.js';
 
 const r2 = (n) => {
   const v = Math.round(n * 100) / 100;
@@ -209,80 +211,6 @@ function outlines() {
   return cache;
 }
 
-// ------------------------------------------------------------------ palette
-
-// The icon's own palette, the one it was designed in. It is also the in-app
-// mark's fallback when no theme is attached (see .chela-mark in ui.css).
-export const PALETTE = {
-  tileTop: '#1a0b2e',
-  tileBottom: '#07030f',
-  neon: '#ff3fa4',
-  dotDim: '#3a2a5a',
-  rule: '#2a1a44',
-  sunrise: '#ffb347',
-  coral: '#ff5e62',
-  violet: '#a33bd6',
-};
-
-// The day half of the pair: a white paper-cut claw on a sunset sky. Neon is for a
-// dark palette and paper for a light one, on every surface that can tell them
-// apart (the iOS home screen's light and dark icon, the desktop Dock, the in-app
-// mark).
-export const PAPER = {
-  skyTop: '#ff9a3c',
-  skyBottom: '#8e2de2',
-  deep: '#4a1580',
-  tint: '#ffc9b8',
-  shadow: '#3b0f5a',
-};
-
-// ------------------------------------------------------------ theme palettes
-
-// Colours are mixed in OKLab, where a straight line between two colours keeps
-// its lightness even, so a mix towards gold or violet does not go grey halfway.
-const toLinear = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
-const toGamma = (c) => (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
-function oklab(hex) {
-  const [r, g, b] = [1, 3, 5].map((i) => toLinear(parseInt(hex.slice(i, i + 2), 16) / 255));
-  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
-  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
-  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
-  return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s];
-}
-function fromOklab([L, a, b]) {
-  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
-  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
-  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
-  return '#' + [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s]
-    .map((c) => Math.round(Math.min(1, Math.max(0, toGamma(Math.max(0, c)))) * 255).toString(16).padStart(2, '0')).join('');
-}
-/** `a` at weight `w` against `b`. */
-export const mix = (a, w, b) => { const A = oklab(a), B = oklab(b); return fromOklab(A.map((v, i) => v * w + B[i] * (1 - w))); };
-/** The colour at a lightness of at least 0.72, so neon still glows from a dim accent. */
-export const lift = (hex) => { const [L, a, b] = oklab(hex); return fromOklab([Math.max(L, 0.72), a, b]); };
-
-/**
- * A theme's neon and paper palettes, worked out from its dark accent. The default
- * theme keeps the sunset palettes the icon was designed in. The paper sky keeps
- * most of the accent (70% at the top, 65% at the foot) so a cool accent stays
- * itself rather than turning lavender on its way to violet.
- */
-export function palettesFor(theme) {
-  if (theme.primary) return { dark: PALETTE, light: PAPER };
-  const h = lift(theme.dark);
-  return {
-    dark: {
-      tileTop: mix(h, 0.14, '#140c22'), tileBottom: mix(h, 0.05, '#05030a'), neon: h,
-      dotDim: mix(h, 0.25, '#2a2440'), rule: mix(h, 0.18, '#1a1428'),
-      sunrise: mix(h, 0.55, '#ffb347'), coral: h, violet: mix(h, 0.55, '#8b3dff'),
-    },
-    light: {
-      skyTop: mix(h, 0.7, '#ffb347'), skyBottom: mix(h, 0.65, '#8b3dff'),
-      deep: mix(h, 0.35, '#2a0845'), tint: mix(h, 0.3, '#ffffff'), shadow: mix(h, 0.2, '#1a0530'),
-    },
-  };
-}
-
 // The synthwave floor: a horizon rule and lines running to a vanishing point.
 function horizon(stroke, width, opacity) {
   const rows = [78, 82, 88, 97, 110].map((y) => '<path d="M10 ' + y + ' H110"/>');
@@ -310,7 +238,7 @@ const HEAD = (what) => '<!-- Chela, ' + what + '. GENERATED by desktop/scripts/a
  * the foot of this icon it outnumbers the glow-tinted background and the corners
  * came out violet. Drawing the square here leaves the pipeline nothing to guess.
  */
-export function appIcon({ square = false, palette = PALETTE } = {}) {
+export function appIcon({ square = false, palette = palettesFor(PRIMARY).dark } = {}) {
   const P = palette, line = 2.2, rx = square ? 0 : 23;
   return HEAD('application icon') +
     '<svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">' +
@@ -338,13 +266,14 @@ export function appIcon({ square = false, palette = PALETTE } = {}) {
  * sunset sky. Carries the same single 7% edge hairline as the neon icon, which is
  * what make-icons.mjs's square treatment finds and removes.
  */
-export function paperIcon({ square = false, palette = PAPER } = {}) {
+export function paperIcon({ square = false, palette = palettesFor(PRIMARY).light } = {}) {
   const P = palette, rx = square ? 0 : 23, claw = outlines().icon;
   const sheet = ([dx, dy, fill]) => '<path d="' + claw + '" fill="' + fill + '" transform="translate(' + dx + ' ' + dy + ')"/>';
   return HEAD('paper application icon') +
     '<svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">' +
     '<defs>' +
-    '<linearGradient id="sky" x1="0" y1="0" x2="0.6" y2="1"><stop offset="0" stop-color="' + P.skyTop + '"/><stop offset="1" stop-color="' + P.skyBottom + '"/></linearGradient>' +
+    '<linearGradient id="sky" x1="0" y1="0" x2="0.6" y2="1"><stop offset="0" stop-color="' + P.skyTop + '"/>' +
+    PAPER_FADE.map(([o, w]) => '<stop offset="' + o + '" stop-color="' + mix(P.skyBottom, w, P.skyTop) + '"/>').join('') + '</linearGradient>' +
     '<filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="120" height="120"><feGaussianBlur stdDeviation="1.4"/></filter>' +
     '<clipPath id="window"><rect x="10" y="10" width="100" height="100" rx="' + rx + '"/></clipPath>' +
     '</defs>' +
@@ -360,27 +289,32 @@ export function paperIcon({ square = false, palette = PAPER } = {}) {
 }
 
 /**
- * Every theme's icon pair, as SVG, for make-icons.mjs to rasterise: one entry
- * per theme and mode, drawn from core/spec/app-icons.json.
+ * Every shipped icon, one neon and one paper per bucket (core/app-icons.js
+ * BUCKETS), for make-icons.mjs to rasterise.
  */
-export function themedIcons({ square = false } = {}) {
-  return THEMES.flatMap((theme) => {
-    const p = palettesFor(theme);
+export function bucketIcons({ square = false } = {}) {
+  return BUCKETS.flatMap((bucket) => {
+    const p = palettesFor(bucket);
     return [
-      { theme, mode: 'dark', svg: appIcon({ square, palette: p.dark }) },
-      { theme, mode: 'light', svg: paperIcon({ square, palette: p.light }) },
+      { bucket, mode: 'dark', svg: appIcon({ square, palette: p.dark }) },
+      { bucket, mode: 'light', svg: paperIcon({ square, palette: p.light }) },
     ];
   });
 }
 
-/** The tray and menu-bar glyph: the claw alone, filled, on transparent. */
-export function trayIcon() {
-  const P = PALETTE;
+/** The tray and menu-bar glyph: the claw alone, filled with the neon line's gradient. */
+export function trayIcon({ palette = palettesFor(PRIMARY).dark } = {}) {
+  const P = palette;
   return HEAD('tray and menu-bar glyph') +
     '<svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">' +
     '<defs><linearGradient id="sunset" gradientUnits="userSpaceOnUse" x1="0" y1="4" x2="0" y2="116"><stop offset="0" stop-color="' + P.sunrise + '"/><stop offset="0.5" stop-color="' + P.coral + '"/><stop offset="1" stop-color="' + P.violet + '"/></linearGradient></defs>' +
     '<path d="' + outlines().tray + '" fill="url(#sunset)"/>' +
     '</svg>\n';
+}
+
+/** One tray glyph per bucket, so the menu bar follows the theme too. */
+export function bucketTrays() {
+  return BUCKETS.map((bucket) => ({ bucket, svg: trayIcon({ palette: palettesFor(bucket).dark }) }));
 }
 
 // The in-app mark's masks. White on transparent, framed to the tile alone
@@ -407,26 +341,56 @@ export function markFillMask() {
 // desktop's file:// pages and draws nothing. A data: URL is not fetched at all.
 const dataUrl = (svg) => 'url("data:image/svg+xml,' + encodeURIComponent(svg).replace(/'/g, '%27') + '")';
 
-/** The stylesheet ui.css imports: the two masks, as custom properties. */
+// The in-app mark's colours: every role of both palettes as a custom property,
+// derived from the element's live --accent by the same rule palettesFor() uses,
+// in CSS relative colour syntax. `n` is 1 for an accent with real colour and 0
+// for a neutral one; `lift` is 1 when a second colour falls in the muddy band.
+const kebab = (name) => name.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+const num = (x) => String(Math.round(x * 10000) / 10000);
+function roleCss(role) {
+  const n = 'clamp(0, (c - ' + NEUTRAL.chroma + ') * 1000, 1)';
+  const first = 'calc(h * ' + n + ' + ' + NEUTRAL.hue + ' * (1 - ' + n + '))';
+  const hue = role.second ? 'calc(' + first + ' + ' + num(SECOND_OFFSET) + ')' : first;
+  const chroma = 'calc(' + num(role.C) + ' * (' + NEUTRAL.scale + ' + ' + num(1 - NEUTRAL.scale) + ' * ' + n + '))';
+  if (!role.second) return 'oklch(from var(--accent) ' + num(role.L) + ' ' + chroma + ' ' + hue + ')';
+  const lift = 'calc(' + n + ' * clamp(0, (cos(calc((' + hue + ' - ' + LIFT.centre + ') * 1deg)) - ' + num(Math.cos((LIFT.half * Math.PI) / 180)) + ') * 1000, 1))';
+  return 'oklch(from var(--accent) max(' + num(role.L) + ', calc(' + LIFT.lightness + ' * ' + lift + ')) max(' + chroma + ', calc(' + LIFT.chroma + ' * ' + lift + ')) ' + hue + ')';
+}
+
+/** The stylesheet ui.css imports: the masks, and the mark's colours. */
 export function markCss() {
-  return '/* Chela, the in-app mark\'s masks. GENERATED by desktop/scripts/artwork.mjs:\n' +
-    '   edit that, then run npm run icons. The mark itself is .chela-mark in ui.css. */\n' +
+  const primary = palettesFor(PRIMARY), fixed = { ...primary.dark, ...primary.light };
+  const sky = 'linear-gradient(149deg, light-dark(var(--chela-sky-top), transparent) 0%, ' +
+    PAPER_FADE.map(([o, w]) => 'light-dark(color-mix(in oklab, var(--chela-sky-bottom) ' + Math.round(w * 100) + '%, var(--chela-sky-top)), transparent) ' + Math.round(o * 100) + '%').join(', ') + ')';
+  return '/* Chela, the in-app mark\'s masks and colours. GENERATED by desktop/scripts/artwork.mjs\n' +
+    '   from core/app-icons.js: edit those, then run npm run icons. The mark itself is .chela-mark in ui.css. */\n' +
     ':root {\n' +
     '  --chela-mark-ring: ' + dataUrl(markRingMask()) + ';\n' +
     '  --chela-mark-horizon: ' + dataUrl(markHorizonMask()) + ';\n' +
     '  --chela-mark-fill: ' + dataUrl(markFillMask()) + ';\n' +
+    '}\n' +
+    '/* The primary icon\'s colours, for an engine without relative colour syntax. */\n' +
+    '.chela-mark {\n' +
+    ROLES.map((r) => '  --chela-' + kebab(r.name) + ': ' + fixed[r.name] + ';\n').join('') +
+    '  --chela-mark-sky: ' + sky + ';\n' +
+    '}\n' +
+    '/* The live accent, recoloured by the rule every icon is drawn with. */\n' +
+    '@supports (color: oklch(from red l c h)) {\n' +
+    '  .chela-mark {\n' +
+    ROLES.map((r) => '    --chela-' + kebab(r.name) + ': ' + roleCss(r) + ';\n').join('') +
+    '  }\n' +
     '}\n';
 }
 
-// The iOS icon sets. Each one holds the paper icon as its default rendition and
-// the neon icon under the dark appearance, so the home screen shows paper in
-// light mode and neon in dark mode with no code at all. The primary set is the
-// default theme's; every other theme is an alternate set the app can switch to.
+// The iOS icon sets, one per bucket. Each holds the paper icon as its default
+// rendition and the neon icon under the dark appearance, so the home screen
+// follows the device's appearance with no code. The primary bucket is the
+// AppIcon set the app ships with; every other bucket is an alternate icon.
 const IOS_SETS = 'mobile/Chela/Assets.xcassets/';
-export const iosSetName = (theme) => (theme.primary ? 'AppIcon' : 'AppIcon-' + theme.id);
-export const iosIconFile = (theme, mode) => iosSetName(theme) + '.appiconset/' + (theme.primary ? 'AppIcon-1024' : theme.id) + (mode === 'dark' ? '-dark' : '') + '.png';
-function iosContents(theme) {
-  const file = (mode) => iosIconFile(theme, mode).split('/')[1];
+export const iosSetName = (bucket) => (bucket.primary ? 'AppIcon' : 'AppIcon-' + bucket.id);
+export const iosIconFile = (bucket, mode) => iosSetName(bucket) + '.appiconset/' + (bucket.primary ? 'AppIcon-1024' : bucket.id) + (mode === 'dark' ? '-dark' : '') + '.png';
+function iosContents(bucket) {
+  const file = (mode) => iosIconFile(bucket, mode).split('/')[1];
   return JSON.stringify({
     images: [
       { filename: file('light'), idiom: 'universal', platform: 'ios', size: '1024x1024' },
@@ -442,7 +406,10 @@ export function generatedFiles() {
     'core/ui/assets/claw.svg': appIcon(),
     'core/ui/assets/claw-tray.svg': trayIcon(),
     'core/ui/assets/claw-mark.css': markCss(),
+    // The iOS app cannot import core/app-icons.js, so the buckets it chooses
+    // between are written out for it, with samples its tests check against.
+    'core/spec/app-icons.json': JSON.stringify(spec(), null, 2) + '\n',
   };
-  for (const theme of THEMES) files[IOS_SETS + iosSetName(theme) + '.appiconset/Contents.json'] = iosContents(theme);
+  for (const bucket of BUCKETS) files[IOS_SETS + iosSetName(bucket) + '.appiconset/Contents.json'] = iosContents(bucket);
   return files;
 }

@@ -320,45 +320,28 @@ body.as-page .modal { border-color: transparent; box-shadow: none; }
    The tile stays dark whatever the theme: the mark is the app's icon, and a
    neon line needs a night sky. It is tinted towards the accent so it belongs
    to the palette rather than sitting on it as a black square. */
-/* Neon for a dark palette, paper for a light one, the same pair as the app icon.
-   The switch is light-dark(), which follows the page's own color-scheme: ui.css
-   sets it for the fallback palette, the desktop injects it with the live theme
-   and iOS sets it on the root, so the mark reads the palette's mode rather than
-   the device's. Every paint below is a light-dark() pair, and the half a mode
-   does not use is transparent, so one set of elements draws either icon. */
+/* The in-app mark: the app icon, drawn from the live theme. Neon for a dark
+   palette, paper for a light one, switched by light-dark(), which follows the
+   page's own color-scheme (ui.css sets it for the fallback palette, the desktop
+   injects it with the live theme and iOS sets it on the root). Every colour is a
+   --chela-<role> property from claw-mark.css, which is generated from
+   core/app-icons.js: the live --accent recoloured by the same rule every app
+   icon is drawn with, so the mark and the icon cannot disagree and no theme is
+   named anywhere. The half a mode does not use is transparent. */
 .chela-mark {
-  --chela-mark-hue: var(--accent);
-  --chela-mark-top: color-mix(in oklch, var(--chela-mark-hue) 55%, #ffb347);
-  --chela-mark-bottom: color-mix(in oklch, var(--chela-mark-hue) 55%, #8b3dff);
-  --chela-paper-top: color-mix(in oklch, var(--chela-mark-hue) 70%, #ffb347);
-  --chela-paper-bottom: color-mix(in oklch, var(--chela-mark-hue) 65%, #8b3dff);
-  --chela-paper-deep: color-mix(in oklch, var(--chela-mark-hue) 35%, #2a0845);
-  --chela-paper-tint: color-mix(in oklch, var(--chela-mark-hue) 30%, #ffffff);
   position: relative;
   display: inline-block;
   flex: none;
   overflow: hidden;
   border-radius: 23%;
   background:
-    radial-gradient(circle at 14% 14%, light-dark(rgb(255 255 255 / .8), var(--chela-mark-hue)) 0 3%, transparent 3.6%),
-    radial-gradient(circle at 23% 14%, light-dark(rgb(255 255 255 / .33), rgb(255 255 255 / .16)) 0 3%, transparent 3.6%),
-    radial-gradient(circle at 32% 14%, light-dark(rgb(255 255 255 / .33), rgb(255 255 255 / .16)) 0 3%, transparent 3.6%),
-    linear-gradient(to bottom, transparent 27%, light-dark(rgb(255 255 255 / .25), rgb(255 255 255 / .08)) 27% 29%, transparent 29%),
-    /* One angle for both halves: light-dark() takes colours only, and an angle
-       inside it invalidates the whole background declaration. */
-    linear-gradient(170deg,
-      light-dark(var(--chela-paper-top), color-mix(in oklch, var(--chela-mark-hue) 14%, #140c22)),
-      light-dark(var(--chela-paper-bottom), color-mix(in oklch, var(--chela-mark-hue) 5%, #05030a)));
-  box-shadow: inset 0 0 0 1px light-dark(rgb(0 0 0 / .07), rgb(255 255 255 / .08));
-}
-
-/* A light theme's accent is dark by design, for contrast on a light page, and
-   dark neon on a dark tile is barely there. Where the browser can say it, the
-   hue is lifted to a floor of lightness and keeps its chroma and hue, so a
-   light theme's mark is its accent, lit. Without relative colour syntax the
-   accent is used as it is, which is dimmer and still correct. */
-@supports (color: oklch(from red l c h)) {
-  .chela-mark { --chela-mark-hue: oklch(from var(--accent) max(l, .72) c h); }
+    radial-gradient(circle at 14% 14%, light-dark(rgb(255 255 255 / .8), var(--chela-neon)) 0 3%, transparent 3.6%),
+    radial-gradient(circle at 23% 14%, light-dark(rgb(255 255 255 / .33), var(--chela-dot-dim)) 0 3%, transparent 3.6%),
+    radial-gradient(circle at 32% 14%, light-dark(rgb(255 255 255 / .33), var(--chela-dot-dim)) 0 3%, transparent 3.6%),
+    linear-gradient(to bottom, transparent 27%, light-dark(rgb(255 255 255 / .25), var(--chela-rule)) 27% 29%, transparent 29%),
+    var(--chela-mark-sky),
+    linear-gradient(to bottom, light-dark(transparent, var(--chela-tile-top)), light-dark(transparent, var(--chela-tile-bottom)));
+  box-shadow: inset 0 0 0 1px light-dark(rgb(0 0 0 / .07), rgb(255 255 255 / .07));
 }
 
 .chela-mark::before,
@@ -373,7 +356,7 @@ body.as-page .modal { border-color: transparent; box-shadow: none; }
 }
 
 .chela-mark::before {
-  background: light-dark(transparent, var(--chela-mark-hue));
+  background: light-dark(transparent, var(--chela-neon));
   opacity: .45;
   -webkit-mask-image: var(--chela-mark-horizon);
   mask-image: var(--chela-mark-horizon);
@@ -381,22 +364,25 @@ body.as-page .modal { border-color: transparent; box-shadow: none; }
 
 /* The glow is a filter on a WRAPPER of the masked line, not on the line itself:
    a filter runs before the mask, so a drop shadow on the masked element would
-   be cut away with everything else outside the line. */
-/* The same wrapper stacks the paper sheets: two hard-edged offsets of the filled
-   claw, tint then deep, which is the paper icon's layering. */
+   be cut away with everything else outside the line. The same wrapper stacks
+   the paper sheets: hard-edged offsets of the filled claw, tint then deep, and
+   the soft shadow under them, which is the paper icon's layering. */
 .chela-mark__neon {
   filter:
-    drop-shadow(.9px .9px 0 light-dark(var(--chela-paper-tint), transparent))
-    drop-shadow(.9px .9px 0 light-dark(var(--chela-paper-deep), transparent))
-    drop-shadow(0 0 1.5px light-dark(transparent, var(--chela-mark-hue)))
-    drop-shadow(0 0 3px light-dark(transparent, color-mix(in srgb, var(--chela-mark-hue) 60%, transparent)));
+    drop-shadow(.9px .9px 0 light-dark(var(--chela-tint), transparent))
+    drop-shadow(.9px .9px 0 light-dark(var(--chela-deep), transparent))
+    drop-shadow(1.2px 1.5px 1.2px light-dark(color-mix(in srgb, var(--chela-shadow) 30%, transparent), transparent))
+    drop-shadow(0 0 1.5px light-dark(transparent, var(--chela-coral)))
+    drop-shadow(0 0 3px light-dark(transparent, color-mix(in srgb, var(--chela-coral) 60%, transparent)));
 }
 
+/* The neon line, with the icon's own stops: the icon runs its gradient from
+   y=30 to y=112 of a tile spanning 10 to 110. */
 .chela-mark__neon::before {
   background: linear-gradient(to bottom,
-    light-dark(transparent, var(--chela-mark-top)) 20%,
-    light-dark(transparent, var(--chela-mark-hue)) 55%,
-    light-dark(transparent, var(--chela-mark-bottom)) 95%);
+    light-dark(transparent, var(--chela-sunrise)) 20%,
+    light-dark(transparent, var(--chela-coral)) 61%,
+    light-dark(transparent, var(--chela-violet)) 100%);
   -webkit-mask-image: var(--chela-mark-ring);
   mask-image: var(--chela-mark-ring);
 }
