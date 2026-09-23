@@ -42,12 +42,13 @@ final class AboutHostTests: XCTestCase {
                 "\(name) is not beside the About page in the bundle"
             )
         }
-        // The header icon is under assets/, kept as a subdirectory so the
-        // `src="assets/claw.svg"` link resolves rather than being flattened.
-        let icon = directory?.appendingPathComponent("assets").appendingPathComponent("claw.svg")
+        // The header mark's masks are under assets/, kept as a subdirectory so
+        // ui.css's `@import url(assets/claw-mark.css)` resolves rather than being
+        // flattened. Without them the mark draws as an empty tile.
+        let masks = directory?.appendingPathComponent("assets").appendingPathComponent("claw-mark.css")
         XCTAssertTrue(
-            icon.map { FileManager.default.fileExists(atPath: $0.path) } ?? false,
-            "assets/claw.svg is not in the bundle, so the About header icon would be broken"
+            masks.map { FileManager.default.fileExists(atPath: $0.path) } ?? false,
+            "assets/claw-mark.css is not in the bundle, so the About header mark would be an empty tile"
         )
     }
 

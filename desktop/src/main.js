@@ -420,7 +420,7 @@ function trayImage() {
   // Not a macOS template image. A template adapts to the menu bar automatically,
   // which is the more native behaviour, but legibility is the reason to want
   // one, and the mark was checked against both a light and a dark menu bar and
-  // holds contrast in red on either. So it keeps the app's colour.
+  // holds contrast in its sunset gradient on either. So it keeps the app's colour.
   const img = nativeImage.createFromPath(path.join(ASSETS, 'tray.png'));
   img.setTemplateImage(false);
   return img;
