@@ -197,7 +197,7 @@ targets:
       # hangs off Settings through the shared `openAbout` command, and
       # AboutHost.swift answers the same window.clawDesktop calls the desktop's
       # preload does. Copied in flat so the page's own relative links (ui.css,
-      # about.js, assets/claw.svg) resolve in the bundle exactly as in the repo;
+      # about.js, assets/claw-mark.css) resolve in the bundle exactly as in the repo;
       # AboutSurface loads the page with read access to that directory.
       - path: ../core/ui/about.html
         buildPhase: resources
@@ -211,11 +211,11 @@ targets:
       # AboutHostTests asserts this copy is the repository's byte for byte.
       - path: ../core/spec/upstream-reference.json
         buildPhase: resources
-      # The icon the About header draws, under `assets/` beside the page so the
-      # `src="assets/claw.svg"` link resolves. `type: folder` makes this a folder
-      # reference, which copies the directory into the bundle whole and keeps the
-      # `assets/` path: a plain group would flatten claw.svg to the bundle root and
-      # the relative link in about.html would break.
+      # The masks the About header's mark is painted through, under `assets/`
+      # beside the page so ui.css's `@import url(assets/claw-mark.css)` resolves.
+      # `type: folder` makes this a folder reference, which copies the directory
+      # into the bundle whole and keeps the `assets/` path: a plain group would
+      # flatten claw-mark.css to the bundle root and the relative import would break.
       - path: ../core/ui/assets
         type: folder
         buildPhase: resources
