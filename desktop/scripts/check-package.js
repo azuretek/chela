@@ -114,7 +114,7 @@ if (!coreInAsar && !coreInResources) {
  * it.
  */
 const CORE_UI = [
-  'ui/settings.html', 'ui/settings.js', 'ui/ui.css', 'ui/assets/claw.svg',
+  'ui/settings.html', 'ui/settings.js', 'ui/ui.css', 'ui/assets/claw.svg', 'ui/assets/claw-mark.css',
   'ui/about.html', 'ui/about.js', 'ui/banner.html', 'ui/banner.js', 'ui/banner.css',
   'ui/loading.html', 'ui/loading.js', 'ui/titlebar.html',
 ];
