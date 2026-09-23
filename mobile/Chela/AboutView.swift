@@ -119,7 +119,7 @@ struct AboutSurface: UIViewRepresentable {
     }
 
     /// The About page as it ships, and the directory it may read from. The page's
-    /// own relative links (`ui.css`, `about.js`, `assets/claw.svg`) resolve
+    /// own relative links (`ui.css`, `about.js`, `assets/claw-mark.css`) resolve
     /// against this directory, exactly as they do in `core/ui`, which is what
     /// `allowingReadAccessTo` is for.
     static var page: URL? { Bundle.main.url(forResource: "about", withExtension: "html") }

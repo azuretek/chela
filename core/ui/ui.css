@@ -25,6 +25,10 @@
  * the Control UI rather than approximated, driven by the same four tokens,
  * they render as the same scrollbar rather than a similar one.
  */
+/* The in-app mark's masks, generated beside the artwork (see .chela-mark). An
+   @import has to come before every rule, which is why it is up here. */
+@import url(assets/claw-mark.css);
+
 :root {
   color-scheme: dark;
 
@@ -43,14 +47,20 @@
   --text-strong: #fff;
   --muted: #8a8a8a;
 
-  --accent: #ff4d4d;
-  --accent-hover: #ff6b6b;
-  --accent-subtle: rgba(255, 77, 77, .14);
-  --primary: #991b1b;
-  --primary-hover: #b91c1c;
-  --primary-foreground: #fff;
+  /* The accent is the application icon's pink, so a page with no theme behind
+     it matches the icon on the Dock rather than the red the icon used to be.
+     The values are the Control UI's own Miami palette (themes/miami.css),
+     which is the theme closest to the icon and has already been through
+     upstream's contrast checks. Destructive stays red: it is a meaning, not a
+     brand colour. */
+  --accent: #f472b6;
+  --accent-hover: #f78fc5;
+  --accent-subtle: rgba(244, 114, 182, .13);
+  --primary: #f472b6;
+  --primary-hover: #f78fc5;
+  --primary-foreground: #3c0a24;
   --destructive: #d32f2f;
-  --ring: #ff4d4d;
+  --ring: #f472b6;
 
   --radius: 10px;
   --radius-sm: 6px;
@@ -178,14 +188,14 @@
     --card: #ffffff;
     --bg-elevated: #ffffff;
     --muted-strong: #56524a;
-    --accent: #c62828;
-    --accent-hover: #a31d1d;
-    --accent-subtle: rgba(198, 40, 40, .10);
-    --primary: #a31d1d;
-    --primary-hover: #8c1919;
+    --accent: #b0246f;
+    --accent-hover: #971d5e;
+    --accent-subtle: rgba(176, 36, 111, .09);
+    --primary: #b0246f;
+    --primary-hover: #971d5e;
     --primary-foreground: #fff;
     --destructive: #c62828;
-    --ring: #c62828;
+    --ring: #b0246f;
     --ok: #1d7a45;
     --warn: #8a5a00;
     --shadow-lg: 0 24px 60px rgba(60, 50, 30, .22);
@@ -290,6 +300,88 @@ body.as-page .modal { border-color: transparent; box-shadow: none; }
 .modal--narrow { width: min(460px, 100%); }
 
 .modal__icon { flex: none; width: 34px; height: 34px; }
+
+/* The in-app Chela mark: the application icon's neon claw, painted from the
+   SELECTED theme rather than copied from the icon's bitmap. The application
+   icon is a static file on every platform, so it keeps the sunset palette it was
+   designed in; this mark sits inside a page that already knows the palette, so
+   it takes the theme's accent and works the rest out from it: the title-bar dot,
+   the horizon, the glow, and a sunset-shaped gradient that runs from the accent
+   mixed towards gold at the top to the accent mixed towards violet at the foot.
+   With no theme attached, --accent is the fallback above, which is the icon's
+   own pink, so the unthemed mark is the icon.
+
+   Drawn as a box with two masks rather than as an <img>, because an image
+   cannot see the page's custom properties. The masks are data: URLs in
+   assets/claw-mark.css, generated from the same outline as the icon by
+   desktop/scripts/artwork.mjs, and they are data: URLs because CSS fetches a
+   mask image in CORS mode, which a file:// page's opaque origin refuses.
+
+   The tile stays dark whatever the theme: the mark is the app's icon, and a
+   neon line needs a night sky. It is tinted towards the accent so it belongs
+   to the palette rather than sitting on it as a black square. */
+.chela-mark {
+  --chela-mark-hue: var(--accent);
+  --chela-mark-top: color-mix(in oklch, var(--chela-mark-hue) 55%, #ffb347);
+  --chela-mark-bottom: color-mix(in oklch, var(--chela-mark-hue) 55%, #8b3dff);
+  position: relative;
+  display: inline-block;
+  flex: none;
+  overflow: hidden;
+  border-radius: 23%;
+  background:
+    radial-gradient(circle at 14% 14%, var(--chela-mark-hue) 0 3%, transparent 3.6%),
+    radial-gradient(circle at 23% 14%, rgb(255 255 255 / .16) 0 3%, transparent 3.6%),
+    radial-gradient(circle at 32% 14%, rgb(255 255 255 / .16) 0 3%, transparent 3.6%),
+    linear-gradient(to bottom, transparent 27%, rgb(255 255 255 / .08) 27% 29%, transparent 29%),
+    linear-gradient(to bottom,
+      color-mix(in oklch, var(--chela-mark-hue) 14%, #140c22),
+      color-mix(in oklch, var(--chela-mark-hue) 5%, #05030a));
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08);
+}
+
+/* A light theme's accent is dark by design, for contrast on a light page, and
+   dark neon on a dark tile is barely there. Where the browser can say it, the
+   hue is lifted to a floor of lightness and keeps its chroma and hue, so a
+   light theme's mark is its accent, lit. Without relative colour syntax the
+   accent is used as it is, which is dimmer and still correct. */
+@supports (color: oklch(from red l c h)) {
+  .chela-mark { --chela-mark-hue: oklch(from var(--accent) max(l, .72) c h); }
+}
+
+.chela-mark::before,
+.chela-mark__neon,
+.chela-mark__neon::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+}
+
+.chela-mark::before {
+  background: var(--chela-mark-hue);
+  opacity: .45;
+  -webkit-mask-image: var(--chela-mark-horizon);
+  mask-image: var(--chela-mark-horizon);
+}
+
+/* The glow is a filter on a WRAPPER of the masked line, not on the line itself:
+   a filter runs before the mask, so a drop shadow on the masked element would
+   be cut away with everything else outside the line. */
+.chela-mark__neon {
+  filter:
+    drop-shadow(0 0 1.5px var(--chela-mark-hue))
+    drop-shadow(0 0 3px color-mix(in srgb, var(--chela-mark-hue) 60%, transparent));
+}
+
+.chela-mark__neon::before {
+  background: linear-gradient(to bottom,
+    var(--chela-mark-top) 20%, var(--chela-mark-hue) 55%, var(--chela-mark-bottom) 95%);
+  -webkit-mask-image: var(--chela-mark-ring);
+  mask-image: var(--chela-mark-ring);
+}
+
 
 /* The header, and it is a COLUMN now rather than a row, which is upstream's own
    shape for this block: the back control gets a line of its own, which is what
