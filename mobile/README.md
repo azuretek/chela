@@ -142,6 +142,8 @@ icon from it with one command, from the repo root:
 pnpm --filter chela-desktop run icons
 ```
 
+The icon follows the Control UI's theme without knowing any theme. `core/app-icons.js` owns the design's two palettes (neon for dark, paper for light) and one rule that recolours them for any accent: the accent's hue first, a near-complement 130 degrees round the wheel as a small second accent. The app ships one pair per hue step round the wheel plus a neutral pair, each as its own icon set with paper as the default rendition and neon under dark appearance. `AppIcons.swift` picks the step nearest the live accent and offers it in a notice, since iOS confirms every icon change with its own alert. The buckets it reads come from `core/spec/app-icons.json`, which is generated.
+
 That writes `Chela/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png`, which is
 the file the icon set names in its `Contents.json`, alongside the desktop app's
 own PNGs. A bitmap copied from one platform to another would be a second owner

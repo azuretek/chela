@@ -8,7 +8,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { generatedFiles, appIcon } from '../scripts/artwork.mjs';
+import { generatedFiles, appIcon, paperIcon } from '../scripts/artwork.mjs';
+import { existsSync } from 'node:fs';
+import { BUCKETS, iconFile, trayFile } from '../../core/app-icons.js';
 
 const repo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (p) => readFileSync(path.join(repo, p), 'utf8');
@@ -24,6 +26,28 @@ test('the application icon carries the one edge hairline the square treatment re
   // requires exactly one, so the icon pipeline fails if the artwork stops
   // drawing it or draws two.
   assert.equal(appIcon().match(/<rect\b[^>]*stroke-opacity="0\.07"[^>]*\/>/g)?.length, 1);
+});
+
+test('every themed icon the desktop can switch to ships under src/assets', () => {
+  // main.js applyAppIcon loads these by the name core/app-icons.js gives, and a
+  // missing one is refused at runtime rather than drawn, so it would never show.
+  for (const bucket of BUCKETS) {
+    const tray = trayFile(bucket);
+    for (const rel of [iconFile(bucket, 'dark'), iconFile(bucket, 'light'), tray, tray.replace(/\.png$/, '@2x.png')]) {
+      const file = path.join(repo, 'desktop', 'src', 'assets', rel);
+      assert.ok(existsSync(file), `${file} is missing: run npm run icons`);
+    }
+  }
+});
+
+test('the paper icon carries the one edge hairline too', () => {
+  assert.equal(paperIcon().match(/<rect\b[^>]*stroke-opacity="0\.07"[^>]*\/>/g)?.length, 1);
+});
+
+test('main.js follows the theme with the app icon', () => {
+  const main = read('desktop/src/main.js');
+  // Both theme paths, the page's report and a gateway switch, and a new window.
+  assert.ok((main.match(/applyAppIcon\(\);/g) || []).length >= 3, 'applyAppIcon is not called on every theme change');
 });
 
 test('the app pages draw the themed mark rather than an image of the icon', () => {

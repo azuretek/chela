@@ -51,7 +51,8 @@ import sharp from 'sharp';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { generatedFiles, appIcon } from './artwork.mjs';
+import { generatedFiles, bucketIcons, bucketTrays, iosIconFile } from './artwork.mjs';
+import { iconFile, trayFile } from '../../core/app-icons.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));   // desktop/
 const repo = path.dirname(root);                                            // the repo
@@ -65,6 +66,7 @@ const read = (p) => readFileSync(path.join(root, p));
 // runtime. desktop/test/artwork.test.js fails if a committed copy drifts.
 const generated = generatedFiles();
 for (const [file, text] of Object.entries(generated)) {
+  mkdirSync(path.dirname(path.join(repo, file)), { recursive: true });
   writeFileSync(path.join(repo, file), text);
   console.log(`wrote ${file}`);
 }
@@ -73,10 +75,6 @@ for (const [file, text] of Object.entries(generated)) {
 const artwork = {
   app: Buffer.from(generated['core/ui/assets/claw.svg'], 'utf8'),
   tray: Buffer.from(generated['core/ui/assets/claw-tray.svg'], 'utf8'),
-  // The same icon drawn with square corners, for the one target that must be a
-  // full-bleed square. See appIcon() for why it is drawn square rather than
-  // squared off afterwards.
-  appSquare: Buffer.from(appIcon({ square: true }), 'utf8'),
 };
 
 // One entry per file that ships. `file` is relative to the repo root rather
@@ -92,13 +90,25 @@ const targets = [
   // The iOS app icon, one 1024x1024 entry that Xcode derives every size the app
   // needs from, so there is no AppIcon60x60@2x.png to keep in step with
   // anything. The filename is the one AppIcon.appiconset/Contents.json names.
-  {
-    file: 'mobile/Chela/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png',
-    size: 1024,
-    svg: artwork.appSquare,
-    treatment: 'square',
-  },
 ];
+
+// Every bucket's pair (core/app-icons.js BUCKETS: hues round the wheel, not
+// themes). The desktop swaps its Dock or window icon and its tray glyph to the
+// live accent's bucket at runtime (main.js applyAppIcon), so they ship under
+// src/assets. iOS gets each pair as an icon set: paper by default and neon under
+// dark appearance, the primary set being the first bucket (see iosContents in
+// artwork.mjs), so the App Store icon is its paper icon.
+for (const { bucket, mode, svg } of bucketIcons()) {
+  targets.push({ file: 'desktop/src/assets/' + iconFile(bucket, mode), size: 512, svg: Buffer.from(svg, 'utf8'), treatment: 'canvas' });
+}
+for (const { bucket, svg } of bucketTrays()) {
+  const file = 'desktop/src/assets/' + trayFile(bucket);
+  targets.push({ file, size: 16, svg: Buffer.from(svg, 'utf8'), treatment: 'canvas' });
+  targets.push({ file: file.replace(/\.png$/, '@2x.png'), size: 32, svg: Buffer.from(svg, 'utf8'), treatment: 'canvas' });
+}
+for (const { bucket, mode, svg } of bucketIcons({ square: true })) {
+  targets.push({ file: 'mobile/Chela/Assets.xcassets/' + iosIconFile(bucket, mode), size: 1024, svg: Buffer.from(svg, 'utf8'), treatment: 'square' });
+}
 
 function fail(message) {
   console.error(`error: ${message}`);

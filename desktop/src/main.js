@@ -44,6 +44,7 @@ import updates from './updates.js';
 // fresher one may replace it, so a second press does not flash. See
 // core/ui/motion.js and the eighth rule in core/ui/CONVENTIONS.md.
 import { MIN_VISIBLE_MS, remainingVisibleMs } from '../../core/ui/motion.js';
+import * as appIcons from '../../core/app-icons.js';
 import secrets from './secrets.js';
 import defaults from './defaults.js';
 import { withTokenHandoff } from '../../core/gateway-url.js';
@@ -414,6 +415,41 @@ function layoutViews() {
   // banner above was just placed as: a band that appears, moves or goes away takes
   // the published frame with it.
   publishFrameInsets();
+}
+
+/* ---------------------------------------------------------------- app icon */
+
+// The icon that matches the live theme: neon for a dark palette, paper for a
+// light one, in the colours of the live accent's bucket. core/app-icons.js makes
+// the choice from the accent alone, so a theme added upstream is followed with
+// no change here, and the iOS client makes the same choice from the same rule.
+// macOS shows the icon in the Dock; Windows and Linux show the window's own
+// icon, which is the taskbar's. The tray glyph follows the same bucket. The
+// packaged icon is what the OS shows while the app is not running.
+let appliedIconFile = null;
+let appliedTrayFile = null;
+function applyAppIcon() {
+  const choice = appIcons.choose(currentTheme.tokens?.['--accent'], currentTheme.mode);
+  if (choice.file !== appliedIconFile) {
+    const img = nativeImage.createFromPath(path.join(ASSETS, choice.file));
+    if (img.isEmpty()) {
+      console.warn(`[chela-desktop] no themed icon at ${choice.file}; keeping the one showing`);
+    } else {
+      appliedIconFile = choice.file;
+      if (process.platform === 'darwin') app.dock?.setIcon(img);
+      else if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setIcon(img);
+    }
+  }
+  if (tray && !tray.isDestroyed() && choice.tray !== appliedTrayFile) {
+    const img = nativeImage.createFromPath(path.join(ASSETS, choice.tray));
+    if (img.isEmpty()) {
+      console.warn(`[chela-desktop] no themed tray glyph at ${choice.tray}; keeping the one showing`);
+    } else {
+      img.setTemplateImage(false);
+      tray.setImage(img);
+      appliedTrayFile = choice.tray;
+    }
+  }
 }
 
 function trayImage() {
@@ -1791,6 +1827,9 @@ function createMainWindow() {
   // would otherwise sit in the store with nothing on screen. Also covers the
   // window being recreated after it was closed for good on macOS.
   refreshBanner();
+  // A new window has the packaged icon, so the themed one is set on it again.
+  appliedIconFile = null;
+  applyAppIcon();
   return mainWindow;
 }
 
@@ -1836,6 +1875,7 @@ function applyStoredTheme(gatewayId) {
   console.log(`[chela-desktop] theme: ${currentTheme.mode} (stored for this gateway)`);
   chrome.applyTheme(currentTheme, mainWindow && !mainWindow.isDestroyed() ? [mainWindow] : []);
   refreshThemedPages();
+  applyAppIcon();
 }
 
 // Adopt a theme reported by the page and repaint everything the page's own
@@ -1864,6 +1904,7 @@ function adoptTheme(theme) {
   currentTheme = theme;
   chrome.applyTheme(currentTheme, [mainWindow]);
   refreshThemedPages();
+  applyAppIcon();
   // Remembered against the gateway that reported it, because the Control UI's
   // theme belongs to that gateway and is chosen in that gateway's own UI. This
   // is one of the only two writes to the appearance store.
@@ -4326,6 +4367,8 @@ function buildMenu() {
 function buildTray() {
   if (!tray) {
     tray = new Tray(trayImage());
+    appliedTrayFile = null;
+    applyAppIcon();
     tray.setToolTip(chrome.APP_NAME);
     tray.on('click', () => (process.platform === 'darwin' ? tray.popUpContextMenu() : toggleMainWindow()));
     tray.on('double-click', showMainWindow);

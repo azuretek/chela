@@ -15,6 +15,7 @@
     "./feed.js": "./feed.js",
     "./version.js": "./version.js",
     "./naming.js": "./naming.js",
+    "./app-icons.js": "./app-icons.js",
     "./prompt-metadata.js": "./prompt-metadata.js",
     "./app-settings-affordance.js": "./app-settings-affordance.js",
     "./config-model.js": "./config-model.js",
