@@ -33,3 +33,12 @@ function report() {
 
 window.addEventListener('resize', report);
 report();
+
+// The label and tooltip are core/spec/banner.json's, the same words the iOS pill
+// uses. sweep.html carries the same label so the first report is the right size;
+// core/test/banner-spec.test.js holds the two to the spec.
+void api.bannerSpec().then((spec) => {
+  button.textContent = spec.sweep.label;
+  button.title = spec.sweep.tooltip;
+  report();
+});

@@ -190,6 +190,10 @@ targets:
         buildPhase: resources
       - path: ../core/spec/tokens.json
         buildPhase: resources
+      # The banner's controls, their words and the Control UI icons, read by
+      # BannerSpec.swift. The desktop reads the same file through core/banner.js.
+      - path: ../core/spec/banner.json
+        buildPhase: resources
       - path: ../core/spec/app-icons.json
         buildPhase: resources
       # The shared About page, bundled rather than mirrored, for the same reason

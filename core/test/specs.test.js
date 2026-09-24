@@ -38,6 +38,7 @@ const MIRRORED = {};
 
 // Shipped as a resource and read at runtime through BundledSpec.
 const BUNDLED = {
+  'banner.json': 'read at runtime for the banner card\'s controls, their labels, the dismiss rule, the sweep and the tone icons, so both banners draw from one owner',
   'app-icons.json': 'read at runtime for the icon buckets a live accent is matched to, and the samples the Swift mirror is tested against',
   'app-settings-affordance.json': 'holds the one injected script that adds the footer control',
   'app-frame-inset.json': 'holds the one injected script that publishes our chrome as a frame the page overlays are clamped to',

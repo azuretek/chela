@@ -33,6 +33,9 @@ import { app, BrowserWindow, nativeTheme } from 'electron';
 // names resolves to nothing -- which is how the first run of this harness looked
 // like a broken layout rather than a harness that had skipped a step.
 import { stylesheet as tokenStylesheet } from '../src/tokens.js';
+// The banner's shared facts, handed to the stub host the way main hands them to
+// the real pages (app:banner-spec).
+import { forPages as bannerSpec } from '../../core/banner.js';
 // And the live theme, injected exactly as the app injects it (applyThemeCss in
 // src/main.js): the Control UI's own tokens, read off a running page.
 //
@@ -296,6 +299,7 @@ contextBridge.exposeInMainWorld('clawDesktop', {
   // height rather than sizing anything: the view is sized to exactly what the
   // page reports, and this harness has no view to size.
   notices: async () => state.notices || [],
+  bannerSpec: async () => JSON.parse(process.env.CLAW_BANNER_SPEC || 'null'),
   onNoticesChanged: () => {},
   bannerHeight: () => {},
   sweepBounds: () => {},
@@ -440,7 +444,9 @@ const PROBE = `(() => {
       const message = card.querySelector('.banner__message');
       const detail = card.querySelector('.banner__detail');
       const progress = card.querySelector('.banner__progress');
-      const body = card.firstElementChild;
+      // By class rather than position: the card leads with its tone icon now
+      // (the Control UI's icon box), so the body is no longer its first child.
+      const body = card.querySelector('.banner__body');
       return {
         className: body ? body.className : null,
         direction: body ? getComputedStyle(body).flexDirection : null,
@@ -506,6 +512,7 @@ async function capture(page, mode, win) {
   // it is spawned, so a stub set after the window appears arrives as an empty map
   // and the page renders an empty state.
   process.env.CLAW_CAPTURE_STATE = JSON.stringify(page.state);
+  process.env.CLAW_BANNER_SPEC = JSON.stringify(bannerSpec());
 
   // ONE window for every capture, reloaded. A fresh window per capture failed
   // here: the second load of the same file:// URL came back ERR_FAILED (-2)

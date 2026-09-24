@@ -1,0 +1,156 @@
+{
+  "description": "The notice banner's shared facts: which controls a card draws and in what order, what each control says, what the card's X does, when the sweep (Mark all read) is offered, and the icons both clients draw. One owner for both clients. The desktop reads it through core/banner.js, whose main-process half hands it to core/ui/banner.js and core/ui/sweep.js; the iOS app bundles it and reads it through BannerSpec.swift. core/test/banner-spec.test.js holds both clients' sources to it, so a label, a control or a rule that one client changes alone fails there.",
+  "why": [
+    "The two banners drifted while each was correct on its own terms: the desktop X cleared a download and said so, the phone X always marked read and always said Mark read, the desktop drew no tone icon while the phone drew one, and the phone's Mark all read was bare text where the desktop's is a floating pill. Nothing compared them, because the facts lived in two sources in two languages.",
+    "`dismiss` names the rule rather than restating it. `shownWhen: dismissible` means a card offers an X unless it says it cannot be dismissed; `clearsWhen: dismissClears` means that X clears the notice when the notice says so and marks it read otherwise. The rule itself is dismiss() in core/notices.js and NoticeStore.dismiss in Notices.swift, proven against the same fixtures; this file is what the controls say about it.",
+    "`sweep.shownWhen: anyUnread` is the desktop's sweepWanted(): the sweep reads every card, the ones that refuse the X included, so it is offered whenever anything is unread.",
+    "The copy has to be true on BOTH clients, which is why the read tooltip no longer names the desktop's Settings, Problems tab: the phone has no such tab.",
+    "`icons` are the Control UI's own strokeIcon() bodies from ui/src/components/icons.ts, element by element in upstream's order, drawn with the `stroke` attributes strokeIcon() sets. The attention card draws its tone in a 28px icon box (.sidebar-issues-panel__icon) and its dismiss as the `x` icon, so both clients draw the same. The desktop draws the SVG; iOS draws the named SF Symbol, the outlined symbol closest to the same shape, because SwiftUI has no SVG path reader and a hand-ported path would be a second copy of the artwork."
+  ],
+  "card": {
+    "controls": [
+      "icon",
+      "message",
+      "detail",
+      "progress",
+      "action",
+      "dismiss"
+    ]
+  },
+  "dismiss": {
+    "shownWhen": "dismissible",
+    "clearsWhen": "dismissClears",
+    "icon": "x",
+    "read": {
+      "label": "Mark read",
+      "tooltip": "Mark read. The condition is still true, and the card comes back only if it changes."
+    },
+    "clears": {
+      "label": "Clear",
+      "tooltip": "Clear this. It stops reporting the download, and it does not come back."
+    }
+  },
+  "sweep": {
+    "shownWhen": "anyUnread",
+    "label": "Mark all read",
+    "tooltip": "Mark everything read and close the bar. Nothing is cleared: anything still true stays true until it is fixed."
+  },
+  "toneIcon": {
+    "error": "circleX",
+    "warn": "alertTriangle",
+    "info": "info",
+    "ok": "check"
+  },
+  "iconSource": "ui/src/components/icons.ts in the OpenClaw checkout named by core/spec/upstream-reference.json",
+  "stroke": {
+    "viewBox": "0 0 24 24",
+    "fill": "none",
+    "stroke": "currentColor",
+    "stroke-width": "2",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round"
+  },
+  "icons": {
+    "circleX": {
+      "sfSymbol": "xmark.circle",
+      "svg": [
+        [
+          "circle",
+          {
+            "cx": "12",
+            "cy": "12",
+            "r": "10"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "m15 9-6 6"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "m9 9 6 6"
+          }
+        ]
+      ]
+    },
+    "alertTriangle": {
+      "sfSymbol": "exclamationmark.triangle",
+      "svg": [
+        [
+          "path",
+          {
+            "d": "m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M12 9v4"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M12 17h.01"
+          }
+        ]
+      ]
+    },
+    "info": {
+      "sfSymbol": "info.circle",
+      "svg": [
+        [
+          "circle",
+          {
+            "cx": "12",
+            "cy": "12",
+            "r": "10"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M12 16v-4"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M12 8h.01"
+          }
+        ]
+      ]
+    },
+    "check": {
+      "sfSymbol": "checkmark",
+      "svg": [
+        [
+          "path",
+          {
+            "d": "M20 6 9 17l-5-5"
+          }
+        ]
+      ]
+    },
+    "x": {
+      "sfSymbol": "xmark",
+      "svg": [
+        [
+          "path",
+          {
+            "d": "M18 6 6 18"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "m6 6 12 12"
+          }
+        ]
+      ]
+    }
+  }
+}
