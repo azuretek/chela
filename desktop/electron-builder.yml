@@ -148,7 +148,8 @@ dmg:
   writeUpdateInfo: false
 
 win:
-  icon: build/icon.png
+  # The edge-to-edge icon: see desktop/scripts/make-icons.mjs, icon-full.png.
+  icon: build/icon-full.png
   target:
     - target: nsis
       arch: [x64, arm64]
@@ -204,7 +205,8 @@ nsis:
 # icon in the dock and in alt-tab, for an app that lives in the tray for weeks,
 # the icon is most of what anyone sees of it.
 linux:
-  icon: build/icon.png
+  # The edge-to-edge icon: see desktop/scripts/make-icons.mjs, icon-full.png.
+  icon: build/icon-full.png
   category: Utility
   artifactName: chela-desktop-${version}-${arch}.${ext}
   synopsis: Desktop shell for the OpenClaw Control UI

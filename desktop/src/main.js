@@ -430,7 +430,7 @@ function layoutViews() {
 let appliedIconFile = null;
 let appliedTrayFile = null;
 function applyAppIcon() {
-  const choice = appIcons.choose(currentTheme.tokens?.['--accent'], currentTheme.mode);
+  const choice = appIcons.choose(currentTheme.tokens?.['--accent'], currentTheme.mode, { full: appIcons.fillsSquare(process.platform) });
   if (choice.file !== appliedIconFile) {
     const img = nativeImage.createFromPath(path.join(ASSETS, choice.file));
     if (img.isEmpty()) {
@@ -1750,7 +1750,7 @@ function createMainWindow() {
     backgroundColor: currentTheme.surface,
     autoHideMenuBar: true,
     title: chrome.APP_NAME,
-    icon: process.platform === 'linux' ? path.join(ASSETS, 'icon.png') : undefined,
+    icon: process.platform === 'linux' ? path.join(ASSETS, 'icon-full.png') : undefined,
   });
 
   if (cfg.window.maximized) mainWindow.maximize();

@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { generatedFiles, appIcon, paperIcon } from '../scripts/artwork.mjs';
+import { generatedFiles, appIcon, paperIcon, TILE } from '../scripts/artwork.mjs';
 import { existsSync } from 'node:fs';
 import { BUCKETS, iconFile, trayFile } from '../../core/app-icons.js';
 
@@ -33,11 +33,37 @@ test('every themed icon the desktop can switch to ships under src/assets', () =>
   // missing one is refused at runtime rather than drawn, so it would never show.
   for (const bucket of BUCKETS) {
     const tray = trayFile(bucket);
-    for (const rel of [iconFile(bucket, 'dark'), iconFile(bucket, 'light'), tray, tray.replace(/\.png$/, '@2x.png')]) {
+    const icons = [iconFile(bucket, 'dark'), iconFile(bucket, 'light'), iconFile(bucket, 'dark', { full: true }), iconFile(bucket, 'light', { full: true })];
+    for (const rel of [...icons, tray, tray.replace(/\.png$/, '@2x.png')]) {
       const file = path.join(repo, 'desktop', 'src', 'assets', rel);
       assert.ok(existsSync(file), `${file} is missing: run npm run icons`);
     }
   }
+});
+
+test('the edge-to-edge icons are the same drawing framed to the tile, with no margin', () => {
+  // Windows and Linux draw an icon at the size of its square, so the macOS
+  // margin round the tile only made the icon smaller there. The full icon is
+  // framed to the tile's own rectangle and otherwise identical.
+  const tile = `${TILE.x} ${TILE.y} ${TILE.size} ${TILE.size}`;
+  for (const draw of [appIcon, paperIcon]) {
+    const canvas = draw(), full = draw({ full: true });
+    assert.match(canvas, /viewBox="0 0 120 120"/);
+    assert.match(full, new RegExp(`viewBox="${tile}"`));
+    assert.equal(full.replace(tile, '0 0 120 120'), canvas, 'the full icon changed more than its frame');
+    assert.match(canvas, new RegExp(`<rect x="${TILE.x}" y="${TILE.y}" width="${TILE.size}" height="${TILE.size}"`), 'TILE no longer matches the drawn tile');
+  }
+});
+
+test('Windows and Linux package the edge-to-edge icon, macOS the one on Apple\'s grid', () => {
+  const yml = read('desktop/electron-builder.yml');
+  // The section's own indented lines, up to the next top-level key.
+  const iconOf = (section) => yml.match(new RegExp(`^${section}:\\n((?:[ #].*\\n|\\n)*)`, 'm'))?.[1].match(/^  icon: (\S+)/m)?.[1];
+  assert.equal(iconOf('mac'), 'build/icon.png');
+  assert.equal(iconOf('win'), 'build/icon-full.png');
+  assert.equal(iconOf('linux'), 'build/icon-full.png');
+  assert.match(read('desktop/src/main.js'), /icon: process\.platform === 'linux' \? path\.join\(ASSETS, 'icon-full\.png'\)/);
+  assert.match(read('desktop/src/main.js'), /appIcons\.choose\([^)]*full: appIcons\.fillsSquare\(process\.platform\)/);
 });
 
 test('the paper icon carries the one edge hairline too', () => {
