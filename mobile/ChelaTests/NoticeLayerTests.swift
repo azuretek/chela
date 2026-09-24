@@ -83,9 +83,24 @@ final class NoticeLayerTests: XCTestCase {
         let text = try source("NoticeBanner.swift")
         XCTAssertTrue(text.contains("NoticeClusterBox.self"),
             "the stack no longer publishes the box it drew, which is the only area the notice layer may claim")
-        XCTAssertTrue(text.contains("NoticeWindow.coordinateSpace"),
-            "the stack's box is reported in a space the notice window does not share, so the claim would be "
-            + "measured against the wrong origin")
+        XCTAssertTrue(text.contains("proxy.frame(in: .global)"),
+            "the stack's box is not reported in the window's coordinates, so the claim would be "
+            + "measured against a different origin from the touches it is tested against")
+    }
+
+    /// The Spacer after the cards publishes nothing, which reads as `.zero`. The
+    /// box must survive it, or the window claims nothing and no control on a card
+    /// can be pressed: the bug Abi reported on 2026-09-23.
+    func testAnEmptySiblingDoesNotEraseTheCardsBox() {
+        let cards = CGRect(x: 120, y: 60, width: 250, height: 95)
+        var value = NoticeClusterBox.defaultValue
+        NoticeClusterBox.reduce(value: &value) { cards }
+        NoticeClusterBox.reduce(value: &value) { .zero }
+        XCTAssertEqual(value, cards, "a sibling with no box erased the cards' box")
+        var other = NoticeClusterBox.defaultValue
+        NoticeClusterBox.reduce(value: &other) { .zero }
+        NoticeClusterBox.reduce(value: &other) { cards }
+        XCTAssertEqual(other, cards)
     }
 
     /// The window is attached the moment the anchor enters a window, with no

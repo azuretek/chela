@@ -10,8 +10,15 @@ import UIKit
 struct NoticeClusterBox: PreferenceKey {
     static let defaultValue: CGRect = .zero
 
+    /// Every sibling of the probe answers too, and one that publishes nothing
+    /// answers `.zero`. Taking the last answer let the Spacer after the cards
+    /// overwrite their box with `.zero`, so the window claimed nothing and every
+    /// tap on a card's X or on Mark all read fell through to the page (Abi,
+    /// 2026-09-23). An empty answer is skipped; real boxes are joined.
     static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
-        value = nextValue()
+        let next = nextValue()
+        guard !next.isEmpty else { return }
+        value = value.isEmpty ? next : value.union(next)
     }
 }
 
@@ -50,10 +57,6 @@ struct NoticeClusterBox: PreferenceKey {
 /// more, and the page, the settings field and every control underneath keep working.
 @MainActor
 final class NoticeWindow: UIWindow {
-    /// The name the layer's coordinate space is registered under, so the probe and
-    /// this window agree on what a point means.
-    static let coordinateSpace = "claw-notice-layer"
-
     /// The box the cards occupy, in this window's coordinates: the only area that
     /// takes a touch. Starts empty, which claims nothing until the stack has
     /// reported where it drew.
@@ -101,7 +104,7 @@ final class NoticeWindow: UIWindow {
     }
 }
 
-/// The stack, in the layer's own coordinate space, reporting the box it drew in.
+/// The stack, reporting the box it drew in, in this window's coordinates.
 struct NoticeLayerContent: View {
     @ObservedObject var board: NoticeBoard
     let report: (CGRect) -> Void
@@ -109,7 +112,6 @@ struct NoticeLayerContent: View {
     var body: some View {
         NoticeStack(board: board)
             .onPreferenceChange(NoticeClusterBox.self) { report($0) }
-            .coordinateSpace(name: NoticeWindow.coordinateSpace)
     }
 }
 
