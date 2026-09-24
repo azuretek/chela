@@ -150,17 +150,19 @@ test('★ the iOS banner draws from the same spec, with the same dismiss rule', 
 });
 
 test('★ the sweep is the same floating pill on both clients', () => {
-  // The desktop pill: the card's surface, hairline, radius, shadow and blur.
+  // The desktop pill: the toast card's surface, hairline, radius and shadow.
   const css = read('core/ui/banner.css');
   const start = css.indexOf('.banner__readall {');
   const rule = css.slice(start, css.indexOf('}', start));
-  for (const decl of ['var(--notice-surface)', 'var(--notice-border)', 'var(--notice-radius)', 'var(--notice-shadow)', 'blur(var(--notice-blur))']) {
+  for (const decl of ['var(--notice-surface)', 'var(--notice-border)', 'var(--notice-radius)', 'var(--notice-shadow)']) {
     assert.ok(rule.includes(decl), `the desktop pill no longer draws ${decl}`);
   }
-  // The phone pill: the same five, from the same card style.
+  // The phone pill: the same four, from the same card style, and no material:
+  // the toast is opaque on both clients.
   const row = IOS_CARD.slice(IOS_CARD.indexOf('struct MarkAllReadRow'));
   const body = row.slice(0, row.indexOf('\n}\n'));
-  for (const piece of ['style.surface', 'style.border', 'style.radius', 'style.shadowColour', '.ultraThinMaterial']) {
+  for (const piece of ['style.surface', 'style.border', 'style.radius', 'style.shadowColour']) {
     assert.ok(body.includes(piece), `the iOS pill no longer draws ${piece}`);
   }
+  assert.ok(!IOS_CARD.includes('ultraThinMaterial'), 'the iOS banner still draws a blurred material the toast does not have');
 });

@@ -121,7 +121,8 @@ final class NoticeTokensParityTests: XCTestCase {
         XCTAssertNil(NoticeTokens.resolve("--nowhere", mode: "dark"))
         // The card's radius is recorded as a token name, so a caller that reads it
         // through cardValue gets a length and not the name of one.
-        XCTAssertEqual(NoticeTokens.cardValue("radius", mode: "dark"), "14px")
+        XCTAssertEqual(NoticeTokens.cardValue("radius", mode: "dark"), "12px")
+        XCTAssertEqual(NoticeTokens.cardValue("surface", mode: "dark"), "#191c24", "the card is not the toast's popover surface")
         XCTAssertNil(NoticeTokens.cardValue("nothing-here", mode: "dark"))
     }
 
@@ -134,8 +135,13 @@ final class NoticeTokensParityTests: XCTestCase {
         XCTAssertEqual(CSSLength("1.5"), 1.5)
         XCTAssertNil(CSSLength("28rem"), "a unit we do not draw in should not parse as pixels")
         let padding = try CSSPadding(spec.paddingText)
-        XCTAssertEqual(padding.top, 11)
-        XCTAssertEqual(padding.leading, 14)
+        // The toast's four-value padding, clockwise from the top.
+        XCTAssertEqual(padding.top, 7)
+        XCTAssertEqual(padding.trailing, 7)
+        XCTAssertEqual(padding.bottom, 7)
+        XCTAssertEqual(padding.leading, 13)
+        XCTAssertEqual(CSSPadding("11px 14px").leading, 14)
+        XCTAssertEqual(CSSPadding("1px 2px 3px").bottom, 3)
         let shadow = CSSShadow(spec.shape["--shadow-sm"])
         XCTAssertEqual(shadow.x, 0)
         XCTAssertEqual(shadow.y, 1)

@@ -97,6 +97,8 @@
      to resolve or it silently loses the declaration that used them. */
   --card: #161920;
   --bg-elevated: #191c24;
+  --popover: #191c24;
+  --popover-foreground: #f0f0f2;
   --muted-strong: #898990;
 
   --space-1: 4px;
@@ -187,6 +189,8 @@
        and a card read as one surface there and as two here. */
     --card: #ffffff;
     --bg-elevated: #ffffff;
+    --popover: #ffffff;
+    --popover-foreground: #211e1a;
     --muted-strong: #56524a;
     --accent: #b0246f;
     --accent-hover: #971d5e;

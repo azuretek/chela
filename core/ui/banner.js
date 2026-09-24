@@ -91,9 +91,9 @@ function report() {
 }
 
 function card(notice) {
-  // The tone, in the Control UI's own icon box (.sidebar-issues-panel__icon): the
-  // attention card shows its tone as an icon, so this card does too, and the iOS
-  // card draws the same icon from the same spec entry.
+  // The tone, as the Control UI toast's icon (.app-toast__icon): a 16px stroke
+  // icon with no box, coloured by the tone. The iOS card draws the same icon from
+  // the same spec entry.
   const toneIcon = icon(spec.toneIcon[notice.tone]);
   const glyph = toneIcon ? el('span', { className: 'banner__icon' }, [toneIcon]) : null;
 

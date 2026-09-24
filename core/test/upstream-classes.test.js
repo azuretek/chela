@@ -35,7 +35,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import {
-  PIN, REPO, checkout, normalizeDeclarations, readPin, ruleBody, uiSources,
+  PIN, REPO, checkout, normalizeDeclarations, readPin, ruleBody, topLevelRules, uiSources,
 } from './upstream-classes.js';
 
 const pin = readPin();
@@ -323,12 +323,19 @@ test('the checkout still declares every pinned card value', () => {
   const cache = new Map();
   for (const entry of pin.values) {
     if (!cache.has(entry.file)) cache.set(entry.file, fs.readFileSync(path.join(dir, entry.file), 'utf8'));
-    const body = ruleBody(cache.get(entry.file), entry.selector);
+    // Every top-level rule that names the selector, in source order: upstream
+    // spreads one element's declarations over grouped rules (the toast's action
+    // and X share a radius rule, and their hover colour is on a rule both share).
+    const bodies = topLevelRules(cache.get(entry.file))
+      .filter((r) => r.selector.split(',').map((s) => s.replace(/\s+/g, ' ').trim()).includes(entry.selector))
+      .map((r) => r.body);
+    const body = bodies.length ? bodies.join(';') : null;
     assert.notStrictEqual(body, null,
       `${entry.selector} is gone from upstream ${entry.file}: the banner's ${entry.path} cites a rule that `
       + 'no longer exists, so re-read the card and update the pin and tokens.json together');
     const decls = normalizeDeclarations(body).split(';').map((d) => d.trim()).filter(Boolean);
-    const found = decls.find((d) => d.slice(0, d.indexOf(':')).trim() === entry.property);
+    // The last one, because that is the declaration the cascade applies.
+    const found = decls.filter((d) => d.slice(0, d.indexOf(':')).trim() === entry.property).pop();
     assert.ok(found, `${entry.selector} no longer declares ${entry.property} in upstream ${entry.file}`);
     const value = found.slice(found.indexOf(':') + 1).trim();
     assert.equal(value, entry.expect,
