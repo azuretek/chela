@@ -12,8 +12,8 @@
   "upstream": {
     "repo": "openclaw",
     "package": "ui",
-    "version": "2026.9.4",
-    "commit": "362492d73404fc751827667a883515c92201c0c7",
+    "version": "2026.9.5",
+    "commit": "376d13b6c7780f170948ab6840a507ad3d032a18",
     "identifiedBy": "The version is the `openclaw` root package.json of the checkout below, which is where the release number lives: the Control UI's own package (`openclaw-control-ui`) is private and carries no version field at all, so there is nowhere else in the checkout to read one from. The commit is the tree the classes and values in this file were read from and are verified against, read with `git rev-parse HEAD` in the checkout, and it is what tells two builds of the same version apart: the number names a release, the commit names the revision our borrowed components came out of. core/test/upstream-classes.test.js compares the checkout's own package.json against `version`, so a checkout that moves to a new release re-runs this pin rather than agreeing with it by accident.",
     "checkout": "the OpenClaw checkout, not this repo: $CLAW_OPENCLAW_UI, defaulting to ~/src/openclaw/ui, which is the fleet convention for ~/src/<repo>. Read-only, and never vendored here.",
     "readOnly": true
@@ -243,7 +243,7 @@
     {
       "path": "card.blur",
       "file": "src/styles/sidebar-attention-floating.css",
-      "selector": ":where(openclaw-sidebar-attention.sidebar-attention--floating) .sidebar-issues-button",
+      "selector": ":where(html:not(.openclaw-native-web-chrome) openclaw-sidebar-attention.sidebar-attention--floating) .sidebar-issues-button",
       "property": "backdrop-filter",
       "expect": "blur(10px)",
       "why": "The blur that makes the translucent surface above read as glass rather than as a washed-out fill."
@@ -354,7 +354,7 @@
     }
   ],
   "ours": [
-    "card.edgeWidth is OURS rather than pinned, and it was recorded as a pinned value first and then removed: the tone stripe on the leading edge has no upstream equivalent at all, because the card shows its tone in an icon COLUMN (card.iconSize, card.iconRadius) and a bar over someone else's page has no column to show it in. Recorded here so that 'ours' is a stated decision rather than a value nobody checked.",
+    "card.edgeWidth is OURS rather than pinned, and it was recorded as a pinned value first and then removed: the tone stripe on the leading edge has no upstream equivalent at all, because the card shows its tone in an icon COLUMN (card.iconSize, card.iconRadius). Both banners now draw that icon too (core/spec/banner.json), and keep the stripe beside it as ours. Recorded here so that 'ours' is a stated decision rather than a value nobody checked.",
     "card.padding is deliberately NOT pinned. Upstream's summary row pads 8px 12px and the banner pads 11px 14px, and the spec says so in as many words: widened for a bar. A bar is a strip rather than a list row, so it needs more air, and pinning it would pin it to a value that is wrong for the shape.",
     "card.dismiss.hoverSurface and card.dismiss.hoverColour are NOT pinned either, and this one is a correction rather than a widening: the spec attributes them to `.sidebar-issues-panel__dismiss:hover`, which upstream does not declare at all (measured against the checkout, 2026-09-16). The floating control's hover lives on `.sidebar-issues-button:hover` and fills with color-mix(--bg-hover 84%) to --text, which is a different colour from the --text-strong the spec records. So the pair is OURS, taken from the interface's ordinary hover rather than from a rule that does not exist, and it is named here so that a reader stops looking for the missing rule."
   ],

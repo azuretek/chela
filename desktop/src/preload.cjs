@@ -154,6 +154,9 @@ if (isLocalPage) {
     // Unread only: the banner draws what has not been acknowledged. Everything
     // still true, read or not, is liveNotices.
     notices: () => ipcRenderer.invoke('app:notices'),
+    // The banner's shared facts (core/spec/banner.json), for the two pages that
+    // cannot import them: the bar and the sweep.
+    bannerSpec: () => ipcRenderer.invoke('app:banner-spec'),
     liveNotices: () => ipcRenderer.invoke('app:live-notices'),
     bannerBounds: (bounds) => ipcRenderer.invoke('app:banner-bounds', bounds),
     // The sweep, in a view of its own, telling main how big to make it. See

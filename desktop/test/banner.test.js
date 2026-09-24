@@ -25,6 +25,8 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { forPages as bannerSpec } from '../../core/banner.js';
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const SOURCE = path.join(HERE, '..', '..', 'core', 'ui', 'banner.js');
@@ -37,6 +39,9 @@ function makeNode(tag) {
     textContent: '',
     parent: null,
     kids: [],
+    attrs: {},
+    setAttribute(name, value) { this.attrs[name] = String(value); },
+    getAttribute(name) { return this.attrs[name] ?? null; },
     get children() { return this.kids; },
     get childElementCount() { return this.kids.length; },
     append(...items) {
@@ -107,11 +112,13 @@ function mount() {
 
   global.document = {
     createElement: makeNode,
+    createElementNS: (_ns, tag) => makeNode(tag),
     getElementById: (id) => (id === 'stack' ? stack : find(stack, id)),
   };
   global.window = {
     clawDesktop: {
       notices: async () => unread,
+      bannerSpec: async () => bannerSpec(),
       bannerBounds: (b) => { calls.bounds.push(b); },
       markNoticesRead: async () => { calls.markAll += 1; },
       dismissNotice: async (id) => { calls.dismissed.push(id); },

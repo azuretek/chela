@@ -19,6 +19,7 @@ import path from 'node:path';
 import { app, BrowserWindow, nativeTheme } from 'electron';
 import { stylesheet as tokenStylesheet } from '../src/tokens.js';
 import { themeCss, themeFromReport } from '../src/chrome.js';
+import { forPages as bannerSpec } from '../../core/banner.js';
 
 const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-float-'));
 app.setPath('userData', PROFILE);
@@ -36,6 +37,7 @@ const notices = JSON.parse(process.env.CLAW_FLOAT_NOTICES || '[]');
 let reported = null;
 contextBridge.exposeInMainWorld('clawDesktop',{
   notices: async()=>notices,
+  bannerSpec: async()=>JSON.parse(process.env.CLAW_BANNER_SPEC || 'null'),
   onNoticesChanged: ()=>{},
   bannerBounds: (b)=>{ reported = b; return Promise.resolve(); },
   dismissNotice: ()=>{}, noticeAction: ()=>{},
@@ -64,6 +66,7 @@ const PROBE = `(() => {
 app.whenReady().then(async () => {
   const win = new BrowserWindow({ show:false, width:1200, height:400, webPreferences:{ preload:PRELOAD, contextIsolation:true, nodeIntegration:false } });
   process.env.CLAW_FLOAT_NOTICES = JSON.stringify(NOTICES);
+  process.env.CLAW_BANNER_SPEC = JSON.stringify(bannerSpec());
   nativeTheme.themeSource = 'dark';
   await win.loadFile(path.join(UI,'banner.html'));
   await win.webContents.insertCSS(tokenStylesheet({ important:true }));

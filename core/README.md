@@ -12,6 +12,7 @@ the iOS app behave identically where it counts and cannot drift apart.
 | `progress.js` | The loading-bar percentage: milestone floors eased by time, never claiming a stage the load has not reached. |
 | `connection.js` | The connection state machine: phases, error-code to sentence mapping, certificate state, what the banner says. |
 | `notices.js` | The keyed-by-condition notice store: raise, replace, read, clear, sorted worst-first. |
+| `banner.js` | The banner card's shared facts: which controls it draws, what the X and the sweep say, when the sweep is offered, and the Control UI icons. The iOS app bundles the same spec. |
 | `config-model.js` | The gateway config shape and the pure CRUD over its gateway list (no persistence, that is each client's disk). |
 | `gateway-url.js` | The token handoff: build the Control UI URL with the token on the `#token=` fragment. |
 | `updates.js` | What this build may do about a new version: the action, whether to check, whether to download, and why. Takes `platform`, `packaged`, `macSigned` and `appImage` as arguments, so a stray environment variable cannot change the answer. |
@@ -58,6 +59,7 @@ The data each module needs lives in `spec/*.json`, and the JS reads from it:
 - `spec/progress.json`: the milestone order, floors, the easing time constant and creep.
 - `spec/connection.json`: the phase names, `ERR_ABORTED`, and the error-code hints.
 - `spec/notices.json`: the tones and their sort rank.
+- `spec/banner.json`: the banner card's controls, their labels and tooltips, the dismiss rule, the sweep, and the Control UI icons each tone draws.
 - `spec/updates.json`: the four action names and the two check intervals.
 - `spec/prompt-metadata.json`: the marker, the per-client headers, the block's field order, the value rules, and the injected script itself.
 - `spec/settings.json`: the settings surface's split by client: which tabs and which settings apply to each, the reason any of them is absent on a client, and the command vocabulary a client's host implements. Not a mirror: both clients hand this file to the one shared page at runtime.

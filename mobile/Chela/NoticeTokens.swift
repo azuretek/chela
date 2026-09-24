@@ -70,7 +70,6 @@ enum NoticeTokens {
         struct ToneSpec: Decodable {
             let edge: String
             let tint: String
-            let glyph: String
         }
 
         struct MotionSpec: Decodable {
@@ -179,21 +178,17 @@ enum NoticeTokens {
         return out
     }
 
-    /// Which token each tone draws with, and the glyph that carries it.
-    ///
-    /// The glyph is the one part of this file the desktop ignores: its card shows
-    /// the tone in the stripe on its leading edge, while a card that sits over
-    /// someone else's page and has an icon slot shows it in both.
+    /// Which token each tone draws with. The icon a tone draws is
+    /// `core/spec/banner.json`'s, read by `BannerSpec`.
     struct Tone: Equatable {
         let edge: String
         let tint: String
-        let glyph: String
     }
 
     static var tones: [String: Tone] {
         var out: [String: Tone] = [:]
         for (name, tone) in spec.tone ?? [:] {
-            out[name] = Tone(edge: tone.edge, tint: tone.tint, glyph: tone.glyph)
+            out[name] = Tone(edge: tone.edge, tint: tone.tint)
         }
         return out
     }
@@ -233,17 +228,17 @@ enum NoticeTokens {
         }
     }
 
-    /// The two colours one tone draws with, resolved for a mode, and the glyph.
+    /// The two colours one tone draws with, resolved for a mode.
     ///
     /// Here rather than in the view because "which token is the error tone" is
     /// the mapping, and a mapping copied into two places is a mapping that
     /// dissents.
-    static func tone(_ name: String, mode: String) -> (edge: String, tint: String, glyph: String, edgeColour: String, tintColour: String)? {
+    static func tone(_ name: String, mode: String) -> (edge: String, tint: String, edgeColour: String, tintColour: String)? {
         guard let tone = tones[name],
               let edge = resolve(tone.edge, mode: mode),
               let tint = resolve(tone.tint, mode: mode)
         else { return nil }
-        return (tone.edge, tone.tint, tone.glyph, edge, tint)
+        return (tone.edge, tone.tint, edge, tint)
     }
 
     /// One card value resolved, so a caller never has to know whether the spec

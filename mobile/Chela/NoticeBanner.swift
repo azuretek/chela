@@ -26,10 +26,15 @@ struct NoticeStack: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
-    private var mode: String { colorScheme == .dark ? "dark" : "light" }
+    /// The palette's mode: the one the Control UI page says it is in when it has
+    /// answered, the device's otherwise, so the banner and the page it floats over
+    /// cannot disagree about which palette is in force.
+    private var mode: String {
+        board.themeTokens[ThemeTokens.schemeKey] ?? (colorScheme == .dark ? "dark" : "light")
+    }
 
     var body: some View {
-        let style = NoticeCardStyle.forMode(mode)
+        let style = NoticeCardStyle.forMode(mode, live: board.themeTokens)
         VStack(alignment: .trailing, spacing: 0) {
             // ★ FLOATING CARDS, NOT A BAR. Abi, 2026-09-19: "floating cards no
             // full width bar that's pointless". This VStack hugs its cards rather
@@ -55,12 +60,14 @@ struct NoticeStack: View {
                     NoticeCard(
                         notice: notice,
                         style: style,
-                        markRead: { board.markRead(notice.id) },
+                        dismiss: { board.dismiss(notice.id) },
                         run: { board.run($0) }
                     )
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                if board.unread.contains(where: { $0.dismissible }) {
+                // Offered whenever anything is unread, the desktop's sweepWanted():
+                // the sweep reads every card, the ones that refuse the X included.
+                if BannerSpec.sweepWanted(board.unread) {
                     MarkAllReadRow(style: style) { board.markAllRead() }
                 }
             }
@@ -101,7 +108,7 @@ struct NoticeStack: View {
 struct NoticeCard: View {
     let notice: Notice
     let style: NoticeCardStyle
-    let markRead: () -> Void
+    let dismiss: () -> Void
     let run: (String) -> Void
 
     var body: some View {
@@ -139,28 +146,35 @@ struct NoticeCard: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(action.label)
             }
-            if notice.dismissible {
-                Button(action: markRead) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: style.dismissGlyph))
+            // The X, and what it MEANS is the store's: a notice that says
+            // dismissClears is cleared, anything else is read (NoticeStore.dismiss,
+            // the same rule as dismiss() in core/notices.js). What it SAYS is
+            // core/spec/banner.json's, the words the desktop's tooltip uses.
+            if let copy = BannerSpec.dismissCopy(for: notice) {
+                Button(action: dismiss) {
+                    Image(systemName: BannerSpec.dismissSymbol)
+                        .font(.system(size: style.dismissGlyph, weight: .medium))
                         .foregroundStyle(style.dismissColour)
                         .frame(width: style.dismissSize, height: style.dismissSize)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Mark read")
+                .accessibilityLabel(copy.label)
+                .accessibilityHint(copy.tooltip)
             }
         }
         .padding(style.padding)
         .background(alignment: .leading) {
-            // The tone stripe, the one part of the card that carries the tone on
-            // both clients even though the icon does too: the desktop has no icon
-            // column, and a bar over someone else's page has no list to sit in.
+            // The tone stripe, drawn by both clients beside the tone icon.
             Rectangle()
                 .fill(style.toneColour(notice.tone))
                 .frame(width: style.edgeWidth)
         }
+        // The Control UI's floating card: its surface mixed with transparency
+        // (the fraction is in the style) over a blur, which is what makes it glass
+        // rather than a slab. The desktop draws the same with backdrop-filter.
         .background(style.surface)
+        .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: style.radius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: style.radius, style: .continuous)
@@ -170,20 +184,20 @@ struct NoticeCard: View {
     }
 }
 
-/// The tone's glyph, on its tinted chip. The tint is what the Control UI gives
-/// `.sidebar-issues-panel__icon`; the glyph is the tone's own symbol, which is
-/// the part the desktop card does not draw.
+/// The tone's icon, in the Control UI's own icon box: `.sidebar-issues-panel__icon`
+/// is a 28px box with no fill of its own whose icon takes the row's colour. The
+/// icon is the one core/spec/banner.json names for the tone, the same one the
+/// desktop draws as upstream's SVG.
 private struct Icon: View {
     let notice: Notice
     let style: NoticeCardStyle
 
     var body: some View {
-        if let tone = NoticeTokens.tone(notice.tone, mode: style.mode) {
-            Image(systemName: tone.glyph)
-                .font(.system(size: style.glyphSize))
+        if let symbol = BannerSpec.toneSymbol(notice.tone) {
+            Image(systemName: symbol)
+                .font(.system(size: style.glyphSize, weight: .medium))
                 .foregroundStyle(style.toneColour(notice.tone))
                 .frame(width: style.iconSize, height: style.iconSize)
-                .background(style.toneTint(notice.tone))
                 .clipShape(RoundedRectangle(cornerRadius: style.iconRadius, style: .continuous))
                 .accessibilityHidden(true)
         } else {
@@ -215,23 +229,38 @@ private struct ProgressBar: View {
 }
 
 /// Closing the whole stack, which is reading everything, not clearing it: a
-/// condition that is still true stays in the store either way, and a notice that
-/// cannot be dismissed refuses this too.
+/// condition that is still true stays in the store either way.
+///
+/// A floating pill with the card's own material, the desktop's `.banner__readall`
+/// shape for shape: the card surface over a blur, the card hairline, radius and
+/// shadow, muted type. It floats over the Control UI's page with nothing behind
+/// it, so bare text here collided with the page's own text.
 private struct MarkAllReadRow: View {
     let style: NoticeCardStyle
     let action: () -> Void
 
     var body: some View {
+        let copy = BannerSpec.sweep
+        let shape = RoundedRectangle(cornerRadius: style.radius, style: .continuous)
         Button(action: action) {
-            Text("Mark all read")
+            Text(copy.label)
                 .font(.system(size: style.subjectSize))
-                .foregroundStyle(style.dismissColour)
+                .foregroundStyle(style.subjectColour)
+                .lineLimit(1)
+                .fixedSize()
                 .padding(.horizontal, style.actionPaddingHorizontal)
                 .padding(.vertical, style.actionPaddingVertical)
                 .frame(minHeight: style.actionMinHeight)
-                .contentShape(RoundedRectangle(cornerRadius: style.dismissRadius, style: .continuous))
+                .background(style.surface)
+                .background(.ultraThinMaterial)
+                .clipShape(shape)
+                .overlay(shape.stroke(style.border, lineWidth: 1))
+                .shadow(color: style.shadowColour, radius: style.shadowRadius, x: style.shadowX, y: style.shadowY)
+                .contentShape(shape)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(copy.label)
+        .accessibilityHint(copy.tooltip)
     }
 }
 
@@ -287,25 +316,40 @@ struct NoticeCardStyle {
         colour(for: tone, keyPath: \.edgeColour) ?? subjectColour
     }
 
-    /// A tone's tint, for the icon chip.
-    func toneTint(_ tone: String) -> Color {
-        colour(for: tone, keyPath: \.tintColour) ?? .clear
-    }
-
-    private func colour(for tone: String, keyPath: KeyPath<(edge: String, tint: String, glyph: String, edgeColour: String, tintColour: String), String>) -> Color? {
+    private func colour(for tone: String, keyPath: KeyPath<(edge: String, tint: String, edgeColour: String, tintColour: String), String>) -> Color? {
         guard let entry = NoticeTokens.tone(tone, mode: mode) else { return nil }
         return Color(css: entry[keyPath: keyPath])
     }
 
-    static func forMode(_ mode: String) -> NoticeCardStyle {
-        /// A value from the card section, with a token name resolved if that is
-        /// what the spec recorded.
-        func card(_ name: String) -> String? { NoticeTokens.cardValue(name, mode: mode) }
-        /// A token resolved straight from the palette.
-        func token(_ name: String) -> String? { NoticeTokens.resolve(name, mode: mode) }
+    /// The style for one mode, wearing the Control UI's LIVE palette where the
+    /// page published one (`live`, from ThemeTokens' probe) and the bundled
+    /// palette otherwise. The desktop banner does the same through the theme it
+    /// injects, so both clients draw the floating card in the colours the
+    /// interface is actually wearing. A live value this file cannot read (a
+    /// colour notation Color(css:) does not parse) falls back to the bundled one.
+    static func forMode(_ mode: String, live: [String: String] = [:]) -> NoticeCardStyle {
+        func usable(_ value: String) -> Bool { Color(css: value) != nil || CSSLength(value) != nil }
+        /// A token, live first.
+        func token(_ name: String) -> String? {
+            if let value = live[name], usable(value) { return value }
+            return NoticeTokens.resolve(name, mode: mode)
+        }
+        /// A value from the card section, with a token name resolved (live first)
+        /// if that is what the spec recorded.
+        func card(_ name: String) -> String? {
+            if let raw = NoticeTokens.card[name], raw.hasPrefix("--"), let value = live[raw], usable(value) {
+                return value
+            }
+            return NoticeTokens.cardValue(name, mode: mode)
+        }
         func colour(_ text: String?, fallback: Color = .secondary) -> Color {
             guard let text, let parsed = Color(css: text) else { return fallback }
             return parsed
+        }
+        /// A CSS percentage as a fraction, for the color-mix() the desktop draws.
+        func fraction(_ text: String?) -> Double {
+            guard let text, text.hasSuffix("%"), let value = Double(text.dropLast()) else { return 1 }
+            return value / 100
         }
         let shadow = CSSShadow(card("shadow"))
         let padding = CSSPadding(card("padding"))
@@ -336,8 +380,8 @@ struct NoticeCardStyle {
             actionPaddingHorizontal: CSSPadding(card("action.padding")).leading,
             actionPaddingVertical: CSSPadding(card("action.padding")).top,
             actionRadius: CSSLength(card("action.radius")) ?? 10,
-            surface: colour(card("surface"), fallback: .clear),
-            border: colour(card("border"), fallback: .clear),
+            surface: colour(card("surface"), fallback: .clear).opacity(fraction(card("surfaceAlpha"))),
+            border: colour(card("border"), fallback: .clear).opacity(fraction(card("borderAlpha"))),
             headlineColour: colour(token("--text-strong")),
             subjectColour: colour(token("--muted")),
             dismissColour: colour(card("dismiss.colour")),
