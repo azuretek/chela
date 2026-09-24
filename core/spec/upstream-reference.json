@@ -1,11 +1,11 @@
 {
-  "description": "The Control UI surface our own chrome borrows, pinned by name and by declaration: the CLASSES our settings and About pages use, and the CARD VALUES the notice banner draws with. Our pages render inside the interface, so matching it means using ITS classes and its declarations rather than our own names styled from its token layer, and the banner sits over it, so its card is upstream's floating attention card rather than a lookalike. That is the difference between the surfaces looking the same by construction and looking approximately the same: before this file, our pages shared upstream's palette and spacing SCALE but none of its components, and the banner shared its GEOMETRY but through a spec whose two recorded values (the card surface and the row gap) had drifted from the rules they cite.",
+  "description": "The Control UI surface our own chrome borrows, pinned by name and by declaration: the CLASSES our settings and About pages use, and the CARD VALUES the notice banner draws with. Our pages render inside the interface, so matching it means using ITS classes and its declarations rather than our own names styled from its token layer, and the banner sits over it, so its card is upstream's toast rather than a lookalike. That is the difference between the surfaces looking the same by construction and looking approximately the same: before this file, our pages shared upstream's palette and spacing SCALE but none of its components, and the banner shared its GEOMETRY but through a spec whose two recorded values (the card surface and the row gap) had drifted from the rules they cite.",
   "why": [
     "A class name is a contract that nothing checks, and a recorded measurement is a contract nothing checks either. Upstream's stylesheet is served as a content-hashed asset (see core/spec/tokens.json), so it cannot be imported by our pages and must not be hardcoded; and a RENAME upstream leaves our markup pointing at a rule that no longer exists, which renders as an unstyled element rather than as an error. So the names, the declarations they resolve to and the card values the banner draws with are written down here, and core/test/upstream-classes.test.js holds both ends of it: our stylesheet and our token spec must still say what is recorded, and, when the checkout is readable, upstream must still declare it too.",
     "The `rule` on a class entry, and the `expect` on a value entry, are upstream's own declaration reduced to one canonical form (comments gone, whitespace collapsed, declarations in order), which is what makes a reformat upstream not a change and a changed declaration one. Both were produced from the checkout rather than typed, by the same reader the guard uses, so the recorded text and the checked text cannot be two readings of the file.",
     "`replaces` names what a class took over from in our own markup, and it is why several entries name the same upstream class: the back control is one control with a base rule, a hover rule, a focus ring, an icon box, an icon and an esc chip, and our old markup had one button carrying all of it.",
-    "`values` is the banner's half, and the reason it is not a second file: the banner is a strip over someone else's page rather than a panel in a sidebar, so it borrows the card's MEASUREMENTS and not its markup, and that borrowing belongs under the same guard as the classes. `path` is the key in core/spec/tokens.json that holds the value, so a drift is findable from either end.",
-    "`ours` lists the parts of that card that are deliberately NOT upstream's, with the reason, so that a value nobody could verify is a stated decision rather than an omission. Two of them are corrections: `.sidebar-issues-panel__dismiss:hover` does not exist upstream at all, and the card's padding is widened on purpose.",
+    "`values` is the banner's half, and the reason it is not a second file: the banner draws the Control UI's toast (components.css .app-toast) in a view of its own rather than inside the page, so it borrows the toast's MEASUREMENTS and not its markup, and that borrowing belongs under the same guard as the classes. `path` is the key in core/spec/tokens.json that holds the value, so a drift is findable from either end.",
+    "`ours` lists the parts of the banner that are deliberately NOT upstream's, with the reason, so that a value nobody could verify is a stated decision rather than an omission.",
     "This file records CLASSES, VALUES and not a stylesheet. Copying upstream's sheets in here would be a second owner of them, and the copy would be the one that goes stale: the point of the pin is to compare against the original, not to keep a snapshot of it.",
     "`upstream` is the identity of the reference, and it is here rather than in each consumer because this app WRAPS the Control UI and depends on it in a pinned way, so 'which version did we build against' is a fact about the pin rather than about a client. A version written into the About page, or into either host, would be a second copy of it and would be the copy that goes stale, since the classes are re-read from the checkout by this file's guard and a version beside them would not be. About reads the two fields below and shows one line, so the sentence and the pin cannot say different things."
   ],
@@ -193,170 +193,203 @@
   ],
   "values": [
     {
+      "path": "card.surface",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast",
+      "property": "background",
+      "expect": "var(--popover)",
+      "why": "THE card surface: the toast is opaque, on the popover colour, with no blur."
+    },
+    {
+      "path": "card.colour",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast",
+      "property": "color",
+      "expect": "var(--popover-foreground)",
+      "why": "The words on it."
+    },
+    {
       "path": "card.border",
-      "file": "src/styles/sidebar-issues.css",
-      "selector": ".sidebar-issues-panel",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast",
       "property": "border",
       "expect": "1px solid var(--border)",
-      "why": "The card's hairline, which is --border at full strength on the panel and at 88% on the floating chrome it was taken from."
-    },
-    {
-      "path": "card.borderAlpha",
-      "file": "src/styles/sidebar-attention-floating.css",
-      "selector": "openclaw-sidebar-attention.sidebar-attention--floating",
-      "property": "--sidebar-issues-border",
-      "expect": "1px solid color-mix(in srgb, var(--border) 88%, transparent)",
-      "why": "The floating chrome mixes --border at 88%; the panel above it uses the border whole. Which of the two the banner takes is recorded here so the fraction cannot drift on its own."
-    },
-    {
-      "path": "card.surface",
-      "file": "src/styles/sidebar-attention-floating.css",
-      "selector": "openclaw-sidebar-attention.sidebar-attention--floating",
-      "property": "--sidebar-issues-background",
-      "expect": "color-mix(in srgb, var(--panel) 92%, transparent)",
-      "why": "THE card surface, and the one that was wrong: the floating chrome mixes --panel at 92%, not --bg-elevated, so the banner's glass was a different tint from the card it is a copy of in light mode, where --panel and --bg-elevated are different colours."
-    },
-    {
-      "path": "card.surfaceAlpha",
-      "file": "src/styles/sidebar-attention-floating.css",
-      "selector": "openclaw-sidebar-attention.sidebar-attention--floating",
-      "property": "--sidebar-issues-background",
-      "expect": "color-mix(in srgb, var(--panel) 92%, transparent)",
-      "why": "The other half of that mix."
+      "why": "The hairline, at full strength."
     },
     {
       "path": "card.radius",
-      "file": "src/styles/sidebar-issues.css",
-      "selector": ".sidebar-issues-panel",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast",
       "property": "border-radius",
-      "expect": "var(--radius-lg)",
-      "why": "The card's own radius."
+      "expect": "12px",
+      "why": "The toast's own radius, which is none of the shared radius tokens."
     },
     {
       "path": "card.shadow",
-      "file": "src/styles/sidebar-issues.css",
-      "selector": ".sidebar-issues-panel",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast",
       "property": "box-shadow",
-      "expect": "var(--shadow-sm)",
-      "why": "The card's resting shadow."
+      "expect": "var(--shadow-md)",
+      "why": "Its shadow."
     },
     {
-      "path": "card.blur",
-      "file": "src/styles/sidebar-attention-floating.css",
-      "selector": ":where(html:not(.openclaw-native-web-chrome) openclaw-sidebar-attention.sidebar-attention--floating) .sidebar-issues-button",
-      "property": "backdrop-filter",
-      "expect": "blur(10px)",
-      "why": "The blur that makes the translucent surface above read as glass rather than as a washed-out fill."
+      "path": "card.padding",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast",
+      "property": "padding",
+      "expect": "7px 7px 7px 13px",
+      "why": "Tighter on the control side, so the X sits near the edge."
     },
     {
       "path": "card.gap",
-      "file": "src/styles/sidebar-issues.css",
-      "selector": ".sidebar-issues-panel__summary",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast",
       "property": "gap",
       "expect": "8px",
-      "why": "The summary row's gap, which is what the banner's own gap between its parts is modelled on."
+      "why": "The gap between the icon, the words and the controls."
     },
     {
-      "path": "card.iconSize",
-      "file": "src/styles/sidebar-issues.css",
-      "selector": ".sidebar-issues-panel__icon",
+      "path": "card.maxWidth",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast",
+      "property": "max-width",
+      "expect": "min(370px, calc(100vw - 32px))",
+      "why": "The cap. The banner takes the 370px and not the viewport half: see cardProvenance.maxWidth in tokens.json."
+    },
+    {
+      "path": "card.glyphSize",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast__icon",
       "property": "width",
-      "expect": "28px",
-      "why": "The tone icon's box. The banner draws no icon and carries the tone on its leading edge, but the box is what the edge width was derived from."
+      "expect": "16px",
+      "why": "The tone icon, with no box around it."
     },
     {
-      "path": "card.iconRadius",
-      "file": "src/styles/sidebar-issues.css",
-      "selector": ".sidebar-issues-panel__icon",
-      "property": "border-radius",
-      "expect": "var(--radius-sm)",
-      "why": "Its radius, recorded for the same reason."
+      "path": "card.messageSize",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast__message",
+      "property": "font-size",
+      "expect": "calc(13px * var(--control-ui-text-scale))",
+      "why": "The size of the words, before the text scale."
+    },
+    {
+      "path": "card.leading",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast__message",
+      "property": "line-height",
+      "expect": "1.5",
+      "why": "Their line height."
     },
     {
       "path": "card.dismiss.size",
-      "file": "src/styles/sidebar-issues.css",
-      "selector": ".sidebar-issues-panel__dismiss",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast__dismiss",
       "property": "width",
-      "expect": "24px",
-      "why": "The dismiss control's box, so the banner's X is the same target as the card's."
+      "expect": "32px",
+      "why": "The X's box."
     },
     {
       "path": "card.dismiss.radius",
-      "file": "src/styles/sidebar-issues.css",
-      "selector": ".sidebar-issues-panel__dismiss",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast__dismiss",
       "property": "border-radius",
-      "expect": "var(--radius-sm)",
-      "why": "Its radius."
+      "expect": "8px",
+      "why": "Its radius, declared on the rule the X shares with the action."
+    },
+    {
+      "path": "card.dismiss.glyph",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast__dismiss svg",
+      "property": "width",
+      "expect": "14px",
+      "why": "The X glyph."
     },
     {
       "path": "card.dismiss.colour",
-      "file": "src/styles/sidebar-issues.css",
-      "selector": ".sidebar-issues-panel__dismiss",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast__dismiss",
       "property": "color",
       "expect": "var(--muted)",
-      "why": "The glyph colour at rest, which is what makes the X read as the quiet end of the card."
+      "why": "The X at rest."
+    },
+    {
+      "path": "card.dismiss.hoverSurface",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast__dismiss:hover",
+      "property": "background",
+      "expect": "var(--bg-muted)",
+      "why": "The X hovered."
+    },
+    {
+      "path": "card.dismiss.hoverColour",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast__dismiss:hover",
+      "property": "color",
+      "expect": "var(--text-strong)",
+      "why": "And the colour it raises to, from the hover rule both controls share."
     },
     {
       "path": "card.action.minHeight",
-      "file": "src/styles/sidebar-issues.css",
-      "selector": ".sidebar-issues-panel__action",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast__action",
       "property": "min-height",
-      "expect": "28px",
-      "why": "The card action's height, so the banner's one offer is the same control."
+      "expect": "32px",
+      "why": "The action's height."
     },
     {
       "path": "card.action.padding",
-      "file": "src/styles/sidebar-issues.css",
-      "selector": ".sidebar-issues-panel__action",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast__action",
       "property": "padding",
-      "expect": "4px 8px",
+      "expect": "5px 10px",
       "why": "Its padding."
     },
     {
       "path": "card.action.radius",
-      "file": "src/styles/sidebar-issues.css",
-      "selector": ".sidebar-issues-panel__action",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast__action",
       "property": "border-radius",
-      "expect": "var(--radius-md)",
+      "expect": "8px",
       "why": "Its radius."
     },
     {
-      "path": "card.action.border",
-      "file": "src/styles/sidebar-issues.css",
-      "selector": ".sidebar-issues-panel__action",
-      "property": "border",
-      "expect": "1px solid var(--border)",
-      "why": "Its hairline."
+      "path": "card.action.surface",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast__action",
+      "property": "background",
+      "expect": "var(--accent-subtle)",
+      "why": "The filled accent button."
     },
     {
       "path": "card.action.colour",
-      "file": "src/styles/sidebar-issues.css",
-      "selector": ".sidebar-issues-panel__action",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast__action",
       "property": "color",
-      "expect": "var(--muted)",
-      "why": "Its label colour at rest."
+      "expect": "var(--accent)",
+      "why": "Its label."
     },
     {
       "path": "card.action.hoverSurface",
-      "file": "src/styles/sidebar-issues.css",
-      "selector": ".sidebar-issues-panel__action:hover",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast__action:hover",
       "property": "background",
-      "expect": "var(--bg-hover)",
-      "why": "And the hover fill, which is the one place the card raises its voice."
+      "expect": "color-mix(in srgb, var(--accent) 16%, transparent)",
+      "why": "Its hover fill."
     },
     {
       "path": "card.action.hoverColour",
-      "file": "src/styles/sidebar-issues.css",
-      "selector": ".sidebar-issues-panel__action:hover",
+      "file": "src/styles/components.css",
+      "selector": ".app-toast__action:hover",
       "property": "color",
-      "expect": "var(--text)",
+      "expect": "var(--text-strong)",
       "why": "And the label colour it raises to."
     }
   ],
   "ours": [
-    "card.edgeWidth is OURS rather than pinned, and it was recorded as a pinned value first and then removed: the tone stripe on the leading edge has no upstream equivalent at all, because the card shows its tone in an icon COLUMN (card.iconSize, card.iconRadius). Both banners now draw that icon too (core/spec/banner.json), and keep the stripe beside it as ours. Recorded here so that 'ours' is a stated decision rather than a value nobody checked.",
-    "card.padding is deliberately NOT pinned. Upstream's summary row pads 8px 12px and the banner pads 11px 14px, and the spec says so in as many words: widened for a bar. A bar is a strip rather than a list row, so it needs more air, and pinning it would pin it to a value that is wrong for the shape.",
-    "card.dismiss.hoverSurface and card.dismiss.hoverColour are NOT pinned either, and this one is a correction rather than a widening: the spec attributes them to `.sidebar-issues-panel__dismiss:hover`, which upstream does not declare at all (measured against the checkout, 2026-09-16). The floating control's hover lives on `.sidebar-issues-button:hover` and fills with color-mix(--bg-hover 84%) to --text, which is a different colour from the --text-strong the spec records. So the pair is OURS, taken from the interface's ordinary hover rather than from a rule that does not exist, and it is named here so that a reader stops looking for the missing rule."
+    "card.phone is recorded and NOT pinned: upstream declares the phone edge (12px) and the 44px touch targets inside a @media rule, and the pin reads top-level rules only. The iOS banner draws with them.",
+    "type.weight.headline and the detail line are OURS: a toast carries one line of words and a notice carries a headline and a subject line, so the headline keeps the attention card's weight and the subject line sits under it in --muted, at the toast's size.",
+    "The tone is carried by the icon's COLOUR, which is ours: the toast colours its icon --info whatever it says, and a notice has four tones.",
+    "The stack and the sweep are ours: the toast host shows one toast at a time and the banner shows every unread notice, so the cards stack with a gap, and Mark all read is a pill on the card's own surface under them."
   ],
   "nowBorrowed": [
     "The interface's reading scale, --control-ui-text-scale, IS now taken from a running Control UI, added to the live-token list beside the colours (see core/spec/tokens.json live.tokens, kind 'scale'). This reverses the decision this entry used to record: it was left alone because taking the live value would have scaled only the borrowed components and left the rest of each page at its literal sizes, so a reader at 125% got rows that grew and sentences that did not. That entry named the two ways out, convert every literal at every use site to the scale, or leave the scale alone, and it named converting as the change to make when the pages' type was reworked. Abi asked for exactly that on 2026-09-19: text scale should follow the Control UI setting the same way light/dark appearance does, with every component on relative units so it follows.",

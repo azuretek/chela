@@ -407,7 +407,9 @@ function layoutViews() {
     const w = Math.max(0, Math.min(sweepSize.width, width));
     const h = Math.max(0, Math.min(sweepSize.height, Math.max(0, height - top)));
     const y = Math.min(bannerFoot + gap, Math.max(0, height - h));
-    sweepView.setBounds({ x: Math.max(0, width - w - 12), y, width: w, height: h });
+    // 20px in, the Control UI toast's own inset, which is where the cards sit too:
+    // their view is 12px in and the stack pads the other 8 (core/ui/banner.css).
+    sweepView.setBounds({ x: Math.max(0, width - w - 20), y, width: w, height: h });
   }
   // A modal covers everything including the strip: the scrim is meant to dim
   // the whole window, and each overlay page carries its own drag band.

@@ -43,28 +43,32 @@ enum NoticeTokens {
                 let minHeight: String
                 let padding: String
                 let radius: String
-                let border: String
                 let surface: String
                 let colour: String
                 let hoverSurface: String
                 let hoverColour: String
             }
 
+            /// The phone's own measurements, from the toast's @media rule.
+            struct Phone: Decodable {
+                let edge: String
+                let target: String
+            }
+
             let radius: String
             let border: String
-            let borderAlpha: String
             let surface: String
-            let surfaceAlpha: String
+            let colour: String
             let shadow: String
-            let blur: String
             let padding: String
             let gap: String
-            let edgeWidth: String
-            let iconSize: String
-            let iconRadius: String
+            let maxWidth: String
             let glyphSize: String
+            let messageSize: String
+            let leading: String
             let dismiss: Dismiss
             let action: Action
+            let phone: Phone
         }
 
         struct ToneSpec: Decodable {
@@ -148,17 +152,15 @@ enum NoticeTokens {
         var out: [String: String] = [
             "radius": card.radius,
             "border": card.border,
-            "borderAlpha": card.borderAlpha,
             "surface": card.surface,
-            "surfaceAlpha": card.surfaceAlpha,
+            "colour": card.colour,
             "shadow": card.shadow,
-            "blur": card.blur,
             "padding": card.padding,
             "gap": card.gap,
-            "edgeWidth": card.edgeWidth,
-            "iconSize": card.iconSize,
-            "iconRadius": card.iconRadius,
+            "maxWidth": card.maxWidth,
             "glyphSize": card.glyphSize,
+            "messageSize": card.messageSize,
+            "leading": card.leading,
             "dismiss.size": card.dismiss.size,
             "dismiss.radius": card.dismiss.radius,
             "dismiss.glyph": card.dismiss.glyph,
@@ -168,11 +170,12 @@ enum NoticeTokens {
             "action.minHeight": card.action.minHeight,
             "action.padding": card.action.padding,
             "action.radius": card.action.radius,
-            "action.border": card.action.border,
             "action.surface": card.action.surface,
             "action.colour": card.action.colour,
             "action.hoverSurface": card.action.hoverSurface,
             "action.hoverColour": card.action.hoverColour,
+            "phone.edge": card.phone.edge,
+            "phone.target": card.phone.target,
         ]
         out["unused"] = nil
         return out

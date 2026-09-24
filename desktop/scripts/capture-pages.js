@@ -93,6 +93,8 @@ const LIVE_THEME = {
       '--ring': 'rgb(235, 188, 186)',
       '--card': 'rgb(31, 29, 46)',
       '--bg-elevated': 'rgb(31, 29, 46)',
+      '--popover': 'rgb(31, 29, 46)',
+      '--popover-foreground': 'rgb(239, 237, 250)',
     },
   },
   light: {
@@ -124,6 +126,8 @@ const LIVE_THEME = {
       '--ring': 'rgb(156, 79, 102)',
       '--card': 'rgb(255, 252, 250)',
       '--bg-elevated': 'rgb(255, 252, 250)',
+      '--popover': 'rgb(255, 252, 250)',
+      '--popover-foreground': 'rgb(38, 35, 58)',
     },
   },
 };
@@ -391,6 +395,8 @@ const PROBE = `(() => {
     cardSurface: cardStyle ? cardStyle.getPropertyValue('--notice-surface').trim() : null,
     cardGap: cardStyle ? cardStyle.getPropertyValue('--notice-gap').trim() : null,
     panel: computed.getPropertyValue('--panel').trim(),
+    popover: computed.getPropertyValue('--popover').trim(),
+    pageBg: computed.getPropertyValue('--bg').trim(),
     bgElevated: computed.getPropertyValue('--bg-elevated').trim(),
 
     // ---- the card the theme is actually wearing -------------------------
@@ -698,20 +704,19 @@ app.whenReady().then(async () => {
 
       if (page.cards) {
         // The card is drawn at all, and drawn with the surface the SPEC records
-        // for it. That second half is here because it is what had drifted: the
-        // banner borrows the floating attention card by value, and its recorded
-        // surface was `--bg-elevated`, the PANEL variant's surface, where the
-        // floating chrome mixes `--panel`. Both are colours a page can paint, so
-        // nothing objected, and the two differ in both appearances.
+        // for it: the Control UI toast's --popover (Abi, 2026-09-23), read
+        // through the live theme, so a palette the interface publishes reaches
+        // the card. And it must not be the page's own --bg, or the card would
+        // vanish into the page it floats over.
         check(`${page.name}.html draws the seeded notices`,
           probe.cards === BANNER_STATE.notices.length,
           `${probe.cards} card(s) for ${BANNER_STATE.notices.length} notice(s)`);
         check(`${page.name}.html draws its card on the surface the spec records`,
-          Boolean(probe.cardSurface) && probe.cardSurface === probe.panel,
-          JSON.stringify({ cardSurface: probe.cardSurface, panel: probe.panel, bgElevated: probe.bgElevated }));
-        check(`${page.name}.html does not draw it on the panel variant's surface`,
-          probe.cardSurface !== probe.bgElevated,
-          JSON.stringify({ cardSurface: probe.cardSurface, bgElevated: probe.bgElevated }));
+          Boolean(probe.cardSurface) && probe.cardSurface === probe.popover,
+          JSON.stringify({ cardSurface: probe.cardSurface, popover: probe.popover }));
+        check(`${page.name}.html does not draw it on the page's own background`,
+          probe.cardSurface !== probe.pageBg,
+          JSON.stringify({ cardSurface: probe.cardSurface, pageBg: probe.pageBg }));
         check(`${page.name}.html uses the row gap the spec records`,
           probe.cardGap === '8px', `the gap resolved to "${probe.cardGap}"`);
 

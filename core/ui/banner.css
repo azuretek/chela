@@ -1,4 +1,4 @@
-/* The notice banner, in the Control UI's own card.
+/* The notice banner, drawn as the Control UI's own toast (components.css .app-toast).
  *
  * Loaded by banner.html after ui.css. ui.css is what the app's other pages use
  * and carries their palette; this file carries only the banner, and it names no
@@ -141,7 +141,10 @@ body.banner-body {
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
-  padding: 10px 12px;
+  /* The toast sits 20px in from the trailing edge: main.js places the view 12px
+     in, and this padding is the other 8px. The leading and bottom padding are
+     room for the toast's --shadow-md, which the view would otherwise clip. */
+  padding: 12px 8px 16px 16px;
   width: max-content;
   max-width: 100%;
   margin-left: auto;
@@ -149,24 +152,19 @@ body.banner-body {
   background: transparent;
 }
 
-/* The card. Surface, hairline, radius, shadow and blur are the Control UI's
-   floating attention card, taken from sidebar-issues.css and
-   sidebar-attention-floating.css. The surface and the hairline are mixed with
-   transparency at the fractions those two files use, which is what makes the
-   blur behind them do anything at all: an opaque surface over a backdrop filter
-   is a surface, and the glass is the point of a card that floats over someone
-   else's page.
+/* The card is the Control UI's toast, .app-toast in components.css: an opaque
+   --popover surface, a full-strength hairline, 12px corners, --shadow-md, and one
+   row of icon, words, action and X. Abi, 2026-09-23: the banner should duplicate
+   the Control UI's own notification style. Every value is pinned against the
+   checkout in core/spec/upstream-reference.json.
 
-   The tone shows the way the Control UI's card shows it: as the row's icon, in
-   its 28px icon box (.banner__icon below). The stripe on the leading edge is ours
-   and stays as a second carrier of the same tone, drawn identically by the iOS
-   card; its width is the one card measurement the spec marks as ours rather than
-   lifted. */
+   The tone is the icon's colour. The toast colours its icon --info whatever it
+   says; a notice has four tones, so that colour is ours. */
 .banner {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--notice-gap);
-  /* ★ A floating card is 420px wide, FULL STOP, not a fraction of the view.
+  /* ★ A floating card is 370px wide, FULL STOP, not a fraction of the view.
      Abi, 2026-09-20, on Windows: with `max-width: min(420px, 100%)` the card was
      capped at 100% of the VIEW, and the view is sized FROM the card (banner.js
      report() measures the card, main.js sizes the view to it). That is a feedback
@@ -174,15 +172,15 @@ body.banner-body {
      view to the clamped card, and the two lock at min-content, one word per line.
      Measured: the card settled at 153px. So the card takes a fixed WIDTH: its
      size is its own, the view is sized to it, and there is no fraction of the
-     view in the loop to collapse. 420px is the Control UI's own floating
-     attention-card width.
+     view in the loop to collapse. 370px is the Control UI toast's own cap
+     (components.css .app-toast max-width), recorded as card.maxWidth.
 
      `max-width: 100%` stays ONLY as a genuine small-window guard, for a window
      narrower than a card, where clamping to the window is correct because there
-     is no room for 420px. That case cannot start the collapse, because the width
-     basis is 420px and the cap only ever engages below it. The stack's own
-     `max-content`/`max-width: 100%` then reports the card's real 420px. */
-  width: 420px;
+     is no room for 370px. That case cannot start the collapse, because the width
+     basis is 370px and the cap only ever engages below it. The stack's own
+     `max-content`/`max-width: 100%` then reports the card's real 370px. */
+  width: 370px;
   max-width: 100%;
   /* The card is furniture too. It states a condition and offers controls; the
      card itself does nothing when it is clicked, so it must not be the reason a
@@ -190,16 +188,13 @@ body.banner-body {
      `pointer-events: auto`, so the offer and the X still work. */
   pointer-events: none;
   padding: var(--notice-padding);
-  border: 1px solid color-mix(in srgb, var(--notice-border) var(--notice-border-alpha), transparent);
-  border-left: var(--notice-edge-width) solid var(--notice-tone-edge, var(--muted));
+  border: 1px solid var(--notice-border);
   border-radius: var(--notice-radius);
-  background: color-mix(in srgb, var(--notice-surface) var(--notice-surface-alpha), transparent);
+  background: var(--notice-surface);
   box-shadow: var(--notice-shadow);
-  backdrop-filter: blur(var(--notice-blur));
-  -webkit-backdrop-filter: blur(var(--notice-blur));
-  color: var(--text);
+  color: var(--notice-colour);
   font-family: var(--font-body);
-  line-height: var(--notice-leading-card);
+  line-height: var(--notice-leading);
 }
 
 /* One rule per tone, and each names a tone rather than a colour: which token a
@@ -295,24 +290,23 @@ body.banner-body {
   min-width: 0;
 }
 
-/* The headline, on the Control UI's card heading: --text-strong at the weight
-   sidebar-issues.css gives .sidebar-issues-panel__heading. */
+/* The headline, at the toast's message size and colour. The weight is ours: a
+   toast has one line of words, a notice has a headline over a subject line. */
 .banner__message {
-  font-size: var(--control-ui-text-sm);
+  font-size: calc(var(--notice-message-size) * var(--control-ui-text-scale, 1));
   font-weight: var(--notice-weight-headline);
-  color: var(--text-strong);
+  color: var(--notice-colour);
   /* Wrap long words within the card rather than forcing the card wider (or, when
      the card had a percentage width, collapsing it). The card owns its width now,
-     so this only governs how a long unbroken token behaves inside 420px. */
+     so this only governs how a long unbroken token behaves inside 370px. */
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-/* The subject line under it: --muted at the card's own text size, the pairing
-   .sidebar-issues-panel__state uses. */
+/* The subject line under it, in --muted at the toast's message size. */
 .banner__detail {
   color: var(--muted);
-  font-size: var(--control-ui-text-xs);
+  font-size: calc(var(--notice-message-size) * var(--control-ui-text-scale, 1));
 }
 
 /* The download bar. `appearance: none` and the two pseudo-elements are the
@@ -341,42 +335,39 @@ body.banner-body {
   .banner__bar::-webkit-progress-value { transition: none; }
 }
 
-/* The one offer a notice makes. Styled as a link rather than a button because
-   it navigates rather than acts: pressing it does not resolve the condition, so
-   it must not look like the button that would. Geometry and colours are the
-   Control UI's .sidebar-issues-panel__action. `flex: none` and the centring
-   keep it on the message's line while the detail wraps under both. */
+/* The one offer a notice makes, as the toast's .app-toast__action: a filled
+   accent button with no border, capped at 35% of the card so the words keep the
+   room. */
 .banner__action {
   flex: none;
   align-self: center;
   min-height: var(--notice-action-min-height);
+  max-width: 35%;
   padding: var(--notice-action-padding);
   background: var(--notice-action-surface);
-  border: 1px solid var(--notice-action-border);
+  border: 0;
   border-radius: var(--notice-action-radius);
   color: var(--notice-action-colour);
-  font-size: var(--control-ui-text-xs);
+  font-size: var(--control-ui-text-sm);
   font-weight: var(--notice-weight-action);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  cursor: pointer;
 }
 .banner__action:hover:not(:disabled) {
-  background: var(--notice-tone-tint, var(--notice-action-hover-surface));
-  border-color: var(--border-strong);
+  background: var(--notice-action-hover-surface);
   color: var(--notice-action-hover-colour);
 }
 
-/* The tone icon, in the Control UI's own icon box: .sidebar-issues-panel__icon is
-   a 28px inline grid with --radius-sm corners and no fill of its own, and its
-   16px stroke icon takes the row's colour (--danger on a critical row, --warn on
-   a warning one). So the icon is upstream's SVG (core/spec/banner.json, from
-   ui/src/components/icons.ts), coloured by the tone, with no tinted square: the
-   Control UI draws none. The iOS card draws the same box. */
+/* The tone icon, as .app-toast__icon: upstream's 16px stroke SVG
+   (core/spec/banner.json, from ui/src/components/icons.ts) with no box around it,
+   coloured by the tone. The iOS card draws the same. */
 .banner__icon {
   flex: none;
   display: inline-grid;
   place-items: center;
-  width: var(--notice-icon-size);
-  height: var(--notice-icon-size);
-  border-radius: var(--notice-icon-radius);
+  width: var(--notice-glyph-size);
+  height: var(--notice-glyph-size);
   color: var(--notice-tone-edge, var(--muted));
 }
 .banner__icon svg {
@@ -384,9 +375,8 @@ body.banner-body {
   height: var(--notice-glyph-size);
 }
 
-/* The dismiss X. Same shape as the Control UI's .sidebar-issues-panel__dismiss:
-   24px, --radius-sm, --muted, on --bg-hover when hovered, and upstream's own `x`
-   icon at 14px rather than a text glyph. What it does (read, or clear for a
+/* The dismiss X, as .app-toast__dismiss: 32px, 8px corners, --muted, on
+   --bg-muted when hovered, and upstream's own `x` icon at 14px. What it does (read, or clear for a
    download) is the store's; what it says is core/spec/banner.json's. */
 .banner__close svg {
   width: var(--notice-dismiss-glyph);
@@ -403,7 +393,7 @@ body.banner-body {
   font-size: var(--notice-dismiss-glyph);
   line-height: 1;
   background: transparent;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: var(--notice-dismiss-radius);
   color: var(--notice-dismiss-colour);
   cursor: pointer;
@@ -447,18 +437,16 @@ body.banner-body {
   margin: 0;
   min-height: var(--notice-action-min-height);
   padding: var(--notice-action-padding);
-  background: color-mix(in srgb, var(--notice-surface) var(--notice-surface-alpha), transparent);
-  border: 1px solid color-mix(in srgb, var(--notice-border) var(--notice-border-alpha), transparent);
+  background: var(--notice-surface);
+  border: 1px solid var(--notice-border);
   border-radius: var(--notice-radius);
   box-shadow: var(--notice-shadow);
-  backdrop-filter: blur(var(--notice-blur));
-  -webkit-backdrop-filter: blur(var(--notice-blur));
   color: var(--muted);
   font-family: var(--font-body);
   font-size: var(--control-ui-text-xs);
   cursor: pointer;
 }
-.banner__readall:hover { background: var(--notice-dismiss-hover-surface); border-color: var(--notice-action-border); color: var(--notice-dismiss-hover-colour); }
+.banner__readall:hover { background: var(--notice-dismiss-hover-surface); border-color: var(--border-strong); color: var(--notice-dismiss-hover-colour); }
 
 /* Keyboard focus, on the card's own controls. Keyboard-only, so a mouse press
    never paints a ring, and drawn inside the card with the Control UI's focus

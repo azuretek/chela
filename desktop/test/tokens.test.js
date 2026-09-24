@@ -191,16 +191,15 @@ test('the card geometry names tokens rather than repeating their values', () => 
   // The shape half of the file is emitted from spec/tokens.json, so the sheet
   // resolves it to a var() rather than to a second copy of a number.
   //
-  // The surface is asserted as `--panel` and not `--bg-elevated` because that
-  // was the drift: the card this borrows from is the FLOATING one, whose chrome
-  // mixes --panel, and --bg-elevated is the surface of the panel variant, which
-  // is a different colour in the light theme. The value in the spec is what the
-  // banner paints with, so getting this wrong is a banner that looks different
-  // from the card it is a copy of, in one mode, with nothing in any log.
+  // The card is the Control UI's toast (components.css .app-toast, Abi,
+  // 2026-09-23): an opaque --popover surface with --shadow-md and its own 12px
+  // radius, and no blur, since an opaque card has nothing to blur through.
   const sheet = stylesheet();
-  assert.match(cssBlock(sheet, ':root'), /--notice-radius: var\(--radius-lg\)/);
-  assert.match(cssBlock(sheet, ':root'), /--notice-surface: var\(--panel\)/);
-  assert.match(cssBlock(sheet, ':root'), /--notice-blur: 10px/);
+  assert.match(cssBlock(sheet, ':root'), /--notice-radius: 12px/);
+  assert.match(cssBlock(sheet, ':root'), /--notice-surface: var\(--popover\)/);
+  assert.match(cssBlock(sheet, ':root'), /--notice-shadow: var\(--shadow-md\)/);
+  assert.doesNotMatch(cssBlock(sheet, ':root'), /--notice-blur/, 'the toast is opaque and draws no blur');
+  assert.doesNotMatch(sheet, /\[object Object\]/, 'a nested card group was emitted as a value');
 });
 
 test('the banner is proven against the card it was copied from, in the checkout', () => {
