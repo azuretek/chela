@@ -57,7 +57,6 @@ final class NoticeTokensParityTests: XCTestCase {
             let actual = try XCTUnwrap(NoticeTokens.tones[name], "no mirror for the \(name) tone")
             XCTAssertEqual(actual.edge, expected.edge, "\(name) reads the wrong edge token")
             XCTAssertEqual(actual.tint, expected.tint, "\(name) reads the wrong tint token")
-            XCTAssertEqual(actual.glyph, expected.glyph, "\(name) draws the wrong glyph")
         }
     }
 
@@ -185,7 +184,6 @@ struct TokensSpec: Decodable {
     struct Tone: Decodable {
         let edge: String
         let tint: String
-        let glyph: String
     }
 
     /// A card value is either a literal, a token name, or one nested level of

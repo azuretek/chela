@@ -35,6 +35,7 @@ import path from 'node:path';
 import { app, BrowserWindow, WebContentsView, nativeTheme } from 'electron';
 import { stylesheet as tokenStylesheet } from '../src/tokens.js';
 import { themeCss, themeFromReport } from '../src/chrome.js';
+import { forPages as bannerSpec } from '../../core/banner.js';
 
 const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-bw-'));
 app.setPath('userData', PROFILE);
@@ -60,6 +61,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 const notices = JSON.parse(process.env.CLAW_BW_NOTICES || '[]');
 contextBridge.exposeInMainWorld('clawDesktop', {
   notices: async () => notices,
+  bannerSpec: async () => JSON.parse(process.env.CLAW_BANNER_SPEC || 'null'),
   onNoticesChanged: () => {},
   bannerBounds: (b) => ipcRenderer.invoke('bw:bounds', b),
   dismissNotice: () => {}, noticeAction: () => {},
@@ -72,6 +74,7 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 app.whenReady().then(async () => {
   const { ipcMain } = await import('electron');
   process.env.CLAW_BW_NOTICES = JSON.stringify(NOTICES);
+  process.env.CLAW_BANNER_SPEC = JSON.stringify(bannerSpec());
   nativeTheme.themeSource = 'dark';
 
   const win = new BrowserWindow({ show:false, width:WINDOW_W, height:WINDOW_H });

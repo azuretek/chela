@@ -39,6 +39,12 @@ final class NoticeBoard: ObservableObject {
     /// `ContentView`, because the board holds no view of its own.
     var onCommand: ((String) -> Void)?
 
+    /// The Control UI's live palette, as the gateway page publishes it, so the
+    /// banner wears the colours the interface is actually wearing, the way the
+    /// desktop banner does through its injected theme. `ContentView` sets it
+    /// whenever it re-reads the page; empty means the bundled palette stands.
+    @Published var themeTokens: [String: String] = [:]
+
     var all: [Notice] { store.list() }
 
     // MARK: Raising
@@ -170,6 +176,21 @@ final class NoticeBoard: ObservableObject {
         if store.markAllRead() { refresh() }
     }
 
+    /// The card's X: what `NoticeStore.dismiss` says it means. A notice that
+    /// says `dismissClears` leaves the store, anything else is read, which is
+    /// the same rule the desktop's `app:dismiss-notice` applies through
+    /// `dismiss()` in `core/notices.js`.
+    func dismiss(_ id: String) {
+        guard store.dismiss(id) else { return }
+        if store.get(id) == nil {
+            // Cleared rather than read, so nothing may bring it back on a timer.
+            timers[id]?.cancel(); timers[id] = nil
+            floorHolds[id]?.cancel(); floorHolds[id] = nil
+            floorShownAt[id] = nil
+        }
+        refresh()
+    }
+
     func clear(_ id: String) {
         timers[id]?.cancel()
         timers[id] = nil
@@ -236,11 +257,20 @@ extension NoticeBoard {
             detail: "iOS installs apps. \(Naming.product) can tell you a release exists and no more.",
             action: NoticeAction(label: "Open Settings", command: NoticeBoard.settingsCommand)
         ))
-        board.raise("seed-info", NoticeRaise(
+        // The download as the desktop raises it: its X clears rather than reads,
+        // which is the case the two banners used to disagree about.
+        board.raise("seed-download", NoticeRaise(
             tone: NoticeTone.info,
             message: "Downloading \(Naming.product) 1.0.2",
-            dismissible: false,
+            detail: "Starting the download.",
+            dismissible: true,
+            dismissClears: true,
             progress: 0.42
+        ))
+        board.raise("seed-info", NoticeRaise(
+            tone: NoticeTone.info,
+            message: "A newer build is available",
+            detail: "Version 1.1.0 is on TestFlight."
         ))
         board.raise("seed-ok", NoticeRaise(
             tone: NoticeTone.ok,

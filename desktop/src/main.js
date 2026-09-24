@@ -45,6 +45,7 @@ import updates from './updates.js';
 // core/ui/motion.js and the eighth rule in core/ui/CONVENTIONS.md.
 import { MIN_VISIBLE_MS, remainingVisibleMs } from '../../core/ui/motion.js';
 import * as appIcons from '../../core/app-icons.js';
+import * as bannerFacts from '../../core/banner.js';
 import secrets from './secrets.js';
 import defaults from './defaults.js';
 import { withTokenHandoff } from '../../core/gateway-url.js';
@@ -2566,7 +2567,7 @@ let sweepSize = { width: 0, height: 0 };
  * left for this to exclude.
  */
 function sweepWanted() {
-  return notices.unread().length > 0;
+  return bannerFacts.sweepWanted(notices.unread());
 }
 
 /** Show the sweep, hide it, or leave it alone. Called on every notice change. */
@@ -5031,6 +5032,9 @@ function registerIpc() {
   // view swallows clicks over its whole rect, so main cannot guess at it.
   // What the banner draws, which is only what has not been acknowledged.
   ipcMain.handle('app:notices', () => notices.unread());
+  // What the bar and the sweep draw with: core/spec/banner.json, which the iOS app
+  // bundles too, so the two banners' controls and words have one owner.
+  ipcMain.handle('app:banner-spec', () => bannerFacts.forPages());
   ipcMain.handle('app:banner-bounds', (_e, bounds) => {
     // The card cluster's box, reported by ui/banner.js. Bounded like the sweep's,
     // so a page that reported nonsense could not size a view over the whole
