@@ -239,7 +239,7 @@ final class NoticeStackHitTests: XCTestCase {
         let stack = code(try body(of: "NoticeStack", in: text))
         XCTAssertFalse(stack.contains("content.overlay"),
             "the stack is applied as an overlay again, which is the per-layer shape the notice layer replaced")
-        XCTAssertTrue(text.contains("NoticeWindow.coordinateSpace"),
+        XCTAssertTrue(text.contains("NoticeClusterBox.self"),
             "the stack no longer reports the box it drew, so the notice layer would have nothing to claim")
     }
 }
