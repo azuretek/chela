@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   PALETTE, PAPER, BUCKETS, PRIMARY, STEPS, KEY, SECOND_OFFSET, SECOND_ROLES, NEUTRAL,
-  hex, lch, fromLch, bucketFor, palettesFor, choose, alternateIconName, spec, inLiftBand,
+  hex, lch, fromLch, bucketFor, palettesFor, choose, alternateIconName, spec, inLiftBand, fillsSquare,
 } from '../app-icons.js';
 import { checkout } from './upstream-classes.js';
 
@@ -44,6 +44,10 @@ test('an accent takes the nearest hue, a colourless one the neutral pair, and no
   assert.equal(bucketFor(undefined), PRIMARY);
   assert.equal(choose(undefined, undefined).file, `icons/${PRIMARY.id}-dark.png`);
   assert.equal(choose('#808080', 'light').file, 'icons/neutral-light.png');
+  assert.equal(choose('#808080', 'light', { full: true }).file, 'icons/neutral-light-full.png');
+  assert.equal(fillsSquare('darwin'), false);
+  assert.equal(fillsSquare('win32'), true);
+  assert.equal(fillsSquare('linux'), true);
   assert.equal(alternateIconName(PRIMARY), null);
   assert.equal(alternateIconName(BUCKETS[3]), `AppIcon-${BUCKETS[3].id}`);
 });

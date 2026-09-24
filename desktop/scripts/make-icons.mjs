@@ -51,7 +51,7 @@ import sharp from 'sharp';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { generatedFiles, bucketIcons, bucketTrays, iosIconFile } from './artwork.mjs';
+import { generatedFiles, bucketIcons, bucketTrays, iosIconFile, appIcon } from './artwork.mjs';
 import { iconFile, trayFile } from '../../core/app-icons.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));   // desktop/
@@ -81,9 +81,17 @@ const artwork = {
 // than to desktop/, because a target can belong to another package and a path
 // that says which one it is reads as one.
 const targets = [
-  // electron-builder derives .icns and .ico from this; it requires >= 512px.
+  // electron-builder derives .icns from this for macOS; it requires >= 512px.
+  // It keeps the margin Apple's icon grid asks for.
   { file: 'desktop/build/icon.png', size: 1024, svg: artwork.app, treatment: 'canvas' },
+  // electron-builder derives the Windows .ico and the Linux icon set from this
+  // one (electron-builder.yml win.icon and linux.icon): the same tile edge to
+  // edge, because neither platform leaves a margin round an icon of its own and
+  // the macOS margin only made the icon smaller than its neighbours there.
+  { file: 'desktop/build/icon-full.png', size: 1024, svg: Buffer.from(appIcon({ full: true }), 'utf8'), treatment: 'canvas' },
   { file: 'desktop/src/assets/icon.png', size: 512, svg: artwork.app, treatment: 'canvas' },
+  // The Linux window icon main.js sets before the themed one arrives.
+  { file: 'desktop/src/assets/icon-full.png', size: 512, svg: Buffer.from(appIcon({ full: true }), 'utf8'), treatment: 'canvas' },
   { file: 'desktop/src/assets/tray.png', size: 16, svg: artwork.tray, treatment: 'canvas' },
   { file: 'desktop/src/assets/tray@2x.png', size: 32, svg: artwork.tray, treatment: 'canvas' },
 
@@ -100,6 +108,11 @@ const targets = [
 // artwork.mjs), so the App Store icon is its paper icon.
 for (const { bucket, mode, svg } of bucketIcons()) {
   targets.push({ file: 'desktop/src/assets/' + iconFile(bucket, mode), size: 512, svg: Buffer.from(svg, 'utf8'), treatment: 'canvas' });
+}
+// The same pairs edge to edge, for the window and taskbar icon on Windows and
+// Linux (core/app-icons.js fillsSquare). The macOS Dock keeps the pair above.
+for (const { bucket, mode, svg } of bucketIcons({ full: true })) {
+  targets.push({ file: 'desktop/src/assets/' + iconFile(bucket, mode, { full: true }), size: 512, svg: Buffer.from(svg, 'utf8'), treatment: 'canvas' });
 }
 for (const { bucket, svg } of bucketTrays()) {
   const file = 'desktop/src/assets/' + trayFile(bucket);

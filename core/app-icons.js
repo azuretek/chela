@@ -186,18 +186,29 @@ export function palettesFor(bucket) {
 
 // ------------------------------------------------------------- the shipped set
 
-/** Where a bucket's icon is, relative to the desktop's assets directory. */
-export const iconFile = (bucket, mode) => `icons/${bucket.id}-${mode === 'light' ? 'light' : 'dark'}.png`;
+/** Whether a platform's app icon fills its whole square. macOS lays app icons
+ *  on Apple's grid, which leaves a margin round the tile, so the Dock icon keeps
+ *  the margin the artwork is drawn with. Windows and Linux put no margin of
+ *  their own round an icon and draw it at the size of its square, so there the
+ *  margin only makes the icon smaller than every other app's: they get the
+ *  tile edge to edge. The packaged icon follows the same split, in
+ *  desktop/electron-builder.yml. */
+export const fillsSquare = (platform) => platform !== 'darwin';
+
+/** Where a bucket's icon is, relative to the desktop's assets directory.
+ *  `full` is the edge-to-edge icon a platform that fillsSquare() shows. */
+export const iconFile = (bucket, mode, { full = false } = {}) => `icons/${bucket.id}-${mode === 'light' ? 'light' : 'dark'}${full ? '-full' : ''}.png`;
 /** Where a bucket's tray glyph is; Electron finds the `@2x` beside it. */
 export const trayFile = (bucket) => `icons/tray-${bucket.id}.png`;
 /** The iOS alternate icon's name, or null for the primary icon. */
 export const alternateIconName = (bucket) => (bucket.primary ? null : `AppIcon-${bucket.id}`);
 
-/** The icon to show for a live palette: its bucket, and neon or paper by mode. */
-export function choose(accent, mode) {
+/** The icon to show for a live palette: its bucket, neon or paper by mode, and
+ *  edge to edge when `full` (see fillsSquare). */
+export function choose(accent, mode, { full = false } = {}) {
   const bucket = bucketFor(accent);
   const m = mode === 'light' ? 'light' : 'dark';
-  return { bucket, mode: m, file: iconFile(bucket, m), tray: trayFile(bucket) };
+  return { bucket, mode: m, file: iconFile(bucket, m, { full }), tray: trayFile(bucket) };
 }
 
 /** What the iOS app reads, as data: the buckets, the neutral threshold, and
