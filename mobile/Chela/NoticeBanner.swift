@@ -108,7 +108,8 @@ struct NoticeStack: View {
     }
 }
 
-/// One notice, as the Control UI's attention card.
+/// One notice, drawn as the Control UI's toast (components.css .app-toast): an
+/// opaque popover card, one row of tone icon, words, action and X.
 struct NoticeCard: View {
     let notice: Notice
     let style: NoticeCardStyle
@@ -116,7 +117,7 @@ struct NoticeCard: View {
     let run: (String) -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: style.gap) {
+        HStack(alignment: .center, spacing: style.gap) {
             Icon(notice: notice, style: style)
             VStack(alignment: .leading, spacing: 2) {
                 Text(notice.message)
@@ -133,19 +134,18 @@ struct NoticeCard: View {
             }
             Spacer(minLength: 0)
             if let action = notice.action {
+                // The toast's filled accent button, at the phone's 44pt target.
+                let shape = RoundedRectangle(cornerRadius: style.actionRadius, style: .continuous)
                 Button { run(action.command) } label: {
                     Text(action.label)
                         .font(.system(size: style.actionSize, weight: style.actionWeight))
                         .foregroundStyle(style.actionColour)
                         .padding(.horizontal, style.actionPaddingHorizontal)
                         .padding(.vertical, style.actionPaddingVertical)
-                        .frame(minHeight: style.actionMinHeight)
+                        .frame(minWidth: style.target, minHeight: style.target)
                         .background(style.actionSurface)
-                        .contentShape(RoundedRectangle(cornerRadius: style.actionRadius, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: style.actionRadius, style: .continuous)
-                                .stroke(style.actionBorder, lineWidth: 1)
-                        )
+                        .clipShape(shape)
+                        .contentShape(shape)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(action.label)
@@ -159,7 +159,7 @@ struct NoticeCard: View {
                     Image(systemName: BannerSpec.dismissSymbol)
                         .font(.system(size: style.dismissGlyph, weight: .medium))
                         .foregroundStyle(style.dismissColour)
-                        .frame(width: style.dismissSize, height: style.dismissSize)
+                        .frame(width: style.target, height: style.target)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -171,17 +171,10 @@ struct NoticeCard: View {
             }
         }
         .padding(style.padding)
-        .background(alignment: .leading) {
-            // The tone stripe, drawn by both clients beside the tone icon.
-            Rectangle()
-                .fill(style.toneColour(notice.tone))
-                .frame(width: style.edgeWidth)
-        }
-        // The Control UI's floating card: its surface mixed with transparency
-        // (the fraction is in the style) over a blur, which is what makes it glass
-        // rather than a slab. The desktop draws the same with backdrop-filter.
+        .frame(maxWidth: style.maxWidth)
+        // Opaque, like the toast: no blur and no tone stripe. The tone is the
+        // icon's colour.
         .background(style.surface)
-        .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: style.radius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: style.radius, style: .continuous)
@@ -191,10 +184,9 @@ struct NoticeCard: View {
     }
 }
 
-/// The tone's icon, in the Control UI's own icon box: `.sidebar-issues-panel__icon`
-/// is a 28px box with no fill of its own whose icon takes the row's colour. The
-/// icon is the one core/spec/banner.json names for the tone, the same one the
-/// desktop draws as upstream's SVG.
+/// The tone's icon, as .app-toast__icon: a 16pt icon with no box, coloured by
+/// the tone. The icon is the one core/spec/banner.json names for the tone, the
+/// same one the desktop draws as upstream's SVG.
 private struct Icon: View {
     let notice: Notice
     let style: NoticeCardStyle
@@ -204,8 +196,7 @@ private struct Icon: View {
             Image(systemName: symbol)
                 .font(.system(size: style.glyphSize, weight: .medium))
                 .foregroundStyle(style.toneColour(notice.tone))
-                .frame(width: style.iconSize, height: style.iconSize)
-                .clipShape(RoundedRectangle(cornerRadius: style.iconRadius, style: .continuous))
+                .frame(width: style.glyphSize, height: style.glyphSize)
                 .accessibilityHidden(true)
         } else {
             EmptyView()
@@ -215,7 +206,7 @@ private struct Icon: View {
 
 /// The download bar and its percentage, laid out as the desktop draws them: the
 /// number beside the bar rather than inside it, since a figure over a filled
-/// track is unreadable at the midpoint and this card is 11px of type.
+/// track is unreadable at the midpoint.
 private struct ProgressBar: View {
     let progress: Double
     let style: NoticeCardStyle
@@ -238,10 +229,8 @@ private struct ProgressBar: View {
 /// Closing the whole stack, which is reading everything, not clearing it: a
 /// condition that is still true stays in the store either way.
 ///
-/// A floating pill with the card's own material, the desktop's `.banner__readall`
-/// shape for shape: the card surface over a blur, the card hairline, radius and
-/// shadow, muted type. It floats over the Control UI's page with nothing behind
-/// it, so bare text here collided with the page's own text.
+/// A pill on the card's own surface, the desktop's `.banner__readall` shape for
+/// shape: the opaque card surface, hairline, radius and shadow, muted type.
 private struct MarkAllReadRow: View {
     let style: NoticeCardStyle
     let action: () -> Void
@@ -257,9 +246,8 @@ private struct MarkAllReadRow: View {
                 .fixedSize()
                 .padding(.horizontal, style.actionPaddingHorizontal)
                 .padding(.vertical, style.actionPaddingVertical)
-                .frame(minHeight: style.actionMinHeight)
+                .frame(minHeight: style.target)
                 .background(style.surface)
-                .background(.ultraThinMaterial)
                 .clipShape(shape)
                 .overlay(shape.stroke(style.border, lineWidth: 1))
                 .shadow(color: style.shadowColour, radius: style.shadowRadius, x: style.shadowX, y: style.shadowY)
@@ -283,23 +271,19 @@ private struct MarkAllReadRow: View {
 struct NoticeCardStyle {
     let mode: String
     let radius: CGFloat
-    let edgeWidth: CGFloat
     let gap: CGFloat
     let stackGap: CGFloat
     let inset: CGFloat
     let padding: EdgeInsets
-    let iconSize: CGFloat
-    let iconRadius: CGFloat
+    let maxWidth: CGFloat
+    let target: CGFloat
     let glyphSize: CGFloat
     let headlineSize: CGFloat
     let subjectSize: CGFloat
     let actionSize: CGFloat
     let headlineWeight: Font.Weight
     let actionWeight: Font.Weight
-    let dismissSize: CGFloat
-    let dismissRadius: CGFloat
     let dismissGlyph: CGFloat
-    let actionMinHeight: CGFloat
     let actionPaddingHorizontal: CGFloat
     let actionPaddingVertical: CGFloat
     let actionRadius: CGFloat
@@ -310,7 +294,6 @@ struct NoticeCardStyle {
     let dismissColour: Color
     let actionColour: Color
     let actionSurface: Color
-    let actionBorder: Color
     let shadowColour: Color
     let shadowRadius: CGFloat
     let shadowX: CGFloat
@@ -319,7 +302,7 @@ struct NoticeCardStyle {
 
     /// A tone's edge colour. A tone the spec does not define draws with the
     /// subject colour, matching how the desktop's stylesheet falls back to a
-    /// neutral stripe rather than to nothing.
+    /// neutral colour rather than to nothing.
     func toneColour(_ tone: String) -> Color {
         colour(for: tone, keyPath: \.edgeColour) ?? subjectColour
     }
@@ -332,9 +315,7 @@ struct NoticeCardStyle {
     /// The style for one mode, wearing the Control UI's LIVE palette where the
     /// page published one (`live`, from ThemeTokens' probe) and the bundled
     /// palette otherwise. The desktop banner does the same through the theme it
-    /// injects, so both clients draw the floating card in the colours the
-    /// interface is actually wearing. A live value this file cannot read (a
-    /// colour notation Color(css:) does not parse) falls back to the bundled one.
+    /// injects. A live value this file cannot read falls back to the bundled one.
     static func forMode(_ mode: String, live: [String: String] = [:]) -> NoticeCardStyle {
         func usable(_ value: String) -> Bool { Color(css: value) != nil || CSSLength(value) != nil }
         /// A token, live first.
@@ -354,48 +335,38 @@ struct NoticeCardStyle {
             guard let text, let parsed = Color(css: text) else { return fallback }
             return parsed
         }
-        /// A CSS percentage as a fraction, for the color-mix() the desktop draws.
-        func fraction(_ text: String?) -> Double {
-            guard let text, text.hasSuffix("%"), let value = Double(text.dropLast()) else { return 1 }
-            return value / 100
-        }
         let shadow = CSSShadow(card("shadow"))
-        let padding = CSSPadding(card("padding"))
+        let action = CSSPadding(card("action.padding"))
         let bezier = CSSBezier(NoticeTokens.resolve("--ease-out", mode: mode))
+        let message = CSSLength(card("messageSize")) ?? 13
         return NoticeCardStyle(
             mode: mode,
-            radius: CSSLength(card("radius")) ?? 14,
-            edgeWidth: CSSLength(card("edgeWidth")) ?? 3,
-            gap: CSSLength(card("gap")) ?? 12,
-            // The desktop banner's stack gap is its own, because a bar spanning a
-            // window and a card over a phone screen are not the same rhythm, and
-            // the screen inset here is the phone's own edge clearance.
+            radius: CSSLength(card("radius")) ?? 12,
+            gap: CSSLength(card("gap")) ?? 8,
             stackGap: 8,
-            inset: 8,
-            padding: padding,
-            iconSize: CSSLength(card("iconSize")) ?? 28,
-            iconRadius: CSSLength(card("iconRadius")) ?? 6,
+            // The toast on a phone sits 12pt in from the screen's edges.
+            inset: CSSLength(card("phone.edge")) ?? 12,
+            padding: CSSPadding(card("padding")),
+            maxWidth: CSSLength(card("maxWidth")) ?? 370,
+            // And its action and X grow to 44pt touch targets.
+            target: CSSLength(card("phone.target")) ?? 44,
             glyphSize: CSSLength(card("glyphSize")) ?? 16,
-            headlineSize: CSSLength(NoticeTokens.sizes["sm"]) ?? 12,
-            subjectSize: CSSLength(NoticeTokens.sizes["xs"]) ?? 11,
-            actionSize: CSSLength(NoticeTokens.sizes["xs"]) ?? 11,
+            headlineSize: message,
+            subjectSize: message,
+            actionSize: CSSLength(NoticeTokens.sizes["sm"]) ?? 12,
             headlineWeight: .css(NoticeTokens.weights["headline"] ?? 650),
             actionWeight: .css(NoticeTokens.weights["action"] ?? 600),
-            dismissSize: CSSLength(card("dismiss.size")) ?? 24,
-            dismissRadius: CSSLength(card("dismiss.radius")) ?? 6,
             dismissGlyph: CSSLength(card("dismiss.glyph")) ?? 14,
-            actionMinHeight: CSSLength(card("action.minHeight")) ?? 28,
-            actionPaddingHorizontal: CSSPadding(card("action.padding")).leading,
-            actionPaddingVertical: CSSPadding(card("action.padding")).top,
-            actionRadius: CSSLength(card("action.radius")) ?? 10,
-            surface: colour(card("surface"), fallback: .clear).opacity(fraction(card("surfaceAlpha"))),
-            border: colour(card("border"), fallback: .clear).opacity(fraction(card("borderAlpha"))),
-            headlineColour: colour(token("--text-strong")),
+            actionPaddingHorizontal: action.leading,
+            actionPaddingVertical: action.top,
+            actionRadius: CSSLength(card("action.radius")) ?? 8,
+            surface: colour(card("surface"), fallback: .clear),
+            border: colour(card("border"), fallback: .clear),
+            headlineColour: colour(card("colour")),
             subjectColour: colour(token("--muted")),
             dismissColour: colour(card("dismiss.colour")),
             actionColour: colour(card("action.colour")),
             actionSurface: colour(card("action.surface"), fallback: .clear),
-            actionBorder: colour(card("action.border"), fallback: .clear),
             shadowColour: shadow.colour,
             shadowRadius: shadow.blur,
             shadowX: shadow.x,
@@ -425,9 +396,10 @@ func CSSLength(_ text: String?) -> CGFloat? {
     return CGFloat(value)
 }
 
-/// `11px 14px`, or one value for all four edges, which is what CSS padding
-/// shorthand means. More than two values is not used in the spec and is refused
-/// rather than half-honoured.
+/// CSS padding shorthand: one value for all four edges, two for vertical and
+/// horizontal, three for top, horizontal and bottom, or four clockwise from the
+/// top, as the toast's `7px 7px 7px 13px` is. Anything else is refused rather
+/// than half-honoured.
 func CSSPadding(_ text: String?) -> EdgeInsets {
     guard let text else { return EdgeInsets() }
     let parts = text.split(separator: " ").map(String.init)
@@ -436,8 +408,12 @@ func CSSPadding(_ text: String?) -> EdgeInsets {
     if values.count == 1 {
         return EdgeInsets(top: values[0], leading: values[0], bottom: values[0], trailing: values[0])
     }
-    guard values.count == 2 else { return EdgeInsets() }
-    return EdgeInsets(top: values[0], leading: values[1], bottom: values[0], trailing: values[1])
+    switch values.count {
+    case 2: return EdgeInsets(top: values[0], leading: values[1], bottom: values[0], trailing: values[1])
+    case 3: return EdgeInsets(top: values[0], leading: values[1], bottom: values[2], trailing: values[1])
+    case 4: return EdgeInsets(top: values[0], leading: values[3], bottom: values[2], trailing: values[1])
+    default: return EdgeInsets()
+    }
 }
 
 /// A box shadow, in the CSS order: x, y, blur, then the colour.

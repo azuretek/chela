@@ -144,7 +144,7 @@ export function rootCss({ mode = 'dark', important = true } = {}) {
     lines.push(`  --notice-leading-${name}: ${leading}${flag};`);
   }
   for (const [name, value] of Object.entries(CARD)) {
-    if (name === 'dismiss' || name === 'action') continue;
+    if (value && typeof value === 'object') continue;
     lines.push(`  --notice-${dashed(name)}: ${cardValue(value, mode)}${flag};`);
   }
   for (const [name, value] of Object.entries(CARD.dismiss)) {

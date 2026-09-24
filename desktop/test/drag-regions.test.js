@@ -365,14 +365,15 @@ test('★ the stack paints no band, so the floating-card view claims only the ca
   // sizes the view to it). That is a feedback loop: a view momentarily narrow
   // clamps the card, the host sizes the view to the clamped card, and they lock at
   // min-content. Measured: 153px. The card width must therefore be its own,
-  // independent of the view, so `width: 420px`; `max-width: 100%` may stay only as
-  // a small-window guard, which cannot start the loop because the basis is 420px.
+  // independent of the view, so `width: 370px` (the Control UI toast's own cap);
+  // `max-width: 100%` may stay only as a small-window guard, which cannot start the
+  // loop because the basis is 370px.
   // The rendered guard is desktop/scripts/prove-banner-width.mjs, which drives the
   // real report/resize loop; this is the fast source half that keeps the loop
   // from being reintroduced.
   const card = rules.find((rule) => rule.selector.split(',').map((s) => s.trim()).includes('.banner'));
   assert.ok(card, 'banner.css has no .banner rule');
-  assert.equal(card.decls.get('width'), '420px',
+  assert.equal(card.decls.get('width'), '370px',
     'the card no longer takes a fixed width, so its size can depend on the view it is sized to: '
     + 'that is the feedback loop that collapsed the banner to a sliver on Windows (2026-09-20)');
   const cardMax = card.decls.get('max-width');
