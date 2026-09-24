@@ -22,6 +22,31 @@
 const api = window.clawDesktop;
 const stack = document.getElementById('stack');
 
+// The banner's shared facts (core/spec/banner.json): which controls a card draws,
+// what they say, and the Control UI's own icons. The page is sandboxed and cannot
+// import the spec, so main hands it over (app:banner-spec) and this page draws
+// from what it was given. The iOS banner reads the same file, which is what keeps
+// the two banners saying the same thing; core/test/banner-spec.test.js holds both
+// to it.
+let spec = null;
+
+const SVG = 'http://www.w3.org/2000/svg';
+
+/** One of the Control UI's own icons, drawn the way its strokeIcon() draws it. */
+function icon(name) {
+  const entry = spec && spec.icons[name];
+  if (!entry) return null;
+  const svg = document.createElementNS(SVG, 'svg');
+  for (const [key, value] of Object.entries(spec.stroke)) svg.setAttribute(key, value);
+  svg.setAttribute('aria-hidden', 'true');
+  for (const [tag, attrs] of entry.svg) {
+    const part = document.createElementNS(SVG, tag);
+    for (const [key, value] of Object.entries(attrs)) part.setAttribute(key, value);
+    svg.append(part);
+  }
+  return svg;
+}
+
 // Deliberately no `frameless` class. The banner's view is already positioned
 // below the title strip by main, so it has nothing to clear, and the rule that
 // class used to carry was written for the error page, which no longer exists.
@@ -66,26 +91,30 @@ function report() {
 }
 
 function card(notice) {
+  // The tone, in the Control UI's own icon box (.sidebar-issues-panel__icon): the
+  // attention card shows its tone as an icon, so this card does too, and the iOS
+  // card draws the same icon from the same spec entry.
+  const toneIcon = icon(spec.toneIcon[notice.tone]);
+  const glyph = toneIcon ? el('span', { className: 'banner__icon' }, [toneIcon]) : null;
+
   // Marks it read: the condition carries on, the app just stops saying so. It
   // was a delete until notices could be read, which meant waving away a refused
   // shortcut destroyed the app's own record that it was refused.
   //
   // ★ Except for a card whose dismissal MEANS something, which is what
   // `dismissClears` says. The one that carries it is a download in flight, and a
-  // tooltip promising the card stays listed would be wrong twice: the reader is
-  // asking for the transfer to stop being reported rather than saying they have
-  // seen it, and the store clears it rather than reading it. Same control, honest
-  // label, and the meaning itself still lives in one place (the store) rather than
-  // being decided here from what the card happens to look like.
-  const dismiss = notice.dismissible === false ? null : el('button', {
+  // label promising the card is only read would be wrong: the store clears it. The
+  // meaning lives in the store (dismiss() in core/notices.js); the words for it
+  // live in core/spec/banner.json, so both clients say the same thing.
+  const copy = notice.dismissible === false ? null
+    : (notice.dismissClears ? spec.dismiss.clears : spec.dismiss.read);
+  const dismiss = copy ? el('button', {
     className: 'banner__close',
     type: 'button',
-    title: notice.dismissClears
-      ? 'Clear this. It stops reporting the download, and it does not come back.'
-      : 'Mark read. It stays listed under Settings, Problems.',
-    textContent: '✕',
+    title: copy.tooltip,
     onclick: () => { void api.dismissNotice(notice.id); },
-  });
+  }, [icon(spec.dismiss.icon)]) : null;
+  if (dismiss) dismiss.setAttribute('aria-label', copy.label);
 
   // A link rather than a button, and the only one: this is where a notice says
   // "the thing that fixes me is over there". It navigates; it does not act, so
@@ -108,6 +137,7 @@ function card(notice) {
   ]);
 
   return el('div', { className: `banner banner--${notice.tone}`, id: `n-${notice.id}` }, [
+    glyph,
     // The body is a COLUMN of blocks, and this page declares that shape itself in
     // banner.css as `.banner__body`. It carried `stack grow` until 2026-09-18,
     // when `.stack` turned out to be a rule the settings refactor had retired:
@@ -156,6 +186,7 @@ function leaveCard(node) {
  * Sweep the cards that are gone, and rebuild the ones that changed.
  */
 async function render() {
+  if (!spec) spec = await api.bannerSpec();
   const notices = await api.notices();
   // Rebuild only what changed, keyed by id. Replacing the whole list every time
   // would replay the slide-in on a banner that has been sitting there for an

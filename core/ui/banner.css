@@ -157,11 +157,11 @@ body.banner-body {
    is a surface, and the glass is the point of a card that floats over someone
    else's page.
 
-   The tone stripe on the leading edge is ours: the Control UI's card is a list
-   row whose tone shows in its icon, and a floating bar over the Control UI's own
-   page has no icon column to show it in, so the edge carries it instead. That is
-   why the stripe width is the one card measurement the spec marks as ours rather
-   than lifted. */
+   The tone shows the way the Control UI's card shows it: as the row's icon, in
+   its 28px icon box (.banner__icon below). The stripe on the leading edge is ours
+   and stays as a second carrier of the same tone, drawn identically by the iOS
+   card; its width is the one card measurement the spec marks as ours rather than
+   lifted. */
 .banner {
   display: flex;
   align-items: flex-start;
@@ -364,10 +364,35 @@ body.banner-body {
   color: var(--notice-action-hover-colour);
 }
 
+/* The tone icon, in the Control UI's own icon box: .sidebar-issues-panel__icon is
+   a 28px inline grid with --radius-sm corners and no fill of its own, and its
+   16px stroke icon takes the row's colour (--danger on a critical row, --warn on
+   a warning one). So the icon is upstream's SVG (core/spec/banner.json, from
+   ui/src/components/icons.ts), coloured by the tone, with no tinted square: the
+   Control UI draws none. The iOS card draws the same box. */
+.banner__icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: var(--notice-icon-size);
+  height: var(--notice-icon-size);
+  border-radius: var(--notice-icon-radius);
+  color: var(--notice-tone-edge, var(--muted));
+}
+.banner__icon svg {
+  width: var(--notice-glyph-size);
+  height: var(--notice-glyph-size);
+}
+
 /* The dismiss X. Same shape as the Control UI's .sidebar-issues-panel__dismiss:
-   24px, --radius-sm, --muted, on --bg-hover when hovered. It marks the condition
-   read, so the control is drawn at the card's quiet end rather than as a
-   primary action it is not. */
+   24px, --radius-sm, --muted, on --bg-hover when hovered, and upstream's own `x`
+   icon at 14px rather than a text glyph. What it does (read, or clear for a
+   download) is the store's; what it says is core/spec/banner.json's. */
+.banner__close svg {
+  width: var(--notice-dismiss-glyph);
+  height: var(--notice-dismiss-glyph);
+  pointer-events: none;
+}
 .banner__close {
   flex: none;
   width: var(--notice-dismiss-size);

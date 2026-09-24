@@ -166,6 +166,7 @@ struct ContentView: View {
     private func refreshLiveTokens() {
         gatewayPage.liveTokens { tokens in
             if tokens != liveTokens { liveTokens = tokens }
+            if tokens != notices.themeTokens { notices.themeTokens = tokens }
             AppIconOffer.consider(tokens: tokens, board: notices)
         }
     }
