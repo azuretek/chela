@@ -274,6 +274,24 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.azuretek.claw-mobile.tests
         GENERATE_INFOPLIST_FILE: YES
 
+  # Real touches, through the real hit test. The notice banner is drawn in a
+  # window of its own above the app (NoticeLayer.swift), and whether a tap on its
+  # controls lands is a question only a tap can answer: a unit test can assert the
+  # box the window claims, and it asserted a box in the wrong coordinate space for
+  # as long as that box was wrong.
+  ChelaUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: ChelaUITests
+    dependencies:
+      - target: Chela
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.azuretek.claw-mobile.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Chela
+
 schemes:
   Chela:
     build:
@@ -283,12 +301,14 @@ schemes:
         # pulling the test bundle in would make that build do work no one asked
         # for.
         ChelaTests: [test]
+        ChelaUITests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
         - ChelaTests
+        - ChelaUITests
     profile:
       config: Release
     analyze:

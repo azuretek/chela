@@ -81,7 +81,11 @@ struct NoticeStack: View {
                 GeometryReader { proxy in
                     Color.clear.preference(
                         key: NoticeClusterBox.self,
-                        value: proxy.frame(in: .named(NoticeWindow.coordinateSpace))
+                        // In the WINDOW's coordinates, which is what hitTest is
+                        // given. A space named on the layer's root sat inside the
+                        // safe area, so the box was measured from below the status
+                        // bar while touches were measured from the window's top.
+                        value: proxy.frame(in: .global)
                     )
                 }
             )
@@ -161,6 +165,9 @@ struct NoticeCard: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(copy.label)
                 .accessibilityHint(copy.tooltip)
+                // A stable handle for UI tests, scoped to the banner: a label
+                // like "Clear" can also belong to a control on the page.
+                .accessibilityIdentifier("notice-dismiss-\(notice.id)")
             }
         }
         .padding(style.padding)
@@ -261,6 +268,7 @@ private struct MarkAllReadRow: View {
         .buttonStyle(.plain)
         .accessibilityLabel(copy.label)
         .accessibilityHint(copy.tooltip)
+        .accessibilityIdentifier("notice-sweep")
     }
 }
 
