@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// The minimum-visible-duration primitive, as the thing that makes the rule hold.
 ///
@@ -73,5 +74,42 @@ enum Motion {
     /// wants the yes/no and not the wait.
     static func heldLongEnough(shownAt: Date, minMs: Int = minVisibleMs, now: Date = Date()) -> Bool {
         remainingVisibleMs(shownAt: shownAt, minMs: minMs, now: now) == 0
+    }
+
+    // MARK: View motion
+
+    /// How a sheet arrives and leaves, from `motion.sheet` in the token spec. The
+    /// phone's Settings and About ARE native sheets, so UIKit plays this motion
+    /// itself and these values are what the desktop's CSS sheet is held to; they are
+    /// here so the parity test can hold the two clients to one spec.
+    static let sheetEnterMs: Int = NoticeTokens.sheetEnterMs
+    static let sheetLeaveMs: Int = NoticeTokens.sheetLeaveMs
+    static let sheetCurve: [Double] = NoticeTokens.sheetCurve
+
+    /// How long a screen inside a surface takes to move.
+    static let screenMs: Int = NoticeTokens.screenMs
+
+    /// The pairing screen's spring, in SwiftUI's own terms: the desktop samples the
+    /// same two numbers into a CSS `linear()` easing (`core/ui/motion.js`
+    /// `springCurve`), so the two clients run one spring.
+    static let springResponseMs: Int = NoticeTokens.springResponseMs
+    static let springDampingFraction: Double = NoticeTokens.springDampingFraction
+
+    /// The pairing screen's arrival, or a plain fade when the reader asked for
+    /// reduced motion (the same swap the shared stylesheet makes).
+    static func pairingAnimation(reduceMotion: Bool) -> Animation {
+        if reduceMotion { return .easeInOut(duration: Double(fadeMs) / 1000) }
+        return .spring(response: Double(springResponseMs) / 1000, dampingFraction: springDampingFraction)
+    }
+
+    /// The reduced-motion fade, the Control UI's own `--duration-normal`, which is
+    /// what the shared stylesheet fades an arrival over under reduced motion.
+    static let fadeMs: Int = NoticeTokens.shape["--duration-normal"]
+        .flatMap { Int($0.replacingOccurrences(of: "ms", with: "")) } ?? 180
+
+    /// Where the pairing screen arrives from: the bottom edge, or nowhere under
+    /// reduced motion, where it fades.
+    static func pairingTransition(reduceMotion: Bool) -> AnyTransition {
+        reduceMotion ? .opacity : .move(edge: .bottom)
     }
 }

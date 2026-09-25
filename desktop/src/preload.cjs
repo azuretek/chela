@@ -151,12 +151,11 @@ if (isLocalPage) {
     about: () => ipcRenderer.invoke('app:about'),
     checkUpdates: () => ipcRenderer.invoke('app:check-updates'),
     openReleases: () => ipcRenderer.invoke('app:open-releases'),
-    // Clear the Control UI's caches and reload it from the server, the same path
-    // the File menu and the tray use. Returns what was actually cleared; the
-    // confirmation that the reload landed arrives on `onCacheCleared`, because a
-    // clear that returned is not a payload that arrived.
+    // Clear the Control UI's caches and restart it from the server, the same path
+    // the File menu and the tray use. Returns what was cleared once the restart
+    // has started; the restart itself is the answer, played in front of the
+    // reader with this page going away as part of it.
     clearCacheAndReload: () => ipcRenderer.invoke('app:clear-cache-and-reload'),
-    onCacheCleared: (fn) => ipcRenderer.on('app:cache-cleared', (_event, report) => fn(report)),
     // The listener is wrapped rather than handed the raw event: a renderer
     // given `event` gets `event.sender`, and with it a way back into IPC that
     // the bridge is supposed to be the only door to.

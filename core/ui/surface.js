@@ -53,6 +53,47 @@
     }
   }
 
+  // Inside a native sheet (the phone's Settings and About) the platform's own
+  // presentation is the motion, so this page has no departure of its own to play.
+  // The host states it at document start; see ui.css, surface--native-sheet.
+  function nativeSheet() {
+    try {
+      return document.documentElement.classList.contains('surface--native-sheet');
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Hold a surface's ARRIVAL until the page has painted its first frame, then let
+  // it play. A view of ours is attached while its page loads (a surface the reader
+  // opened takes the keyboard, see ui/CONVENTIONS.md), so an arrival that started
+  // with the document's first style ran partly while nothing was yet on screen,
+  // and a sheet appeared already half way up. Paused at its first keyframe it is
+  // wholly off screen, so nothing is shown early either.
+  //
+  // Fail-safe by construction: the pause is a class THIS script adds, so a page
+  // whose script never ran animates as it always did, and the class comes off on
+  // a short bound even if no frame is ever reported.
+  (function holdArrivalForFirstPaint() {
+    try {
+      var root = document.documentElement;
+      if (!root || !root.classList || typeof root.classList.add !== 'function') return;
+      root.classList.add('surface--pending');
+      var released = false;
+      var release = function () {
+        if (released) return;
+        released = true;
+        try { root.classList.remove('surface--pending'); } catch (e) { /* the page is going */ }
+      };
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(function () { window.requestAnimationFrame(release); });
+      }
+      setTimeout(release, 250);
+    } catch (e) {
+      // A page that cannot be held animates as it always did.
+    }
+  })();
+
   window.clawSurface = {
     /**
      * Whether the reader has asked for no motion.
@@ -96,17 +137,23 @@
      * never takes away.
      */
     leave: function () {
+      var wait;
       try {
-        // Reduced motion resolves at once, so the host removes the view
-        // immediately rather than holding a surface that is not going to move.
-        if (reduced()) return Promise.resolve(false);
+        // A native sheet leaves by the platform's own motion, so there is nothing
+        // here to wait for.
+        if (nativeSheet()) return Promise.resolve(false);
         var body = document.body;
         if (body) body.classList.add('surface--leaving');
+        // The page's own departure: a sheet's slide, or the short fade that stands
+        // in for every movement under reduced motion (the stylesheet swaps the
+        // value, so this reads whichever one is in force). Reduced motion still
+        // plays its fade, so it still waits, just for the shorter time.
+        wait = reduced() ? durationMs('--duration-fast') : durationMs('--surface-leave');
       } catch (e) {
         return Promise.resolve(false);
       }
       return new Promise(function (resolve) {
-        setTimeout(function () { resolve(true); }, durationMs('--duration-fast') + SLACK_MS);
+        setTimeout(function () { resolve(true); }, wait + SLACK_MS);
       });
     },
   };

@@ -166,7 +166,6 @@ contextBridge.exposeInMainWorld('clawDesktop', {
   closeOverlay: () => {},
   onAboutChanged: () => {},
   clearCacheAndReload: async () => ({ cleared: [], failed: [], origins: [], gateway: null }),
-  onCacheCleared: () => {},
   notices: async () => [],
   onNoticesChanged: () => {},
   bannerHeight: () => {},

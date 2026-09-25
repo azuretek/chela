@@ -47,6 +47,18 @@ final class PageCover: ObservableObject {
     private var generation = 0
     private var finished: Set<Int> = []
 
+    /// The minimum-visible floor, for the one path that asks for it: a restart the
+    /// reader asked for (Clear cache and refresh) is a state they are meant to SEE,
+    /// and a page that paints while the sheets are still sliding away would lift the
+    /// cover before it was ever on screen. `distantFuture` while the sheets go,
+    /// then the floor from the moment the cover is revealed. Nil otherwise, so a
+    /// launch or a reconnect lifts the moment its page has painted, as before.
+    private var floorUntil: Date?
+    /// A paint that arrived inside the floor, played when the floor ends unless a
+    /// new hold has voided it by then.
+    private var pending: (generation: Int, why: String)?
+    private var pendingTask: Task<Void, Never>?
+
     init(backstop: Duration = .milliseconds(RenderReady.backstopMs)) {
         self.backstop = backstop
     }
@@ -54,7 +66,21 @@ final class PageCover: ObservableObject {
     /// A load started: cover the page, and void any lift still on its way.
     func hold() {
         generation += 1
+        pending = nil
         isCovered = true
+    }
+
+    /// Hold the cover up through any lift until `releaseFloor` is called. See
+    /// `floorUntil`.
+    func holdFloor() {
+        floorUntil = .distantFuture
+    }
+
+    /// The sheets have gone and the cover is what the reader sees: keep it at
+    /// least `ms` from now, then play any paint that arrived meanwhile.
+    func releaseFloor(after ms: Int) {
+        floorUntil = Date().addingTimeInterval(Double(max(0, ms)) / 1000)
+        schedulePending()
     }
 
     /// The load finished. Lift once the page has painted, or at the backstop.
@@ -80,6 +106,8 @@ final class PageCover: ObservableObject {
     func lift(_ why: String) {
         generation += 1
         finished.insert(generation)
+        pending = nil
+        floorUntil = nil
         isCovered = false
         lastLift = why
     }
@@ -88,10 +116,33 @@ final class PageCover: ObservableObject {
         guard !finished.contains(mine) else { return }
         finished.insert(mine)
         guard mine == generation else { return }
+        if let floorUntil, floorUntil > Date() {
+            pending = (mine, why)
+            schedulePending()
+            return
+        }
+        reveal(why)
+    }
+
+    private func reveal(_ why: String) {
+        floorUntil = nil
         isCovered = false
         lastLift = why
         if why != "rendered" {
             NSLog("[claw] lifting the loading cover on %@ rather than a painted page", why)
+        }
+    }
+
+    private func schedulePending() {
+        pendingTask?.cancel()
+        guard let waiting = pending, let floorUntil, floorUntil != .distantFuture else { return }
+        let wait = max(0, floorUntil.timeIntervalSinceNow)
+        pendingTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(Int(wait * 1000)))
+            guard let self, !Task.isCancelled, let now = self.pending,
+                  now.generation == waiting.generation, now.generation == self.generation else { return }
+            self.pending = nil
+            self.reveal(now.why)
         }
     }
 }
