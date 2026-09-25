@@ -148,8 +148,11 @@ dmg:
   writeUpdateInfo: false
 
 win:
-  # The edge-to-edge icon: see desktop/scripts/make-icons.mjs, icon-full.png.
-  icon: build/icon-full.png
+  # The edge-to-edge icon at every size the Windows shell draws, written by
+  # desktop/scripts/make-icons.mjs. Not icon-full.png: the .ico electron-builder
+  # derives from a PNG leaves out 20, 30, 36 and 40, and the taskbar then draws
+  # a smaller size centred in its slot. See desktop/scripts/ico.mjs.
+  icon: build/icon.ico
   target:
     - target: nsis
       arch: [x64, arm64]
