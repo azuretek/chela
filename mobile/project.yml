@@ -185,6 +185,16 @@ targets:
         buildPhase: resources
       - path: ../core/spec/progress.json
         buildPhase: resources
+      # The loading screen is the shared page too (Abi, 2026-09-25): the
+      # desktop's own core/ui/loading.html, hosted by LoadingSurface, so its mark,
+      # ring, progress bar, quips and failed state with Try again are one copy on
+      # every platform. The quips travel with it for the host to rotate.
+      - path: ../core/ui/loading.html
+        buildPhase: resources
+      - path: ../core/ui/loading.js
+        buildPhase: resources
+      - path: ../core/spec/quips.json
+        buildPhase: resources
       # Everything else the app needed as a value is bundled here too, one loader
       # for all of them: the feed paths and channel names, the notice tones and
       # their rank, the update intervals, the two sentences a pending row shows,

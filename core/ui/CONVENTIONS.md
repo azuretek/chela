@@ -251,8 +251,16 @@ nothing at all.** Two controls work this way, and both take the three rows above
   Settings slide away onto it, the Control UI reloads from the server behind it, and
   it comes down once the page has painted, held the floor so the restart is seen.
   No green line anywhere, because the restart IS the answer, and a reload that
-  fails takes the path a failed launch takes on that client: the desktop's loading
-  screen in its failed state with Try again, and the phone's failure notice.
+  fails lands on the loading screen's own failed state with Try again, the path a
+  failed launch takes.
+
+**The loading screen is one page on every client** (Abi, 2026-09-25):
+`core/ui/loading.html`, which the desktop hosts in its cover view and the phone
+hosts in `LoadingSurface`, so its mark, ring, progress bar, quips and failed state
+change everywhere at once. Each host computes the progress from `spec/progress.json`
+and the quip from `spec/quips.json` and pushes them; the page only draws. A load
+that fails keeps the cover up in its failed state on both clients, never takes it
+down onto a page that did not load.
 
 ## ★ The sixth rule: colour is not ours to choose
 

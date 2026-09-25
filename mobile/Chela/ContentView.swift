@@ -317,8 +317,18 @@ struct ContentView: View {
         // reader needs, so it is never hidden behind a spinner.
         .overlay {
             if cover.isCovered {
-                PageCoverView(colour: themeColour)
-                    .transition(.opacity)
+                // The shared loading page (core/ui/loading.html), the desktop's own
+                // loading screen, so a change to it reaches every platform. Its Try
+                // again is the same reconnect the wake rule and pairing use.
+                LoadingSurface(
+                    cover: cover,
+                    gateway: gateway,
+                    tokens: liveTokens,
+                    colour: themeColour,
+                    reconnect: { pairing.reconnectNow() }
+                )
+                .ignoresSafeArea()
+                .transition(.opacity)
             }
         }
         .animation(.easeOut(duration: 0.15), value: cover.isCovered)
@@ -496,7 +506,7 @@ struct ContentView: View {
     ///    Control UI being replaced.
     /// 4. The cover stays at least the floor once the sheets have gone, and comes
     ///    down once the page has painted. A reload that fails takes the failure path
-    ///    a launch takes (the cover lifts and the failure notice says why).
+    ///    a launch takes: the cover stays in its failed state with Try again.
     private func restartAfterClear() async -> (ok: Bool, detail: String) {
         let pressedAt = Date()
         guard gatewayPage.hasPage else {

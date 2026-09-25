@@ -39,6 +39,15 @@ enum RenderReady {
 @MainActor
 final class PageCover: ObservableObject {
     @Published private(set) var isCovered = false
+    /// Whether the load under the cover failed. The cover then STAYS, in the shared
+    /// loading page's failed state with its Try again, which is what the desktop
+    /// does (Abi, 2026-09-25): a failure is shown where the reader is looking,
+    /// never by taking the cover down onto a page that did not load.
+    @Published private(set) var failed = false
+    /// The furthest load milestone reached, and when, for the shared progress curve
+    /// (`Progress`, core/spec/progress.json). The navigation reports them.
+    private(set) var milestone: String = Progress.start
+    private(set) var milestoneAt = Date()
     /// Why the cover last came down: "rendered", "backstop", "probe-failed",
     /// "no-probe", or a failure's own reason. Read by the tests and the log.
     private(set) var lastLift: String?
@@ -67,7 +76,33 @@ final class PageCover: ObservableObject {
     func hold() {
         generation += 1
         pending = nil
+        failed = false
+        milestone = Progress.start
+        milestoneAt = Date()
         isCovered = true
+    }
+
+    /// The load reached `name` (`navigated` on commit, `dom` on finish). Only
+    /// ever forward, so a late event cannot move the bar backwards.
+    func reached(_ name: String) {
+        let order = Progress.order
+        guard let next = order.firstIndex(of: name),
+              next > (order.firstIndex(of: milestone) ?? -1) else { return }
+        milestone = name
+        milestoneAt = Date()
+    }
+
+    /// The load under the cover failed: keep the cover up in its failed state and
+    /// void any lift in flight, so nothing reveals the page that did not load.
+    /// Try again (or any new load) clears it through `hold()`.
+    func fail(_ why: String) {
+        generation += 1
+        pending = nil
+        floorUntil = nil
+        failed = true
+        isCovered = true
+        lastLift = nil
+        NSLog("[claw] the load under the cover failed (%@); holding it in its failed state", why)
     }
 
     /// Hold the cover up through any lift until `releaseFloor` is called. See
@@ -108,6 +143,7 @@ final class PageCover: ObservableObject {
         finished.insert(generation)
         pending = nil
         floorUntil = nil
+        failed = false
         isCovered = false
         lastLift = why
     }
@@ -144,22 +180,5 @@ final class PageCover: ObservableObject {
             self.pending = nil
             self.reveal(now.why)
         }
-    }
-}
-
-/// What the cover draws: the page's own colour, so the handoff to the painted
-/// page is a change of content and not a flash, and a spinner.
-struct PageCoverView: View {
-    let colour: Color
-
-    var body: some View {
-        ZStack {
-            colour
-            ProgressView()
-                .controlSize(.large)
-        }
-        .ignoresSafeArea()
-        .accessibilityIdentifier("loading-cover")
-        .accessibilityLabel("Loading")
     }
 }
