@@ -152,6 +152,9 @@ struct ContentView: View {
     @StateObject private var gatewayPage = GatewayPage()
     /// The loading cover over the page, held until it has painted. See PageCover.
     @StateObject private var cover = PageCover()
+    /// Whether the reader asked for reduced motion, which turns the pairing
+    /// screen's spring into a fade.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The wake and reconnect rule's state; this view only reports into it.
     @StateObject private var wake = WakeMonitor()
 
@@ -314,18 +317,31 @@ struct ContentView: View {
         // reader needs, so it is never hidden behind a spinner.
         .overlay {
             if cover.isCovered {
-                PageCoverView(colour: themeColour)
-                    .transition(.opacity)
+                // The shared loading page (core/ui/loading.html), the desktop's own
+                // loading screen, so a change to it reaches every platform. Its Try
+                // again is the same reconnect the wake rule and pairing use.
+                LoadingSurface(
+                    cover: cover,
+                    gateway: gateway,
+                    tokens: liveTokens,
+                    colour: themeColour,
+                    reconnect: { pairing.reconnectNow() }
+                )
+                .ignoresSafeArea()
+                .transition(.opacity)
             }
         }
         .animation(.easeOut(duration: 0.15), value: cover.isCovered)
+        // It rises from the bottom edge on the spring the desktop's pairing page
+        // also runs (core/spec/tokens.json motion.spring), and fades instead when
+        // the reader asked for reduced motion.
         .overlay {
             if pairing.isPairing {
                 PairingView(state: pairing, deviceLabel: Self.deviceLabel)
-                    .transition(.opacity)
+                    .transition(Motion.pairingTransition(reduceMotion: reduceMotion))
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: pairing.isPairing)
+        .animation(Motion.pairingAnimation(reduceMotion: reduceMotion), value: pairing.isPairing)
     }
 
     var body: some View {
@@ -477,6 +493,44 @@ struct ContentView: View {
         .onChange(of: notices.unread) { _, _ in host?.emit("notices") }
     }
 
+    /// Clear cache and refresh, as a fresh start of the app. The phone's half of the
+    /// desktop's `restartAfterClear`, in the same order, which is the first rule
+    /// in ui/CONVENTIONS.md:
+    ///
+    /// 1. The cached code is cleared (never the paired identity; see
+    ///    `GatewayPage.clearCachedCode`).
+    /// 2. The launch loading cover goes up UNDER the sheets and is held there, and
+    ///    the page reloads from the server behind it.
+    /// 3. The press's own "Clearing…" is held the minimum-visible floor, then About
+    ///    and Settings slide away together, onto the cover rather than onto the
+    ///    Control UI being replaced.
+    /// 4. The cover stays at least the floor once the sheets have gone, and comes
+    ///    down once the page has painted. A reload that fails takes the failure path
+    ///    a launch takes: the cover stays in its failed state with Try again.
+    private func restartAfterClear() async -> (ok: Bool, detail: String) {
+        let pressedAt = Date()
+        guard gatewayPage.hasPage else {
+            return (false, "There is no Control UI to reload: the app is not connected to a gateway.")
+        }
+        let cleared = await gatewayPage.clearCachedCode()
+        NSLog("[claw] cleared cached Control UI code%@; restarting the Control UI", cleared)
+        cover.holdFloor()
+        cover.hold()
+        gatewayPage.reloadFromServer()
+        let owed = Motion.remainingVisibleMs(shownAt: pressedAt)
+        if owed > 0 { try? await Task.sleep(for: .milliseconds(owed)) }
+        // Settings is the sheet About is presented from, so dismissing it takes
+        // both away in ONE slide; dismissing About first played two, About down
+        // onto Settings and then Settings down onto the cover.
+        showingSettings = false
+        // The sheets take the platform's own time to go; the floor starts once the
+        // cover is what the reader sees.
+        try? await Task.sleep(for: .milliseconds(Motion.sheetLeaveMs))
+        showingAbout = false
+        cover.releaseFloor(after: Motion.minVisibleMs)
+        return (true, "Cleared cached code\(cleared) and restarted the Control UI from the server.")
+    }
+
     private func prepare() {
         if host == nil {
             host = SettingsHost(
@@ -506,8 +560,19 @@ struct ContentView: View {
                 // they had not asked for before the settings page arrived. The
                 // dismissal is unconditional inside the completion, so the sheet
                 // still goes away on every path that cannot reach the destination.
+                //
+                // The press put "Opening…" on the button, so the dismissal waits out
+                // the minimum-visible floor from the press as well: a Control UI
+                // that answers at once would otherwise take the sheet away before
+                // that was read. The eighth rule in ui/CONVENTIONS.md.
                 onOpenControlUiSettings: {
-                    gatewayPage.openControlUiSettings { showingSettings = false }
+                    let pressedAt = Date()
+                    gatewayPage.openControlUiSettings {
+                        let owed = Motion.remainingVisibleMs(shownAt: pressedAt)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(owed)) {
+                            showingSettings = false
+                        }
+                    }
                 }
             )
         }
@@ -520,12 +585,12 @@ struct ContentView: View {
                 // The same seeded-or-real check the launch uses, so a screenshot
                 // run's press answers about the same feed its banner is under.
                 makeCheck: { Self.updateCheck(board: notices) },
-                // Clear this app's cached Control UI code and reload the session.
-                // Wired here rather than inside the About host because the thing
-                // that reloads is the GATEWAY page, which lives in the session
-                // and not in the sheet: the host owns a page, not a web view, and
-                // a host that reached across would be a second owner of it.
-                clearCacheAndReload: { await gatewayPage.clearCacheAndReload() }
+                // Clear this app's cached Control UI code and restart the Control
+                // UI the way a fresh launch does. Wired here rather than inside the
+                // About host because what moves is the session's: the gateway page,
+                // the loading cover over it and both sheets, and a host that reached
+                // across would be a second owner of them.
+                clearCacheAndReload: { await restartAfterClear() }
             )
         }
         // The notice model carries a command NAME rather than a callback, so this
@@ -586,6 +651,17 @@ struct ContentView: View {
         // screenshot blocks in this file that reach DEBUG-only API carry the same
         // guard.
         #if DEBUG
+        // A screenshot run that presses a button on Settings or About, which a
+        // simulator cannot tap. See `SettingsSpec.screenshotPress`.
+        if let press = SettingsSpec.screenshotPress {
+            showingSettings = true
+            DispatchQueue.main.async {
+                if press.page == "about" { showingAbout = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                    if press.page == "about" { aboutHost?.pressButton(press.id) } else { host?.pressButton(press.id) }
+                }
+            }
+        }
         if SettingsSpec.screenshotChecksUpdates {
             showingSettings = true
             DispatchQueue.main.async {

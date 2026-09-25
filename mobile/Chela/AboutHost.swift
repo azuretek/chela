@@ -98,8 +98,12 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
         (function () {
           var pending = {};
           var changed = [];
-          var cleared = [];
           var seq = 0;
+
+          // Always a sheet over Settings: the native sheet's slide is the motion,
+          // so the page draws none of its own inside it (see surface--native-sheet
+          // in core/ui/ui.css).
+          try { document.documentElement.classList.add('surface--native-sheet'); } catch (e) { /* no root yet */ }
 
           window.__clawAboutReply = function (id, ok, value, error) {
             var entry = pending[id];
@@ -111,12 +115,6 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
           window.__clawAboutEmit = function () {
             for (var i = 0; i < changed.length; i += 1) {
               try { changed[i](); } catch (e) { /* a listener that throws must not stop the others */ }
-            }
-          };
-
-          window.__clawAboutCacheCleared = function (report) {
-            for (var i = 0; i < cleared.length; i += 1) {
-              try { cleared[i](report); } catch (e) { /* the same rule as above */ }
             }
           };
 
@@ -143,7 +141,6 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
             openReleases: function () { post('openReleases', []); },
             closeOverlay: function (name) { post('closeOverlay', [name]); },
             clearCacheAndReload: function () { return invoke('clearCacheAndReload', []); },
-            onCacheCleared: function (fn) { cleared.push(fn); },
             onAboutChanged: function (fn) { changed.push(fn); }
           };
         })();
@@ -165,16 +162,6 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
     /// the page is sitting under is refreshed rather than left saying "checking".
     func emitChanged() {
         webView?.evaluateJavaScript("window.__clawAboutEmit && window.__clawAboutEmit()")
-    }
-
-    /// Tells the page what the clear-and-reload did, the phone's version of the
-    /// desktop's `app:cache-cleared` push. The desktop sends its own from the load
-    /// that landed; this one is sent once the reload has resolved, which is the
-    /// same claim. See `GatewayPage.reloadAndWait()`.
-    func emitCacheCleared(ok: Bool, detail: String) {
-        let report: [String: Any] = ["ok": ok, "detail": detail]
-        guard let json = Self.json(report, fallback: "null") else { return }
-        webView?.evaluateJavaScript("window.__clawAboutCacheCleared && window.__clawAboutCacheCleared(\(json))")
     }
 
     /// The kinds of cache a clear drops, named for the reader rather than for the
@@ -200,6 +187,20 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
     }
     #endif
 
+    #if DEBUG
+    /// Click one of the page's own buttons, for a screenshot run. See
+    /// `SettingsSpec.screenshotPress`, which only ever hands this a plain id.
+    func pressButton(_ id: String) {
+        webView?.evaluateJavaScript(Self.pressScript(id))
+    }
+
+    /// Waits for the button to exist and be enabled (the page may still be
+    /// loading), then brings it on screen, lets that frame paint, and clicks it.
+    static func pressScript(_ id: String) -> String {
+        "(function(){var n=0;(function t(){var b=document.getElementById('\(id)');if(b&&!b.disabled&&b.offsetParent){b.scrollIntoView({block:'center'});setTimeout(function(){b.click();},600);}else if(n++<100){setTimeout(t,100);}})();})()"
+    }
+    #endif
+
     // MARK: The commands
 
     private func run(id: String?, command: String, args: [Any]) async {
@@ -221,25 +222,25 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
             emitChanged()
 
         case "clearCacheAndReload":
-            // The same command the desktop's About page calls, and the same two
-            // parts: the effect is reported when it has happened, and the reload is
-            // confirmed when the load actually lands. Sent from the load rather
-            // than from the press, because "cleared" and "reloaded" are two
-            // different events and a page that said the second at the first would
-            // be asserting something it had not seen.
+            // The same command the desktop's About page calls, with the same
+            // answer: the cache is cleared and the Control UI restarts the way a
+            // fresh launch does, with this sheet and Settings going away as part of
+            // it (see ContentView's wiring). The reply says whether that restart
+            // STARTED; when it did not (no gateway page to reload), this sheet is
+            // staying and the page shows the reason under the button.
             let report = await clearCacheAndReload()
             if let id {
                 reply(id, value: [
                     "ok": report.ok,
+                    "started": report.ok,
+                    "detail": report.detail,
                     "origins": ["this device's Control UI"],
                     "cleared": report.ok ? ["this device's Control UI"] : [],
                     "failed": report.ok ? [] : [["origin": "this device's Control UI", "error": report.detail]],
                     "kinds": Self.cacheKinds,
-                    "reloading": true,
                     "gateway": NSNull(),
                 ])
             }
-            emitCacheCleared(ok: report.ok, detail: report.detail)
 
         case "openReleases":
             // The REAL release notes, which is what the button says. It used to
