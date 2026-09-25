@@ -48,10 +48,12 @@ export const PROOFS = [
   { group: 'proofs', name: 'settings-theme-light', script: 'test-settings-theme.js', args: ['--appearance', 'light'] },
   { group: 'proofs', name: 'settings-theme-dark', script: 'test-settings-theme.js', args: ['--appearance', 'dark'] },
   { group: 'proofs', name: 'payload-freshness', script: 'test-payload-freshness.js' },
+  // Against its own deliberately slow server, the default. Pointed at the bare
+  // throwaway gateway it waits past 120s for a Control UI that stays on first run.
+  { group: 'proofs', name: 'loading-theme-dark', script: 'test-loading-theme.js', args: ['--appearance', 'dark'] },
+  { group: 'proofs', name: 'loading-theme-light', script: 'test-loading-theme.js', args: ['--appearance', 'light'] },
   // Against the throwaway gateway ci.yml starts on 127.0.0.1:19099.
   { group: 'gateway', name: 'gateway-identity', script: 'test-gateway-identity.js' },
-  { group: 'gateway', name: 'loading-theme-dark', script: 'test-loading-theme.js', args: ['--appearance', 'dark', '--gateway', 'http://127.0.0.1:19099/'] },
-  { group: 'gateway', name: 'loading-theme-light', script: 'test-loading-theme.js', args: ['--appearance', 'light', '--gateway', 'http://127.0.0.1:19099/'] },
 ];
 
 /**
