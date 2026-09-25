@@ -223,8 +223,7 @@ $('releases').addEventListener('click', () => api.openReleases());
 // starting again in front of the reader, and nothing is written here: a line
 // under the button would be on a surface that is already going away, and a green
 // "cleared" is a claim about a reload that has not landed yet. A reload that fails
-// takes the path a failed launch takes on that client (the desktop's loading
-// screen in its failed state with Try again, the phone's failure notice).
+// lands on the loading screen's own failed state with Try again, on both clients.
 //
 // The press is answered on the button (the fifth rule in ui/CONVENTIONS.md): it
 // says "Clearing…" and every press after the first is ignored, and the host holds
