@@ -1,0 +1,24 @@
+{
+  "description": "Whether a loaded page has PAINTED: the probe a client runs in its web view after a load finishes, and how long a cover is held for a page that never reports a paint. The ONE owner of both. core/render-ready.js exports them for the desktop, and the iOS client bundles this file and evaluates the same probe with callAsyncJavaScript.",
+  "why": "A load that finished is not a page on screen: the Control UI builds itself after its load event, so a cover taken down on the load showed an empty window between Try again and the page (2026-09-24). A second copy of the probe in Swift would be a second answer to that question.",
+  "backstopMs": 4000,
+  "probe": [
+    "new Promise(function (resolve) {",
+    "  var settled = false;",
+    "  function presented() {",
+    "    if (settled) { return; }",
+    "    settled = true;",
+    "    requestAnimationFrame(function () { requestAnimationFrame(function () { resolve(true); }); });",
+    "  }",
+    "  function isFcp(entry) { return entry.name === 'first-contentful-paint'; }",
+    "  try {",
+    "    if (performance.getEntriesByType('paint').some(isFcp)) { presented(); return; }",
+    "    new PerformanceObserver(function (list, observer) {",
+    "      if (list.getEntries().some(isFcp)) { observer.disconnect(); presented(); }",
+    "    }).observe({ type: 'paint', buffered: true });",
+    "  } catch (e) {",
+    "    presented();",
+    "  }",
+    "})"
+  ]
+}

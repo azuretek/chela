@@ -1,0 +1,114 @@
+import Foundation
+import SwiftUI
+
+/// The shared answer to "has the page painted", read from core/spec/render-ready.json.
+///
+/// The desktop runs the same probe through core/render-ready.js. This client has
+/// no Swift copy of it: it bundles the spec and evaluates those bytes in the web
+/// view, so the two clients cannot disagree about what "rendered" means.
+enum RenderReady {
+    private struct Spec: Decodable {
+        let backstopMs: Int
+        let probe: [String]
+    }
+
+    private static let spec: Spec? = try? BundledSpec.load("render-ready", as: Spec.self)
+
+    /// The probe, an expression that evaluates to a Promise resolving once the
+    /// page has painted content and that frame has been presented. Nil when the
+    /// build did not bundle the spec, which RenderReadyParityTests fails on.
+    static var probe: String? {
+        guard let lines = spec?.probe, !lines.isEmpty else { return nil }
+        return lines.joined(separator: "\n")
+    }
+
+    /// How long a cover is held for a page that never reports a paint.
+    static var backstopMs: Int { spec?.backstopMs ?? 4000 }
+
+    static let decodedKeys: Set<String> = ["backstopMs", "probe"]
+    static let ignoredKeys: Set<String> = []
+}
+
+/// The loading cover over the gateway page, held until the page has PAINTED.
+///
+/// A finished load is not a page on screen: the Control UI builds itself after its
+/// load event, so a page revealed on didFinish showed the reader an empty web view
+/// first. The same gate as core/render-ready.js createCoverGate: hold() raises the
+/// cover and voids every lift in flight, loaded() lifts once the probe settles or
+/// the backstop fires, whichever is first, and only if nothing has held since.
+@MainActor
+final class PageCover: ObservableObject {
+    @Published private(set) var isCovered = false
+    /// Why the cover last came down: "rendered", "backstop", "probe-failed",
+    /// "no-probe", or a failure's own reason. Read by the tests and the log.
+    private(set) var lastLift: String?
+
+    private let backstop: Duration
+    private var generation = 0
+    private var finished: Set<Int> = []
+
+    init(backstop: Duration = .milliseconds(RenderReady.backstopMs)) {
+        self.backstop = backstop
+    }
+
+    /// A load started: cover the page, and void any lift still on its way.
+    func hold() {
+        generation += 1
+        isCovered = true
+    }
+
+    /// The load finished. Lift once the page has painted, or at the backstop.
+    func loaded(probe: @escaping @MainActor () async throws -> Void) {
+        generation += 1
+        let mine = generation
+        Task { @MainActor [weak self, backstop] in
+            try? await Task.sleep(for: backstop)
+            self?.finish(mine, "backstop")
+        }
+        Task { @MainActor [weak self] in
+            do {
+                try await probe()
+                self?.finish(mine, "rendered")
+            } catch {
+                self?.finish(mine, "probe-failed")
+            }
+        }
+    }
+
+    /// The load failed, and the notice says so: nothing is coming to paint, so
+    /// the cover must not sit over the banner that explains why.
+    func lift(_ why: String) {
+        generation += 1
+        finished.insert(generation)
+        isCovered = false
+        lastLift = why
+    }
+
+    private func finish(_ mine: Int, _ why: String) {
+        guard !finished.contains(mine) else { return }
+        finished.insert(mine)
+        guard mine == generation else { return }
+        isCovered = false
+        lastLift = why
+        if why != "rendered" {
+            NSLog("[claw] lifting the loading cover on %@ rather than a painted page", why)
+        }
+    }
+}
+
+/// What the cover draws: the page's own colour, so the handoff to the painted
+/// page is a change of content and not a flash, and a spinner.
+struct PageCoverView: View {
+    let colour: Color
+
+    var body: some View {
+        ZStack {
+            colour
+            ProgressView()
+                .controlSize(.large)
+        }
+        .ignoresSafeArea()
+        .accessibilityIdentifier("loading-cover")
+        .accessibilityLabel("Loading")
+    }
+}

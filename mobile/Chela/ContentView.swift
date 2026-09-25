@@ -147,6 +147,8 @@ struct ContentView: View {
     /// reader takes that offer. Weak inside, and this object owns only the ask;
     /// see `GatewayPage`.
     @StateObject private var gatewayPage = GatewayPage()
+    /// The loading cover over the page, held until it has painted. See PageCover.
+    @StateObject private var cover = PageCover()
     /// The wake and reconnect rule's state; this view only reports into it.
     @StateObject private var wake = WakeMonitor()
 
@@ -274,7 +276,8 @@ struct ContentView: View {
             // the handle is for the one action that asks the Control UI to
             // do something the Control UI owns. See `GatewayPage`.
             onOpenAppSettings: { showingSettings = true },
-            pageControl: gatewayPage
+            pageControl: gatewayPage,
+            cover: cover
         )
         page
             // Edge to edge, so the Control UI's own `100dvh` means the whole
@@ -303,6 +306,15 @@ struct ContentView: View {
         // recovery needs no relaunch and no button here. The settings
         // button stays reachable above it, since a wrong gateway address
         // is fixed there and a refusal on the wrong host looks the same.
+        // The loading cover, under the pairing screen: a refusal is the answer the
+        // reader needs, so it is never hidden behind a spinner.
+        .overlay {
+            if cover.isCovered {
+                PageCoverView(colour: themeColour)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: cover.isCovered)
         .overlay {
             if pairing.isPairing {
                 PairingView(state: pairing, deviceLabel: Self.deviceLabel)
