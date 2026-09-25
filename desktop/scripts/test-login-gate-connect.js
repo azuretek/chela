@@ -6,13 +6,16 @@
 // about what is on screen DURING the connect, so it is measured by sampling the
 // app's own view stack from the press to the end, not by where it ended.
 //
-//   npx electron scripts/test-login-gate-connect.js --case connect|refused [--record DIR]
+//   npx electron scripts/test-login-gate-connect.js --case gate|connect|refused [--record DIR]
 //
-//   connect   the gate is on screen, the gateway answers the press after a delay.
-//             The loading cover must be up within a moment of the press, stay up
-//             while the gate is still in the document, and lift once it has gone.
-//   refused   the gate is on screen and the press is refused again. The cover must
-//             come up and land on its failed state, never back on the gate.
+//   gate      the gate is drawn and nothing presses it. The reader must never see
+//             it: the loading cover goes up over it, and lands on its failed state
+//             on the bound, never on the page's own connection screen.
+//   connect   the gate is drawn and its own Connect is pressed in the page. The
+//             loading cover must be up at once, stay up while the gate is still in
+//             the document, and lift once it has gone.
+//   refused   the press is refused again. The cover must come up and land on its
+//             failed state, never back on the gate.
 //
 // It needs a REAL gateway, because the gate is the real Control UI's: the page is
 // served through a proxy of this script's own, in front of the gateway named by
@@ -41,8 +44,8 @@ function arg(name, fallback = null) {
 }
 
 const CASE = (arg('case', 'connect') || '').toLowerCase();
-if (!['connect', 'refused'].includes(CASE)) {
-  console.error('--case must be connect or refused, not ' + CASE);
+if (!['gate', 'connect', 'refused'].includes(CASE)) {
+  console.error('--case must be gate, connect or refused, not ' + CASE);
   process.exit(2);
 }
 const RECORD = arg('record');
@@ -129,16 +132,23 @@ app.whenReady().then(async () => {
   // and the page draws its own "Gateway unreachable".
   proxy.set({ socket: 'refuse' });
   proxy.cut();
-  const gated = await until((s) => s.gate === true && s.failure === true && s.cover === null, 20000);
-  check('the Control UI login gate is on screen with its failure', Boolean(gated), 'the gate never came up');
-  await delay(1500);
+  // The gate is the page's OWN connection screen, and the app must never show it.
+  // So this waits for the gate in the DOCUMENT rather than for it on screen: the
+  // reader's surface for it is the loading cover, which is asserted below.
+  const gated = await until((s) => s.gate === true, 20000);
+  check('the Control UI drew its own login gate', Boolean(gated), 'the gate never came up');
+  const covered = await until((s) => Boolean(s.cover), 3000);
+  check('and the app covered it rather than showing it', Boolean(covered),
+    'the gate stood on screen with nothing over it: ' + JSON.stringify(covered || gated));
 
   if (CASE === 'connect') proxy.set({ socket: 'pass', delay: CONNECT_DELAY_MS });
   const samples = [];
   const pressedAt = Date.now();
   await record('gate');
-  await pageWc().executeJavaScript("document.querySelector('.login-gate__connect').click()", true);
-  const windowMs = CASE === 'connect' ? CONNECT_DELAY_MS + 4000 : 6000;
+  // Driven in the page rather than by a tap, so the press is measured even though
+  // the cover is over it: that is the point of the cover.
+  if (CASE !== 'gate') await pageWc().executeJavaScript("document.querySelector('.login-gate__connect').click()", true);
+  const windowMs = CASE === 'connect' ? CONNECT_DELAY_MS + 4000 : (CASE === 'gate' ? 5000 : 6000);
   while (Date.now() - pressedAt < windowMs) {
     const s = await sample();
     s.at = Date.now() - pressedAt;
@@ -149,13 +159,15 @@ app.whenReady().then(async () => {
   for (const s of samples) console.log('  +' + String(s.at).padStart(5) + 'ms cover=' + JSON.stringify(s.cover) + ' gate=' + s.gate + ' failure=' + s.failure);
 
   const firstCover = samples.find((s) => s.cover);
-  check('the press puts the loading screen up at once', firstCover && firstCover.at <= 600,
-    firstCover ? 'first cover at +' + firstCover.at + 'ms' : 'the loading screen never came up; the gate sat there for the whole connect');
-  const afterCover = firstCover ? samples.slice(samples.indexOf(firstCover)) : [];
+  if (CASE !== 'gate') {
+    check('the press puts the loading screen up at once', firstCover && firstCover.at <= 600,
+      firstCover ? 'first cover at +' + firstCover.at + 'ms' : 'the loading screen never came up; the gate sat there for the whole connect');
+  }
+  const afterCover = firstCover ? samples.slice(samples.indexOf(firstCover)) : samples;
+  const bare = afterCover.find((s) => !s.cover && s.gate);
+  check('the gate is never shown bare once the cover is up', !bare, bare ? 'gate uncovered at +' + bare.at + 'ms' : '');
 
   if (CASE === 'connect') {
-    const bare = afterCover.find((s) => !s.cover && s.gate);
-    check('the gate is never shown bare once the cover is up', !bare, bare ? 'gate uncovered at +' + bare.at + 'ms' : '');
     const gone = samples.find((s) => s.gate === false);
     const lifted = afterCover.find((s) => !s.cover);
     check('the cover lifts only once the interface has replaced the gate', lifted && gone && lifted.at >= gone.at,
@@ -164,9 +176,13 @@ app.whenReady().then(async () => {
     check('the interface is on screen at the end', last && !last.cover && last.gate === false, JSON.stringify(last));
   } else {
     const landed = afterCover.find((s) => s.cover && s.cover !== 'Connecting…');
-    check('a refused connect lands on the failed state', Boolean(landed), 'cover titles: ' + [...new Set(afterCover.map((s) => s.cover))].join(', '));
-    const bare = afterCover.find((s) => !s.cover);
-    check('and never back on the bare gate', !bare, bare ? 'uncovered at +' + bare.at + 'ms' : '');
+    check('the failed state is where it lands', Boolean(landed), 'cover titles: ' + [...new Set(afterCover.map((s) => s.cover))].join(', '));
+    const uncovered = samples.find((s) => !s.cover && s.at > 1200);
+    check('and the page is never left uncovered', !uncovered, uncovered ? 'uncovered at +' + uncovered.at + 'ms' : '');
+    if (CASE === 'gate') {
+      const last = samples[samples.length - 1];
+      check('the reader is still on our own surface at the end', last && last.cover && last.cover !== 'Connecting…', JSON.stringify(last));
+    }
   }
 
   await proxy.close();

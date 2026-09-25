@@ -1,15 +1,19 @@
 import XCTest
 
-/// Connect pressed on the Control UI's OWN login gate must put the loading screen
-/// up at once and hold it until the interface has rendered. The phone's half of
-/// the proof; the desktop's is desktop/scripts/test-login-gate-connect.js.
+/// The Control UI's OWN connection screen must never be the surface in Chela
+/// (Abi, 2026-09-25: "if we never show the control UIs own connection screen that
+/// would be ideal, control the whole auth flow").
+///
+/// The phone's half of the proof. The desktop's is
+/// desktop/scripts/test-login-gate-connect.js, which can drive the gate's own
+/// Connect inside the page and so measures the press as well; a tap on the phone
+/// cannot reach a control that is behind the cover, which is the point.
 ///
 /// The gate is reached on purpose through the login-gate proxy
 /// (desktop/scripts/login-gate-proxy.js) in front of a real gateway: it serves the
-/// page and refuses the page's socket, so the page draws "Gateway unreachable".
-/// The test then switches the proxy to pass the socket after a delay, presses
-/// Connect, and samples whether the loading cover (the shared loading page, whose
-/// web view carries the identifier "loading-cover") is on screen.
+/// page and refuses the page's socket, so the page draws "Gateway unreachable". The
+/// app must cover it, land on its own failed state with Try again, and never hand
+/// the reader the page's Connect.
 ///
 /// Opt-in, because it needs a gateway: skipped unless the runner is given
 /// CLAW_GATE_GATEWAY (the proxy's address) and CLAW_GATE_CONTROL (its control
@@ -37,8 +41,8 @@ final class LoginGateConnectUITests: XCTestCase {
     private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
 
     /// iOS confirms every icon change with its own alert, and the app changes its
-    /// icon when the page reports its theme. Accept any that is up, so the alert
-    /// is not what the press lands on.
+    /// icon when the page reports its theme. Accept any that is up, so the alert is
+    /// not what the test is looking at.
     @discardableResult
     private func acceptIconAlerts(_ app: XCUIApplication, for seconds: TimeInterval) -> Int {
         var accepted = 0
@@ -60,8 +64,21 @@ final class LoginGateConnectUITests: XCTestCase {
         app.webViews.matching(identifier: "loading-cover").firstMatch
     }
 
-    /// Launch onto the gate, and return the gate's Connect.
-    private func launchOntoTheGate() throws -> (XCUIApplication, XCUIElement, String) {
+    /// The page's own Connect, which must never be reachable.
+    private func pageConnect(_ app: XCUIApplication) -> XCUIElement {
+        app.webViews.buttons["Connect"].firstMatch
+    }
+
+    private func pagesOwnScreenIsUnreachable(_ app: XCUIApplication, _ whenIt: String) {
+        let connect = pageConnect(app)
+        if connect.exists {
+            XCTAssertFalse(connect.isHittable, "the Control UI's own connection screen was reachable " + whenIt)
+        }
+    }
+
+    /// Launch onto a gate: the page is served, its socket is refused, and the page
+    /// draws its own "Gateway unreachable".
+    private func launchOntoTheGate() throws -> XCUIApplication {
         guard let gateway = env("CLAW_GATE_GATEWAY"), let controlBase = env("CLAW_GATE_CONTROL") else {
             throw XCTSkip("needs CLAW_GATE_GATEWAY and CLAW_GATE_CONTROL")
         }
@@ -70,49 +87,28 @@ final class LoginGateConnectUITests: XCTestCase {
         app.launchArguments += ["-claw-gateway-url", gateway]
         app.launchEnvironment["OPENCLAW_SEED_TOKEN"] = env("CLAW_GATE_TOKEN") ?? "login-gate-test"
         app.launch()
-        let connect = app.webViews.buttons["Connect"].firstMatch
-        XCTAssertTrue(connect.waitForExistence(timeout: 90), "the Control UI login gate never came up")
-        // The launch cover lifts once the gate has painted; wait for that, so the
-        // press below is the only thing that can raise it again.
-        let deadline = Date().addingTimeInterval(20)
-        while cover(app).exists && Date() < deadline { usleep(200_000) }
-        acceptIconAlerts(app, for: 6)
-        shot(app, "gate")
-        return (app, connect, controlBase)
+        return app
     }
 
-    func testConnectOnTheGateShowsTheLoadingScreenUntilTheInterfaceRenders() throws {
-        let (app, connect, controlBase) = try launchOntoTheGate()
-        control(controlBase, "/set?socket=pass&delay=3000")
-        let pressed = Date()
-        connect.tap()
-        var firstCover: TimeInterval?
-        var lastCover: TimeInterval?
-        while Date().timeIntervalSince(pressed) < 9 {
-            let at = Date().timeIntervalSince(pressed)
-            if cover(app).exists {
-                if firstCover == nil { firstCover = at; shot(app, "cover") }
-                lastCover = at
-            }
-            acceptIconAlerts(app, for: 0)
-            usleep(100_000)
-        }
-        shot(app, "after")
-        let first = try XCTUnwrap(firstCover, "the loading screen never came up; the gate sat there for the whole connect")
-        XCTAssertLessThan(first, 1.5, "the loading screen must come up at once")
-        XCTAssertGreaterThan(lastCover ?? 0, 2.5, "it must be held while the page connects, not flashed")
-        XCTAssertFalse(cover(app).exists, "the interface is on screen at the end")
-        XCTAssertFalse(app.webViews.buttons["Connect"].exists, "the gate has gone")
+    func testTheControlUisOwnConnectionScreenIsNeverTheSurface() throws {
+        let app = try launchOntoTheGate()
+        XCTAssertTrue(cover(app).waitForExistence(timeout: 60),
+            "the loading screen must be what is shown, not the page's own connection screen")
+        pagesOwnScreenIsUnreachable(app, "when the gate was reached")
+        XCTAssertTrue(cover(app).buttons["Try again"].waitForExistence(timeout: 30),
+            "the gate lands on the failed state with Try again, never a screen that spins")
+        pagesOwnScreenIsUnreachable(app, "after the failed state")
+        acceptIconAlerts(app, for: 1)
+        shot(app, "gate-covered")
     }
 
-    func testARefusedConnectLandsOnTheFailedState() throws {
-        let (app, connect, _) = try launchOntoTheGate()
-        let pressed = Date()
-        connect.tap()
-        XCTAssertTrue(cover(app).waitForExistence(timeout: 1.5), "the loading screen must come up at once")
-        while Date().timeIntervalSince(pressed) < 5 { acceptIconAlerts(app, for: 0); usleep(200_000) }
+    func testTryAgainFromTheFailedStateCoversRatherThanShowingThePage() throws {
+        let app = try launchOntoTheGate()
+        XCTAssertTrue(cover(app).buttons["Try again"].waitForExistence(timeout: 60), "the failed state never came up")
         shot(app, "failed")
-        XCTAssertTrue(cover(app).exists, "a refused connect stays on the loading screen's failed state, never back on the bare gate")
-        XCTAssertTrue(cover(app).buttons["Try again"].exists, "with Try again")
+        cover(app).buttons["Try again"].tap()
+        XCTAssertTrue(cover(app).waitForExistence(timeout: 10), "Try again goes through the loading screen")
+        pagesOwnScreenIsUnreachable(app, "after Try again")
+        shot(app, "retry")
     }
 }

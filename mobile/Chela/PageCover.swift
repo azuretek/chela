@@ -72,8 +72,13 @@ final class PageCover: ObservableObject {
         self.backstop = backstop
     }
 
-    /// A load started: cover the page, and void any lift still on its way.
+    /// A load started: cover the page, and void any lift still on its way. The
+    /// gate goes with it: a load of ours is a fresh document, and only that
+    /// document's own reports say what it is showing.
     func hold() {
+        pageOnGate = false
+        gateTask?.cancel()
+        gateTask = nil
         generation += 1
         pending = nil
         failed = false
@@ -90,6 +95,45 @@ final class PageCover: ObservableObject {
               next > (order.firstIndex(of: milestone) ?? -1) else { return }
         milestone = name
         milestoneAt = Date()
+    }
+
+    /// The page has drawn its OWN login gate (core/spec/login-gate-connect.json).
+    /// It is never revealed: the cover goes up if it is not already, and lands on
+    /// the failed state once the hold has been seen, bounded by gateMs. A gate
+    /// already up is not a second hold. A gate that arrives while a press is in
+    /// flight is the press's answer to come, so the press keeps the cover.
+    func gateShown(title: String) {
+        let wasOnGate = pageOnGate
+        if !isCovered, pressGeneration == nil { hold(); releaseFloor(after: Motion.minVisibleMs) }
+        pageOnGate = true
+        guard pressGeneration == nil, !wasOnGate else { return }
+        let mine = generation
+        gateTask?.cancel()
+        gateTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(LoginGateConnect.gateMs))
+            guard let self, !Task.isCancelled, self.generation == mine, self.pageOnGate,
+                  self.pressGeneration == nil else { return }
+            self.gateTask = nil
+            self.fail(title.isEmpty ? "gate" : "gate: " + title)
+        }
+    }
+
+    /// The gate has gone: the interface is being drawn in its place, so the hold is
+    /// over. A press in flight is answered by its own reports instead.
+    func gateGone() {
+        pageOnGate = false
+        gateTask?.cancel()
+        gateTask = nil
+        guard pressGeneration == nil, !failed else { return }
+        finish(generation, "gate-gone")
+    }
+
+    /// The page's document has begun, so a gate the last one reported is gone with
+    /// it.
+    func pageReady() {
+        pageOnGate = false
+        gateTask?.cancel()
+        gateTask = nil
     }
 
     /// The load under the cover failed: keep the cover up in its failed state and
@@ -143,6 +187,9 @@ final class PageCover: ObservableObject {
     func connectRendered() {
         guard let mine = pressGeneration, mine == generation else { return }
         pressGeneration = nil
+        // The press's own answer is authoritative: it means the gate has gone,
+        // whether or not the gate's own report has caught up with it.
+        pageReady()
         finish(mine, "rendered")
     }
 
@@ -150,11 +197,29 @@ final class PageCover: ObservableObject {
     func connectFailed(_ title: String) {
         guard let mine = pressGeneration, mine == generation else { return }
         pressGeneration = nil
+        pageReady()
         fail(title.isEmpty ? "connect-refused" : "connect-refused: " + title)
+    }
+
+    /// The gateway answered the press by refusing this device. The pairing screen
+    /// is that answer, drawn over the page as on any load, so the press ends and
+    /// the cover comes down under the screen rather than failing at the deadline.
+    func connectAnsweredByPairing() {
+        guard let mine = pressGeneration, mine == generation else { return }
+        pressGeneration = nil
+        finish(mine, "pairing")
     }
 
     /// The generation a Connect press raised, while that press is in flight.
     private var pressGeneration: Int?
+
+    /// Whether the page is sitting on its OWN login gate. That gate is the Control
+    /// UI's answer to "this client is not connected", and a page showing it is never
+    /// revealed: the reader's surface for it is this cover in its FAILED state, with
+    /// Try again (core/ui/CONVENTIONS.md, the second rule; Abi, 2026-09-25).
+    private var pageOnGate = false
+    /// The bounded hold over a page that is on its gate.
+    private var gateTask: Task<Void, Never>?
 
     /// The load finished. Lift once the page has painted, or at the backstop.
     func loaded(probe: @escaping @MainActor () async throws -> Void) {
@@ -190,6 +255,13 @@ final class PageCover: ObservableObject {
         guard !finished.contains(mine) else { return }
         finished.insert(mine)
         guard mine == generation else { return }
+        // A page sitting on its own login gate is not a page to reveal, whichever
+        // path got here: the cover lands on its failed state instead, which is one of
+        // ours rather than the page's own connection screen.
+        if pageOnGate, why == "rendered" || why == "backstop" {
+            fail("gate")
+            return
+        }
         if let floorUntil, floorUntil > Date() {
             pending = (mine, why)
             schedulePending()

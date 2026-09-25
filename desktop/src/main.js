@@ -47,7 +47,7 @@ import { createWake } from './wake.js';
 import { MIN_VISIBLE_MS, remainingVisibleMs } from '../../core/ui/motion.js';
 import * as appIcons from '../../core/app-icons.js';
 import { RENDERED_PROBE, createCoverGate } from '../../core/render-ready.js';
-import { CONNECT_DEADLINE_MS, createConnectPress } from '../../core/login-gate-connect.js';
+import { CONNECT_DEADLINE_MS, createLoginGateCover } from '../../core/login-gate-connect.js';
 import * as bannerFacts from '../../core/banner.js';
 import secrets from './secrets.js';
 import defaults from './defaults.js';
@@ -2627,8 +2627,18 @@ const coverGate = createCoverGate({
  * seen; see floorCover. The lift is kept rather than dropped, and played when the
  * floor ends, unless a new hold has voided it by then.
  */
+/** What the cover says when the page is on its own login gate rather than connecting. */
+const GATE_UNREACHABLE = 'The gateway is not answering.';
+
 function liftWhenAllowed(why) {
   if (connection.phase === connectionState.FAILED) return;
+  // A page sitting on its OWN login gate is not a page to reveal: that gate is the
+  // Control UI's answer to "this client is not connected", and the reader's surface
+  // for it is the loading screen's failed state with Try again, never the page's own
+  // screen (core/ui/CONVENTIONS.md, the second rule; Abi, 2026-09-25). The gate
+  // module owns whether the page is on it, and this is the ONE gate the cover comes
+  // down through, so a paint on the gate is answered the way a refused connect is.
+  if (connectPress.onGate) { showConnectionFailure({ errorCode: null, errorDescription: GATE_UNREACHABLE }); return; }
   if (coverFloor.until > Date.now()) {
     coverFloor.pending = why;
     scheduleFlooredLift();
@@ -2655,7 +2665,7 @@ function liftWhenAllowed(why) {
  *
  * See core/spec/login-gate-connect.json, and core/ui/CONVENTIONS.md for the rules.
  */
-const connectPress = createConnectPress({
+const connectPress = createLoginGateCover({
   cover: () => {
     console.log('[chela-desktop] Connect pressed on the Control UI login gate; covering until the interface renders');
     setConnection({
@@ -2679,7 +2689,9 @@ const connectPress = createConnectPress({
   fail: (why, title) => {
     const description = why === 'deadline'
       ? 'The gateway did not answer the connect within ' + Math.round(CONNECT_DEADLINE_MS / 1000) + ' seconds.'
-      : (title || 'The gateway refused the connect.');
+      : why === 'gate'
+        ? (title || GATE_UNREACHABLE)
+        : (title || 'The gateway refused the connect.');
     showConnectionFailure({ errorCode: null, errorDescription: description });
   },
 });
