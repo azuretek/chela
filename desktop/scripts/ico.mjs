@@ -17,6 +17,12 @@
  *  extra-large (48), and the jumbo view (256). */
 export const WINDOWS_SIZES = [16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 128, 256];
 
+/** The sizes a live WINDOW icon is drawn at, 100% through 200% scaling: the
+ *  title bar and taskbar (16 to 36) and the big icon Alt+Tab and the taskbar
+ *  scale from (32 to 64). The themed icons main.js swaps in carry these, which
+ *  keeps 26 of them small; the jumbo sizes only matter for the exe in Explorer. */
+export const WINDOW_SIZES = WINDOWS_SIZES.filter((s) => s <= 64);
+
 /**
  * An .ico from images of each size, as RGBA pixels.
  *

@@ -38,3 +38,24 @@ test('an .ico round-trips through the encoder', () => {
   assert.equal(back.size, 20);
   assert.deepEqual(back.rgba, rgba);
 });
+
+test('every themed Windows window icon ships as an .ico holding every window size, edge to edge', async () => {
+  const { BUCKETS, iconFile } = await import('../../core/app-icons.js');
+  const { WINDOW_SIZES } = await import('../scripts/ico.mjs');
+  for (const bucket of BUCKETS) {
+    for (const mode of ['dark', 'light']) {
+      const rel = 'src/assets/' + iconFile(bucket, mode, { ico: true });
+      const entries = decodeIco(read(rel));
+      assert.deepEqual(entries.map((e) => e.size), WINDOW_SIZES, rel);
+      for (const { size, rgba } of entries) {
+        const mid = size >> 1;
+        assert.ok(rgba[(mid * size) * 4 + 3] > 200 && rgba[(mid * size + size - 1) * 4 + 3] > 200, rel + ' ' + size + 'px does not fill its square');
+      }
+    }
+  }
+});
+
+test('on Windows the live icon main.js swaps in is the .ico, not one oversized PNG', () => {
+  const main = read('src/main.js').toString('utf8');
+  assert.match(main, /appIcons\.choose\([^;]*ico: appIcons\.iconsAsIco\(process\.platform\)/, 'a single PNG becomes a 512 px HICON and the taskbar draws it small');
+});

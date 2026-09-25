@@ -434,7 +434,7 @@ function layoutViews() {
 let appliedIconFile = null;
 let appliedTrayFile = null;
 function applyAppIcon() {
-  const choice = appIcons.choose(currentTheme.tokens?.['--accent'], currentTheme.mode, { full: appIcons.fillsSquare(process.platform) });
+  const choice = appIcons.choose(currentTheme.tokens?.['--accent'], currentTheme.mode, { full: appIcons.fillsSquare(process.platform), ico: appIcons.iconsAsIco(process.platform) });
   if (choice.file !== appliedIconFile) {
     const img = nativeImage.createFromPath(path.join(ASSETS, choice.file));
     if (img.isEmpty()) {

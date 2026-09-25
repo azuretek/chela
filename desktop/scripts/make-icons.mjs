@@ -53,7 +53,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { generatedFiles, bucketIcons, bucketTrays, iosIconFile, appIcon } from './artwork.mjs';
 import { iconFile, trayFile } from '../../core/app-icons.js';
-import { WINDOWS_SIZES, encodeIco, decodeIco } from './ico.mjs';
+import { WINDOWS_SIZES, WINDOW_SIZES, encodeIco, decodeIco } from './ico.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));   // desktop/
 const repo = path.dirname(root);                                            // the repo
@@ -362,19 +362,27 @@ for (const target of targets) {
 // image for: it draws the next size down, centred, and the icon reads small.
 // Same artwork, same edge-to-edge framing, one image rendered at each size.
 // See scripts/ico.mjs.
-{
-  const rel = 'desktop/build/icon.ico';
+async function writeIco(rel, svg, sizes) {
   const file = path.join(repo, rel);
-  const svg = Buffer.from(appIcon({ full: true }), 'utf8');
   const images = [];
-  for (const size of WINDOWS_SIZES) {
+  for (const size of sizes) {
     const render = () => sharp(svg, { density: Math.max(72, size) })
       .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } });
     const { data } = await render().ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     images.push({ size, rgba: data, png: size >= 256 ? await render().png().toBuffer() : null });
   }
+  mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, encodeIco(images));
-  const sizes = decodeIco(readFileSync(file)).map((e) => e.size);
-  if (sizes.join() !== WINDOWS_SIZES.join()) fail(rel + ' holds ' + sizes.join(', ') + ', expected ' + WINDOWS_SIZES.join(', '));
-  console.log(rel + '  ' + sizes.join(', ') + '  (ico)');
+  const got = decodeIco(readFileSync(file)).map((e) => e.size);
+  if (got.join() !== sizes.join()) fail(rel + ' holds ' + got.join(', ') + ', expected ' + sizes.join(', '));
+  console.log(rel + '  ' + got.join(', ') + '  (ico)');
+}
+
+await writeIco('desktop/build/icon.ico', Buffer.from(appIcon({ full: true }), 'utf8'), WINDOWS_SIZES);
+
+// The themed window icons for Windows, edge to edge, one .ico per bucket and
+// mode: main.js applyAppIcon hands Windows these rather than a PNG, so the live
+// icon is loaded at the size each slot asks for. See core/app-icons.js iconsAsIco.
+for (const { bucket, mode, svg } of bucketIcons({ full: true })) {
+  await writeIco('desktop/src/assets/' + iconFile(bucket, mode, { ico: true }), Buffer.from(svg, 'utf8'), WINDOW_SIZES);
 }
