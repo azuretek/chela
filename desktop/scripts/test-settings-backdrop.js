@@ -252,22 +252,25 @@ async function through(name, act, done) {
 }
 
 /**
- * The window at rest: captured until three frames in a row agree, because a page
- * that says it has settled can still be a frame or two from the screen on a slow
- * machine, and a reading taken in between measures neither state.
+ * The window at rest: captured until the reading has held for longer than any
+ * transition, because a page that says it has settled can still be a frame or
+ * two from the screen on a slow machine, and a compositor that stalls repeats a
+ * mid-fade frame, so a reading taken then measures neither state.
  */
 async function still(name, until = () => true) {
   const deadline = Date.now() + 15000;
   let last = null;
-  let agree = 0;
+  let since = 0;
   let image = null;
   while (Date.now() < deadline) {
     image = await frame();
     if (!image) return null;
     const rgb = sample(image);
-    agree = last && far(rgb, last) <= 2 ? agree + 1 : 0;
+    if (!last || far(rgb, last) > 2) since = Date.now();
     last = rgb;
-    if (agree >= 2 && until(rgb)) break;
+    // Unchanged for longer than the slowest transition (a 500ms sheet), not
+    // merely for a few frames: a stalled compositor repeats a mid-fade frame.
+    if (Date.now() - since >= 700 && until(rgb)) break;
     await delay(60);
   }
   if (SHOTS) fs.writeFileSync(path.join(SHOTS, name + '.png'), image.toPNG());
