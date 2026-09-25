@@ -648,6 +648,17 @@ struct ContentView: View {
         // screenshot blocks in this file that reach DEBUG-only API carry the same
         // guard.
         #if DEBUG
+        // A screenshot run that presses a button on Settings or About, which a
+        // simulator cannot tap. See `SettingsSpec.screenshotPress`.
+        if let press = SettingsSpec.screenshotPress {
+            showingSettings = true
+            DispatchQueue.main.async {
+                if press.page == "about" { showingAbout = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                    if press.page == "about" { aboutHost?.pressButton(press.id) } else { host?.pressButton(press.id) }
+                }
+            }
+        }
         if SettingsSpec.screenshotChecksUpdates {
             showingSettings = true
             DispatchQueue.main.async {
