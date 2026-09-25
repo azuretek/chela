@@ -275,6 +275,28 @@ Where a client paints something the page cannot reach, meaning the phone's statu
 bar and the strips above and below the web view, it takes the same two answers in
 that order and does not add a third.
 
+**★ Every colour a control of ours paints, in every state, comes from a token the
+theme actually sets.** Rest, hover, focus, pressed and disabled, light and dark. A
+custom theme imported from tweakcn sets a FIXED list of names
+(`live.customTheme` in `spec/tokens.json`, upstream's `MODE_TOKEN_ORDER`), and
+every other name keeps upstream's base value on the page, so a token we take
+live that the theme does not set arrives as upstream's default. Reported
+2026-09-25: the primary button went upstream's red on hover and press inside a
+window wearing the reader's own palette. So:
+
+- **A name a custom theme does not set is DERIVED in `ui.css` from one it does**,
+  and listed as ours rather than live (`--primary-hover` from `--primary`).
+- **Nothing falls through to the platform's colours.** Keyboard focus draws the
+  theme's `--ring`, never the engine's default ring, and a checkbox is drawn by
+  us from theme tokens rather than in the platform's greys.
+- **An error keeps the theme's own `--destructive`.** No red is written anywhere.
+
+Guarded by `core/test/live-tokens.test.js` (every live colour is one a custom
+theme sets) and measured by `desktop/scripts/test-controls-follow-theme.js`, which
+drives every control on every page through every state under two custom themes
+and fails on any colour that does not move between them, with
+`mobile/ChelaTests/ControlsFollowThemeTests.swift` the phone's half.
+
 ## ★ The seventh rule: the colour flows into the strips, from ONE source
 
 **The strips the safe area leaves above and below a page belong to the app, and they
