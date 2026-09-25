@@ -12,7 +12,8 @@
 //      backdrop upstream declares when the OpenClaw checkout is readable.
 //   2. A sheet still fades its dim in and out with the slide (the animation is
 //      core/test/motion.test.js's claim; the colour is this one's).
-//   3. The page-as-window case keeps the opaque page colour: nothing is behind it.
+//   3. A sheet's page paints no page colour behind its scrim, which is what hid the
+//      Control UI outright; the page-as-window keeps it, since nothing is behind it.
 //   4. A second sheet over the first draws no dim of its own, and inside the
 //      phone's native sheet the page draws none either, because the platform does.
 //
@@ -85,6 +86,21 @@ test('a sheet dims with the scrim, and the page-as-window keeps its page colour'
   const asPage = ruleBodies(UI_CSS, 'body.as-page .scrim').map((b) => property(b, 'background')).filter(Boolean);
   assert.deepStrictEqual(asPage, ['var(--bg)'],
     'Settings as the whole window has nothing behind it, so it must stay on the opaque page colour');
+});
+
+test('a sheet page paints nothing behind its scrim, so the Control UI shows through', () => {
+  // The page colour on html and body is what actually hid the interface: the
+  // view went to a flat --bg the moment it attached, whatever the scrim did.
+  for (const selector of [
+    'html:not(.surface--native-sheet):has(body:not(.as-page) .scrim)',
+    'html:not(.surface--native-sheet) body:not(.as-page):has(.scrim)',
+  ]) {
+    const values = ruleBodies(UI_CSS, selector).map((b) => property(b, 'background'));
+    assert.deepStrictEqual(values, ['transparent'], selector + ' must be transparent, and reads ' + JSON.stringify(values));
+  }
+  // And the rule that paints every page stays, for the page-as-window and the phone sheet.
+  const base = ruleBodies(UI_CSS, 'html').map((b) => property(b, 'background')).filter(Boolean);
+  assert.deepStrictEqual(base, ['var(--bg)'], 'the page colour is gone from the page-as-window as well');
 });
 
 test('a sheet over a sheet keeps one dim, and the native sheet draws none of its own', () => {
