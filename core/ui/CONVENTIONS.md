@@ -501,6 +501,17 @@ upstream-parity check the borrowed tokens face, because both clients read them:
 `core/test/motion.test.js` holds each CSS literal to the spec and
 `MotionParityTests` holds the Swift mirror to it.
 
+### The dim behind a sheet
+
+**The Control UI stays on screen behind Settings and About, under a dim.** Abi, 2026-09-25: *"right now the control ui sort of flickers into the background color as the settings/about us pages slide up ... or like a dim like the slide out of the menu on mobile from the left"*. The scrim had been the page colour at 70%, so as it faded in on the sheet's fast-off-the-mark curve the interface washed into the page colour, which read as a flicker.
+
+- **The dim is the Control UI's own**: its mobile nav drawer backdrop (`.shell-nav-backdrop`, black at 44% in every palette), restated as `--scrim` in `ui.css` and held to upstream by `core/test/backdrop.test.js`. It fades in with the slide up and out with the slide down, on the sheet's duration and curve.
+- **One dim however many sheets are up.** A sheet opened over another (About from Settings) keeps its own scrim clear: the desktop host adds `?stacked=1` and `ui/surface.js` sets `surface--stacked` before first paint. If the lower sheet leaves first, the host clears the mark so the dim stays.
+- **Where nothing is behind, there is no dim.** Settings as the window's own content keeps the opaque page colour, and inside the phone's native sheet the page draws no dim, because the platform draws one behind the sheet.
+- **No blur.** Deferred by choice (Abi, 2026-09-25): a dim first, and a blur only if the dim turns out not to be enough.
+
+Measured on the composited window by `desktop/scripts/test-settings-backdrop.js`, which samples every frame of each transition and requires the backdrop to move only along the line from the bare interface to the dimmed one.
+
 ## What moves, and what stays still
 
 Only `opacity` and `transform` ever animate. Both are compositor properties, so a
@@ -511,8 +522,8 @@ window or shift the reader's content under them.
 
 | Change | Motion |
 |---|---|
-| Settings or About arriving | Scrim fades in. The card SLIDES UP from below the window's bottom edge into its place, like an iOS sheet, over `--motion-sheet-in` on `--motion-sheet-ease`. No fade and no scale on the card: the slide is the motion. |
-| Settings or About leaving | Scrim fades out. The card slides back DOWN past the bottom edge by the same path, over `--motion-sheet-out`. About leaving from over Settings is what reveals Settings. |
+| Settings or About arriving | The dim fades in over the Control UI (see The dim behind a sheet). The card SLIDES UP from below the window's bottom edge into its place, like an iOS sheet, over `--motion-sheet-in` on `--motion-sheet-ease`. No fade and no scale on the card: the slide is the motion. |
+| Settings or About leaving | The dim fades out. The card slides back DOWN past the bottom edge by the same path, over `--motion-sheet-out`. About leaving from over Settings is what reveals Settings. |
 | Settings or About on the phone | The native sheet's own slide, and nothing else: the phone's host marks the page `surface--native-sheet` and the card draws no motion of its own inside it, so there are never two motions for one arrival. |
 | The pairing screen arriving | Rises from below the bottom edge on the spring (`--motion-spring`, `--motion-spring-ease`), on both clients; it leaves by the sheet's path. |
 | The loading cover | Keeps its short fade: it is held back a beat and fades in, so a connect that resolves at once never flashes it, and it fades out over `--duration-fast` once the page under it has painted. |
