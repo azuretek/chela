@@ -449,6 +449,7 @@ function touchesAStyleTag(records) {
 }
 
 function observeStyleTags() {
+  return; // DELIBERATE REGRESSION: the head observer from #88 removed
   if (!document.head) return;
   new MutationObserver((records) => {
     if (touchesAStyleTag(records)) reportTheme();

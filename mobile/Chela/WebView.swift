@@ -439,7 +439,7 @@ struct WebView: UIViewRepresentable {
           }
           try {
             new MutationObserver(function (records) {
-              if (touchesAStyleTag(records)) { report(); }
+              /* DELIBERATE REGRESSION: the head observer from #88 removed */
             }).observe(document.head, { childList: true, subtree: true, characterData: true });
           } catch (e) {}
         })();

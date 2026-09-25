@@ -1850,3 +1850,7 @@ html.surface--native-sheet body.surface--leaving .modal { animation: none; }
   .editor-disclosure--arriving,
   .editor-disclosure--leaving { animation: none; }
 }
+
+/* DELIBERATE REGRESSION for the throwaway CI proof PR: the About mark back at the
+   header's own padding and 25px off its name, as before #86. */
+.modal .modal__headline { margin-left: 0; gap: 16px; }
