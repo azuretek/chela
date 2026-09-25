@@ -66,9 +66,9 @@ export const NOT_IN_CI = {
   'test-affordance-placement.js':
     'needs a Control UI past its first-run flow, which takes a gateway configured with a model provider and so a credential; the throwaway gateway serves the first-run page, which has no sidebar footer to place into',
   'test-surface-motion.js':
-    'measures each transition at frame resolution; under the runner\'s software-composited virtual display the settings surface never read as settled, so the frames it counts are a property of the display rather than of the app',
+    'measures each transition at frame resolution against the throwaway gateway; on the runner the settings surface never read as settled. Not yet run on macOS against a gateway, so whether that is the display or drift like test-gateway-edit-motion is open',
   'test-gateway-edit-motion.js':
-    'measures the editor\'s animation at frame resolution; under the runner\'s software-composited virtual display it counted 283ms of changing frames against a 350ms token, a property of the display rather than of the app',
+    'fails on main on macOS and on Linux alike (measured 2026-09-25): both counted 283ms of changing frames and animations ending at 371ms against the pinned --duration-fast. The harness has drifted from the app and needs its own fix before it can gate',
   'test-held-gateway-view.js':
     'fails on main on macOS and on Linux alike (measured 2026-09-25): no "Cannot connect" notice within 20s after the stub drops. The harness has drifted from the app and needs its own fix before it can gate',
   'test-notice-layers.js':
@@ -92,11 +92,11 @@ export const NOT_IN_CI = {
   'test-update-answer.js':
     'answers only in a build that can update: on Linux that is an AppImage, and the runner runs the source tree, where the app rightly says "Updates are not available in this build"; it passes on macOS',
   'test-update-stall.js':
-    'drives the updater\'s download card, which exists only in a build that can update; on Linux that is an AppImage and the runner runs the source tree, so the card never appears (timed out at 240s)',
+    'drives the updater download card, which exists on Linux only in an AppImage build, and the runner runs the source tree, so the card never appears (timed out at 240s); on macOS it has not been seen green either (its startup bar is not empty), so it also needs its own look',
   'test-update-relaunch.js':
     'drives the updater\'s download card across a relaunch, which exists only in a build that can update; on Linux that is an AppImage, not the source tree the runner runs',
   'test-banner-focus.js':
-    'types through sendInputEvent into whichever page holds the keyboard; on the runner the positive control failed (the keystroke reached the gateway page but not its composer), so the run cannot show focus moving or staying',
+    'fails on main on macOS and on Linux alike (measured 2026-09-25): its positive control cannot type into the composer, and the bar stays up after its last notice is cleared. The harness has drifted from the app and needs its own fix before it can gate',
   'test-pairing.js':
     'drives a real gateway with a real device credential (CLAW_TEST_GATEWAY_URL and _TOKEN) and revokes a device, which no pull request may hold',
   'test-pairing-recovery.js':
