@@ -52,6 +52,7 @@ const BUNDLED = {
   'outbox-reconcile.json': 'holds the one injected script that reconciles a queued message stuck on a live connection against the gateway record',
   'notices.json': 'read at runtime for the tone names and their sort order',
   'pairing.json': 'holds the one injected script that observes the page gateway socket for a pairing close',
+  'login-gate-connect.json': 'holds the one injected script that reports Connect pressed on the Control UI login gate, which the loading cover answers',
   'progress.json': 'read at runtime for the milestone order, the floors and the easing constants',
   'quips.json': 'read at runtime for the lines the shared loading page rotates, which the host computes and pushes on both clients',
   'prompt-metadata.json': 'holds the injected script that puts the client-context block on every prompt',
