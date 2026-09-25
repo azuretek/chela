@@ -1,5 +1,5 @@
 #!/bin/sh
-# pre-push: the half of the gate that CI cannot be.
+# pre-push: the local copy of the desktop gate.
 #
 # Where this lives now. The hook is at the REPO ROOT (core.hooksPath -> .githooks)
 # and it runs ROOT scripts. It used to cd into desktop/ and call that package's
@@ -9,17 +9,16 @@
 #
 # The split, and why it is a split at all.
 #
-# CI covers the headless half on every push: the unit tests, the import audits
-# (desktop/scripts/check-imports.js and check-package.js) and the iOS legs. What
-# CI cannot run is the GUI boot smoke, because GitHub's macOS runners have no
-# session to launch Electron into. That is the check that catches the fault which
+# CI runs all of this on every pull request: the unit tests, the import audit,
+# the iOS legs, and in the desktop job (.github/workflows/ci.yml) the GUI boot
+# smoke, the packaged-artifact audit and the packed smoke, in Electron under a
+# virtual display on Linux. The smoke is the check that catches the fault which
 # actually shipped: a build that passed every test and still opened a fatal
 # "A JavaScript error occurred in the main process" dialog. A green unit-test run
 # is not evidence the app starts.
 #
-# So the smoke is gated here, at the push, because a push to main IS the merge in
-# this repo. Running it on every push rather than only on main keeps the rule
-# simple: the push either passed the local gate or it did not.
+# This hook runs the same checks before the push, so a fault is seen here rather
+# than minutes later on the pull request.
 #
 # This hook is ADVISORY, and do not mistake it for the gate. `git push --no-verify`
 # skips it, and a fresh clone has no hook until `npm run hooks:install` points
@@ -42,13 +41,11 @@ The local gate, from the repo root:
   npm run smoke       boot the real Electron app and require a positive signal
   npm run check:package   audit the packaged artifact, when one exists
 
-The smoke needs a real desktop session, which is why it lives here and not in
-CI. Fix the failure and push again, or deliberately skip the gate with:
+CI runs the same checks on the pull request, and the merge gate needs them, so a
+skip here only moves the failure there. Fix the failure and push again, or
+deliberately skip the local copy with:
 
     git push --no-verify
-
-Skipping is sometimes right (a docs-only push, a headless host). It is never
-free: the smoke is the only check that proves the app still starts.
 EOF
   exit 1
 }
@@ -57,7 +54,7 @@ EOF
 # the import audit and an Electron boot smoke. A push whose commits touch nothing
 # under desktop/, core/ or a root manifest cannot change the app, so the smoke
 # would be a multi-minute Electron launch for no signal (Abi, 2026-09-18). CI
-# still runs every headless check on the pushed commit, including the iOS legs.
+# still runs every check on the pull request, the smoke and the iOS legs included.
 changed="$(
   while read -r _local_ref local_sha _remote_ref remote_sha; do
     [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
@@ -82,8 +79,8 @@ fi
 
 # A packaged build, if one is sitting there, is worth auditing on the way out:
 # this is the check that catches a module the packer never copied, which is a
-# fault the source tree cannot show. CI does this on the artifact it builds, so
-# this is the local equivalent rather than a duplicate of CI's work.
+# fault the source tree cannot show. CI packs and audits on every pull request
+# (the desktop job), so this is the local equivalent of that step.
 if [ -d desktop/dist ]; then
   echo "pre-push: auditing the packaged build in desktop/dist/"
   if ! npm run check:package; then

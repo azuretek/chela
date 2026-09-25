@@ -21,13 +21,25 @@ name: CI
 # What it runs, and what it deliberately does not (Abi, 2026-09-19: "ensure these
 # run on PRs, just not our full build unless it's needed for tests"):
 #
-#   js    lint, the core+desktop unit tests, the import and package audits, and
-#         the boot smoke. The smoke runs the app from the WORKING TREE, so it
-#         needs Electron but not a packaged artifact. None of this is the release
-#         build.
-#   ios   swiftlint and the build-for-testing (xcodegen + xcodebuild), which is
-#         what compiles the Swift and runs the unit tests. This is a build, but it
-#         is the build a TEST needs, not the packaged .app/.ipa.
+#   js       lint, the core+desktop unit tests and the import audit. None of
+#            this is the release build.
+#   desktop  the checks that need the app ON SCREEN: the boot smoke, the page
+#            measurements (npm run measure), every desktop proof harness that
+#            needs no live gateway (scripts/desktop-proofs.mjs owns the list),
+#            and the packaged-artifact audit, run in Electron under a virtual
+#            display (xvfb) on Linux. These ran only in the local git hooks
+#            until 2026-09-25, and a hook is advisory and skippable.
+#   mobile   the iOS 26 and iOS 27 suites and swiftlint, which live in
+#            mobile-pipeline.yml. A job cannot need a job in another workflow,
+#            so this one waits on that run's whole job list through
+#            platforms-gate.yml, the same reader the release gates use. Measured
+#            on PR #88: the gate passed while both iOS suites were still running,
+#            and the PR was merged then.
+#   ios      swiftlint and the build-for-testing (xcodegen + xcodebuild), which
+#            compiles the Swift and its tests. This is a build, but it is the
+#            build a TEST needs, not the packaged .app/.ipa. It installs its own
+#            tools and refuses to skip: until 2026-09-25 it skipped both steps
+#            for want of swiftlint and xcodegen and reported success in 6s.
 #
 # The full packaged build matrix stays where it was, in release.yml, on push to
 # main and on tags. A PR proves the code is sound; the push that follows the merge
@@ -96,13 +108,13 @@ jobs:
           matches () { printf '%s\n' "$changed" | grep -Eq "$1"; }
           js=false; ios=false
           if [ -z "$changed" ]; then js=true; ios=true; fi
-          if matches '^(core/|desktop/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|eslint\.config\.mjs|\.github/workflows/ci\.yml)'; then js=true; fi
-          if matches '^(core/|mobile/|\.github/workflows/ci\.yml)'; then ios=true; fi
+          if matches '^(core/|desktop/|scripts/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|eslint\.config\.mjs|\.github/workflows/(ci|platforms-gate)\.yml)'; then js=true; fi
+          if matches '^(core/|mobile/|scripts/mobile\.mjs|\.github/workflows/ci\.yml)'; then ios=true; fi
           echo "js=$js" >> "$GITHUB_OUTPUT"
           echo "ios=$ios" >> "$GITHUB_OUTPUT"
           echo "js=$js ios=$ios"
 
-  # The JS half: lint, unit tests, the audits and the boot smoke. No packaging.
+  # The JS half: lint, unit tests and the import audit. No packaging, no display.
   js:
     needs: changes
     if: needs.changes.outputs.js == 'true'
@@ -169,24 +181,141 @@ jobs:
         run: pnpm run test:js
       - name: Import audit
         run: pnpm run check:imports
-      # Two checks are deliberately NOT in this gate, both because they need
-      # something a generic runner cannot give, and both already run where they
-      # can:
-      #
-      #   check:package  audits the PACKAGED artifact (app.asar under dist/), so it
-      #                  needs `npm run pack` first. It belongs in release.yml
-      #                  after the build, and in the local hooks. A PR gate that
-      #                  does not build the full artifact (Abi, 2026-09-20: "just
-      #                  not our full build unless it's needed for tests") has no
-      #                  asar to audit.
-      #   smoke          boots the real Electron app, which needs a GUI session
-      #                  the runner does not have: it fails in ~0.5s under xvfb for
-      #                  a reason that has nothing to do with the code, exactly as
-      #                  mobile-pipeline.yml already records for the macOS runners.
-      #                  It is the strongest desktop check and it runs in the local
-      #                  pre-push hook (npm run verify), where there is a session.
-      #
-      # check:imports above is the source-level audit and runs fine here.
+      # The boot smoke, the page measurements, the proof harnesses and the
+      # packaged-artifact audit run in the desktop job below, which has a display.
+
+  # ★ The desktop on screen: the checks that used to live only in the local git
+  # hooks, because they launch the real Electron app. They run here under a virtual
+  # display (xvfb) on Linux. Each step is its own claim and runs whether or not the
+  # one before it passed (`!cancelled()`), so one red step never hides another, and
+  # the job is red if any step is.
+  #
+  # The history, so it is not re-litigated: the smoke was tried on GitHub's macOS
+  # runners and hung with no output, and under xvfb on Linux it died in about half
+  # a second. That half-second death was Chromium's sandbox, not the display:
+  # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor, which the
+  # sandbox needs, so Electron exits before it draws. The sysctl below lifts that
+  # restriction for this throwaway runner only, and the sandbox then runs as it
+  # does on a desktop. Measured 2026-09-25: the smoke boots in 5s and every
+  # harness below renders.
+  desktop:
+    name: desktop (Linux, xvfb)
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      # A throwaway OpenClaw gateway for the harnesses that need a real Control
+      # UI, at the version core/spec/upstream-reference.json pins. The gateway
+      # needs Node 24, so it is installed under its own Node first and the job's
+      # Node is set up after it. Nothing is configured: --auth none on loopback,
+      # its own state directory, and no model provider or credential.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install the pinned OpenClaw gateway
+        run: |
+          set -eo pipefail
+          version="$(node -e "process.stdout.write(require('./core/spec/upstream-reference.json').upstream.version)")"
+          npm install --prefix "$RUNNER_TEMP/gateway" "openclaw@$version" --no-audit --no-fund 2>&1 | tail -2
+          echo "GATEWAY_NODE=$(command -v node)" >> "$GITHUB_ENV"
+          echo "GATEWAY_BIN=$RUNNER_TEMP/gateway/node_modules/openclaw/openclaw.mjs" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install (frozen lockfile, workspace)
+        run: pnpm install --frozen-lockfile
+      - name: Ensure Electron is usable
+        working-directory: desktop
+        run: |
+          electron_usable() {
+            node -e "const fs=require('fs'),p=require('electron');if(!fs.existsSync(p))throw new Error('electron binary missing at '+p)"
+          }
+          if ! electron_usable 2>/dev/null; then
+            echo "electron install incomplete; fetching"
+            node node_modules/electron/install.js || true
+          fi
+          electron_usable >/dev/null && echo "electron loads"
+      # A virtual display, fonts that cover the emoji the pages draw, the
+      # namespace restriction lifted so Chromium's sandbox can start (see above),
+      # and a session bus with an unlocked keyring. Without the keyring the app
+      # rightly raises "credentials cannot be stored encrypted" on every launch,
+      # and that notice is then what half the harnesses read instead of the one
+      # they are asking about.
+      - name: A display and a keyring for Electron
+        run: |
+          set -eo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb dbus-x11 gnome-keyring libsecret-1-0 fonts-noto-color-emoji >/dev/null
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          eval "$(dbus-launch --sh-syntax)"
+          echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" >> "$GITHUB_ENV"
+          echo "XDG_CURRENT_DESKTOP=GNOME" >> "$GITHUB_ENV"
+          mkdir -p ~/.local/share/keyrings
+          printf 'ci' | gnome-keyring-daemon --unlock --components=secrets --daemonize >/dev/null
+          printf 'ci' | gnome-keyring-daemon --start --components=secrets >/dev/null
+          echo "SHOTS=$RUNNER_TEMP/shots" >> "$GITHUB_ENV"
+      # On the port the harnesses default to (see test-gateway-identity.js), in
+      # its own state directory, and with OPENCLAW_SUPERVISOR_MODE=external so it
+      # never touches a service manager.
+      - name: Start the throwaway gateway
+        run: |
+          set -eo pipefail
+          state="$RUNNER_TEMP/openclaw-state"
+          mkdir -p "$state" && chmod 700 "$state"
+          OPENCLAW_STATE_DIR="$state" OPENCLAW_CONFIG_PATH="$state/openclaw.json" OPENCLAW_SUPERVISOR_MODE=external \
+            nohup "$GATEWAY_NODE" "$GATEWAY_BIN" gateway --port 19099 --auth none --bind loopback --allow-unconfigured \
+            > "$RUNNER_TEMP/gateway.log" 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:19099/ -o /dev/null; then echo "gateway answering after $((i * 2))s"; exit 0; fi
+            sleep 2
+          done
+          echo "::error::the throwaway gateway never answered on 127.0.0.1:19099"
+          tail -40 "$RUNNER_TEMP/gateway.log"
+          exit 1
+      - name: Boot smoke (the app starts, from the working tree)
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" pnpm run smoke
+      - name: Page measurements (npm run measure)
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" pnpm run measure
+      - name: About header alignment and surface
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" node scripts/desktop-proofs.mjs --group about --shots "$SHOTS"
+      - name: Custom theme follows a style-tag swap, light and dark
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" node scripts/desktop-proofs.mjs --group theme --shots "$SHOTS"
+      - name: Every other desktop proof
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" node scripts/desktop-proofs.mjs --group proofs --shots "$SHOTS"
+      - name: The proofs against a real gateway
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" node scripts/desktop-proofs.mjs --group gateway --shots "$SHOTS"
+      # The packaged artifact. This is a build, but it is the build a test needs:
+      # check:package audits app.asar for a module the packer never copied, which
+      # no source-tree check can see, and the packed smoke boots that artifact.
+      # --dir packs without an installer, so nothing is signed or published.
+      - name: Pack (unpacked, no installer)
+        if: ${{ !cancelled() }}
+        run: pnpm run build:desktop
+      - name: Packaged-artifact audit (check:package)
+        if: ${{ !cancelled() }}
+        run: pnpm run check:package
+      - name: Boot smoke (the packed app starts)
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" pnpm run smoke:packed
+      - name: Keep the screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-shots
+          path: ${{ runner.temp }}/shots
+          if-no-files-found: ignore
+          retention-days: 14
 
   # The iOS half: swiftlint and the build-for-testing. This compiles the Swift and
   # runs the unit tests (xcodegen generate + xcodebuild build-for-testing), which
@@ -199,12 +328,55 @@ jobs:
     defaults:
       run:
         working-directory: mobile
+    # A missing tool is a failure here, not a named skip: scripts/mobile.mjs
+    # refuses to skip when this is set.
+    env:
+      CHELA_REQUIRE_MOBILE_TOOLS: '1'
     steps:
       - uses: actions/checkout@v4
+      # Neither is part of Xcode and the image may not carry them.
+      # HOMEBREW_NO_AUTO_UPDATE keeps each install from updating the tap index,
+      # the same discipline mobile-pipeline.yml uses.
+      - name: Install SwiftLint and xcodegen
+        run: |
+          set -eo pipefail
+          for tool in swiftlint xcodegen; do
+            command -v "$tool" >/dev/null || HOMEBREW_NO_AUTO_UPDATE=1 brew install "$tool"
+          done
+          swiftlint version
+          xcodegen --version
       - name: SwiftLint
         run: node ../scripts/mobile.mjs lint
       - name: Build for testing (xcodegen + xcodebuild)
         run: node ../scripts/mobile.mjs test
+
+  # ★ The iOS suites. They live in mobile-pipeline.yml, which runs on every pull
+  # request, and a job here cannot `needs:` a job in another workflow. So this
+  # waits on that run's WHOLE job list through platforms-gate.yml, the reader the
+  # release gates already use: every job it lists must conclude success, a job
+  # still running is waited for, and a skipped, cancelled or failed one refuses.
+  #
+  # Exempt are the three jobs that are the publish half and are skipped on a pull
+  # request by design (mobile-pipeline.yml: `github.event_name != 'pull_request'`):
+  # the version, the TestFlight release and that pipeline's own wait on the
+  # desktop release. Everything else, swiftlint and iOS 26 and iOS 27 included,
+  # is required, and a job added to that pipeline is required by itself.
+  #
+  # Pull requests only. On a push to main the release gates already make each
+  # pipeline wait for the other before anything publishes.
+  mobile:
+    name: iOS suites
+    if: github.event_name == 'pull_request'
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/platforms-gate.yml
+    with:
+      platform: chela-mobile pipeline
+      exempt: '^version$|^release$|^every platform must be green'
+      sha: ${{ github.event.pull_request.head.sha }}
+      purpose: merge
+      window: 90
 
   # ★ THE GATE. Always runs, always reports, so branch protection has one check to
   # require on every PR whatever it touched. It passes only when every job that
@@ -216,7 +388,7 @@ jobs:
     # so it reads as a sentence; the job id is a plain identifier because ids may
     # not contain spaces.
     name: merge gate
-    needs: [changes, js, ios]
+    needs: [changes, js, ios, desktop, mobile]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -224,8 +396,15 @@ jobs:
         env:
           JS: ${{ needs.js.result }}
           IOS: ${{ needs.ios.result }}
+          DESKTOP: ${{ needs.desktop.result }}
+          MOBILE: ${{ needs.mobile.result }}
           JS_NEEDED: ${{ needs.changes.outputs.js }}
           IOS_NEEDED: ${{ needs.changes.outputs.ios }}
+          # The desktop job runs whenever the js half does. The iOS suites are
+          # needed on every pull request, whatever it touched, because
+          # mobile-pipeline.yml runs on every one and a PR must not merge while
+          # any of its checks is running or red.
+          MOBILE_NEEDED: ${{ github.event_name == 'pull_request' }}
         run: |
           set -eo pipefail
           fail=0
@@ -248,6 +427,8 @@ jobs:
           echo "the merge gate: every job this change needed must be green"
           check "js"  "$JS_NEEDED"  "$JS"
           check "ios" "$IOS_NEEDED" "$IOS"
+          check "desktop (Linux, xvfb)" "$JS_NEEDED" "$DESKTOP"
+          check "iOS suites (chela-mobile pipeline)" "$MOBILE_NEEDED" "$MOBILE"
           if [ "$fail" -ne 0 ]; then
             echo "::error::refusing the merge: a needed job is not green (see above)."
             exit 1

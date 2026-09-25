@@ -613,7 +613,9 @@ jobs:
       # smoke.js is the strongest check the desktop app has, and it cannot run
       # on GitHub's macOS runners (measured: no output, 30s timeout), so a
       # launch gate would fail for a reason that has nothing to do with the
-      # code. That is why this gate is build plus tests and stops there.
+      # code. That is why this gate is build plus tests and stops there. The
+      # smoke runs on Linux under a virtual display instead, in ci.yml's desktop
+      # job, on every pull request.
       - name: Test on the resolved simulator
         run: |
           set -eo pipefail

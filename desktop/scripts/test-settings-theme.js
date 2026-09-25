@@ -386,8 +386,11 @@ app.whenReady().then(async () => {
       wrong.length === 0,
       `${wrong.length} of ${COMPARED.length} wrong:\n      ${wrong.join('\n      ')}`);
 
-    check('the settings page paints its own background from the palette',
-      measured.body === rgb(published['--bg']), `body is ${measured.body}, expected ${rgb(published['--bg'])}`);
+    // Since #90 a sheet page paints nothing behind its scrim, so the Control UI
+    // shows through dimmed rather than being replaced by a flat sheet of --bg; the
+    // palette reaches the page through its group surfaces and every token below.
+    check('the settings sheet paints nothing behind its scrim, so the Control UI shows through',
+      measured.body === 'rgba(0, 0, 0, 0)', `body is ${measured.body}, expected transparent`);
     check('and its group surfaces from the palette',
       measured.group === rgb(published['--card']), `group is ${measured.group}, expected ${rgb(published['--card'])}`);
     check('the settings page is in the published appearance, not the fallback one',
