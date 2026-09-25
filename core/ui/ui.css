@@ -320,6 +320,10 @@ body.as-page .modal { border-color: transparent; box-shadow: none; }
    sits alone across half a screen. */
 .modal--narrow { width: min(460px, 100%); }
 
+/* The body's inline padding, named so the header can line its mark up against the
+   cards the body holds (see .modal__headline) rather than restating the number. */
+.modal { --modal-body-inline: 22px; }
+
 /* 56px, sized to the two-line block beside it (the name and the build line) so
    the mark reads as the page's own icon rather than a bullet, and centred on that
    block by .modal__headline below. */
@@ -436,8 +440,20 @@ body.as-page .modal { border-color: transparent; box-shadow: none; }
 .modal__headline {
   display: flex;
   align-items: center;
-  gap: 16px;
+  /* The mark to the name reads as --space-3. The title and the build line each
+     carry upstream's 9px inset (.settings-sidebar__title, .modal__header .sub),
+     so the flex gap is what is left of --space-3 after it. Reported on
+     1.0.1-dev.358: at 16px plus that inset the mark sat 25px off its own name. */
+  gap: calc(var(--space-3) - 9px);
   padding-top: 4px;
+  /* The mark's left edge on the same line as the card headings below it
+     ("Updates", "Cached Control UI code"). A heading starts at the body's inline
+     padding, plus the card's 1px border, plus the row's --space-4; the header
+     already pads 12px (upstream's .settings-sidebar__header), so the headline adds
+     the rest. Before this the mark sat at the header's 12px, left of the cards'
+     own outer edge. Measured on the rendered page by AboutLayoutTests and by
+     desktop/scripts/test-about-surface.js. */
+  margin-left: calc(var(--modal-body-inline) + 1px + var(--space-4) - 12px);
 }
 /* The subtitle, on the header's CONTENT edge rather than on its outer padding.
    The header holds three things that share one column: the back control (whose
@@ -476,7 +492,7 @@ body.as-page .modal { border-color: transparent; box-shadow: none; }
      width and would refuse to shrink without it. */
   overflow-x: hidden;
   min-width: 0;
-  padding: 16px 22px 22px;
+  padding: 16px var(--modal-body-inline) var(--modal-body-inline);
 }
 .modal__body > h2:first-child,
 .modal__body > *:first-child > h2:first-child { margin-top: 4px; }

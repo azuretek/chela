@@ -55,3 +55,20 @@ test('the About fact table is a block the rule reaches', () => {
     "the fact table is no longer the card's next sibling, so the gap rule cannot reach it");
 });
 
+
+test('the About header mark is placed from the tokens, not a number of its own', () => {
+  // Reported on 1.0.1-dev.358: the mark sat left of the cards below it and 25px
+  // off its name. Where it lands is measured on the rendered page (AboutLayoutTests
+  // on the phone, desktop/scripts/test-about-surface.js on the desktop); this pins
+  // that the two values it rests on stay derived, so a change to the body's
+  // padding or the row's inset moves the mark with the cards.
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const headline = /\.modal__headline \{([^}]*)\}/.exec(bare);
+  assert.ok(headline, 'the header row rule is gone');
+  assert.match(headline[1], /margin-left: calc\(var\(--modal-body-inline\) \+ 1px \+ var\(--space-4\) - 12px\);/,
+    'the mark is no longer inset by the body padding, the card border and the row inset');
+  assert.match(headline[1], /gap: calc\(var\(--space-3\) - 9px\);/,
+    'the mark to the name is no longer --space-3');
+  assert.match(bare, /\.modal__body \{[^}]*padding: 16px var\(--modal-body-inline\) var\(--modal-body-inline\);/,
+    'the body pads with something other than the value the header lines up against');
+});
