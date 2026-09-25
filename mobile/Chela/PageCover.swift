@@ -118,6 +118,44 @@ final class PageCover: ObservableObject {
         schedulePending()
     }
 
+    /// Connect was pressed on the Control UI's own login gate
+    /// (core/spec/login-gate-connect.json). The gate is the page's, and pressing it
+    /// pins the gate on screen while the page connects, so the loading screen goes
+    /// up at once and is held the minimum-visible floor from the press. Exactly one
+    /// of `connectRendered()` or `connectFailed(_:)` ends it, or the deadline does,
+    /// on the cover's failed state. A press while one is in flight is the same
+    /// attempt, and any new hold (a load of our own) voids the press.
+    func connectPressed(deadline: Duration = .milliseconds(LoginGateConnect.deadlineMs), floorMs: Int = Motion.minVisibleMs) {
+        if let inFlight = pressGeneration, inFlight == generation { return }
+        hold()
+        pressGeneration = generation
+        releaseFloor(after: floorMs)
+        let mine = generation
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: deadline)
+            guard let self, self.pressGeneration == mine, self.generation == mine else { return }
+            self.pressGeneration = nil
+            self.fail("connect-deadline")
+        }
+    }
+
+    /// The gate has gone and the interface is on screen: lift, after the floor.
+    func connectRendered() {
+        guard let mine = pressGeneration, mine == generation else { return }
+        pressGeneration = nil
+        finish(mine, "rendered")
+    }
+
+    /// The page answered the press with its failure again: the cover's failed state.
+    func connectFailed(_ title: String) {
+        guard let mine = pressGeneration, mine == generation else { return }
+        pressGeneration = nil
+        fail(title.isEmpty ? "connect-refused" : "connect-refused: " + title)
+    }
+
+    /// The generation a Connect press raised, while that press is in flight.
+    private var pressGeneration: Int?
+
     /// The load finished. Lift once the page has painted, or at the backstop.
     func loaded(probe: @escaping @MainActor () async throws -> Void) {
         generation += 1

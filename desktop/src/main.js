@@ -47,6 +47,7 @@ import { createWake } from './wake.js';
 import { MIN_VISIBLE_MS, remainingVisibleMs } from '../../core/ui/motion.js';
 import * as appIcons from '../../core/app-icons.js';
 import { RENDERED_PROBE, createCoverGate } from '../../core/render-ready.js';
+import { CONNECT_DEADLINE_MS, createConnectPress } from '../../core/login-gate-connect.js';
 import * as bannerFacts from '../../core/banner.js';
 import secrets from './secrets.js';
 import defaults from './defaults.js';
@@ -667,6 +668,9 @@ function showSettingsAsPage(opts = {}) {
  * usually re-asserts it and moves it to its stopped state.
  */
 function showConnectionFailure(detail) {
+  // A Connect pressed on the Control UI's login gate is answered by this failure
+  // as much as by its own, so it ends here rather than failing a second time.
+  connectPress.cancel();
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const gw = config.activeGateway();
   const label = gw ? gw.label || gw.url : null;
@@ -774,6 +778,9 @@ function loadActiveGateway() {
  * asynchronously; everything below is the attempt it always was.
  */
 function beginGatewayConnect(gw) {
+  // A load of our own supersedes a Connect pressed on the Control UI's login
+  // gate: this attempt raises its own cover and has its own ending.
+  connectPress.cancel();
   settingsIsPage = false;
   autofilled = false;
   // Re-seed the appearance from the gateway being switched TO, before anything
@@ -1455,6 +1462,11 @@ function handlePairingReport(event, payload) {
   const report = pairing.parseReport(payload);
   if (!report) return;
 
+  if (report.kind === 'connect') {
+    connectPress.report(report);
+    return;
+  }
+
   if (report.kind === 'dropped') {
     const wasConnected = connection.phase === connectionState.CONNECTED && !pageReloading;
     handleSocketDropped();
@@ -1479,6 +1491,13 @@ function handlePairingReport(event, payload) {
       loadActiveGateway();
     }
   } else {
+    // The gateway answered a Connect pressed on its login gate by refusing the
+    // device: the pairing screen is that answer, drawn over the page as on any
+    // load, so the press ends and its cover comes down under the screen.
+    if (connectPress.active) {
+      connectPress.cancel();
+      liftWhenAllowed('pairing');
+    }
     pairingState.closed(report.refusal);
     console.warn(`[chela-desktop] gateway refused this device: ${report.refusal.reason}` +
       `${report.refusal.requestId ? ` (requestId: ${report.refusal.requestId})` : ''}; showing the pairing screen`);
@@ -2597,17 +2616,71 @@ function showLoadingCover() {
 // failed in the meantime keeps its cover: the failure owns the screen then.
 const coverGate = createCoverGate({
   probe: (wc) => (wc.isDestroyed() ? Promise.resolve() : wc.executeJavaScript(RENDERED_PROBE)),
+  lift: (why) => liftWhenAllowed(why),
+});
+
+/**
+ * Take the cover down for a page that is on screen, unless something says not yet.
+ *
+ * A connection that failed keeps its cover, since the failure owns the screen. A
+ * restart or a Connect the reader asked for holds the cover until it has been
+ * seen; see floorCover. The lift is kept rather than dropped, and played when the
+ * floor ends, unless a new hold has voided it by then.
+ */
+function liftWhenAllowed(why) {
+  if (connection.phase === connectionState.FAILED) return;
+  if (coverFloor.until > Date.now()) {
+    coverFloor.pending = why;
+    scheduleFlooredLift();
+    return;
+  }
+  liftCover(why);
+}
+
+/**
+ * Connect pressed on the Control UI's OWN login gate.
+ *
+ * The page's 'Gateway unreachable' screen is upstream's, and pressing its Connect
+ * pins that gate on screen while the page connects, so the reader watched an
+ * unchanged screen for as long as the attempt took (Abi, 2026-09-25: 'it just
+ * hangs there for a while, we should do the load page there until the UI
+ * renders'). The watcher injected beside the pairing observer reports the press,
+ * and this answers it the way a launch is answered: the loading screen goes up at
+ * once, and comes down only once the gate has gone and the interface has been
+ * presented, held the minimum-visible floor from the press so it is seen as a
+ * connect rather than a flash. A press with no answer by the spec deadline, or one
+ * the page answers with its failure again, lands on the cover's failed state with
+ * Try again, through the same failure path a launch takes. The page's own handler
+ * runs untouched: nothing here changes what the press does.
+ *
+ * See core/spec/login-gate-connect.json, and core/ui/CONVENTIONS.md for the rules.
+ */
+const connectPress = createConnectPress({
+  cover: () => {
+    console.log('[chela-desktop] Connect pressed on the Control UI login gate; covering until the interface renders');
+    setConnection({
+      phase: connectionState.nextPhase(connection.phase, { type: 'connect' }),
+      error: null,
+      milestone: progress.START,
+      milestoneAt: Date.now(),
+    });
+    showLoadingCover();
+    floorCover(Date.now() + MIN_VISIBLE_MS);
+  },
   lift: (why) => {
-    if (connection.phase === connectionState.FAILED) return;
-    // A restart the reader asked for holds the cover until it has been seen; see
-    // floorCover. The lift is kept rather than dropped, and played when the floor
-    // ends, unless a new hold has voided it by then.
-    if (coverFloor.until > Date.now()) {
-      coverFloor.pending = why;
-      scheduleFlooredLift();
-      return;
-    }
-    liftCover(why);
+    setConnection({
+      phase: connectionState.nextPhase(connection.phase, { type: 'connected' }),
+      error: null,
+      milestone: progress.DONE,
+      milestoneAt: Date.now(),
+    });
+    liftWhenAllowed(why);
+  },
+  fail: (why, title) => {
+    const description = why === 'deadline'
+      ? 'The gateway did not answer the connect within ' + Math.round(CONNECT_DEADLINE_MS / 1000) + ' seconds.'
+      : (title || 'The gateway refused the connect.');
+    showConnectionFailure({ errorCode: null, errorDescription: description });
   },
 });
 

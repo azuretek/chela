@@ -28,7 +28,8 @@
     "./reconnect-resume-shim.js": "./reconnect-resume-shim.js",
     "./outbox-reconcile.js": "./outbox-reconcile.js",
     "./wake.js": "./wake.js",
-    "./render-ready.js": "./render-ready.js"
+    "./render-ready.js": "./render-ready.js",
+    "./login-gate-connect.js": "./login-gate-connect.js"
   },
   "scripts": {
     "test": "node --test test/*.test.js",

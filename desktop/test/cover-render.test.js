@@ -24,11 +24,14 @@ test('a finished gateway load hands the cover to the render gate rather than tak
 test('the gate probes the page for a paint and lifts through hideLoadingCover', () => {
   const gate = body('const coverGate = createCoverGate(', '\n});');
   assert.match(gate, /executeJavaScript\(RENDERED_PROBE\)/);
-  // Through liftCover, which is the one place the cover comes down for a paint:
-  // the gate calls it at once, or a restart's floor calls it once the floor ends.
-  assert.match(gate, /liftCover\(why\)/);
+  // Through liftWhenAllowed and then liftCover, which is the one place the cover
+  // comes down for a paint: the gate calls it at once, or a restart's floor calls
+  // it once the floor ends. A Connect pressed on the login gate lifts the same way.
+  assert.match(gate, /liftWhenAllowed\(why\)/);
+  const allowed = body('function liftWhenAllowed(why) {', '\n}\n');
+  assert.match(allowed, /liftCover\(why\)/);
   assert.match(body('function liftCover(why) {', '\n}\n'), /hideLoadingCover\(\)/);
-  assert.match(gate, /connectionState\.FAILED/, 'a connection that failed while waiting keeps its cover');
+  assert.match(allowed, /connectionState\.FAILED/, 'a connection that failed while waiting keeps its cover');
 });
 
 test('raising the cover again voids a lift still waiting on the page before', () => {
