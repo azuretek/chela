@@ -210,8 +210,12 @@ export const iconFile = (bucket, mode, { full = false, ico = false } = {}) => (i
   : `icons/${bucket.id}-${mode === 'light' ? 'light' : 'dark'}${full ? '-full' : ''}.png`);
 /** Where a bucket's tray glyph is; Electron finds the `@2x` beside it. */
 export const trayFile = (bucket) => `icons/tray-${bucket.id}.png`;
-/** The iOS alternate icon's name, or null for the primary icon. */
-export const alternateIconName = (bucket) => (bucket.primary ? null : `AppIcon-${bucket.id}`);
+/** The iOS alternate icon for a bucket in one mode. Every bucket has one per
+ *  mode, the primary's included, so the icon follows the Control UI's own light
+ *  or dark palette rather than the home screen's appearance: an icon set that
+ *  carries both renditions switches with the DEVICE, which is not the question
+ *  when the interface's theme is pinned to the other mode. */
+export const alternateIconName = (bucket, mode) => `AppIcon-${bucket.id}-${mode === 'light' ? 'light' : 'dark'}`;
 
 /** The icon to show for a live palette: its bucket, neon or paper by mode, and
  *  edge to edge when `full` (see fillsSquare). */

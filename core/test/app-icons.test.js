@@ -48,8 +48,9 @@ test('an accent takes the nearest hue, a colourless one the neutral pair, and no
   assert.equal(fillsSquare('darwin'), false);
   assert.equal(fillsSquare('win32'), true);
   assert.equal(fillsSquare('linux'), true);
-  assert.equal(alternateIconName(PRIMARY), null);
-  assert.equal(alternateIconName(BUCKETS[3]), `AppIcon-${BUCKETS[3].id}`);
+  assert.equal(alternateIconName(PRIMARY, 'light'), `AppIcon-${PRIMARY.id}-light`);
+  assert.equal(alternateIconName(BUCKETS[3], 'dark'), `AppIcon-${BUCKETS[3].id}-dark`);
+  assert.equal(alternateIconName(BUCKETS[3], undefined), `AppIcon-${BUCKETS[3].id}-dark`);
 });
 
 test('every role keeps the design lightness, and takes the first or second hue by its role', () => {

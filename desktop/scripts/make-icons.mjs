@@ -51,7 +51,7 @@ import sharp from 'sharp';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { generatedFiles, bucketIcons, bucketTrays, iosIconFile, appIcon } from './artwork.mjs';
+import { generatedFiles, bucketIcons, bucketTrays, iosIconFile, iosAltIconFile, appIcon } from './artwork.mjs';
 import { iconFile, trayFile } from '../../core/app-icons.js';
 import { WINDOWS_SIZES, WINDOW_SIZES, encodeIco, decodeIco } from './ico.mjs';
 
@@ -121,7 +121,8 @@ for (const { bucket, svg } of bucketTrays()) {
   targets.push({ file: file.replace(/\.png$/, '@2x.png'), size: 32, svg: Buffer.from(svg, 'utf8'), treatment: 'canvas' });
 }
 for (const { bucket, mode, svg } of bucketIcons({ square: true })) {
-  targets.push({ file: 'mobile/Chela/Assets.xcassets/' + iosIconFile(bucket, mode), size: 1024, svg: Buffer.from(svg, 'utf8'), treatment: 'square' });
+  if (bucket.primary) targets.push({ file: 'mobile/Chela/Assets.xcassets/' + iosIconFile(bucket, mode), size: 1024, svg: Buffer.from(svg, 'utf8'), treatment: 'square' });
+  targets.push({ file: 'mobile/Chela/Assets.xcassets/' + iosAltIconFile(bucket, mode), size: 1024, svg: Buffer.from(svg, 'utf8'), treatment: 'square' });
 }
 
 function fail(message) {
