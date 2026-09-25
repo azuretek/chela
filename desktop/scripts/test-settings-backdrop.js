@@ -251,12 +251,31 @@ async function through(name, act, done) {
   return frames;
 }
 
-async function still(name) {
-  const image = await frame();
-  if (!image) return null;
+/**
+ * The window at rest: captured until three frames in a row agree, because a page
+ * that says it has settled can still be a frame or two from the screen on a slow
+ * machine, and a reading taken in between measures neither state.
+ */
+async function still(name, until = () => true) {
+  const deadline = Date.now() + 15000;
+  let last = null;
+  let agree = 0;
+  let image = null;
+  while (Date.now() < deadline) {
+    image = await frame();
+    if (!image) return null;
+    const rgb = sample(image);
+    agree = last && far(rgb, last) <= 2 ? agree + 1 : 0;
+    last = rgb;
+    if (agree >= 2 && until(rgb)) break;
+    await delay(60);
+  }
   if (SHOTS) fs.writeFileSync(path.join(SHOTS, name + '.png'), image.toPNG());
-  return sample(image);
+  return last;
 }
+
+/** Enough frames inside a transition to say how it moved, rather than only where it ended. */
+const MIN_FRAMES_FOR_MOTION = 6;
 
 /** Leave a surface the way the reader does, with Escape. */
 const escape = (wc) => wc.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
@@ -284,7 +303,8 @@ app.whenReady().then(async () => {
   order = [0, 1, 2];
   const swapped = sample(probe);
   order = far(asIs, COLUMN) <= far(swapped, COLUMN) ? [2, 1, 0] : [0, 1, 2];
-  const bare = await still('backdrop-bare');
+  // The gateway page's own first paint can trail its load on a slow machine.
+  const bare = await still('backdrop-bare', (rgb) => far(rgb, COLUMN) <= TOLERANCE);
   console.log('note bare column rgb(' + bare.join(' ') + '), the dim should read rgb(' + DIMMED.join(' ') + ')');
   check('the capture reads the bare column', far(bare, COLUMN) <= TOLERANCE,
     'the column reads rgb(' + bare.join(' ') + ') where the page paints rgb(' + COLUMN.join(' ') + ')');
@@ -294,7 +314,9 @@ app.whenReady().then(async () => {
   check('Settings can be opened from the menu', Boolean(settingsItem), 'no "Settings\u2026" menu item');
   if (!settingsItem) { finish(); return; }
   const arrival = await through('backdrop-settings-arrival', () => settingsItem.click(), () => settledPage('settings.html'));
-  const underSettings = await still('backdrop-settings');
+  // Waited for until the sheet shows at all: a page that reports itself settled
+  // can still be a frame from the screen.
+  const underSettings = await still('backdrop-settings', (rgb) => far(rgb, bare) > TOLERANCE);
   check('under Settings the interface is dimmed, not washed into the page colour',
     far(underSettings, DIMMED) <= TOLERANCE,
     'the column reads rgb(' + underSettings.join(' ') + '); the drawer dim over it is rgb(' + DIMMED.join(' ') + ')');
@@ -302,8 +324,16 @@ app.whenReady().then(async () => {
   check('every frame of the arrival only darkens the interface toward the dim', strayIn.length === 0,
     strayIn.slice(0, 4).map((f) => f.rel + 'ms rgb(' + f.rgb.join(' ') + ')').join(', ') + ' left the line from the bare interface to the dim');
   const between = arrival.filter((f) => far(f.rgb, bare) > TOLERANCE && far(f.rgb, DIMMED) > TOLERANCE);
-  check('the dim fades in rather than snapping', between.length >= 1,
-    'no frame caught the backdrop between bare and dimmed in ' + arrival.length + ' frames');
+  const moving = arrival.filter((f) => f.rel >= 0 && f.rel <= 1500);
+  if (moving.length < MIN_FRAMES_FOR_MOTION) {
+    // A capturer this slow (a whole-screen grab under xvfb is seconds a frame)
+    // cannot see a 500ms fade either way, so the claim is not made rather than
+    // failed or passed on a frame that could not have caught it.
+    console.log('note only ' + moving.length + ' frames in the first 1.5s of the arrival, too few to see the fade; not claimed');
+  } else {
+    check('the dim fades in rather than snapping', between.length >= 1,
+      'no frame caught the backdrop between bare and dimmed in ' + arrival.length + ' frames');
+  }
 
   /* ------------------------------------------------------ About over Settings */
   const aboutItem = menuItem((label) => /^About\b/.test(label));
@@ -331,7 +361,7 @@ app.whenReady().then(async () => {
   check('the Settings surface is up to close', Boolean(settings), 'no settings view');
   if (settings) {
     const departure = await through('backdrop-settings-departure', () => escape(settings), gone('settings.html'));
-    const after = await still('backdrop-closed');
+    const after = await still('backdrop-closed', (rgb) => far(rgb, bare) <= TOLERANCE);
     check('closing Settings gives the interface back undimmed', far(after, bare) <= TOLERANCE,
       'the column reads rgb(' + after.join(' ') + ') where it read rgb(' + bare.join(' ') + ')');
     const strayOut = departure.filter((f) => offLine(f.rgb, bare, DIMMED) > TOLERANCE);
