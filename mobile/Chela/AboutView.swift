@@ -53,9 +53,10 @@ struct AboutSurface: UIViewRepresentable {
         // Painted with the PAGE's own resolved background rather than the system's,
         // and that is what the two shades at the top of the screen were.
         //
-        // This page draws its card on a wash: `.scrim` is `--scrim`, which ui.css
-        // resolves to `--bg` at 70%, so whatever sits behind the page shows
-        // through it. The web view is not opaque and it was painted with
+        // This page draws its card on the scrim, which ui.css leaves clear inside a
+        // native sheet (the platform draws the dim behind the sheet), so whatever
+        // sits behind the page shows through it. The web view is not opaque and
+        // it was painted with
         // `.systemBackground`, which follows the DEVICE's appearance rather than
         // the Control UI's palette, so on a page whose palette is not the system's
         // default the strip above the card composited to a second colour and met
