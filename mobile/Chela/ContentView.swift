@@ -147,6 +147,8 @@ struct ContentView: View {
     /// reader takes that offer. Weak inside, and this object owns only the ask;
     /// see `GatewayPage`.
     @StateObject private var gatewayPage = GatewayPage()
+    /// The wake and reconnect rule's state; this view only reports into it.
+    @StateObject private var wake = WakeMonitor()
 
     /// The About page's other end, built once for the same reason `host` is: it is
     /// the object `core/ui/about.js` talks to for the life of the About sheet.
@@ -408,6 +410,18 @@ struct ContentView: View {
         // See `UpdateSchedule.becameActive`.
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { updateSchedule?.becameActive() }
+            // Sleep and wake, reported into the shared rule. A backgrounded page
+            // comes back holding a socket iOS killed and an outbox that never saw
+            // the delivery, which only a fresh load clears. See core/wake.js.
+            switch phase {
+            case .background: wake.report("scenePhase:background")
+            case .active: wake.report("scenePhase:active")
+            default: break
+            }
+        }
+        .onAppear {
+            wake.reconnect = { [pairing] in pairing.reconnectNow() }
+            wake.start()
         }
         // The gateway row follows the pairing state, and this is where the two are
         // joined. An unapproved device is `pending` (the page loaded, the gateway
@@ -423,6 +437,7 @@ struct ContentView: View {
                 if let id = gateways.activeGateway?.id { connection.pending(id) }
             case .authenticated:
                 connection.confirm()
+                wake.report("page:rendered")
             default:
                 break
             }

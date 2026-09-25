@@ -42,6 +42,7 @@ const BUNDLED = {
   'app-icons.json': 'read at runtime for the icon buckets a live accent is matched to, and the samples the Swift mirror is tested against',
   'app-settings-affordance.json': 'holds the one injected script that adds the footer control',
   'app-frame-inset.json': 'holds the one injected script that publishes our chrome as a frame the page overlays are clamped to',
+  'wake.json': 'read at runtime for the wake and reconnect transition table, so sleep, wake, network and heartbeat handling is one rule walked by both clients',
   'connection.json': 'read at runtime for the two sentences a pending row shows',
   'device-identity.json': 'holds two injected scripts, the device keypair seed and the capture',
   'feed.json': 'read at runtime for the feed path, the release-notes path, the iOS availability marker and the channel names',

@@ -1,0 +1,230 @@
+{
+  "$comment": "The wake and reconnect rule every client follows. Each platform only REPORTS its events (sleep, wake, offline, online, heartbeatMissed, rendered, loadFailed); this table decides what happens. Bundled, never ported: iOS and desktop read these bytes. See core/wake.js.",
+  "initial": "awake",
+  "states": [
+    "awake",
+    "asleep",
+    "asleepOffline",
+    "offline",
+    "reconnecting"
+  ],
+  "events": [
+    "sleep",
+    "wake",
+    "offline",
+    "online",
+    "heartbeatMissed",
+    "rendered",
+    "loadFailed"
+  ],
+  "actions": [
+    "none",
+    "close",
+    "cover",
+    "reconnect",
+    "uncover"
+  ],
+  "platformEvents": {
+    "desktop": {
+      "sleep": [
+        "powerMonitor:suspend",
+        "powerMonitor:lock-screen"
+      ],
+      "wake": [
+        "powerMonitor:resume",
+        "powerMonitor:unlock-screen"
+      ],
+      "offline": [
+        "net:offline"
+      ],
+      "online": [
+        "net:online"
+      ],
+      "heartbeatMissed": [
+        "page:socket-dropped"
+      ],
+      "rendered": [
+        "page:rendered"
+      ],
+      "loadFailed": [
+        "did-fail-load"
+      ]
+    },
+    "ios": {
+      "sleep": [
+        "scenePhase:background"
+      ],
+      "wake": [
+        "scenePhase:active"
+      ],
+      "offline": [
+        "NWPathMonitor:unsatisfied"
+      ],
+      "online": [
+        "NWPathMonitor:satisfied",
+        "NWPathMonitor:interface-changed"
+      ],
+      "heartbeatMissed": [
+        "page:socket-dropped"
+      ],
+      "rendered": [
+        "page:rendered"
+      ],
+      "loadFailed": [
+        "didFailNavigation"
+      ]
+    }
+  },
+  "transitions": {
+    "awake": {
+      "sleep": [
+        "asleep",
+        "close"
+      ],
+      "wake": [
+        "reconnecting",
+        "reconnect"
+      ],
+      "offline": [
+        "offline",
+        "cover"
+      ],
+      "online": [
+        "reconnecting",
+        "reconnect"
+      ],
+      "heartbeatMissed": [
+        "reconnecting",
+        "reconnect"
+      ],
+      "rendered": [
+        "awake",
+        "none"
+      ],
+      "loadFailed": [
+        "awake",
+        "none"
+      ]
+    },
+    "asleep": {
+      "sleep": [
+        "asleep",
+        "none"
+      ],
+      "wake": [
+        "reconnecting",
+        "reconnect"
+      ],
+      "offline": [
+        "asleepOffline",
+        "none"
+      ],
+      "online": [
+        "asleep",
+        "none"
+      ],
+      "heartbeatMissed": [
+        "asleep",
+        "none"
+      ],
+      "rendered": [
+        "asleep",
+        "none"
+      ],
+      "loadFailed": [
+        "asleep",
+        "none"
+      ]
+    },
+    "asleepOffline": {
+      "sleep": [
+        "asleepOffline",
+        "none"
+      ],
+      "wake": [
+        "offline",
+        "cover"
+      ],
+      "offline": [
+        "asleepOffline",
+        "none"
+      ],
+      "online": [
+        "asleep",
+        "none"
+      ],
+      "heartbeatMissed": [
+        "asleepOffline",
+        "none"
+      ],
+      "rendered": [
+        "asleepOffline",
+        "none"
+      ],
+      "loadFailed": [
+        "asleepOffline",
+        "none"
+      ]
+    },
+    "offline": {
+      "sleep": [
+        "asleepOffline",
+        "close"
+      ],
+      "wake": [
+        "offline",
+        "none"
+      ],
+      "offline": [
+        "offline",
+        "none"
+      ],
+      "online": [
+        "reconnecting",
+        "reconnect"
+      ],
+      "heartbeatMissed": [
+        "offline",
+        "none"
+      ],
+      "rendered": [
+        "offline",
+        "none"
+      ],
+      "loadFailed": [
+        "offline",
+        "none"
+      ]
+    },
+    "reconnecting": {
+      "sleep": [
+        "asleep",
+        "close"
+      ],
+      "wake": [
+        "reconnecting",
+        "none"
+      ],
+      "offline": [
+        "offline",
+        "cover"
+      ],
+      "online": [
+        "reconnecting",
+        "none"
+      ],
+      "heartbeatMissed": [
+        "reconnecting",
+        "none"
+      ],
+      "rendered": [
+        "awake",
+        "uncover"
+      ],
+      "loadFailed": [
+        "awake",
+        "none"
+      ]
+    }
+  }
+}

@@ -562,6 +562,13 @@ final class PairingState: ObservableObject {
     /// non-positive guard is the broken-build case (a spec that would not decode,
     /// see `loadSpec`), where arming would spin; refusing to arm is the safe
     /// direction, and `PairingParityTests` is what turns that build red.
+    /// Reload the gateway page now, through the same leg the retry beat uses, so
+    /// the token handoff and the device seed are reinstalled on the fresh load.
+    /// The wake rule's reconnect: see `WakeMonitor`.
+    func reconnectNow() {
+        retryTick += 1
+    }
+
     private func startRetry() {
         guard retryHandle == nil, Self.retryInterval > 0 else { return }
         retryHandle = clock.schedule(Self.retryInterval) { [weak self] in
