@@ -195,9 +195,19 @@ export function palettesFor(bucket) {
  *  desktop/electron-builder.yml. */
 export const fillsSquare = (platform) => platform !== 'darwin';
 
+/** Whether a platform's live window icon is handed over as a multi-size .ico
+ *  rather than one PNG. Windows: a single PNG becomes one oversized HICON for
+ *  both the big and the small icon (measured 2026-09-24: 512 px each), and the
+ *  taskbar then draws it at 30 px in a 36 px slot at 150% scaling. From an .ico
+ *  Windows loads the size it needs, as it does for the exe's own icon, which
+ *  drew full size in the same slot. The .ico is always edge to edge. */
+export const iconsAsIco = (platform) => platform === 'win32';
+
 /** Where a bucket's icon is, relative to the desktop's assets directory.
  *  `full` is the edge-to-edge icon a platform that fillsSquare() shows. */
-export const iconFile = (bucket, mode, { full = false } = {}) => `icons/${bucket.id}-${mode === 'light' ? 'light' : 'dark'}${full ? '-full' : ''}.png`;
+export const iconFile = (bucket, mode, { full = false, ico = false } = {}) => (ico
+  ? `icons/${bucket.id}-${mode === 'light' ? 'light' : 'dark'}.ico`
+  : `icons/${bucket.id}-${mode === 'light' ? 'light' : 'dark'}${full ? '-full' : ''}.png`);
 /** Where a bucket's tray glyph is; Electron finds the `@2x` beside it. */
 export const trayFile = (bucket) => `icons/tray-${bucket.id}.png`;
 /** The iOS alternate icon's name, or null for the primary icon. */
@@ -205,10 +215,10 @@ export const alternateIconName = (bucket) => (bucket.primary ? null : `AppIcon-$
 
 /** The icon to show for a live palette: its bucket, neon or paper by mode, and
  *  edge to edge when `full` (see fillsSquare). */
-export function choose(accent, mode, { full = false } = {}) {
+export function choose(accent, mode, { full = false, ico = false } = {}) {
   const bucket = bucketFor(accent);
   const m = mode === 'light' ? 'light' : 'dark';
-  return { bucket, mode: m, file: iconFile(bucket, m, { full }), tray: trayFile(bucket) };
+  return { bucket, mode: m, file: iconFile(bucket, m, { full, ico }), tray: trayFile(bucket) };
 }
 
 /** What the iOS app reads, as data: the buckets, the neutral threshold, and

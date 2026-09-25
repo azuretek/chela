@@ -109,3 +109,13 @@ test('every theme the Control UI checkout declares lands on a bucket near its ow
   }
   assert.ok(seen > 0, 'found no accents to check');
 });
+
+test('Windows swaps its live icon as an .ico, every other platform as a PNG', async () => {
+  const { iconsAsIco, choose, iconFile, PRIMARY } = await import('../app-icons.js');
+  assert.equal(iconsAsIco('win32'), true);
+  assert.equal(iconsAsIco('linux'), false);
+  assert.equal(iconsAsIco('darwin'), false);
+  assert.equal(iconFile(PRIMARY, 'dark', { ico: true }), 'icons/' + PRIMARY.id + '-dark.ico');
+  assert.equal(choose(null, 'light', { full: true, ico: true }).file, 'icons/' + PRIMARY.id + '-light.ico');
+  assert.equal(choose(null, 'light', { full: true }).file, 'icons/' + PRIMARY.id + '-light-full.png');
+});
