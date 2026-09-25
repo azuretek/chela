@@ -605,6 +605,16 @@ function motionMs(name) {
 }
 
 /**
+ * How long a screen inside this surface takes to move: the sheet's curve at a
+ * navigation push's speed, or the short fade that stands in for it under reduced
+ * motion. One answer, so the wait below and the stylesheet's own swap cannot
+ * disagree about which of the two is playing.
+ */
+function screenMs() {
+  return reducedMotion() ? motionMs('--duration-fast') : motionMs('--motion-screen');
+}
+
+/**
  * The editor's wrapper: the element that actually moves.
  *
  * The panel is built inside a wrapper rather than animated itself, because what
@@ -612,10 +622,10 @@ function motionMs(name) {
  * own, which would each land in a track of their own. See the `editor-disclosure`
  * rules in ui.css for what moves and ui/CONVENTIONS.md for the rule they implement.
  *
- * Reduced motion is not asked to play it. The panel's resting state IS the open
- * editor, so there is nothing to animate and nothing to take back off afterwards,
- * which is also what makes "nothing may depend on an animation having run" true
- * here by construction.
+ * Reduced motion plays it too, as the stylesheet's plain fade: the track snaps
+ * open and the panel's content fades in, so nothing moves. The panel's resting
+ * state IS the open editor, so "nothing may depend on an animation having run"
+ * stays true here by construction.
  */
 function editorDisclosure(gw) {
   // TWO levels, and the inner one is not decoration. A grid track will not shrink
@@ -630,13 +640,12 @@ function editorDisclosure(gw) {
   const node = el('div', { className: 'editor-disclosure' }, panel);
   if (opening !== gw.id) return node;
   opening = null;
-  if (reducedMotion()) return node;
   node.classList.add('editor-disclosure--arriving');
   arriving = { id: gw.id, node };
   setTimeout(() => {
     node.classList.remove('editor-disclosure--arriving');
     if (arriving && arriving.node === node) arriving = null;
-  }, motionMs('--duration-fast') + MOTION_SLACK_MS);
+  }, screenMs() + MOTION_SLACK_MS);
   return node;
 }
 
@@ -658,10 +667,10 @@ function openEditor(gw) {
  * the same tick as the press never paints a frame of its own departure, so the
  * animation would exist in the stylesheet and nowhere a reader could see it.
  *
- * Reduced motion takes the panel away on the press instead. The preference removes
- * MOTION, not the correct end state, and waiting a duration that is not going to
- * animate reads as the app hanging; so the panel goes in the same frame, with no
- * half-folded state ever shown.
+ * Reduced motion plays the stylesheet's plain fade instead of the fold, and waits
+ * only that long: the preference removes MOTION, not the correct end state, and
+ * the track snaps shut once the content has faded, with no half-folded state ever
+ * shown.
  */
 function collapseEditor(gw) {
   if (leaving && leaving.id === gw.id) return;
@@ -675,12 +684,11 @@ function collapseEditor(gw) {
   // being layered on top of it, so the two animations can never both apply.
   node.classList.remove('editor-disclosure--arriving');
   if (arriving && arriving.node === node) arriving = null;
-  if (reducedMotion()) { render(); return; }
   leaving = { id: gw.id, node };
   node.classList.add('editor-disclosure--leaving');
   setTimeout(() => {
     if (leaving && leaving.node === node) { leaving = null; render(); }
-  }, motionMs('--duration-fast') + MOTION_SLACK_MS);
+  }, screenMs() + MOTION_SLACK_MS);
 }
 
 /** Whatever motion this gateway's panel was in the middle of, forgotten. */
@@ -1287,10 +1295,47 @@ function setEditorAnswer(gw, out, text, kind) {
 //
 // Guarded so a client without the command does not throw; the card that carries
 // this button is hidden in the same case.
+//
+// DEBOUNCED, and answered on the button (the fifth rule in ui/CONVENTIONS.md). The
+// host holds this surface up while the Control UI's settings arrive behind it, which
+// can take a visible second or two, and a press that showed nothing in that time
+// was pressed again: each extra press sent the Control UI to its settings a second
+// time. So the first press says "Opening…" on the button itself and every press
+// after it is ignored. The surface goes away when the destination is on screen,
+// which ends the state with the page; the host holds the surface at least the
+// minimum-visible floor so "Opening…" is read rather than flashed. The deadline is
+// for the one case where neither happens (a Control UI that never answers and a
+// host that never closes), and it gives the reader the button back rather than a
+// control that stays busy for good.
+const OPEN_CONTROL_UI_DEADLINE_MS = 15000;
 const openControlUiSettings = $('open-control-ui-settings');
+const openControlUiLabel = openControlUiSettings ? openControlUiSettings.textContent : '';
+let openingControlUi = null;
+
+/** Give the reader the button back, once the busy state has been up long enough to read. */
+function endOpeningControlUi(shownAt) {
+  const floor = window.clawSurface && window.clawSurface.minVisibleMs ? window.clawSurface.minVisibleMs() : 900;
+  setTimeout(() => {
+    if (!openingControlUi) return;
+    clearTimeout(openingControlUi);
+    openingControlUi = null;
+    openControlUiSettings.disabled = false;
+    openControlUiSettings.textContent = openControlUiLabel;
+    openControlUiSettings.removeAttribute('aria-busy');
+  }, Math.max(0, floor - (Date.now() - shownAt)));
+}
+
 if (openControlUiSettings) {
   openControlUiSettings.addEventListener('click', () => {
-    if (hasCommand('openControlUiSettings')) call('openControlUiSettings');
+    if (openingControlUi || !hasCommand('openControlUiSettings')) return;
+    const shownAt = Date.now();
+    openControlUiSettings.disabled = true;
+    openControlUiSettings.textContent = 'Opening…';
+    openControlUiSettings.setAttribute('aria-busy', 'true');
+    openingControlUi = setTimeout(() => endOpeningControlUi(shownAt), OPEN_CONTROL_UI_DEADLINE_MS);
+    // A host that refused the command will not be closing this surface, so the
+    // button comes back rather than waiting out the deadline.
+    Promise.resolve(call('openControlUiSettings')).catch(() => endOpeningControlUi(shownAt));
   });
 }
 

@@ -78,6 +78,20 @@ enum NoticeTokens {
 
         struct MotionSpec: Decodable {
             let minVisibleMs: Int
+            let sheet: SheetSpec?
+            let screenMs: Int?
+            let spring: SpringSpec?
+        }
+
+        struct SheetSpec: Decodable {
+            let enterMs: Int
+            let leaveMs: Int
+            let curve: [Double]
+        }
+
+        struct SpringSpec: Decodable {
+            let responseMs: Int
+            let dampingFraction: Double
         }
 
         let css: [String: [String: String]]?
@@ -136,6 +150,16 @@ enum NoticeTokens {
     /// A spec without it falls back to the design-language value rather than zero:
     /// a missing floor must fail toward holding a state too long, never toward a flash.
     static var minVisibleMs: Int { spec.motion?.minVisibleMs ?? 900 }
+
+    /// The sheet, screen and spring motion, read by `Motion`. The fallbacks are the
+    /// spec's own values, so a build that bundled no spec still moves like the
+    /// desktop rather than snapping; `MotionParityTests` fails on that build anyway.
+    static var sheetEnterMs: Int { spec.motion?.sheet?.enterMs ?? 500 }
+    static var sheetLeaveMs: Int { spec.motion?.sheet?.leaveMs ?? 400 }
+    static var sheetCurve: [Double] { spec.motion?.sheet?.curve ?? [0.32, 0.72, 0, 1] }
+    static var screenMs: Int { spec.motion?.screenMs ?? 350 }
+    static var springResponseMs: Int { spec.motion?.spring?.responseMs ?? 550 }
+    static var springDampingFraction: Double { spec.motion?.spring?.dampingFraction ?? 0.825 }
 
     /// The type scale, at the Control UI's default text scale of 1.
     static var sizes: [String: String] { spec.type?.size ?? [:] }

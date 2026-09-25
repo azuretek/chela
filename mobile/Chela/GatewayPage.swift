@@ -22,7 +22,12 @@ final class GatewayPage: ObservableObject {
     /// Set by `WebView.makeUIView`, which is the only thing that creates one.
     weak var webView: WKWebView?
 
-    /// Clear this app's cached Control UI code and reload the gateway page.
+    /// Whether there is a gateway page to restart at all.
+    var hasPage: Bool { webView != nil }
+
+    /// Clear this app's cached Control UI code: the first half of the phone's Clear
+    /// cache and refresh, and the restart that follows is `ContentView`'s, because
+    /// it moves the sheets and the loading cover as well as this page.
     ///
     /// The phone's half of the desktop's Clear cache and refresh, and it keeps the
     /// same boundary for the same reason. What is dropped is CACHE and nothing
@@ -33,21 +38,25 @@ final class GatewayPage: ObservableObject {
     /// staleness this button exists to fix. See `CACHE_DATA_TYPES` below and
     /// `desktop/src/cache.js` for the other client's half of the same rule.
     ///
-    /// It returns what happened as a sentence rather than a bool, because the
-    /// reader is owed the effect rather than the intention: a reload that never
-    /// started and one that never landed are different things, and neither is
-    /// "reloaded".
+    /// Returns which sites' records were dropped, for the log.
     @MainActor
-    func clearCacheAndReload() async -> (ok: Bool, detail: String) {
-        let cleared = await Self.clearCachedCode()
-        guard let webView else {
-            return (false, "There is no Control UI page to reload: the app is not connected to a gateway.")
-        }
-        let landed = await reloadAndWait(webView)
-        if !landed {
-            return (false, "The cached code was cleared\(cleared), but the Control UI did not reload.")
-        }
-        return (true, "Cleared cached code\(cleared) and reloaded the Control UI from the server.")
+    func clearCachedCode() async -> String {
+        await Self.clearCachedCode()
+    }
+
+    /// Reload the gateway page from the server, as a launch loads it.
+    ///
+    /// `reloadFromOrigin` rather than `reload`, so the document is revalidated
+    /// end to end rather than served from whatever the cache still holds. Nothing
+    /// is awaited here: the navigation delegate raises the loading cover on the
+    /// load's start and lifts it once the page has painted (`PageCover`), and a
+    /// load that fails takes the same failure path a launch does, so the reader is
+    /// told either way.
+    @discardableResult
+    func reloadFromServer() -> Bool {
+        guard let webView else { return false }
+        webView.reloadFromOrigin()
+        return true
     }
 
     /// The cache types a clear drops, and the ONLY ones it drops.
@@ -74,25 +83,6 @@ final class GatewayPage: ObservableObject {
                 }
             }
         }
-    }
-
-    /// Reload the page and wait for the navigation to actually finish.
-    ///
-    /// Bounded, because a reload that never starts and one that never lands are
-    /// both states this has to be able to report: the first is a page that is gone
-    /// and the second is a gateway that is not answering, and neither is a
-    /// confirmation. `started` is what makes the difference between them, since
-    /// `isLoading` is false both before a load begins and after one ends.
-    private func reloadAndWait(_ webView: WKWebView, timeout: TimeInterval = 12) async -> Bool {
-        webView.reload()
-        let deadline = Date().addingTimeInterval(timeout)
-        var started = false
-        while Date() < deadline {
-            try? await Task.sleep(nanoseconds: 100_000_000)
-            if webView.isLoading { started = true }
-            else if started { return true }
-        }
-        return false
     }
 
     /// Ask the Control UI for its live design tokens.

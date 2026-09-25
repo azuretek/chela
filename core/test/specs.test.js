@@ -53,6 +53,7 @@ const BUNDLED = {
   'notices.json': 'read at runtime for the tone names and their sort order',
   'pairing.json': 'holds the one injected script that observes the page gateway socket for a pairing close',
   'progress.json': 'read at runtime for the milestone order, the floors and the easing constants',
+  'quips.json': 'read at runtime for the lines the shared loading page rotates, which the host computes and pushes on both clients',
   'prompt-metadata.json': 'holds the injected script that puts the client-context block on every prompt',
   'reconnect-resume-shim.json': 'holds the one injected script that strips the Control UI reconnect-resume marker from a chat.send frame before it leaves the page',
   'release.json': 'read at runtime for the release asset names the OTA install URL is built from',
@@ -65,7 +66,6 @@ const BUNDLED = {
 
 // Read by nothing in this repo's clients.
 const NOT_READ_HERE = {
-  'quips.json': 'the loading quips belong to the desktop loading cover; no iOS surface draws them',
   'bootstrap-health.json': 'the crash-loop rollback is a desktop bootstrap concern (iOS cannot self-update); the desktop imports it directly as ESM, so no iOS surface ships it',
   'issue-report.json': 'the opt-out issue reporter is desktop-only (there is no iOS reporter); the desktop imports it directly as ESM, so no iOS surface ships it',
 };

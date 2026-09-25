@@ -199,8 +199,15 @@ struct WebView: UIViewRepresentable {
             Task { @MainActor in cover.hold() }
         }
 
+        /// The response arrived and the page began to load: the cover's progress
+        /// bar reaches the shared curve's `navigated` milestone, as the desktop's does.
+        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            Task { @MainActor in cover.reached("navigated") }
+        }
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             Task { @MainActor in
+                cover.reached("dom")
                 // The cover waits for the page to PAINT, because a finished load is
                 // not a page on screen. See PageCover and core/render-ready.js.
                 if let probe = RenderReady.probe {
@@ -264,7 +271,10 @@ struct WebView: UIViewRepresentable {
             if urlError?.code == .cancelled { return }
             let description = urlError?.localizedDescription ?? error.localizedDescription
             Task { @MainActor in
-                cover.lift("load-failed")
+                // The cover stays, in the shared loading page's failed state with
+                // Try again, rather than coming down onto a page that did not load
+                // (Abi, 2026-09-25). The notice still says why.
+                cover.fail("load-failed")
                 notices.connectionFailed(label: gatewayName, description: description)
                 connection.failed(gatewayId)
                 // A load that never reached a page is a network/host failure, not

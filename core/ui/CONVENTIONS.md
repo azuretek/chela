@@ -237,7 +237,30 @@ looking, and it is the phone platforms' own answer for the same job.
 **A result that outlives the press belongs to the banner**, because the reader may
 have looked away, and a result that expired with their attention is one they never
 got. A line under a control is for a report that stays until the surface closes,
-meaning what a clear actually cleared.
+meaning a host that refused the press.
+
+**A press whose answer is the app doing something in front of the reader writes
+nothing at all.** Two controls work this way, and both take the three rows above:
+
+- **Go to the Control UI** says "Opening…" and ignores every press after the first,
+  while the Control UI's own settings arrive behind this surface; the surface goes
+  when they are on screen, held the minimum-visible floor from the press, and a
+  bounded deadline gives the button back if neither happens.
+- **Clear cache and refresh** says "Clearing…", and its answer is a FRESH START of
+  the app (Abi, 2026-09-25): the launch loading screen goes up first, About and
+  Settings slide away onto it, the Control UI reloads from the server behind it, and
+  it comes down once the page has painted, held the floor so the restart is seen.
+  No green line anywhere, because the restart IS the answer, and a reload that
+  fails lands on the loading screen's own failed state with Try again, the path a
+  failed launch takes.
+
+**The loading screen is one page on every client** (Abi, 2026-09-25):
+`core/ui/loading.html`, which the desktop hosts in its cover view and the phone
+hosts in `LoadingSurface`, so its mark, ring, progress bar, quips and failed state
+change everywhere at once. Each host computes the progress from `spec/progress.json`
+and the quip from `spec/quips.json` and pushes them; the page only draws. A load
+that fails keeps the cover up in its failed state on both clients, never takes it
+down onto a page that did not load.
 
 ## ★ The sixth rule: colour is not ours to choose
 
@@ -402,46 +425,59 @@ the end of this file.
 
 ## Durations and easing
 
-Two durations, from the shared token layer, and nothing animates for longer:
+Every duration and curve is a token, and nothing animates on a number of its own.
+Two families, and which one a change takes depends on what it is:
 
 | Token | Value | Use |
 |---|---|---|
-| `--duration-fast` | 100ms | A change WITHIN one surface, and every LEAVE. |
-| `--duration-normal` | 180ms | A surface ENTERING the window. |
+| `--motion-sheet-in` | 500ms | Settings and About ARRIVING: a sheet sliding up from the bottom edge. |
+| `--motion-sheet-out` | 400ms | Settings and About LEAVING: the same sheet sliding back down. Also the pairing screen's departure. |
+| `--motion-screen` | 350ms | A screen moving INSIDE a surface: a settings tab, the gateway editor opening and closing. |
+| `--motion-spring` | 730ms | The pairing screen ARRIVING, on a spring. The time the spring takes to settle, not a number chosen beside it. |
+| `--duration-normal` | 180ms | The notice card arriving, the first run's own page arriving, and every arrival under reduced motion. |
+| `--duration-fast` | 100ms | The notice card leaving, the loading cover leaving, and every departure under reduced motion. |
 
-**Leaving is always quicker than arriving.** A surface arriving has to be read;
-a surface leaving has already been read, and the reader is waiting to see what is
-behind it. So arrival takes `--duration-normal` and departure takes
-`--duration-fast`.
+**Settings and About move like an iOS sheet, on every client** (Abi, 2026-09-25,
+emphatically). They slide up from the bottom edge over a fading scrim and slide back
+down on close, at the iOS sheet's own speed and on its curve. About opened from
+Settings is a second sheet over the first, and its departure is what reveals Settings
+again. That is why these are the slowest motions here: a sheet crosses the whole
+window, and at the Control UI's 180ms it would read as a jump rather than as a sheet.
+
+**Leaving is always quicker than arriving.** A surface arriving has to be read; a
+surface leaving has already been read, and the reader is waiting to see what is
+behind it. So a sheet arrives over `--motion-sheet-in` and leaves over the shorter
+`--motion-sheet-out`, and the notice card arrives over `--duration-normal` and
+leaves over `--duration-fast`.
 
 Easing:
 
 | Token | Value | Use |
 |---|---|---|
-| `--ease-out` | `cubic-bezier(0.16, 1, 0.3, 1)` | Entering. Fast off the mark, gentle into place. |
-| `--motion-leave-ease` | `cubic-bezier(0.4, 0, 1, 1)` | Leaving, when the departure is a movement of its own. Accelerates away, so it does not linger at the end. |
-
-The arriving curve decelerates so the thing lands rather than stops. The leaving
-curve accelerates for the mirror reason: a decelerating exit spends its last
-frames almost stationary, which reads as the surface being reluctant to go.
+| `--motion-sheet-ease` | `cubic-bezier(0.32, 0.72, 0, 1)` | A sheet, both ways, and a screen inside a surface. The curve web implementations of the iOS sheet use to match UIKit's own presentation: fast off the mark and a long, gentle settle. |
+| `--motion-spring-ease` | a `linear()` sampling of the spring | The pairing screen's arrival. |
+| `--ease-out` | `cubic-bezier(0.16, 1, 0.3, 1)` | The notice card and the first run's own page. The Control UI's own curve. |
 
 **A departure that is its arrival played backwards keeps the arrival's curve**, and
 takes the shorter duration to say it is going. It is the same movement in reverse
 rather than a movement of its own, so reversing the curve with it is what makes the
-pair read as one object going back the way it came. Leaving by a different path (a
-surface that rose in and drops out) is a movement of its own and takes
-`--motion-leave-ease`.
+pair read as one object going back the way it came. A sheet leaves this way, and so
+does the notice card.
 
-There is a hard constraint behind that rule as well as a design one: `banner.css`
-reads only tokens the layer emits, which `desktop/test/tokens.test.js` asserts, and
-`--motion-leave-ease` is ours rather than borrowed so it is not one of them. The
-notice card's departure is the mirrored kind anyway.
+**The spring is the phone's own.** SwiftUI's `.spring(response:dampingFraction:)`
+is what iOS runs, with the default parameters, and CSS has no spring, so
+`core/ui/motion.js` `springCurve()` samples the same spring into a `linear()`
+easing and the time it takes to settle. `ui.css` restates that string and
+`core/test/motion.test.js` recomputes it, so the two clients run one spring.
 
-Both durations are the Control UI's own borrowed tokens. `--motion-leave-ease` is
-OURS, because upstream publishes one curve and an exit needs the other shape. It
-lives in `ui.css`'s `:root` with the other values we own, and not in
-`spec/tokens.json`: every value in that spec is checked against the upstream
-checkout, so a value of ours there would fail the day upstream has no such name.
+**Where the values live.** The two short durations and `--ease-out` are the Control
+UI's own borrowed tokens. The sheet, screen and spring values are OURS, and they live
+in `motion` in `spec/tokens.json` beside `minVisibleMs`, exempt from the
+upstream-parity check the borrowed tokens face, because both clients read them:
+`core/ui/motion.js` exports them, `ui.css` restates them as custom properties
+(a page cannot import the spec), and `mobile/Chela/Motion.swift` mirrors them.
+`core/test/motion.test.js` holds each CSS literal to the spec and
+`MotionParityTests` holds the Swift mirror to it.
 
 ## What moves, and what stays still
 
@@ -453,12 +489,16 @@ window or shift the reader's content under them.
 
 | Change | Motion |
 |---|---|
-| A surface entering (overlay, cover, sheet) | Scrim fades in. Card fades in and RISES 8px into place (`--motion-rise`). |
-| A surface leaving | Scrim fades out. Card fades out and drops 4px. No rise: it is going back the way it came. |
-| A panel replacing another in the same surface (settings tabs) | The incoming panel fades in and enters from the side the reader moved TOWARD, 12px (`--motion-slide`). |
+| Settings or About arriving | Scrim fades in. The card SLIDES UP from below the window's bottom edge into its place, like an iOS sheet, over `--motion-sheet-in` on `--motion-sheet-ease`. No fade and no scale on the card: the slide is the motion. |
+| Settings or About leaving | Scrim fades out. The card slides back DOWN past the bottom edge by the same path, over `--motion-sheet-out`. About leaving from over Settings is what reveals Settings. |
+| Settings or About on the phone | The native sheet's own slide, and nothing else: the phone's host marks the page `surface--native-sheet` and the card draws no motion of its own inside it, so there are never two motions for one arrival. |
+| The pairing screen arriving | Rises from below the bottom edge on the spring (`--motion-spring`, `--motion-spring-ease`), on both clients; it leaves by the sheet's path. |
+| The loading cover | Keeps its short fade: it is held back a beat and fades in, so a connect that resolves at once never flashes it, and it fades out over `--duration-fast` once the page under it has painted. |
+| The first run's own settings page | The window's content rather than a sheet over anything, so the card fades in and RISES 8px (`--motion-rise`) over `--duration-normal`. |
+| A panel replacing another in the same surface (settings tabs) | The incoming panel fades in and enters from the side the reader moved TOWARD, 12px (`--motion-slide`), on the sheet's curve over `--motion-screen`. |
 | A notice card appearing | Slides DOWN from above the viewport (already so, and it keeps that direction: it arrives from the edge it occupies). |
 | A notice card being dismissed | Slides back UP by the same path, over `--duration-fast`. |
-| **A disclosure opening or closing in place** (the gateway editor's Edit) | The panel's wrapper opens its track from `0fr` to `1fr`, and the panel underneath fades in and RISES 8px into place (`--motion-rise`), over `--duration-fast`. Closing shuts the same track by the same path, with the panel fading out in place: the arrival's rise has a direction the collapse does not, so only the opacity is mirrored. |
+| **A disclosure opening or closing in place** (the gateway editor's Edit) | The panel's wrapper opens its track from `0fr` to `1fr`, and the panel underneath fades in and RISES 8px into place (`--motion-rise`), on the sheet's curve over `--motion-screen`. Closing shuts the same track by the same path, with the panel fading out in place: the arrival's rise has a direction the collapse does not, so only the opacity is mirrored. |
 
 **Snaps, always, and an animation here is a fault:**
 
@@ -478,7 +518,7 @@ window or shift the reader's content under them.
     three, so with the editor as the item the track floored at 29px and the closing
     press ended in a jump of exactly that height.
   - **Its content still arrives on opacity and transform** underneath the track, and
-    it still takes `--duration-fast` in both directions. Clipping is part of the
+    it takes `--motion-screen` in both directions. Clipping is part of the
     moving classes only, never of the resting rule, so an element at rest is not a
     clip container and no focus ring is cut.
   - **A VIEW's height is still final on its first frame.** This does not license
@@ -525,8 +565,8 @@ way the thing is going:
 
 - Moving to a tab to the RIGHT brings its panel in from the RIGHT. The incoming
   panel starts offset toward the side it is arriving from and settles at zero.
-- A surface arriving comes FORWARD, which is the rise; a surface leaving goes back
-  the way it came, which is the drop.
+- A sheet arrives from the bottom edge and leaves back through it, the way an iOS
+  sheet does.
 - A notice arrives from the edge it lives on (above) and leaves back through it.
 
 Motion that points the wrong way is worse than no motion: it tells the reader they
@@ -537,10 +577,15 @@ went somewhere they did not.
 **Every rule above has a reduced-motion form, and it is part of the rule rather
 than an exception to it.**
 
-`@media (prefers-reduced-motion: reduce)` turns every view-change animation off
-(`animation: none`), which leaves each element at its ordinary resting state, and
-`clawSurface.leave()` resolves at once so a host removes the surface immediately
-instead of waiting a duration it is not going to animate.
+**Reduced motion is a plain fade, everywhere** (Abi, 2026-09-25).
+`@media (prefers-reduced-motion: reduce)` swaps every view change for
+`surface-fade-in` over `--duration-normal` or `surface-fade-out` over
+`--duration-fast`: the sheets, the pairing screen, the settings panels and the
+editor's content all fade and nothing moves, and the editor's track snaps while its
+content fades. `clawSurface.leave()` waits out that short fade rather than a slide,
+so a host removes the surface as the fade ends. On the phone the native sheets and
+the pairing screen take the platform's own reduced-motion cross-fade, and the pairing
+screen's spring becomes a fade.
 
 Two things this must NOT change:
 
