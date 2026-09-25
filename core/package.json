@@ -26,7 +26,8 @@
     "./device-identity.js": "./device-identity.js",
     "./release.js": "./release.js",
     "./reconnect-resume-shim.js": "./reconnect-resume-shim.js",
-    "./wake.js": "./wake.js"
+    "./wake.js": "./wake.js",
+    "./render-ready.js": "./render-ready.js"
   },
   "scripts": {
     "test": "node --test test/*.test.js",
