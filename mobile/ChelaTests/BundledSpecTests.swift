@@ -32,6 +32,7 @@ final class BundledSpecTests: XCTestCase {
         Reader(name: "notices", decoded: NoticeTone.decodedKeys, ignored: NoticeTone.ignoredKeys),
         Reader(name: "updates", decoded: UpdatePolicy.decodedKeys, ignored: UpdatePolicy.ignoredKeys),
         Reader(name: "connection", decoded: ConnectionState.decodedKeys, ignored: ConnectionState.ignoredKeys),
+        Reader(name: "wake", decoded: WakeRule.decodedKeys, ignored: WakeRule.ignoredKeys),
         Reader(name: "release", decoded: Release.decodedKeys, ignored: Release.ignoredKeys),
         Reader(name: "tokens", decoded: NoticeTokens.decodedKeys, ignored: NoticeTokens.ignoredKeys),
         Reader(name: "banner", decoded: BannerSpec.decodedKeys, ignored: BannerSpec.ignoredKeys),

@@ -1,6 +1,6 @@
 import {
   app, BrowserWindow, WebContentsView, Tray, Menu, MenuItem, shell,
-  globalShortcut, nativeImage, ipcMain, screen, session,
+  globalShortcut, nativeImage, ipcMain, screen, session, powerMonitor, net,
 } from 'electron';
 import http from 'node:http';
 import { createRequire } from 'node:module';
@@ -39,6 +39,7 @@ import * as promptMetadata from './prompt-metadata.js';
 import * as quips from './quips.js';
 import * as tokens from './tokens.js';
 import updates from './updates.js';
+import { createWake } from './wake.js';
 // The minimum-visible-duration primitive, shared with the phone: how long a
 // transient state (a manual check's answer card) must stay on screen before a
 // fresher one may replace it, so a second press does not flash. See
@@ -1352,6 +1353,39 @@ function retryPairingConnect() {
  *     because a reload tears the old document's socket down and that close is our
  *     own doing rather than the connection ending.
  */
+/* ------------------------------------------------------------ wake/reconnect */
+
+// Sleep, wake, lock, unlock, a network drop and a missed heartbeat all feed one
+// rule, core/wake.js, and this only reports them and carries out its actions. A
+// queued message that hung after idle was cleared by a restart, and a restart is
+// a fresh page load under the cover: that is what reconnect does here.
+const wake = createWake({
+  log: (line) => console.log(line),
+  close: () => { payloadGateway = null; },
+  cover: () => { payloadGateway = null; showLoadingCover(); },
+  reconnect: () => {
+    payloadGateway = null;
+    if (config.activeGateway()) loadActiveGateway();
+  },
+});
+
+let onlinePoll = null;
+function watchWake() {
+  for (const name of ['suspend', 'resume', 'lock-screen', 'unlock-screen']) {
+    powerMonitor.on(name, () => wake.reportRaw(`powerMonitor:${name}`));
+  }
+  // Electron has no network-change event in the main process, so the answer is
+  // read on a short cadence and only a CHANGE is reported.
+  let online = net.isOnline();
+  onlinePoll = setInterval(() => {
+    const now = net.isOnline();
+    if (now === online) return;
+    online = now;
+    wake.reportRaw(now ? 'net:online' : 'net:offline');
+  }, 3000);
+  onlinePoll.unref?.();
+}
+
 function handleSocketDropped() {
   if (connection.phase !== connectionState.CONNECTED) return;
   if (pageReloading) return;
@@ -1379,7 +1413,11 @@ function handlePairingReport(event, payload) {
   if (!report) return;
 
   if (report.kind === 'dropped') {
+    const wasConnected = connection.phase === connectionState.CONNECTED && !pageReloading;
     handleSocketDropped();
+    // A connection that was up and fell is the missed heartbeat: reconnect fresh
+    // rather than trust the page to resume a socket and an outbox that went stale.
+    if (wasConnected) wake.reportRaw('page:socket-dropped');
     return;
   }
 
@@ -1642,6 +1680,7 @@ function createGatewayView({ attempt = false } = {}) {
       // that proves it -- a load that finished on a page that is not ours.
       clearNotice('connection');
       hideLoadingCover();
+      wake.reportRaw('page:rendered');
       // The reader asked for a reload from the About box, and this is the load that
       // answered it. Reported from the LOAD rather than from the press, because
       // the clear returning and a fresh payload arriving are two different events
@@ -5182,6 +5221,7 @@ if (!app.requestSingleInstanceLock()) {
     // attempt for this launch. bootHealth() carries the verdict for the banner
     // and the automatic rollback.
     beginBootAttempt();
+    watchWake();
 
     // The issue reporter, wired before anything can crash: it installs the
     // process error handlers and the crash reporter, and it decides the channel
