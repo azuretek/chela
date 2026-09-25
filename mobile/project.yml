@@ -123,6 +123,14 @@ targets:
       # is the repository's.
       - path: ../core/spec/reconnect-resume-shim.json
         buildPhase: resources
+      # The outbox reconcile, bundled rather than mirrored for the same reason as
+      # the shim above: it holds the ONE injected script, which settles a queued
+      # message the Control UI leaves stuck on a live connection. OutboxReconcile
+      # reads this at runtime and installs it through a WKUserScript at document
+      # start, and OutboxReconcileParityTests asserts the bundled copy is the
+      # repository's.
+      - path: ../core/spec/outbox-reconcile.json
+        buildPhase: resources
       # The device-identity persistence contract, bundled rather than mirrored
       # for its TWO injected scripts: the seed that restores the page's device
       # keypair into localStorage before the page boots, and the capture that
