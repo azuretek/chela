@@ -79,7 +79,7 @@ fs.writeFileSync(path.join(PROFILE, 'config.json'), `${JSON.stringify({
  * case measure nothing at all, which is what its first run did.
  */
 const document = (mark) => `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Marker Control UI ${mark}</title>
+<html lang="en" data-openclaw-control-ui-build-id="harness"><head><meta charset="utf-8"><title>Marker Control UI ${mark}</title>
 <style>
   html, body { margin: 0; height: 100%; }
   body { background: ${mark === 'A' ? '#1b3ea8' : '#0f7a3d'}; color: #fff;

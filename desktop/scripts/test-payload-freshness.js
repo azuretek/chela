@@ -152,7 +152,7 @@ if (!fs.existsSync(CONFIG)) {
  * fixed name, so a cache-first worker has something to serve stale.
  */
 const document = (mark) => `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Marker Control UI ${mark}</title></head>
+<html lang="en" data-openclaw-control-ui-build-id="harness"><head><meta charset="utf-8"><title>Marker Control UI ${mark}</title></head>
 <body>
   <div id="doc">doc ${mark}</div>
   <div id="hashed">hashed not loaded</div>
