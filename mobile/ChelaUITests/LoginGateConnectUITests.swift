@@ -25,10 +25,30 @@ final class LoginGateConnectUITests: XCTestCase {
         return (value?.isEmpty ?? true) ? nil : value
     }
 
-    private func control(_ base: String, _ path: String) {
+    @discardableResult
+    private func control(_ base: String, _ path: String) -> [String: Any] {
         let done = expectation(description: path)
-        URLSession.shared.dataTask(with: URL(string: base + path)!) { _, _, _ in done.fulfill() }.resume()
+        var answer: [String: Any] = [:]
+        URLSession.shared.dataTask(with: URL(string: base + path)!) { data, _, _ in
+            if let data, let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] { answer = object }
+            done.fulfill()
+        }.resume()
         wait(for: [done], timeout: 5)
+        return answer
+    }
+
+    /// The gate was really reached: the page loaded through the proxy and its
+    /// socket was refused. Without this, a page that never loaded passes every
+    /// assertion below, because the app's own failed-load screen is also a cover.
+    private func assertTheGateWasReached(_ controlBase: String) {
+        let deadline = Date().addingTimeInterval(30)
+        var refused = 0
+        repeat {
+            refused = (control(controlBase, "/state")["refused"] as? Int) ?? 0
+            if refused > 0 { break }
+            usleep(500_000)
+        } while Date() < deadline
+        XCTAssertGreaterThan(refused, 0, "the page never loaded and tried its socket, so the gate was never reached and nothing here is measured")
     }
 
     private func shot(_ app: XCUIApplication, _ name: String) {
@@ -78,7 +98,7 @@ final class LoginGateConnectUITests: XCTestCase {
 
     /// Launch onto a gate: the page is served, its socket is refused, and the page
     /// draws its own "Gateway unreachable".
-    private func launchOntoTheGate() throws -> XCUIApplication {
+    private func launchOntoTheGate() throws -> (XCUIApplication, String) {
         guard let gateway = env("CLAW_GATE_GATEWAY"), let controlBase = env("CLAW_GATE_CONTROL") else {
             throw XCTSkip("needs CLAW_GATE_GATEWAY and CLAW_GATE_CONTROL")
         }
@@ -87,11 +107,12 @@ final class LoginGateConnectUITests: XCTestCase {
         app.launchArguments += ["-claw-gateway-url", gateway]
         app.launchEnvironment["OPENCLAW_SEED_TOKEN"] = env("CLAW_GATE_TOKEN") ?? "login-gate-test"
         app.launch()
-        return app
+        assertTheGateWasReached(controlBase)
+        return (app, controlBase)
     }
 
     func testTheControlUisOwnConnectionScreenIsNeverTheSurface() throws {
-        let app = try launchOntoTheGate()
+        let (app, _) = try launchOntoTheGate()
         XCTAssertTrue(cover(app).waitForExistence(timeout: 60),
             "the loading screen must be what is shown, not the page's own connection screen")
         pagesOwnScreenIsUnreachable(app, "when the gate was reached")
@@ -103,7 +124,7 @@ final class LoginGateConnectUITests: XCTestCase {
     }
 
     func testTryAgainFromTheFailedStateCoversRatherThanShowingThePage() throws {
-        let app = try launchOntoTheGate()
+        let (app, _) = try launchOntoTheGate()
         XCTAssertTrue(cover(app).buttons["Try again"].waitForExistence(timeout: 60), "the failed state never came up")
         shot(app, "failed")
         cover(app).buttons["Try again"].tap()
