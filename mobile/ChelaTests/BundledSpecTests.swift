@@ -37,6 +37,7 @@ final class BundledSpecTests: XCTestCase {
         Reader(name: "tokens", decoded: NoticeTokens.decodedKeys, ignored: NoticeTokens.ignoredKeys),
         Reader(name: "banner", decoded: BannerSpec.decodedKeys, ignored: BannerSpec.ignoredKeys),
         Reader(name: "app-frame-inset", decoded: AppFrameInset.decodedKeys, ignored: AppFrameInset.ignoredKeys),
+        Reader(name: "render-ready", decoded: RenderReady.decodedKeys, ignored: RenderReady.ignoredKeys),
     ]
 
     func testEachReaderAccountsForEveryKeyItsSpecCarries() throws {

@@ -68,6 +68,11 @@ struct WebView: UIViewRepresentable {
     /// here because this view is what makes the web view; see `GatewayPage`.
     let pageControl: GatewayPage
 
+    /// The loading cover, held from the start of every load until the page has
+    /// painted. This view is the only thing that sees a navigation start, so it is
+    /// where the cover is raised; ContentView draws it. See PageCover.
+    let cover: PageCover
+
     /// Remembers what has been asked for, so a SwiftUI update cannot reload the
     /// page under the user. `updateUIView` runs on every layout pass, and the
     /// web view's own `url` is not a usable guard for that: it stays nil until
@@ -135,6 +140,9 @@ struct WebView: UIViewRepresentable {
         /// close carries.
         private let pairing: PairingState
 
+        /// The loading cover the navigation legs raise and release.
+        private let cover: PageCover
+
         init(
             themeColour: Binding<Color>,
             notices: NoticeBoard,
@@ -142,8 +150,10 @@ struct WebView: UIViewRepresentable {
             pairing: PairingState,
             gatewayName: String,
             gatewayId: String,
+            cover: PageCover,
             onOpenAppSettings: @escaping () -> Void
         ) {
+            self.cover = cover
             self.themeColour = themeColour
             self.notices = notices
             self.connection = connection
@@ -172,8 +182,24 @@ struct WebView: UIViewRepresentable {
 
         /// The page loaded. Whatever a previous failure said about this gateway is
         /// no longer true, so the notice the banner is showing comes down.
+        /// A load started, the first one, a Try again, a wake's reconnect or a
+        /// pairing retry alike: cover the page until the new one has painted.
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            Task { @MainActor in cover.hold() }
+        }
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             Task { @MainActor in
+                // The cover waits for the page to PAINT, because a finished load is
+                // not a page on screen. See PageCover and core/render-ready.js.
+                if let probe = RenderReady.probe {
+                    cover.loaded { [weak webView] in
+                        guard let webView else { return }
+                        _ = try await webView.callAsyncJavaScript("return await (" + probe + ");", contentWorld: .page)
+                    }
+                } else {
+                    cover.lift("no-probe")
+                }
                 notices.connectionRecovered()
                 connection.connected(gatewayId)
                 // The page's HTML loaded, which is NOT the same as the gateway
@@ -217,6 +243,7 @@ struct WebView: UIViewRepresentable {
                     description: "The page stopped responding and will be reloaded."
                 )
                 connection.failed(gatewayId)
+                cover.lift("page-terminated")
                 webView.reload()
             }
         }
@@ -226,6 +253,7 @@ struct WebView: UIViewRepresentable {
             if urlError?.code == .cancelled { return }
             let description = urlError?.localizedDescription ?? error.localizedDescription
             Task { @MainActor in
+                cover.lift("load-failed")
                 notices.connectionFailed(label: gatewayName, description: description)
                 connection.failed(gatewayId)
                 // A load that never reached a page is a network/host failure, not
@@ -442,6 +470,7 @@ struct WebView: UIViewRepresentable {
             pairing: pairing,
             gatewayName: gateway.label,
             gatewayId: gateway.id,
+            cover: cover,
             onOpenAppSettings: onOpenAppSettings
         )
     }

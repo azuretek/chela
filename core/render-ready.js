@@ -13,33 +13,20 @@
 // anything passes, and a page that draws nothing is held by the backstop.
 //
 // Every client uses this: the desktop runs RENDERED_PROBE in the gateway view,
-// and the iOS client ships the same source as a bundled resource.
+// and the iOS client bundles spec/render-ready.json, the one owner of the probe
+// and the backstop, and runs the same bytes (mobile/Chela/PageCover.swift).
+
+import spec from './spec/render-ready.json' with { type: 'json' };
 
 /** How long a cover is held for a page that never reports a paint. A backstop,
  *  never the path that fires: a view the OS treats as hidden may not paint until
  *  it is shown, and a cover that never lifts is worse than one frame of blank. */
-export const RENDER_BACKSTOP_MS = 4000;
+export const RENDER_BACKSTOP_MS = spec.backstopMs;
 
 /** Evaluates to a Promise that resolves once the page has painted content and
  *  that frame has been presented. Read-only: it defines no global and touches
  *  nothing on the page. */
-export const RENDERED_PROBE = `new Promise(function (resolve) {
-  var settled = false;
-  function presented() {
-    if (settled) { return; }
-    settled = true;
-    requestAnimationFrame(function () { requestAnimationFrame(function () { resolve(true); }); });
-  }
-  function isFcp(entry) { return entry.name === 'first-contentful-paint'; }
-  try {
-    if (performance.getEntriesByType('paint').some(isFcp)) { presented(); return; }
-    new PerformanceObserver(function (list, observer) {
-      if (list.getEntries().some(isFcp)) { observer.disconnect(); presented(); }
-    }).observe({ type: 'paint', buffered: true });
-  } catch (e) {
-    presented();
-  }
-})`;
+export const RENDERED_PROBE = spec.probe.join('\n');
 
 /**
  * Holds a cover until the page under it has rendered.
