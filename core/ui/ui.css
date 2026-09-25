@@ -57,7 +57,6 @@
   --accent-hover: #f78fc5;
   --accent-subtle: rgba(244, 114, 182, .13);
   --primary: #f472b6;
-  --primary-hover: #f78fc5;
   --primary-foreground: #3c0a24;
   --destructive: #d32f2f;
   --ring: #f472b6;
@@ -168,6 +167,17 @@
   --surface-leave: var(--duration-fast);
   --cursor-action: default;
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 3px color-mix(in srgb, var(--ring) 80%, transparent);
+  /* ★ Derived, never taken live, because a custom theme does not set it. A tweakcn
+     theme writes a FIXED list of names (live.customTheme in core/spec/tokens.json)
+     and every other name keeps upstream's base value on the page, so the page
+     computes --primary-hover as upstream's default red, and a primary button went
+     red on hover and press under every custom theme (reported 2026-09-25). So it
+     is ours, derived from --primary here, and it follows every palette including
+     the fallback one above. The step is upstream's own for a custom theme's
+     accent hover (theme-palette.ts: 82% of the colour, 18% toward the contrast
+     side), taken toward --text-strong so it needs no per-mode literal. Guarded by
+     core/test/live-tokens.test.js and desktop/scripts/test-controls-follow-theme.js. */
+  --primary-hover: color-mix(in srgb, var(--primary) 82%, var(--text-strong));
 
   /* Ours: the Control UI has no equivalent, so these are never overridden. */
   --ok: #3ddc84;
@@ -213,7 +223,6 @@
     --accent-hover: #971d5e;
     --accent-subtle: rgba(176, 36, 111, .09);
     --primary: #b0246f;
-    --primary-hover: #971d5e;
     --primary-foreground: #fff;
     --destructive: #c62828;
     --ring: #b0246f;
@@ -1158,6 +1167,19 @@ button.primary:hover:not(:disabled) { background: var(--primary-hover); border-c
 button.ghost { background: transparent; }
 button.danger:hover:not(:disabled) { border-color: var(--destructive); color: var(--destructive); }
 
+/* ★ Keyboard focus on every control of ours draws the theme's ring, never the
+   platform's. A control with no focus style of its own otherwise takes the
+   engine's default outline, a fixed blue in dark and orange in light whatever
+   the palette (measured 2026-09-25 by test-controls-follow-theme.js). Zero
+   specificity, so a control that styles its own focus (.tab, the sidebar back
+   button) keeps it, and the text fields are left out because their ring border
+   already is their focus. An outline rather than --focus-ring's shadow, so it
+   never replaces a shadow the control already draws. */
+:where(:focus-visible:not(input:is([type="text"], [type="url"], [type="password"]), select, textarea)) {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
 /* The checkbox our toggle rows carry. Upstream's row holds a `<wa-switch>`,
    which is a component in the Control UI's own bundle that a file:// page with
    `default-src 'none'` cannot load, so ours is the platform's checkbox in the
@@ -1170,7 +1192,32 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
   height: 16px;
   accent-color: var(--accent);
   cursor: var(--cursor-action);
+  /* Drawn by us rather than by the platform, because the platform paints its box
+     and its tick in its own colours whatever the palette: only the checked fill
+     followed accent-color. Every paint below is a theme token. */
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  display: inline-grid;
+  place-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--input);
 }
+.settings-row--toggle input[type="checkbox"]::before {
+  content: "";
+  width: 4px;
+  height: 8px;
+  margin-top: -2px;
+  border: solid var(--bg);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  visibility: hidden;
+}
+.settings-row--toggle input[type="checkbox"]:hover:not(:disabled) { border-color: var(--border-hover); }
+.settings-row--toggle input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+.settings-row--toggle input[type="checkbox"]:checked::before { visibility: visible; }
+.settings-row--toggle input[type="checkbox"]:disabled { opacity: .45; }
 
 /* The reply line, and what it must NOT do while it is empty.
    It carries a min-height and a top margin so a message that ARRIVES does not
