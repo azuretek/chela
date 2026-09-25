@@ -92,6 +92,50 @@ enum ThemeTokens {
     /// `applyScript` rather than set as a custom one that nothing would read.
     static let schemeKey = "--color-scheme"
 
+    /// The engine's own answer for a colour, as sRGB, as a page function.
+    ///
+    /// Both injected scripts need this, and it is here rather than written twice
+    /// because the fault it answers is ONE fault seen from two ends: a palette
+    /// exporter authors its colours in oklch(), Chromium KEEPS that space in the
+    /// value it computes, and every reader of ours is a parser that understands
+    /// #hex and rgb(). So a theme imported from one of those exporters reached
+    /// neither the strips nor the mark: the relay could not parse the background
+    /// and posted nothing at all, and AppIcons.hex refused the accent and fell
+    /// back to the primary bucket. Measured 2026-09-25.
+    ///
+    /// Painting the value onto a one pixel canvas asks the ENGINE for the colour
+    /// rather than for the notation: the bytes that come back are what a reader
+    /// sees, and rgb()/rgba() is a form both readers already take. A value already
+    /// in one of those forms is passed through untouched, so a palette that was
+    /// readable keeps its exact bytes and its alpha.
+    static var srgbHelper: String {
+        """
+        function clawSrgb(value) {
+          var text = String(value === null || value === undefined ? '' : value).trim();
+          if (/^(#[0-9a-f]{3,8}|rgba?\\([^()]*\\))$/i.test(text)) { return text; }
+          try {
+            var canvas = clawSrgb.canvas;
+            if (!canvas) {
+              canvas = document.createElement('canvas');
+              canvas.width = 1;
+              canvas.height = 1;
+              clawSrgb.canvas = canvas;
+            }
+            var context = canvas.getContext('2d');
+            if (!context) { return null; }
+            context.clearRect(0, 0, 1, 1);
+            context.fillStyle = 'rgba(0, 0, 0, 0)';
+            context.fillStyle = value;
+            context.fillRect(0, 0, 1, 1);
+            var data = context.getImageData(0, 0, 1, 1).data;
+            if (!data[3]) { return null; }
+            if (data[3] === 255) { return 'rgb(' + data[0] + ', ' + data[1] + ', ' + data[2] + ')'; }
+            return 'rgba(' + data[0] + ', ' + data[1] + ', ' + data[2] + ', ' + (Math.round((data[3] / 255) * 1000) / 1000) + ')';
+          } catch (e) { return null; }
+        }
+        """
+    }
+
     /// Read the live values out of the Control UI page, as a JSON object.
     ///
     /// Only the names above are read, and a name the page does not publish is
@@ -108,17 +152,33 @@ enum ThemeTokens {
     /// leaves the page's own resolution alone rather than pinning it to a guess.
     static var probeScript: String {
         let names = (try? String(data: JSONSerialization.data(withJSONObject: names), encoding: .utf8)) ?? "[]"
+
+        // Which of those names is a COLOUR, because only a colour needs the
+        // conversion: a length, a font or the reading scale keeps the exact value
+        // the page authored.
+        let colourNames = (try? String(data: JSONSerialization.data(withJSONObject: live.filter { $0.kind == "color" }.map { $0.name }), encoding: .utf8)) ?? "[]"
         return """
         (function () {
+        \(srgbHelper)
           try {
             var root = document.documentElement;
             if (!root) { return '{}'; }
             var computed = getComputedStyle(root);
             var out = {};
             var names = \(names);
+            var colourNames = \(colourNames);
             for (var i = 0; i < names.length; i += 1) {
               var value = computed.getPropertyValue(names[i]);
-              if (value && value.trim()) { out[names[i]] = value.trim(); }
+              if (!value || !value.trim()) { continue; }
+              var resolved = value.trim();
+              // A colour is carried as sRGB, whatever space the palette authored it
+              // in, so the readers below (AppIcons among them) get a colour rather
+              // than the notation. See srgbHelper.
+              if (colourNames.indexOf(names[i]) >= 0) {
+                var converted = clawSrgb(resolved);
+                if (converted) { resolved = converted; }
+              }
+              out[names[i]] = resolved;
             }
             var mode = root.getAttribute('data-theme-mode') || (root.style && root.style.colorScheme) || computed.colorScheme || '';
             mode = String(mode).trim().toLowerCase();
