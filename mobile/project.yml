@@ -71,6 +71,11 @@ targets:
       - path: ../core/spec/app-settings-affordance.json
       - path: ../core/spec/app-frame-inset.json
         buildPhase: resources
+      # The render probe and its backstop, bundled for the same reason: it is a
+      # script, and the desktop runs the same bytes. PageCover evaluates it and
+      # RenderReadyParityTests asserts the bundled copy is the repository's.
+      - path: ../core/spec/render-ready.json
+        buildPhase: resources
       # The native token handoff, bundled rather than mirrored for its shape.
       #
       # NativeControlAuth reads this at runtime for the global name, the client
