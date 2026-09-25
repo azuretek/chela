@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en" data-theme-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chela theme fixture</title>
+<!--
+  A stand-in for the Control UI, for ThemeIconUITests. It publishes the two
+  things the app reads from a page, the --accent custom property and the
+  data-theme-mode attribute, and paints its content late on purpose, so the
+  loading cover can be seen holding until the first contentful paint. Nothing
+  here talks to a gateway.
+-->
+<style>
+  :root { --accent: #0dafd7; }
+  html, body { margin: 0; height: 100%; font: 17px -apple-system, system-ui, sans-serif; }
+  /* --bg is the name the Control UI publishes its background under, and what
+     the app's theme observer reads. It follows the MODE only, so a theme change
+     here moves the accent and leaves the background alone, the case the app
+     once missed. */
+  html[data-theme-mode="dark"] { --bg: #10141a; }
+  html[data-theme-mode="light"] { --bg: #f4f1ea; }
+  html[data-theme-mode="dark"] body { background: var(--bg); color: #e8eef4; }
+  html[data-theme-mode="light"] body { background: var(--bg); color: #1b1f24; }
+  main { padding: 80px 24px; }
+  button { display: block; margin: 12px 0; padding: 12px 16px; font-size: 17px; border-radius: 10px; border: 0; background: var(--accent); color: #fff; }
+</style>
+</head>
+<body>
+<main id="main"></main>
+<script>
+  var states = {
+    'blue-dark': ['#0dafd7', 'dark'],
+    'blue-light': ['#0dafd7', 'light'],
+    'green-light': ['#7cb04f', 'light']
+  };
+  function apply(name) {
+    var s = states[name];
+    document.documentElement.style.setProperty('--accent', s[0]);
+    document.documentElement.setAttribute('data-theme-mode', s[1]);
+    sessionStorage.setItem('fixture-state', name);
+    document.getElementById('state').textContent = 'State ' + name;
+  }
+  var start = sessionStorage.getItem('fixture-state') || 'blue-dark';
+  document.documentElement.style.setProperty('--accent', states[start][0]);
+  document.documentElement.setAttribute('data-theme-mode', states[start][1]);
+  // Content arrives late, so the first contentful paint is about 2 s after the
+  // load event, the gap the loading cover exists to hide.
+  setTimeout(function () {
+    document.getElementById('main').innerHTML =
+      '<h1>Fixture ready</h1><p id="state"></p>' +
+      '<button onclick="apply(\'blue-light\')">Light mode</button>' +
+      '<button onclick="apply(\'green-light\')">Green theme</button>' +
+      '<button onclick="location.reload()">Reload</button>';
+    document.getElementById('state').textContent = 'State ' + start;
+  }, 2000);
+</script>
+</body>
+</html>

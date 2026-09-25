@@ -37,6 +37,13 @@ struct WebView: UIViewRepresentable {
     /// not cover.
     @Binding var themeColour: Color
 
+    /// How many times the page has reported its theme. Every report counts, a
+    /// repeat of the same background included, because a theme change can move
+    /// the accent and leave the background where it was: the colour alone did not
+    /// change, so nothing re-read the theme and the app icon stayed on the old one
+    /// (caught by ThemeIconUITests, 2026-09-25).
+    @Binding var themeReports: Int
+
     /// Where a failed or recovered load is reported. Held rather than observed:
     /// this view raises, and the banner in ContentView draws.
     let notices: NoticeBoard
@@ -123,6 +130,7 @@ struct WebView: UIViewRepresentable {
         /// It reads the observer's reports and drives the pairing state.
         let pairingBridge: PairingBridge
         private let themeColour: Binding<Color>
+        private let themeReports: Binding<Int>
         private let notices: NoticeBoard
         private let connection: ConnectionState
         /// The gateway's name, for the notice a failed load raises. Carried
@@ -145,6 +153,7 @@ struct WebView: UIViewRepresentable {
 
         init(
             themeColour: Binding<Color>,
+            themeReports: Binding<Int>,
             notices: NoticeBoard,
             connection: ConnectionState,
             pairing: PairingState,
@@ -155,6 +164,7 @@ struct WebView: UIViewRepresentable {
         ) {
             self.cover = cover
             self.themeColour = themeColour
+            self.themeReports = themeReports
             self.notices = notices
             self.connection = connection
             self.pairing = pairing
@@ -172,6 +182,7 @@ struct WebView: UIViewRepresentable {
                   let parts = message.body as? [NSNumber],
                   parts.count == 3
             else { return }
+            themeReports.wrappedValue &+= 1
             themeColour.wrappedValue = Color(uiColor: UIColor(
                 red: CGFloat(parts[0].doubleValue) / 255,
                 green: CGFloat(parts[1].doubleValue) / 255,
@@ -465,6 +476,7 @@ struct WebView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(
             themeColour: $themeColour,
+            themeReports: $themeReports,
             notices: notices,
             connection: connection,
             pairing: pairing,
