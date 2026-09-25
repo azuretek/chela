@@ -61,6 +61,7 @@ final class PairingBridge: NSObject, WKScriptMessageHandler {
             let reason = body["reason"] as? String
             let requestId = body["requestId"] as? String
             state.closed(Self.refusal(reason: reason, requestId: requestId))
+            onConnect(.pairing)
         default:
             if let report = LoginGateConnect.read(body) { onConnect(report) }
         }

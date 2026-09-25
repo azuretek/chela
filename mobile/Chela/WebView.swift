@@ -179,6 +179,10 @@ struct WebView: UIViewRepresentable {
                 case .pressed: cover.connectPressed()
                 case .rendered: cover.connectRendered()
                 case .failed(let title): cover.connectFailed(title)
+                case .gateShown(let title): cover.gateShown(title: title)
+                case .gateGone: cover.gateGone()
+                case .pageReady: cover.pageReady()
+                case .pairing: cover.connectAnsweredByPairing()
                 }
             }
         }

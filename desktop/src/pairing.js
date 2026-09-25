@@ -58,7 +58,7 @@ import {
   readRequestId,
   requirement,
 } from '../../core/pairing.js';
-import { LOGIN_GATE_CONNECT_SCRIPT, readConnectReport } from '../../core/login-gate-connect.js';
+import { LOGIN_GATE_CONNECT_SCRIPT, readGateReport } from '../../core/login-gate-connect.js';
 
 /** The reason key a payload naming something unknown is narrowed to. */
 const FALLBACK_REASON = 'not-paired';
@@ -155,7 +155,7 @@ export function parseReport(payload) {
   // sees, so it is read here with the other kind the spec names and nothing else
   // is guessed at.
   if (body.kind === SOCKET_CLOSED) return { kind: 'dropped' };
-  const connect = readConnectReport(body);
+  const connect = readGateReport(body);
   if (connect) return { kind: 'connect', ...connect };
   if (body.kind !== PAIRING_REQUIRED) return null;
 
