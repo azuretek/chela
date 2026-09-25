@@ -46,6 +46,7 @@ import { createWake } from './wake.js';
 // core/ui/motion.js and the eighth rule in core/ui/CONVENTIONS.md.
 import { MIN_VISIBLE_MS, remainingVisibleMs } from '../../core/ui/motion.js';
 import * as appIcons from '../../core/app-icons.js';
+import { RENDERED_PROBE, createCoverGate } from '../../core/render-ready.js';
 import * as bannerFacts from '../../core/banner.js';
 import secrets from './secrets.js';
 import defaults from './defaults.js';
@@ -1675,12 +1676,12 @@ function createGatewayView({ attempt = false } = {}) {
         milestone: progress.DONE,
         milestoneAt: Date.now(),
       });
-      // The gateway is on screen behind the cover, so the cover comes down and
-      // any failure it was reporting is over. Both are keyed to the one event
-      // that proves it -- a load that finished on a page that is not ours.
+      // The gateway is behind the cover, so any failure it was reporting is
+      // over, keyed to the one event that proves it: a load that finished on a
+      // page that is not ours. The cover itself waits for the page to PAINT,
+      // because a finished load is not a page on screen; see coverGate.
       clearNotice('connection');
-      hideLoadingCover();
-      wake.reportRaw('page:rendered');
+      coverGate.loaded(wc);
       // The reader asked for a reload from the About box, and this is the load that
       // answered it. Reported from the LOAD rather than from the press, because
       // the clear returning and a fresh payload arriving are two different events
@@ -2479,6 +2480,9 @@ async function styleLoadingCover(wc) {
 }
 
 function showLoadingCover() {
+  // Any lift still waiting on an earlier page's paint is void from here: the
+  // cover is wanted again, and only a load that finishes after this may take it.
+  coverGate.hold();
   if (!mainWindow || mainWindow.isDestroyed() || loadingView) {
     // Already up: a second connect attempt reuses the same cover, so the ticker
     // has to be (re)started here rather than only where the view is built.
@@ -2516,6 +2520,25 @@ function showLoadingCover() {
   startProgressTicker();
   layoutViews();
 }
+
+// The cover comes down when the page under it has PAINTED, not when its load
+// finished. The Control UI builds itself after its load event, so lifting on the
+// load showed an empty window between Try again and the page. A connection that
+// failed in the meantime keeps its cover: the failure owns the screen then.
+const coverGate = createCoverGate({
+  probe: (wc) => (wc.isDestroyed() ? Promise.resolve() : wc.executeJavaScript(RENDERED_PROBE)),
+  lift: (why) => {
+    if (connection.phase === connectionState.FAILED) return;
+    if (why !== 'rendered') console.warn(`[chela-desktop] lifting the loading cover on ${why} rather than a painted page`);
+    hideLoadingCover();
+    // The wake rule terminal event, and this is where it belongs: its own spec
+    // says the cover is kept until the page has rendered, so the report is the
+    // lift rather than the load that preceded the paint. Reported for every
+    // reason the cover comes down, because each one means the page is on screen
+    // again, which is the thing the state machine is waiting to hear.
+    wake.reportRaw('page:rendered');
+  },
+});
 
 function hideLoadingCover() {
   stopProgressTicker();
