@@ -89,11 +89,17 @@ final class LoginGateConnectUITests: XCTestCase {
         app.webViews.buttons["Connect"].firstMatch
     }
 
+    /// The page's own screen is under our cover, not on screen. isHittable cannot
+    /// say this: it reports the page's Connect as hittable from inside its own web
+    /// view even while a separate view is drawn over it (measured 2026-09-25, with
+    /// the cover's failed state on screen). What the reader sees is decided by the
+    /// cover being up and its frame holding the page's control.
     private func pagesOwnScreenIsUnreachable(_ app: XCUIApplication, _ whenIt: String) {
         let connect = pageConnect(app)
-        if connect.exists {
-            XCTAssertFalse(connect.isHittable, "the Control UI's own connection screen was reachable " + whenIt)
-        }
+        guard connect.exists else { return }
+        let cover = cover(app)
+        XCTAssertTrue(cover.exists, "the Control UI's own connection screen was on screen with nothing over it " + whenIt)
+        XCTAssertTrue(cover.frame.contains(connect.frame), "the Control UI's own Connect was outside the cover " + whenIt)
     }
 
     /// Launch onto a gate: the page is served, its socket is refused, and the page
