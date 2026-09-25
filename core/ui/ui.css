@@ -129,15 +129,14 @@
   --duration-normal: 180ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* Motion, ours rather than borrowed: the Control UI publishes one curve and an
-     exit needs the other shape. The two durations above ARE the borrowed ones, so
-     nothing here restates a value the design tokens own. The rules that use these,
-     and the reasoning, are ui/CONVENTIONS.md. */
-  --motion-leave-ease: cubic-bezier(0.4, 0, 1, 1);
-  /* Distances: a surface arrives by rising, leaves by dropping a shorter distance
-     the way it came, and a panel enters from the side the reader moved toward. */
+  /* Motion, ours rather than borrowed. The two durations above ARE the borrowed
+     ones, so nothing here restates a value the design tokens own. The rules that
+     use these, and the reasoning, are ui/CONVENTIONS.md.
+
+     Distances: content arriving inside a surface rises into place (the first
+     run's own page, the gateway editor's fields), and a panel enters from the side
+     the reader moved toward. */
   --motion-rise: 8px;
-  --motion-drop: 4px;
   --motion-slide: 12px;
   /* The minimum-visible floor, as a CSS custom property so a sandboxed page can
      read it the way surface.js already reads the duration tokens. It is the same
@@ -149,6 +148,24 @@
      motion.test.js asserts this literal equals the spec value, since a page
      cannot import the module and this is the one place the number is restated. */
   --motion-min-visible: 900ms;
+  /* How Settings and About arrive and leave: they slide up from the bottom edge
+     like an iOS sheet and back down on close, on the iOS sheet's own curve and
+     speed. A screen INSIDE a surface (a settings tab, the gateway editor) moves on
+     the same curve at a navigation push's speed, and the pairing screen arrives on
+     a spring, sampled into linear() because CSS has no spring. All of these are
+     restated from motion in spec/tokens.json, which a page cannot import;
+     core/test/motion.test.js holds each literal to the spec, and recomputes the
+     spring from core/ui/motion.js springCurve(). The rules are ui/CONVENTIONS.md. */
+  --motion-sheet-in: 500ms;
+  --motion-sheet-out: 400ms;
+  --motion-sheet-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --motion-screen: 350ms;
+  --motion-spring: 730ms;
+  --motion-spring-ease: linear(0, 0.05, 0.164, 0.305, 0.447, 0.578, 0.69, 0.781, 0.853, 0.906, 0.945, 0.972, 0.99, 1.001, 1.007, 1.009, 1.01, 1.01, 1.009, 1.007, 1.006, 1.004, 1.003, 1.002, 1);
+  /* How long this page's own departure runs, which ui/surface.js waits out before
+     the host removes the view. A page that leaves as a sheet says so in the motion
+     section. */
+  --surface-leave: var(--duration-fast);
   --cursor-action: default;
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 3px color-mix(in srgb, var(--ring) 80%, transparent);
 
@@ -303,7 +320,10 @@ body.as-page .modal { border-color: transparent; box-shadow: none; }
    sits alone across half a screen. */
 .modal--narrow { width: min(460px, 100%); }
 
-.modal__icon { flex: none; width: 34px; height: 34px; }
+/* 56px, sized to the two-line block beside it (the name and the build line) so
+   the mark reads as the page's own icon rather than a bullet, and centred on that
+   block by .modal__headline below. */
+.modal__icon { flex: none; width: 56px; height: 56px; }
 
 /* The in-app Chela mark: the application icon's neon claw, painted from the
    SELECTED theme rather than copied from the icon's bitmap. The application
@@ -415,7 +435,7 @@ body.as-page .modal { border-color: transparent; box-shadow: none; }
    no icon there, and this is where the app's mark sits beside its name. */
 .modal__headline {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 16px;
   padding-top: 4px;
 }
@@ -866,13 +886,19 @@ a  { color: var(--accent); }
    and the title strip above this view is the window's drag surface. The cover's
    own 24px inset is all that is left to keep, which is what .loading declares. */
 
+/* The geometry, because the ring used to cut across the mark's corners. The mark
+   is 68px with corners rounded at 23% (15.6px), so its farthest point is 41.6px
+   from the centre. The ring's inner edge is 56px from the centre (the box's 80px
+   radius, less the 22px inset and the 2px border), which clears every corner by
+   14.4px. The halo is the whole box, 22px past the ring on every side as before,
+   and the gap below grows with it. */
 .loading__mark {
   position: relative;
   display: grid;
   place-items: center;
-  width: 96px;
-  height: 96px;
-  margin-bottom: 26px;
+  width: 160px;
+  height: 160px;
+  margin-bottom: 40px;
 }
 
 /* A halo rather than a second spinner: it reads as the app being alive without
@@ -887,7 +913,7 @@ a  { color: var(--accent); }
   animation: loading-pulse 2.6s ease-in-out infinite;
 }
 
-.loading__logo { position: relative; width: 34px; height: 34px; opacity: .9; }
+.loading__logo { position: relative; width: 68px; height: 68px; opacity: .9; }
 
 .loading__ring {
   position: absolute;
@@ -1023,14 +1049,14 @@ body.frameless .pairing { padding-top: 58px; }
 .pairing__mark {
   display: grid;
   place-items: center;
-  width: 64px;
-  height: 64px;
-  margin-bottom: 18px;
+  width: 104px;
+  height: 104px;
+  margin-bottom: 24px;
   border-radius: var(--radius-full);
   background: radial-gradient(circle, var(--accent-subtle), transparent 70%);
 }
 
-.pairing__logo { width: 30px; height: 30px; opacity: .9; }
+.pairing__logo { width: 56px; height: 56px; opacity: .9; }
 
 .pairing__title { margin: 0 0 10px; font-size: calc(19px * var(--control-ui-text-scale)); font-weight: 600; }
 
@@ -1585,25 +1611,72 @@ body:not(.frameless) .scrim { padding-top: 24px; }
    Only opacity and transform, so nothing here can reflow the page or resize the
    view mid-animation. */
 @keyframes surface-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes surface-scrim-out { from { opacity: 1; } to { opacity: 0; } }
+/* A sheet: the card rises from below the window's bottom edge into its place, and
+   drops back out the same way. 100vh is past the bottom edge wherever the card
+   sits, so the first frame shows none of it and the last frame of the departure
+   has none of it left. */
+@keyframes surface-sheet-in {
+  from { transform: translateY(100vh); }
+  to   { transform: none; }
+}
+@keyframes surface-sheet-out {
+  from { transform: none; }
+  to   { transform: translateY(100vh); }
+}
+/* The first run's own page, which is the window's content rather than a sheet over
+   anything, keeps the card's short fade and rise. */
 @keyframes surface-card-in {
   from { opacity: 0; transform: translateY(var(--motion-rise)); }
   to   { opacity: 1; transform: none; }
 }
-@keyframes surface-scrim-out { from { opacity: 1; } to { opacity: 0; } }
-@keyframes surface-card-out {
-  from { opacity: 1; transform: none; }
-  to   { opacity: 0; transform: translateY(var(--motion-drop)); }
+/* The reduced-motion form of every view change: the same sequence as a plain fade,
+   with nothing moving. */
+@keyframes surface-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes surface-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
 }
 
-.scrim { animation: surface-scrim-in var(--duration-normal) var(--ease-out) both; }
-.modal { animation: surface-card-in var(--duration-normal) var(--ease-out) both; }
+/* Settings and About arrive as a sheet over a fading scrim, and leave the same way
+   back. The departure is the arrival played backwards, so it keeps the curve and
+   takes the shorter duration. About opened from Settings is a second sheet over the
+   first, and its departure is what reveals Settings again. */
+.scrim { animation: surface-scrim-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
+.modal { animation: surface-sheet-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
+body.as-page .modal { animation: surface-card-in var(--duration-normal) var(--ease-out) both; }
+:root:has(.modal) { --surface-leave: var(--motion-sheet-out); }
 
 /* Leaving. `surface--leaving` is set on the body by the page's own leave()
    (ui/surface.js), which the host calls before it takes the view away, so every
    departure takes one path whatever asked for it: the Close button, the menu, the
    handoff to the Control UI, or the loading cover handing the window over. */
-body.surface--leaving .scrim { animation: surface-scrim-out var(--duration-fast) var(--motion-leave-ease) both; }
-body.surface--leaving .modal { animation: surface-card-out var(--duration-fast) var(--motion-leave-ease) both; }
+body.surface--leaving .scrim { animation: surface-scrim-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
+body.surface--leaving .modal { animation: surface-sheet-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
+
+/* The pairing screen rises on a spring, the phone's own `.spring()` sampled into
+   linear(), and leaves by the sheet's path. */
+.pairing { animation: surface-sheet-in var(--motion-spring) var(--motion-spring-ease) both; }
+body.surface--leaving .pairing { animation: surface-sheet-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
+:root:has(.pairing) { --surface-leave: var(--motion-sheet-out); }
+
+/* Held at the first keyframe until the page has painted (ui/surface.js), so the
+   arrival plays on frames the reader sees rather than while the view is loading. */
+html.surface--pending .scrim,
+html.surface--pending .modal,
+html.surface--pending .pairing { animation-play-state: paused; }
+
+/* Inside a native sheet, which is how the phone presents Settings and About. The
+   sheet already slides, so a card that also moved inside it would be two motions for
+   one arrival: the page draws none of its own and the native slide is the only one.
+   The phone's host sets the class at document start. */
+html.surface--native-sheet .scrim,
+html.surface--native-sheet .modal,
+html.surface--native-sheet body.surface--leaving .scrim,
+html.surface--native-sheet body.surface--leaving .modal { animation: none; }
 
 /* A panel replacing another one in the same surface, which is the settings tabs.
 
@@ -1620,8 +1693,8 @@ body.surface--leaving .modal { animation: surface-card-out var(--duration-fast) 
   from { opacity: 0; transform: translateX(var(--motion-slide)); }
   to   { opacity: 1; transform: none; }
 }
-.panel--in-from-left { animation: panel-in-from-left var(--duration-fast) var(--ease-out) both; }
-.panel--in-from-right { animation: panel-in-from-right var(--duration-fast) var(--ease-out) both; }
+.panel--in-from-left { animation: panel-in-from-left var(--motion-screen) var(--motion-sheet-ease) both; }
+.panel--in-from-right { animation: panel-in-from-right var(--motion-screen) var(--motion-sheet-ease) both; }
 
 /* The gateway editor's own disclosure: the reader pressed Edit and the panel's
    fields take the space they need.
@@ -1681,15 +1754,17 @@ body.surface--leaving .modal { animation: surface-card-out var(--duration-fast) 
 /* Clipping, on the moving classes only. */
 .editor-disclosure--arriving,
 .editor-disclosure--leaving { overflow: clip; }
-.editor-disclosure--arriving { animation: editor-open var(--duration-fast) var(--ease-out) both; }
-.editor-disclosure--arriving > * { animation: editor-content-in var(--duration-fast) var(--ease-out) both; }
-.editor-disclosure--leaving { animation: editor-close var(--duration-fast) var(--ease-out) both; }
-.editor-disclosure--leaving > * { animation: editor-content-out var(--duration-fast) var(--ease-out) both; }
+.editor-disclosure--arriving { animation: editor-open var(--motion-screen) var(--motion-sheet-ease) both; }
+.editor-disclosure--arriving > * { animation: editor-content-in var(--motion-screen) var(--motion-sheet-ease) both; }
+.editor-disclosure--leaving { animation: editor-close var(--motion-screen) var(--motion-sheet-ease) both; }
+.editor-disclosure--leaving > * { animation: editor-content-out var(--motion-screen) var(--motion-sheet-ease) both; }
 
 /* Reduced motion, and it is part of the rules rather than an exception to them.
-   Every animation above is off, which leaves each element at its ordinary resting
-   state, and ui/surface.js resolves leave() at once so a host removes the view
-   instead of waiting a duration it is not going to animate.
+   Nothing moves: every view change above becomes a plain fade over the Control
+   UI's own short durations, arriving over --duration-normal and leaving over
+   --duration-fast, and the disclosure's track snaps while its content fades.
+   ui/surface.js waits out the same short fade, so the host removes the view as the
+   fade ends rather than waiting on a slide that is not going to run.
 
    What this must NOT change is the sequencing: the destination is still ready
    before it is revealed and nothing intermediate is still shown. The preference
@@ -1697,14 +1772,18 @@ body.surface--leaving .modal { animation: surface-card-out var(--duration-fast) 
    passed down from a client, so one page cannot animate while its sibling
    respects the setting. */
 @media (prefers-reduced-motion: reduce) {
+  :root, :root:has(.modal), :root:has(.pairing) { --surface-leave: var(--duration-fast); }
   .scrim,
   .modal,
+  body.as-page .modal,
+  .pairing { animation: surface-fade-in var(--duration-normal) ease both; }
   body.surface--leaving .scrim,
   body.surface--leaving .modal,
+  body.surface--leaving .pairing { animation: surface-fade-out var(--duration-fast) ease both; }
   .panel--in-from-left,
   .panel--in-from-right,
+  .editor-disclosure--arriving > * { animation: surface-fade-in var(--duration-fast) ease both; }
+  .editor-disclosure--leaving > * { animation: surface-fade-out var(--duration-fast) ease both; }
   .editor-disclosure--arriving,
-  .editor-disclosure--arriving > *,
-  .editor-disclosure--leaving,
-  .editor-disclosure--leaving > * { animation: none; }
+  .editor-disclosure--leaving { animation: none; }
 }

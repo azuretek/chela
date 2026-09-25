@@ -37,7 +37,9 @@ const CORE_README = read(REPO, 'core', 'README.md');
 // The minimum-visible-duration primitive itself, imported so the constant and the
 // remaining-time maths are checked as code rather than described. See the section
 // at the end of this file.
-import { MIN_VISIBLE_MS, remainingVisibleMs, heldLongEnough } from '../ui/motion.js';
+import {
+  MIN_VISIBLE_MS, remainingVisibleMs, heldLongEnough, SHEET, sheetEase, SCREEN_MS, SPRING, springCurve,
+} from '../ui/motion.js';
 import tokenSpec from '../spec/tokens.json' with { type: 'json' };
 
 const SHEETS = [
@@ -103,7 +105,7 @@ test('every animation in the shared sheets has a reduced-motion counterpart', ()
     for (const [selector, body] of animatedRules(css)) {
       for (const one of selector.split(',').map((s) => s.trim())) {
         const escaped = one.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const covered = new RegExp(`${escaped}\\s*[,{]?[^{}]*\\{[^{}]*animation:\\s*none`).test(REDUCED);
+        const covered = new RegExp(`${escaped}\\s*[,{]?[^{}]*\\{[^{}]*animation:\\s*(?:none|surface-fade-(?:in|out)\\b)`).test(REDUCED);
         if (!covered) uncovered.push(`${name}: ${one} (${body.trim().slice(0, 60)})`);
       }
     }
@@ -120,7 +122,7 @@ test('the sweep is looking at real animations, not at nothing', () => {
   // A parser that stopped matching would make the test above pass by finding no
   // animations at all, which is the way this kind of guard dies.
   const found = CLEAN.flatMap(([, css]) => animatedRules(css).map(([selector]) => selector));
-  for (const expected of ['.scrim', '.modal', '.banner--enter', '.banner--leave', '.loading',
+  for (const expected of ['.scrim', '.modal', '.pairing', '.banner--enter', '.banner--leave', '.loading',
     '.editor-disclosure--arriving', '.editor-disclosure--arriving > *',
     '.editor-disclosure--leaving', '.editor-disclosure--leaving > *']) {
     assert.ok(found.includes(expected), `${expected} is no longer seen as animated, so the sweep is broken`);
@@ -131,25 +133,30 @@ test('the sweep is looking at real animations, not at nothing', () => {
 /* --------------------------------------------------------- the pinned specifics */
 
 test('the view-change rules use the timings the conventions pin', () => {
-  // The table in ui/CONVENTIONS.md, asserted against the stylesheets: a surface
-  // arrives over --duration-normal and leaves over the shorter --duration-fast, so
-  // leaving is always quicker than arriving.
+  // The table in ui/CONVENTIONS.md, asserted against the stylesheets. Settings and
+  // About arrive as a sheet over --motion-sheet-in and leave over the shorter
+  // --motion-sheet-out; a screen inside a surface moves over --motion-screen; the
+  // pairing screen rises on the spring; the first run's own page and the notice
+  // card keep the Control UI's own short durations.
   const expected = [
-    [CLEAN[0][1], '.scrim', '--duration-normal'],
-    [CLEAN[0][1], '.modal', '--duration-normal'],
-    [CLEAN[0][1], 'body.surface--leaving .scrim', '--duration-fast'],
-    [CLEAN[0][1], 'body.surface--leaving .modal', '--duration-fast'],
-    [CLEAN[0][1], '.panel--in-from-left', '--duration-fast'],
-    [CLEAN[0][1], '.panel--in-from-right', '--duration-fast'],
+    [CLEAN[0][1], '.scrim', '--motion-sheet-in'],
+    [CLEAN[0][1], '.modal', '--motion-sheet-in'],
+    [CLEAN[0][1], 'body.as-page .modal', '--duration-normal'],
+    [CLEAN[0][1], 'body.surface--leaving .scrim', '--motion-sheet-out'],
+    [CLEAN[0][1], 'body.surface--leaving .modal', '--motion-sheet-out'],
+    [CLEAN[0][1], '.pairing', '--motion-spring'],
+    [CLEAN[0][1], 'body.surface--leaving .pairing', '--motion-sheet-out'],
+    [CLEAN[0][1], '.panel--in-from-left', '--motion-screen'],
+    [CLEAN[0][1], '.panel--in-from-right', '--motion-screen'],
     [CLEAN[1][1], '.banner--enter', '--duration-normal'],
     [CLEAN[1][1], '.banner--leave', '--duration-fast'],
     // The in-place case, added with the rule's widening. Both directions are here
     // for the reason the rule is: the departure is the half nothing navigated for,
     // and it is the half that gets left as a pop.
-    [CLEAN[0][1], '.editor-disclosure--arriving', '--duration-fast'],
-    [CLEAN[0][1], '.editor-disclosure--arriving > *', '--duration-fast'],
-    [CLEAN[0][1], '.editor-disclosure--leaving', '--duration-fast'],
-    [CLEAN[0][1], '.editor-disclosure--leaving > *', '--duration-fast'],
+    [CLEAN[0][1], '.editor-disclosure--arriving', '--motion-screen'],
+    [CLEAN[0][1], '.editor-disclosure--arriving > *', '--motion-screen'],
+    [CLEAN[0][1], '.editor-disclosure--leaving', '--motion-screen'],
+    [CLEAN[0][1], '.editor-disclosure--leaving > *', '--motion-screen'],
   ];
   for (const [css, selector, token] of expected) {
     // The rule that DECLARES the animation, not simply the first rule with this
@@ -161,7 +168,10 @@ test('the view-change rules use the timings the conventions pin', () => {
     // `none` case is excluded, because a selector can carry TWO animation rules:
     // the one that sets it moving and the reduced-motion one that stops it, which
     // sits inside a media query this scan does not skip.
-    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    // Outside the reduce blocks, whose fade stands in for every one of these and
+    // is asserted on its own below.
+    const outside = blocks(css, '@media (prefers-reduced-motion: reduce)').reduce((text, body) => text.replace(body, ''), css);
+    const rules = [...outside.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
       .filter(([, sel]) => sel.trim().replace(/\s+/g, ' ') === selector)
       .filter(([,, body]) => /(^|[;\s])animation\s*:/.test(body) && !/animation\s*:\s*none/.test(body));
     assert.ok(rules.length > 0, `${selector} has no rule that animates, so the conventions describe something that is not there`);
@@ -173,45 +183,95 @@ test('the view-change rules use the timings the conventions pin', () => {
   }
 });
 
-test('the exit curve is ours and declared in the stylesheet that uses it', () => {
-  // `--motion-leave-ease` is NOT in spec/tokens.json on purpose: every value in
-  // that spec is checked against the upstream checkout, so a value of ours there
-  // would fail the day upstream has no such name. It lives with the other values
-  // ui.css owns.
-  assert.match(UI_CSS, /--motion-leave-ease:\s*cubic-bezier\(/,
-    'ui.css declares no exit curve, so the leaving rules fall back to no easing');
-  const spec = JSON.parse(read(REPO, 'core', 'spec', 'tokens.json'));
-  const borrowed = new Set([...Object.keys(spec.shape || {})]);
-  assert.ok(!borrowed.has('--motion-leave-ease'),
-    'the exit curve was added to the borrowed token spec, where it is checked against upstream');
+test('the sheet, screen and spring values are the spec\'s, restated in the stylesheet', () => {
+  // A page cannot import spec/tokens.json, so ui.css restates each motion value as
+  // a custom property, and this is the one place each restatement is held to its
+  // owner. The spring is recomputed from core/ui/motion.js rather than compared as
+  // a copied string, so a change to its parameters that forgot the stylesheet fails.
+  const decl = (name) => {
+    const found = new RegExp(`${name}:\\s*([^;]+);`).exec(UI_CSS);
+    assert.ok(found, `ui.css declares no ${name}`);
+    return found[1].trim();
+  };
+  assert.strictEqual(decl('--motion-sheet-in'), `${SHEET.enterMs}ms`);
+  assert.strictEqual(decl('--motion-sheet-out'), `${SHEET.leaveMs}ms`);
+  assert.strictEqual(decl('--motion-sheet-ease'), sheetEase());
+  assert.strictEqual(decl('--motion-screen'), `${SCREEN_MS}ms`);
+  const spring = springCurve();
+  assert.strictEqual(decl('--motion-spring'), `${spring.durationMs}ms`);
+  assert.strictEqual(decl('--motion-spring-ease'), spring.linear);
+  // The values ARE the spec's, not constants of the module's own.
+  assert.strictEqual(SHEET.enterMs, tokenSpec.motion.sheet.enterMs);
+  assert.strictEqual(SHEET.leaveMs, tokenSpec.motion.sheet.leaveMs);
+  assert.deepStrictEqual([...SHEET.curve], tokenSpec.motion.sheet.curve);
+  assert.strictEqual(SCREEN_MS, tokenSpec.motion.screenMs);
+  assert.deepStrictEqual({ ...SPRING }, tokenSpec.motion.spring);
+  // Ours, not the Control UI's, so none of them may be added to the borrowed shape
+  // tokens, which are checked against the upstream checkout.
+  for (const name of ['--motion-sheet-in', '--motion-sheet-out', '--motion-sheet-ease', '--motion-screen', '--motion-spring']) {
+    assert.ok(!(name in (tokenSpec.shape || {})), `${name} was added to the borrowed token spec`);
+  }
 });
 
-test('nothing animates for longer than the longer token', () => {
-  // "An animation the reader can notice the length of is a delay." Read from the
-  // sheets rather than from the doc, because the doc is the half that cannot fail.
+test('leaving is quicker than arriving, and a screen is quicker than a sheet', () => {
+  assert.ok(SHEET.leaveMs < SHEET.enterMs, 'a sheet leaves no quicker than it arrived');
+  assert.ok(SCREEN_MS < SHEET.enterMs, 'a screen inside a surface moves as long as the surface itself arrives');
+  // The Control UI's own durations are the reduced-motion fade, and they stay the
+  // shorter ones.
+  assert.ok(parseFloat(tokenSpec.shape['--duration-normal']) < SCREEN_MS, 'the fade is no shorter than the motion it replaces');
+});
+
+test('the spring settles, overshoots only a little, and ends at rest', () => {
+  const { durationMs, linear } = springCurve();
+  const points = linear.replace(/^linear\(|\)$/g, '').split(',').map(Number);
+  assert.strictEqual(points[0], 0);
+  assert.strictEqual(points[points.length - 1], 1);
+  const peak = Math.max(...points);
+  assert.ok(peak > 1 && peak < 1.05, `the spring peaks at ${peak}, which is either no spring or a bounce`);
+  assert.ok(durationMs >= 400 && durationMs <= 1000, `the spring runs ${durationMs}ms`);
+});
+
+test('no view change writes its own duration: every one is a token', () => {
+  // A literal duration in an animation is a value the table cannot see. Read from
+  // the sheets rather than from the doc, because the doc is the half that cannot fail.
   const offenders = [];
   for (const [name, css] of CLEAN) {
     for (const [selector, body] of animatedRules(css)) {
-      // Only our view-change rules: the loading cover's own spinners are loops,
-      // and a loop has no duration to compare.
-      if (!/infinite/.test(body)) {
-        for (const value of body.matchAll(/(\d+(?:\.\d+)?)(ms|s)\b/g)) {
-          const ms = value[2] === 's' ? Number(value[1]) * 1000 : Number(value[1]);
-          // The one pre-existing exception, and it is not a view change: the
-          // cover's fade-in is held a beat so a connect that resolves at once
-          // never flashes the cover up at all.
-          if (ms > 180 && !/loading-in/.test(body)) offenders.push(`${name}: ${selector} (${value[0]})`);
-        }
-      }
+      // The loading cover's own spinners are loops, and a loop has no duration to
+      // compare; its fade-in is held a beat so a connect that resolves at once never
+      // flashes the cover up at all.
+      if (/infinite/.test(body) || /loading-in/.test(body)) continue;
+      for (const value of body.matchAll(/(\d+(?:\.\d+)?)(ms|s)\b/g)) offenders.push(`${name}: ${selector} (${value[0]})`);
     }
   }
-  assert.deepStrictEqual(offenders, [], `these animate longer than the pinned maximum: ${offenders.join(', ')}`);
+  assert.deepStrictEqual(offenders, [], `these animate for a literal duration: ${offenders.join(', ')}`);
+});
+
+test('the reduced-motion form is a fade, and moves nothing', () => {
+  // Abi, 2026-09-25: reduced motion falls back to a plain fade everywhere. So the
+  // keyframes it swaps in may touch opacity and nothing else.
+  for (const name of ['surface-fade-in', 'surface-fade-out']) {
+    const frames = blocks(CLEAN[0][1], `@keyframes ${name}`)[0];
+    assert.ok(frames, `${name} is gone`);
+    assert.match(frames, /opacity/);
+    assert.doesNotMatch(frames, /transform|translate|scale|grid-template-rows/, `${name} moves something`);
+  }
+  assert.match(REDUCED, /surface-fade-in var\(--duration-normal\)/, 'a surface does not fade in under reduced motion');
+  assert.match(REDUCED, /surface-fade-out var\(--duration-fast\)/, 'a surface does not fade out under reduced motion');
+});
+
+test('inside a native sheet the page draws no motion of its own', () => {
+  // The phone presents Settings and About as native sheets, which already slide, so
+  // a card that also moved inside one would be two motions for one arrival.
+  assert.match(CLEAN[0][1], /html\.surface--native-sheet \.modal[^{]*\{\s*animation:\s*none/,
+    'the card still moves inside a native sheet');
+  assert.match(SURFACE_JS, /surface--native-sheet/, 'surface.js does not know a native sheet leaves on its own');
 });
 
 /* --------------------------------------------------- the page-side handshake */
 
 /** Run surface.js against just enough of a page. */
-function runSurface({ reduced = false, fast = '100ms' } = {}) {
+function runSurface({ reduced = false, fast = '100ms', leave = '', native = false } = {}) {
   const classes = new Set();
   const context = {
     // `matchMedia` goes ON the window, not beside it: the script asks
@@ -221,10 +281,12 @@ function runSurface({ reduced = false, fast = '100ms' } = {}) {
       matchMedia: (query) => ({ matches: reduced && /prefers-reduced-motion/.test(query) }),
     },
     document: {
-      documentElement: {},
+      documentElement: { classList: { contains: (name) => native && name === 'surface--native-sheet' } },
       body: { classList: { add: (name) => classes.add(name) } },
     },
-    getComputedStyle: () => ({ getPropertyValue: (name) => (name === '--duration-fast' ? fast : '') }),
+    getComputedStyle: () => ({
+      getPropertyValue: (name) => (name === '--duration-fast' ? fast : name === '--surface-leave' ? leave : ''),
+    }),
     setTimeout,
     Promise,
   };
@@ -233,30 +295,39 @@ function runSurface({ reduced = false, fast = '100ms' } = {}) {
 }
 
 test('a surface leaves by asking the page, and the page says when it is done', async () => {
-  const { surface, classes } = runSurface();
+  const { surface, classes } = runSurface({ leave: '200ms' });
   assert.strictEqual(typeof surface.leave, 'function', 'the host has nothing to call');
   const started = Date.now();
   const animated = await surface.leave();
   assert.strictEqual(animated, true, 'the departure reported nothing animated');
   assert.ok(classes.has('surface--leaving'), 'the leaving class never landed, so nothing would move');
-  // Bounded by the token the stylesheet declares, plus the frame of slack: a
-  // surface that answers far later than this would hold a view on screen.
+  // Bounded by the page's own departure, plus the frame of slack: a surface that
+  // answers far later than this would hold a view on screen.
   const elapsed = Date.now() - started;
-  assert.ok(elapsed >= 100, `the departure resolved after ${elapsed}ms, before its own duration`);
-  assert.ok(elapsed < 400, `the departure took ${elapsed}ms, which is a delay rather than an animation`);
+  assert.ok(elapsed >= 200, `the departure resolved after ${elapsed}ms, before its own duration`);
+  assert.ok(elapsed < 500, `the departure took ${elapsed}ms, which is a delay rather than an animation`);
 });
 
-test('reduced motion resolves at once, and the host is told nothing moved', async () => {
-  // The half that makes the preference real rather than decorative: a host that
-  // waited anyway would leave a still surface on screen for a duration nothing is
-  // animating, which reads as the app hanging.
-  const { surface, classes } = runSurface({ reduced: true });
+test('reduced motion plays the short fade, and waits only for that', async () => {
+  // Reduced motion is a fade, not nothing, so the class still lands and the host
+  // still waits; but for the fade's short duration, never the sheet's.
+  const { surface, classes } = runSurface({ reduced: true, leave: '400ms' });
   assert.strictEqual(surface.reducedMotion(), true, 'the preference was not read');
   const started = Date.now();
   const animated = await surface.leave();
-  assert.strictEqual(animated, false, 'a reduced-motion departure claimed to have animated');
-  assert.ok(Date.now() - started < 40, 'reduced motion waited for an animation that will not run');
-  assert.ok(!classes.has('surface--leaving'), 'the leaving class landed with motion turned off');
+  const elapsed = Date.now() - started;
+  assert.strictEqual(animated, true, 'the fade was not played');
+  assert.ok(classes.has('surface--leaving'), 'the leaving class never landed, so nothing would fade');
+  assert.ok(elapsed >= 100 && elapsed < 300, `a reduced-motion departure waited ${elapsed}ms`);
+});
+
+test('a native sheet leaves on its own, and the page answers at once', async () => {
+  const { surface, classes } = runSurface({ native: true, leave: '400ms' });
+  const started = Date.now();
+  const animated = await surface.leave();
+  assert.strictEqual(animated, false, 'a native sheet claimed a departure of its own');
+  assert.ok(Date.now() - started < 40, 'the page waited on a motion the platform plays');
+  assert.ok(!classes.has('surface--leaving'), 'the leaving class landed inside a native sheet');
 });
 
 test('the duration comes from the stylesheet, in both units, with a fallback', () => {
@@ -276,7 +347,8 @@ test('the conventions doc names what the stylesheets actually use', () => {
   // The drift guard. A rule that lives only in the code that implements it is the
   // thing this file exists to prevent, and a doc that has stopped describing the
   // code is the same fault with the arrow reversed.
-  for (const token of ['--duration-fast', '--duration-normal', '--ease-out', '--motion-leave-ease']) {
+  for (const token of ['--duration-fast', '--duration-normal', '--ease-out', '--motion-sheet-in', '--motion-sheet-out',
+    '--motion-sheet-ease', '--motion-screen', '--motion-spring']) {
     assert.ok(DOC.includes(token), `the doc does not name ${token}, which the sheets use`);
   }
   assert.ok(DOC.includes('prefers-reduced-motion'), 'the doc does not mention the preference');
@@ -285,7 +357,7 @@ test('the conventions doc names what the stylesheets actually use', () => {
     'the doc does not carry the sequencing rule the motion sits under');
   // Every selector the sheets animate for a view change is described by name, so a
   // reader can find the rule for the thing they are looking at.
-  for (const name of ['panel', 'scrim', 'card', 'notice card']) {
+  for (const name of ['panel', 'scrim', 'card', 'notice card', 'sheet', 'spring']) {
     assert.ok(DOC.toLowerCase().includes(name), `the doc does not describe what a ${name} does`);
   }
   // The widened scope, asserted as wording rather than left to a reader's memory of
@@ -364,23 +436,27 @@ test('the panel is asked to leave, and only then taken away', () => {
   assert.ok(lastRender > asked, 'the panel is re-rendered before it has been asked to leave');
   assert.ok(body.slice(asked, lastRender).includes('setTimeout('),
     'the taking-away render is not inside the wait, so the departure cannot be seen');
-  // The wait is the page's own token and not a number worked out here.
-  assert.match(body, /motionMs\('--duration-fast'\)/, 'the wait does not use the pinned duration');
-  assert.match(body, /if \(reducedMotion\(\)\) \{ render\(\); return; \}/,
-    'reduced motion does not take the panel away on the press, so it waits for an animation that will not run');
+  // The wait is the page's own token and not a number worked out here, and it is
+  // the one answer that knows which of the two is playing: the screen's motion, or
+  // the short fade that replaces it under reduced motion.
+  assert.match(body, /screenMs\(\)/, 'the wait does not use the pinned duration');
+  assert.doesNotMatch(body, /reducedMotion\(\)/,
+    'reduced motion skips the departure, where it should play the fade');
+  const screen = functionBody(SETTINGS_JS, 'function screenMs(');
+  assert.match(screen, /reducedMotion\(\) \? motionMs\('--duration-fast'\) : motionMs\('--motion-screen'\)/,
+    'the screen wait does not follow the reduced-motion swap the stylesheet makes');
 });
 
-test('the arrival is played once, and never with motion turned off', () => {
+test('the arrival is played once, and as a fade with motion turned off', () => {
   const body = functionBody(SETTINGS_JS, 'function editorDisclosure(');
   assert.match(body, /if \(opening !== gw.id\) return node;/,
     'the arrival is not keyed to the press that opened it, so a re-render would replay it');
   assert.match(body, /opening = null;/, 'the arrival is not consumed');
-  const reduced = body.indexOf('if (reducedMotion()) return node;');
-  const added = body.indexOf("classList.add('editor-disclosure--arriving')");
-  assert.ok(reduced >= 0, 'reduced motion is not handled on the arrival');
-  assert.ok(added > reduced, 'the arriving class can land with motion turned off, so a reader who asked for none gets it');
-  // Read from the page's own handshake rather than the media query a second time.
-  assert.match(body, /reducedMotion\(\)/, 'the arrival decides about motion for itself');
+  // The class lands either way: the stylesheet makes it a fade under reduced
+  // motion, so the page does not decide about motion a second time.
+  assert.match(body, /classList\.add\('editor-disclosure--arriving'\)/, 'the arrival is never played');
+  assert.doesNotMatch(body, /reducedMotion\(\)/, 'the arrival decides about motion itself instead of taking the stylesheet\'s swap');
+  assert.match(body, /screenMs\(\)/, 'the arrival does not wait the screen duration');
 });
 
 test('the row hands over a panel only when there is one', () => {

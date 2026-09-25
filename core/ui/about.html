@@ -98,8 +98,9 @@
                    The press is answered ON the button now, which is where the
                    reader is looking, and the RESULT arrives on the banner. See
                    the fifth rule in ui/CONVENTIONS.md. The clear-cache row below
-                   keeps its own line, because what a clear DID is a report that
-                   stays until the surface closes rather than a transient one. -->
+                   answers its press the same way, and its line is only ever a
+                   host that refused: a clear that starts restarts the app in front
+                   of the reader, which is its whole answer. -->
             </div>
           </div>
         </div>
@@ -130,7 +131,8 @@
           <div class="settings-row settings-row--actions settings-row--actions-center">
             <div class="settings-row__control">
               <button id="clear-cache">Clear cache and refresh</button>
-              <!-- Inside the control, for the reason the Updates row above says. -->
+              <!-- Inside the control, for the reason the Updates row above says.
+                   Empty unless the host refused; see about.js. -->
               <div class="result" id="clear-result"></div>
             </div>
           </div>

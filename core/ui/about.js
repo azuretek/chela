@@ -215,13 +215,22 @@ $('releases').addEventListener('click', () => api.openReleases());
 // (the File menu and the tray call the same one) rather than adding a second
 // that could come to mean something different.
 //
-// It reports the EFFECT rather than the intention, in two parts, because the two
-// are genuinely two events. The invoke returns what was actually cleared, per
-// origin, including any step that refused; the confirmation that the Control UI
-// reloaded arrives afterwards on a separate push, because with a document already
-// on screen the app makes its attempt off to the side and reloading is not the
-// same moment as clearing. So this says "Cleared X" when X was cleared, and then
-// says the reload landed when it landed.
+// It behaves like a FRESH START of the app, on both clients: the host clears the
+// cached code (the paired-device identity and sign-in are untouched, as the row
+// says), raises the launch loading screen, closes this surface and Settings under
+// it, and reloads the Control UI from the server behind the loading screen, which
+// comes down once the page has painted. So the answer to this press is the app
+// starting again in front of the reader, and nothing is written here: a line
+// under the button would be on a surface that is already going away, and a green
+// "cleared" is a claim about a reload that has not landed yet. A reload that fails
+// takes the path a failed launch takes on that client (the desktop's loading
+// screen in its failed state with Try again, the phone's failure notice).
+//
+// The press is answered on the button (the fifth rule in ui/CONVENTIONS.md): it
+// says "Clearing…" and every press after the first is ignored, and the host holds
+// this surface long enough for that to be read. The one line this row can still
+// show is a host that REFUSED, meaning nothing was started and this surface is
+// staying, and that is reported in the error colour rather than left silent.
 //
 // A host with no such command does not get a button that appears to work: the
 // section is hidden, the same way the settings page hides a control whose command
@@ -230,71 +239,46 @@ const clearButton = $('clear-cache');
 const clearOut = $('clear-result');
 const hasClear = typeof api.clearCacheAndReload === 'function';
 if (clearButton && !hasClear) $('clear-cache-group').hidden = true;
-// What the clear did, kept so the confirmation can be ADDED to it rather than
-// replacing it. Both halves are owed to the reader and they arrive at different
-// moments: on the desktop the reload is made off to the side when a document is
-// already on screen, so "cleared" and "reloaded" are not the same event and a
-// line that swapped one for the other would lose the answer to the question the
-// reader actually asked.
-let clearSummary = '';
+const clearLabel = clearButton ? clearButton.textContent : '';
+// For a host that neither closes this surface nor answers, so the button is given
+// back rather than left saying "Clearing…" for good.
+const CLEAR_DEADLINE_MS = 15000;
+let clearing = false;
+let clearDeadline = 0;
+
+function endClear() {
+  clearing = false;
+  if (clearDeadline) { clearTimeout(clearDeadline); clearDeadline = 0; }
+  clearButton.disabled = false;
+  clearButton.textContent = clearLabel;
+  clearButton.removeAttribute('aria-busy');
+}
+
 if (clearButton && hasClear) {
   clearButton.addEventListener('click', async () => {
+    if (clearing) return;
+    clearing = true;
     clearButton.disabled = true;
-    setResult(clearOut, 'Clearing…');
+    clearButton.textContent = 'Clearing…';
+    clearButton.setAttribute('aria-busy', 'true');
+    setResult(clearOut, '');
+    clearDeadline = setTimeout(endClear, CLEAR_DEADLINE_MS);
     let report;
     try {
       report = await api.clearCacheAndReload();
     } catch (err) {
-      clearButton.disabled = false;
+      endClear();
       setResult(clearOut, `The cache could not be cleared: ${err && err.message ? err.message : err}`, 'err');
       return;
     }
-    clearButton.disabled = false;
-    clearSummary = describeClear(report);
-    setResult(clearOut, `${clearSummary}${reloadPending(report)}`, report && report.failed && report.failed.length ? 'err' : 'ok');
-  });
-}
-
-/**
- * What was cleared, and what was not, as one sentence the reader can check.
- *
- * Every branch is reachable: no gateway at all is the state on a first run, and a
- * partial clear is the state this reports rather than smoothing over, because a
- * reader who is here because something looks stale is the one reader who needs to
- * know that a step refused.
- */
-function describeClear(report) {
-  if (!report) return 'Nothing was cleared.';
-  const parts = [];
-  if (report.cleared && report.cleared.length) {
-    parts.push(`Cleared cached code and service workers for ${report.cleared.join(', ')}`);
-  } else if (!report.origins || report.origins.length === 0) {
-    parts.push('No gateway is configured, so there was no cached code to clear');
-  } else {
-    parts.push(`Nothing could be cleared for ${report.origins.join(', ')}`);
-  }
-  if (report.failed && report.failed.length) {
-    parts.push(report.failed.map((f) => `${f.origin} refused it (${f.error})`).join('; '));
-  }
-  return `${parts.join('. ')}.`;
-}
-
-/** What is happening now, which the confirmation later replaces. */
-function reloadPending(report) {
-  const where = report && report.gateway ? report.gateway.label : 'the gateway';
-  return ` Reloading ${where} from the server…`;
-}
-
-// The confirmation, pushed by the main process from the load that actually
-// landed. Reaching here is the only thing that makes this box able to say the
-// reload happened rather than that it was asked for, and it is ADDED to what was
-// cleared rather than replacing it: a reader who pressed a button about their
-// caches is owed both answers.
-if (hasClear && typeof api.onCacheCleared === 'function') {
-  api.onCacheCleared((report) => {
-    const detail = report && report.detail ? report.detail : '';
-    const confirmation = detail || (report && report.ok ? 'The Control UI reloaded.' : 'The reload did not land.');
-    setResult(clearOut, `${clearSummary ? `${clearSummary} ` : ''}${confirmation}`, report && report.ok ? 'ok' : 'err');
+    // Nothing was restarted (no gateway, or a host that refused), so this surface
+    // is not going away and the reader is owed the reason here: in the error
+    // colour when the clear itself failed, plainly when it is simply nothing to
+    // reload.
+    if (report && report.started === false) {
+      endClear();
+      setResult(clearOut, report.detail || 'The Control UI could not be restarted.', report.ok === false ? 'err' : '');
+    }
   });
 }
 

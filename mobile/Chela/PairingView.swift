@@ -67,9 +67,11 @@ struct PairingView: View {
     }
 
     private func header(_ copy: Pairing.Copy) -> some View {
-        HStack(spacing: 12) {
+        // The mark at 56, the size the desktop's pairing page draws its own at, and
+        // centred on the title beside it.
+        HStack(spacing: 14) {
             Image(systemName: "lock.shield")
-                .font(.system(size: 30, weight: .regular))
+                .font(.system(size: 56, weight: .regular))
                 .foregroundStyle(.tint)
                 .accessibilityHidden(true)
             Text(copy.title)

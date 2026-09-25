@@ -151,6 +151,13 @@ final class SettingsHost: NSObject, ObservableObject, WKScriptMessageHandler {
               listeners[event].push(fn);
             }
           };
+
+          // A sheet over the app, rather than the app itself: the native sheet's
+          // slide is the motion, so the page draws none of its own inside it (see
+          // surface--native-sheet in core/ui/ui.css).
+          if (!\(asPage)) {
+            try { document.documentElement.classList.add('surface--native-sheet'); } catch (e) { /* no root yet */ }
+          }
         })();
         """
     }
