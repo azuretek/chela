@@ -16,6 +16,10 @@ import net from 'node:net';
 
 export function createLoginGateProxy({ upstreamHost = '127.0.0.1', upstreamPort = 18995 } = {}) {
   const state = { socket: 'pass', delay: 0 };
+  // How many sockets were refused: proof the page loaded and tried to connect,
+  // so a client test can tell the gate was reached rather than the page never
+  // loading at all.
+  let refused = 0;
   const upgraded = new Set();
   const server = http.createServer((req, res) => {
     const out = http.request({ host: upstreamHost, port: upstreamPort, path: req.url, method: req.method, headers: req.headers }, (answer) => {
@@ -26,7 +30,7 @@ export function createLoginGateProxy({ upstreamHost = '127.0.0.1', upstreamPort 
     req.pipe(out);
   });
   server.on('upgrade', (req, socket, head) => {
-    if (state.socket === 'refuse') { socket.destroy(); return; }
+    if (state.socket === 'refuse') { refused += 1; socket.destroy(); return; }
     const forward = () => {
       const up = net.connect(upstreamPort, upstreamHost, () => {
         let raw = req.method + ' ' + req.url + ' HTTP/1.1\r\n';
@@ -50,7 +54,7 @@ export function createLoginGateProxy({ upstreamHost = '127.0.0.1', upstreamPort 
     cut() { for (const s of upgraded) s.destroy(); upgraded.clear(); },
     listen(port, host = '127.0.0.1') { return new Promise((resolve) => server.listen(port, host, resolve)); },
     close() { this.cut(); return new Promise((resolve) => server.close(() => resolve())); },
-    get state() { return { ...state }; },
+    get state() { return { ...state, refused }; },
   };
 }
 
