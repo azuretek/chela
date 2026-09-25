@@ -52,6 +52,8 @@ export const PROOFS = [
   // throwaway gateway it waits past 120s for a Control UI that stays on first run.
   { group: 'proofs', name: 'loading-theme-dark', script: 'test-loading-theme.js', args: ['--appearance', 'dark'] },
   { group: 'proofs', name: 'loading-theme-light', script: 'test-loading-theme.js', args: ['--appearance', 'light'] },
+  { group: 'proofs', name: 'settings-backdrop-dark', script: 'test-settings-backdrop.js', args: ['--appearance', 'dark'] },
+  { group: 'proofs', name: 'settings-backdrop-light', script: 'test-settings-backdrop.js', args: ['--appearance', 'light'] },
   // Against the throwaway gateway ci.yml starts on 127.0.0.1:19099.
   { group: 'gateway', name: 'gateway-identity', script: 'test-gateway-identity.js' },
 ];
