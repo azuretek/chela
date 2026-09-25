@@ -77,6 +77,12 @@ import * as appSettingsAffordance from '../../core/app-settings-affordance.js';
 // notice band appearing takes the frame with it. The phone installs the same bytes
 // from the same spec. See core/app-frame-inset.js.
 import * as appFrameInset from '../../core/app-frame-inset.js';
+// The outbox reconcile: a queued message the Control UI leaves stuck on a live
+// connection is checked against the gateway's record and settled, delivered or
+// sent once. Installed from the preload at document start (the
+// outbox:reconcile-script channel below). The phone installs the same bytes from
+// the same spec. See core/outbox-reconcile.js.
+import * as outboxReconcile from '../../core/outbox-reconcile.js';
 // The URL shape of a release's own notes. Shared rather than built here, because
 // the phone puts the same link behind the same button and a link that says
 // "release notes" has to land where the notes are.
@@ -1218,6 +1224,23 @@ function frameInsets() {
   const band = bannerView && !bannerView.webContents.isDestroyed() ? Math.max(0, bannerSize.height) : 0;
   return { top: band, bottom: 0 };
 }
+
+/**
+ * The outbox reconcile's bytes, read by the preload at document start, and its
+ * word that they ran. Synchronous for the observer's reason: the script wraps the
+ * page's WebSocket constructor, so it has to precede the page's own first script.
+ */
+ipcMain.on('outbox:reconcile-script', (event) => {
+  event.returnValue = outboxReconcile.reconcileScript();
+});
+
+ipcMain.on('outbox:injected', (_event, report) => {
+  if (report && report.ok) {
+    console.log('[chela-desktop] outbox reconcile installed (document start)');
+    return;
+  }
+  console.warn(`[chela-desktop] outbox reconcile did not install (${(report && report.error) || 'no reason given'}); a stuck queued message will not be settled`);
+});
 
 ipcMain.on('frame:inset-script', (event) => {
   event.returnValue = appFrameInset.installation(frameInsets());

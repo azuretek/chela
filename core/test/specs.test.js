@@ -49,6 +49,7 @@ const BUNDLED = {
   'gateway-identity.json': 'holds the signals a payload is recognised by, so "is this an OpenClaw gateway" is one answer rather than one per platform',
   'naming.json': 'read at runtime for the product name, the repo slug and each client shorthand',
   'native-control-auth.json': 'read at runtime for the global name, the client mode and the operator scopes',
+  'outbox-reconcile.json': 'holds the one injected script that reconciles a queued message stuck on a live connection against the gateway record',
   'notices.json': 'read at runtime for the tone names and their sort order',
   'pairing.json': 'holds the one injected script that observes the page gateway socket for a pairing close',
   'progress.json': 'read at runtime for the milestone order, the floors and the easing constants',
