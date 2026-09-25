@@ -593,6 +593,18 @@ struct WebView: UIViewRepresentable {
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         ))
+        // The outbox reconcile, the same bytes the desktop installs, read from
+        // core/spec/outbox-reconcile.json rather than ported. It watches the
+        // page's queued messages and settles one the Control UI leaves stuck on a
+        // live connection against the gateway's record: delivered, or sent once
+        // under its own send id. At document START because it wraps the page's
+        // WebSocket constructor, which has to precede the page's own socket. A
+        // stand-in with a named removal trigger in the spec's why list.
+        scripts.addUserScript(WKUserScript(
+            source: OutboxReconcile.script,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
         // The gateway token, handed to the Control UI the way the page itself
         // expects it: `window.__OPENCLAW_NATIVE_CONTROL_AUTH__`, set at document
         // START, before the page reads it during boot and before it opens its

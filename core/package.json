@@ -26,6 +26,7 @@
     "./device-identity.js": "./device-identity.js",
     "./release.js": "./release.js",
     "./reconnect-resume-shim.js": "./reconnect-resume-shim.js",
+    "./outbox-reconcile.js": "./outbox-reconcile.js",
     "./wake.js": "./wake.js",
     "./render-ready.js": "./render-ready.js"
   },

@@ -105,6 +105,22 @@ if (!isLocalPage) {
     frameReport = { ok: false, error: (err && err.message) || String(err) };
   }
   try { ipcRenderer.send('frame:injected', frameReport); } catch { /* nothing left to report it to */ }
+
+  /* The outbox reconcile (core/outbox-reconcile.js, read from
+     core/spec/outbox-reconcile.json), at the same moment and for the observer's
+     reason: it wraps the page's WebSocket constructor to see the page's own
+     socket, so it has to be in place before the page opens it. Reported the same
+     way, because a silent non-installation is the failure this file has had. */
+  let outboxReport = { ok: false, error: 'no script from main' };
+  try {
+    const outboxScript = ipcRenderer.sendSync('outbox:reconcile-script') || '';
+    if (!outboxScript) throw new Error('no script from main');
+    webFrame.executeJavaScript(outboxScript);
+    outboxReport = { ok: true, error: '' };
+  } catch (err) {
+    outboxReport = { ok: false, error: (err && err.message) || String(err) };
+  }
+  try { ipcRenderer.send('outbox:injected', outboxReport); } catch { /* nothing left to report it to */ }
 }
 
 if (isLocalPage) {
