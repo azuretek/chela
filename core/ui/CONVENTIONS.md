@@ -315,6 +315,7 @@ screen being different, it should always flow".
 - **The colour is the page's own reported background**, through the theme relay
   (`WebView.themeScript`): the value the interface is actually painted with, not a
   token of ours and not the window's colour.
+- **A colour is read from what the page COMPUTES, converted to sRGB, and never parsed from the authored value**, because a theme authored in `oklch()` keeps that space in its computed value and a reader that parses `#hex` and `rgb()` refuses it (#88).
 - **A band that disagrees is a bug in the wrapper, not a style.** Same shape as the
   sixth rule: the reader must never see our chrome and the interface disagree.
 

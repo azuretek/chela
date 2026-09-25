@@ -234,10 +234,25 @@ async function grab(name) {
   const win = BrowserWindow.getAllWindows()[0];
   if (!win) return;
   const [width, height] = win.getContentSize();
-  const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width, height } });
-  const mine = sources.find((s) => s.id === win.getMediaSourceId()) || sources.find((s) => /claw/i.test(s.name));
-  if (!mine || mine.thumbnail.isEmpty()) return;
-  fs.writeFileSync(path.join(SHOTS, name + '.png'), mine.thumbnail.toPNG());
+  // The composited window, which is what a reader sees. A host with no screen
+  // to capture (a Mac with nobody signed in, or no screen-recording grant)
+  // refuses this, and the settings surface's own page is captured instead: it is
+  // the surface this harness asserts on, so the capture still shows the claim.
+  let mine = null;
+  try {
+    const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width, height } });
+    mine = sources.find((s) => s.id === win.getMediaSourceId()) || sources.find((s) => /claw/i.test(s.name));
+  } catch (err) {
+    console.log('note no window capture here (' + String((err && err.message) || err) + '); capturing the settings surface itself');
+  }
+  if (mine && !mine.thumbnail.isEmpty()) {
+    fs.writeFileSync(path.join(SHOTS, name + '.png'), mine.thumbnail.toPNG());
+    return;
+  }
+  const surface = view('settings.html');
+  if (!surface) return;
+  const image = await surface.capturePage();
+  if (!image.isEmpty()) fs.writeFileSync(path.join(SHOTS, name + '.png'), image.toPNG());
 }
 
 function finish(code) {

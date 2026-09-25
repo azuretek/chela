@@ -56,7 +56,7 @@ const server = https.createServer(
   { key: fs.readFileSync(key), cert: fs.readFileSync(cert) },
   (_req, res) => {
     res.writeHead(200, { 'content-type': 'text/html' });
-    res.end('<!doctype html><title>Gateway</title><body><h1>PRETEND GATEWAY REACHED</h1>');
+    res.end('<!doctype html><html data-openclaw-control-ui-build-id="harness"><title>Gateway</title><body><h1>PRETEND GATEWAY REACHED</h1>');
   },
 );
 

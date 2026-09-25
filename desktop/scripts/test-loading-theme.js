@@ -53,7 +53,7 @@ if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 let holdServer = null;
 if (!GATEWAY) {
   holdServer = http.createServer((_req, res) => {
-    setTimeout(() => { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<!doctype html><title>Gateway</title>held'); }, HOLD_MS);
+    setTimeout(() => { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<!doctype html><html data-openclaw-control-ui-build-id="harness"><title>Gateway</title>held'); }, HOLD_MS);
   });
   await new Promise((r) => holdServer.listen(0, '127.0.0.1', r));
   GATEWAY = `http://127.0.0.1:${holdServer.address().port}/`;

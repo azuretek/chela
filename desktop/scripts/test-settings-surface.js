@@ -63,7 +63,7 @@ const PORT = await freePort();
 // been accepted, so without a reachable gateway there would be nothing to assert.
 const server = http.createServer((_req, res) => {
   res.writeHead(200, { 'content-type': 'text/html' });
-  res.end('<!doctype html><title>Gateway</title><h1 id="served">served</h1>');
+  res.end('<!doctype html><html data-openclaw-control-ui-build-id="harness"><title>Gateway</title><h1 id="served">served</h1></html>');
 });
 await new Promise((resolve) => server.listen(PORT, '127.0.0.1', resolve));
 
