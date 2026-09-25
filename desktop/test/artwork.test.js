@@ -60,7 +60,7 @@ test('Windows and Linux package the edge-to-edge icon, macOS the one on Apple\'s
   // The section's own indented lines, up to the next top-level key.
   const iconOf = (section) => yml.match(new RegExp(`^${section}:\\n((?:[ #].*\\n|\\n)*)`, 'm'))?.[1].match(/^  icon: (\S+)/m)?.[1];
   assert.equal(iconOf('mac'), 'build/icon.png');
-  assert.equal(iconOf('win'), 'build/icon-full.png');
+  assert.equal(iconOf('win'), 'build/icon.ico');
   assert.equal(iconOf('linux'), 'build/icon-full.png');
   assert.match(read('desktop/src/main.js'), /icon: process\.platform === 'linux' \? path\.join\(ASSETS, 'icon-full\.png'\)/);
   assert.match(read('desktop/src/main.js'), /appIcons\.choose\([^)]*full: appIcons\.fillsSquare\(process\.platform\)/);
