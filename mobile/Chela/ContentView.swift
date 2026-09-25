@@ -104,6 +104,9 @@ struct ContentView: View {
     /// before the page has a document to read a colour out of.
     @State private var themeColour = Color(uiColor: .systemBackground)
 
+    /// How many theme reports the page has sent; see WebView.themeReports.
+    @State private var themeReports = 0
+
     /// The one live board. `NoticeBoard.live()` is a plain board in a release
     /// build and a seeded one under `-claw-seed-notices`, which is how the tones
     /// nobody can otherwise reach are rendered for a screenshot.
@@ -263,6 +266,7 @@ struct ContentView: View {
             gateway: gateway,
             appearance: AppearanceMode.system,
             themeColour: $themeColour,
+            themeReports: $themeReports,
             notices: notices,
             connection: connection,
             pairing: pairing,
@@ -407,7 +411,7 @@ struct ContentView: View {
         // time", measured 2026-09-16).
         .modifier(LiveTokenRefresh(
             scheme: deviceScheme,
-            pageColour: themeColour,
+            pageReports: themeReports,
             phase: scenePhase,
             showingSettings: $showingSettings,
             showingAbout: $showingAbout,
@@ -740,10 +744,11 @@ private struct LiveTokenRefresh: ViewModifier {
     /// in one mode is the wrong map in the other. It was this app's own stored mode,
     /// which no longer exists.
     let scheme: ColorScheme
-    /// The page's own background, reported by the theme observer the moment the
-    /// Control UI repaints. A theme or mode change made INSIDE the interface moves
-    /// it without the device changing, and that is the change the icon follows.
-    let pageColour: Color
+    /// Every theme report the page sends, counted. The observer reports whenever
+    /// the Control UI changes its theme attributes, so a theme or mode change made
+    /// INSIDE the interface arrives here even when the device did not change and
+    /// the background did not either, and that is the change the icon follows.
+    let pageReports: Int
     /// The app returning to the foreground, the only time iOS accepts an icon
     /// change, so a theme changed while away is caught up on the way back.
     let phase: ScenePhase
@@ -755,7 +760,7 @@ private struct LiveTokenRefresh: ViewModifier {
         content
             .onAppear(perform: refresh)
             .onChange(of: scheme) { _, _ in refresh() }
-            .onChange(of: pageColour) { _, _ in refresh() }
+            .onChange(of: pageReports) { _, _ in refresh() }
             .onChange(of: phase) { _, now in if now == .active { refresh() } }
             .onChange(of: showingSettings) { _, isOpen in if isOpen { refresh() } }
             .onChange(of: showingAbout) { _, isOpen in if isOpen { refresh() } }
