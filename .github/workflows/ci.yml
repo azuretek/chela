@@ -108,8 +108,8 @@ jobs:
           matches () { printf '%s\n' "$changed" | grep -Eq "$1"; }
           js=false; ios=false
           if [ -z "$changed" ]; then js=true; ios=true; fi
-          if matches '^(core/|desktop/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|eslint\.config\.mjs|\.github/workflows/ci\.yml)'; then js=true; fi
-          if matches '^(core/|mobile/|\.github/workflows/ci\.yml)'; then ios=true; fi
+          if matches '^(core/|desktop/|scripts/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|eslint\.config\.mjs|\.github/workflows/(ci|platforms-gate)\.yml)'; then js=true; fi
+          if matches '^(core/|mobile/|scripts/mobile\.mjs|\.github/workflows/ci\.yml)'; then ios=true; fi
           echo "js=$js" >> "$GITHUB_OUTPUT"
           echo "ios=$ios" >> "$GITHUB_OUTPUT"
           echo "js=$js ios=$ios"
