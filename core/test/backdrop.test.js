@@ -112,6 +112,13 @@ test('a sheet over a sheet keeps one dim, and the native sheet draws none of its
   // Read by the shared page script, before first paint, from the URL the host gives.
   assert.match(SURFACE_JS, /has\('stacked'\)[\s\S]{0,200}classList\.add\('surface--stacked'\)/,
     'ui/surface.js no longer marks a stacked surface, so the host saying so changes nothing');
+  // And the script is in the head of both sheet pages, so the mark is on the root
+  // before the first paint rather than after a frame of a second dim.
+  for (const page of ['about.html', 'settings.html']) {
+    const html = fs.readFileSync(path.join(REPO, 'core', 'ui', page), 'utf8');
+    const at = html.indexOf('<script src="surface.js"></script>');
+    assert.ok(at > 0 && at < html.indexOf('</head>'), page + ' loads surface.js after its head, so the stacked mark can land after a painted frame');
+  }
   const markAt = SURFACE_JS.indexOf("classList.add('surface--stacked')");
   const surfaceObject = SURFACE_JS.indexOf('window.clawSurface = {');
   assert.ok(markAt > 0 && markAt < surfaceObject, 'the stacked mark must run as the script loads, not on a later call');
