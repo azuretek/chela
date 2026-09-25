@@ -187,6 +187,14 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
     }
     #endif
 
+    #if DEBUG
+    /// Click one of the page's own buttons, for a screenshot run. See
+    /// `SettingsSpec.screenshotPress`, which only ever hands this a plain id.
+    func pressButton(_ id: String) {
+        webView?.evaluateJavaScript("(function(){var b=document.getElementById('\(id)');if(b){b.scrollIntoView({block:'center'});b.click();}})()")
+    }
+    #endif
+
     // MARK: The commands
 
     private func run(id: String?, command: String, args: [Any]) async {

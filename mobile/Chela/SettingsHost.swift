@@ -162,6 +162,14 @@ final class SettingsHost: NSObject, ObservableObject, WKScriptMessageHandler {
         """
     }
 
+    #if DEBUG
+    /// Click one of the page's own buttons, for a screenshot run. See
+    /// `SettingsSpec.screenshotPress`, which only ever hands this a plain id.
+    func pressButton(_ id: String) {
+        webView?.evaluateJavaScript("(function(){var b=document.getElementById('\(id)');if(b){b.scrollIntoView({block:'center'});b.click();}})()")
+    }
+    #endif
+
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == Self.messageName,
               let body = message.body as? [String: Any],
