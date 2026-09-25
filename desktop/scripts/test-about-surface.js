@@ -10,7 +10,8 @@
 //      control and the group's own bottom edge and compares it with the same gap at
 //      the section's top;
 //   2. what the page paints behind and around its card. The page draws its card on
-//      a translucent wash (--scrim is --bg at 70%), and on the phone the web view
+//      a scrim (the drawer dim on the desktop, clear in the phone sheet), and
+//      the web view
 //      behind it is painted by the HOST (mobile/Chela/AboutView.swift sets the
 //      web view and its scroll view to .systemBackground while the page reports its
 //      own --bg). Two shades meeting at the card's edge is what that composits to,

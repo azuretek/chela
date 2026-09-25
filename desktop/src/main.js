@@ -2083,12 +2083,38 @@ function openOverlay(name, opts = {}) {
   attachedViews.add(view);
   restackViews();
   layoutViews();
-  wc.loadFile(path.join(UI_DIR, OVERLAY_PAGES[name]), { search: opts.search || overlaySearch() });
+  wc.loadFile(path.join(UI_DIR, OVERLAY_PAGES[name]), { search: stackedSearch(name, opts.search || overlaySearch()) });
   wc.once('did-finish-load', () => {
     applyThemeCss(wc);
     wc.focus();
   });
   return view;
+}
+
+/**
+ * The overlays whose page dims the window behind its card. Pairing draws its own
+ * full-window screen and no scrim, so it is not one.
+ */
+const DIMMING_OVERLAYS = ['settings', 'about'];
+
+/** Whether a dimming overlay other than `name` is up. */
+function dimmedBelow(name) {
+  return DIMMING_OVERLAYS.some((other) => other !== name && overlayAlive(other));
+}
+
+/**
+ * An overlay's URL, told whether a dim is already up under it.
+ *
+ * About opened over Settings lands on a window Settings has already dimmed, and
+ * two dims stacked read as the interface going nearly black. So the page is told
+ * to keep its scrim clear (ui/surface.js, ui.css surface--stacked), in the URL
+ * rather than over IPC because it decides the first frame's paint.
+ */
+function stackedSearch(name, search) {
+  if (!DIMMING_OVERLAYS.includes(name) || !dimmedBelow(name)) return search;
+  const params = new URLSearchParams(search);
+  params.set('stacked', '1');
+  return '?' + params;
 }
 
 /**
@@ -2160,6 +2186,18 @@ async function closeOverlay(name, { animate = true } = {}) {
   try {
     if (!view.webContents.isDestroyed()) view.webContents.close();
   } catch { /* already torn down */ }
+  // The dim belonged to the surface that just left, so a surface that was
+  // stacked over it takes the dim over rather than leaving the window undimmed
+  // behind its card. There are two dimming surfaces, so whichever is still up is
+  // now the only one.
+  if (DIMMING_OVERLAYS.includes(name)) {
+    for (const other of DIMMING_OVERLAYS) {
+      if (other === name || !overlayAlive(other)) continue;
+      overlayViews.get(other).webContents
+        .executeJavaScript("document.documentElement.classList.remove('surface--stacked')", true)
+        .catch(() => {});
+    }
+  }
   // About shown over Settings must hand focus back to Settings, not to the
   // gateway page buried under both of them.
   const remaining = [...overlayViews.values()].filter((v) => !v.webContents.isDestroyed());

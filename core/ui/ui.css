@@ -182,7 +182,15 @@
   /* Ours: the Control UI has no equivalent, so these are never overridden. */
   --ok: #3ddc84;
   --warn: #ffb020;
-  --scrim: color-mix(in srgb, var(--bg) 70%, transparent);
+  /* The dim behind a sheet, taken from the Control UI's own mobile nav drawer
+     backdrop (.shell-nav-backdrop in upstream ui/src/styles/layout.mobile.css),
+     so the two dims match. Restated rather than read live because upstream paints
+     it as a literal and publishes no token for it. Black at 44% in every palette:
+     the interface stays readable behind Settings and About and darkens, where a
+     wash of --bg at 70% faded it into the page colour as the sheet rose.
+     Declared with the one value in both appearance blocks, because the dim does
+     not follow the mode. See ui/CONVENTIONS.md, "The dim behind a sheet". */
+  --scrim: rgb(0 0 0 / 44%);
 }
 /* Warm neutrals rather than pure white, to sit beside the Control UI's light
    palettes without looking like a different application bolted on. Reached via
@@ -208,6 +216,7 @@
     --border: #e3dfd2;
     --border-strong: #cdc7b6;
     --border-hover: #ada694;
+    --scrim: rgb(0 0 0 / 44%);
     --text: #3d3a33;
     --text-strong: #1f1d1a;
     --muted: #6b655b;
@@ -306,6 +315,18 @@ html, body {
    that failed, there is nothing behind to show through, and a translucent wash
    would just look like a bug. */
 body.as-page .scrim { background: var(--bg); }
+
+/* One dim however many sheets are up. About opened over Settings lands on a
+   window Settings has already dimmed, so its own scrim stays clear rather than
+   stacking a second dim on the first, and it still takes the click that closes
+   it. The desktop host says so in the URL (?stacked=1, read by ui/surface.js
+   before first paint). */
+html.surface--stacked .scrim { background: transparent; }
+
+/* Inside the phone's native sheet the platform draws the dim behind the sheet
+   and the page fills the sheet on its own background, so a dim of ours would only
+   darken the sheet around the card. The page-as-window case keeps its own rule. */
+html.surface--native-sheet body:not(.as-page) .scrim { background: transparent; }
 
 .modal {
   position: relative;
