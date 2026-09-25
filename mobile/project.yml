@@ -186,6 +186,11 @@ targets:
         buildPhase: resources
       - path: ../core/spec/connection.json
         buildPhase: resources
+      # The wake and reconnect rule. WakeRule reads this at runtime and walks the
+      # same transition table the desktop does, so scenePhase and the network
+      # path only report events. See core/wake.js.
+      - path: ../core/spec/wake.json
+        buildPhase: resources
       - path: ../core/spec/release.json
         buildPhase: resources
       - path: ../core/spec/tokens.json
