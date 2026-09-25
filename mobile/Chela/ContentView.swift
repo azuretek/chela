@@ -519,11 +519,14 @@ struct ContentView: View {
         gatewayPage.reloadFromServer()
         let owed = Motion.remainingVisibleMs(shownAt: pressedAt)
         if owed > 0 { try? await Task.sleep(for: .milliseconds(owed)) }
-        showingAbout = false
+        // Settings is the sheet About is presented from, so dismissing it takes
+        // both away in ONE slide; dismissing About first played two, About down
+        // onto Settings and then Settings down onto the cover.
         showingSettings = false
         // The sheets take the platform's own time to go; the floor starts once the
         // cover is what the reader sees.
         try? await Task.sleep(for: .milliseconds(Motion.sheetLeaveMs))
+        showingAbout = false
         cover.releaseFloor(after: Motion.minVisibleMs)
         return (true, "Cleared cached code\(cleared) and restarted the Control UI from the server.")
     }

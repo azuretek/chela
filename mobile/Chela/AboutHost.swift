@@ -191,7 +191,13 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
     /// Click one of the page's own buttons, for a screenshot run. See
     /// `SettingsSpec.screenshotPress`, which only ever hands this a plain id.
     func pressButton(_ id: String) {
-        webView?.evaluateJavaScript("(function(){var b=document.getElementById('\(id)');if(b){b.scrollIntoView({block:'center'});b.click();}})()")
+        webView?.evaluateJavaScript(Self.pressScript(id))
+    }
+
+    /// Waits for the button to exist and be enabled (the page may still be
+    /// loading), then brings it on screen, lets that frame paint, and clicks it.
+    static func pressScript(_ id: String) -> String {
+        "(function(){var n=0;(function t(){var b=document.getElementById('\(id)');if(b&&!b.disabled&&b.offsetParent){b.scrollIntoView({block:'center'});setTimeout(function(){b.click();},600);}else if(n++<100){setTimeout(t,100);}})();})()"
     }
     #endif
 
