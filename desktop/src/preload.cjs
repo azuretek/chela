@@ -320,6 +320,53 @@ const RESOLVE = {
 // The token list lives in src/chrome.js, which a sandboxed preload cannot
 // require. Asking for it once per page keeps a single owner rather than a copy
 // here that drifts the first time the list changes.
+// A palette can name a colour in any space CSS has. oklch() is what the palette
+// exporters write, color-mix() is what a derived token often is, and
+// color(srgb ...) shows up in exported shadcn themes. Chromium KEEPS the space in
+// the computed value it hands back, so the "resolved form" this reader has always
+// relied on is not always a form this app can parse: measured 2026-09-25, a theme
+// imported from tweakcn resolved --bg to oklch(0.97 0.01 95), and the main process
+// refused the WHOLE report because that is not a colour it will hold to its
+// grammar (chrome.js normalizeColor keeps only what parses into #rrggbb). Our own
+// pages, the caption strip and the mark therefore never saw the theme at all.
+//
+// Painting the value onto a one pixel canvas asks the ENGINE for the colour rather
+// than for the notation: the bytes that come back are what a reader sees, and
+// rgb()/rgba() is the one form every parser here already reads.
+function srgbCanvas() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1;
+  canvas.height = 1;
+  return canvas;
+}
+
+// The forms this app already parses. They are passed through untouched, so a
+// palette that was already readable keeps its exact bytes and its alpha.
+const READABLE_COLOUR = /^(#[0-9a-f]{3,8}|rgba?\([^()]*\))$/i;
+
+// The colour as rgb()/rgba(), or null when nothing can paint it, which is a case
+// for the report to refuse rather than one to repair here.
+function srgb(canvas, value) {
+  const text = String(value).trim();
+  if (READABLE_COLOUR.test(text)) return text;
+  try {
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.clearRect(0, 0, 1, 1);
+    context.fillStyle = "rgba(0, 0, 0, 0)";
+    context.fillStyle = value;
+    context.fillRect(0, 0, 1, 1);
+    const data = context.getImageData(0, 0, 1, 1).data;
+    // Nothing painted means nothing paintable: an unpainted canvas is the
+    // transparent default, and a real colour never leaves it that way.
+    if (!data[3]) return null;
+    if (data[3] === 255) return "rgb(" + data[0] + ", " + data[1] + ", " + data[2] + ")";
+    const alpha = Math.round((data[3] / 255) * 1000) / 1000;
+    return "rgba(" + data[0] + ", " + data[1] + ", " + data[2] + ", " + alpha + ")";
+  } catch {
+    return null;
+  }
+}
 let tokenSpec = null;
 function tokenSpecOnce() {
   if (tokenSpec) return tokenSpec;
@@ -340,11 +387,12 @@ function readTheme() {
     + 'background-color:var(--bg);color:var(--text)';
   root.appendChild(probe);
   const computed = getComputedStyle(probe);
+  const canvas = srgbCanvas();
 
   const report = {
     mode: root.getAttribute('data-theme-mode'),
-    surface: computed.backgroundColor,
-    symbol: computed.color,
+    surface: srgb(canvas, computed.backgroundColor) || computed.backgroundColor,
+    symbol: srgb(canvas, computed.color) || computed.color,
     tokens: {},
   };
 
@@ -354,13 +402,58 @@ function readTheme() {
     probe.style[spec.prop] = `var(${name}, ${spec.absent})`;
     const value = computed[spec.read];
     probe.style[spec.prop] = '';
-    if (value && value !== spec.absent) report.tokens[name] = value;
+    if (!value || value === spec.absent) continue;
+    // A colour is reported as sRGB, whatever space the palette authored it in:
+    // see srgb(). A value nothing can paint is left as it arrived, for the report
+    // to refuse the same way it always has.
+    report.tokens[name] = kind === 'color' ? (srgb(canvas, value) || value) : value;
   }
 
   probe.remove();
   return report;
 }
 
+// A CUSTOM theme does not arrive as an attribute at all.
+//
+// The theme picker rewrites data-theme in place with no navigation, which is an
+// attribute and is the event the root observer above exists for. A theme IMPORTED
+// from a palette exporter is different: upstream writes it into a STYLE TAG in the
+// document head (syncCustomThemeStyleTag in ui/src/app/custom-theme.ts, id
+// openclaw-custom-theme), and importing a second one REWRITES that tag text.
+// data-theme stays custom and every other attribute stays put, so an observer on
+// the ROOT receives no event whatever: the page repaints around us while our own
+// pages keep the previous palette, the caption strip keeps the previous window
+// colour and the mark keeps the previous accent. Reported 2026-09-25: when we use a
+// theme from tweakcn our ui elements and the icon do not change, and we need to
+// follow even those theme changes.
+//
+// So the head is watched too, and only for its STYLE elements. A style tag added,
+// removed or retyped is a palette change. The built-in palettes arrive as LINK
+// elements (syncThemePaletteStylesheet), so switching between those does not fire
+// this, and set textContent replaces a style own text node, which is why the
+// record target matters as much as the nodes added and removed. The upstream tag id
+// is deliberately NOT matched: a name copied from upstream breaks the day upstream
+// renames it, and reportTheme() already drops a report whose values have not moved,
+// so a wider net costs nothing.
+function touchesAStyleTag(records) {
+  for (const record of records) {
+    if (record.target && record.target.nodeName === "STYLE") return true;
+    for (const node of record.addedNodes) {
+      if (node.nodeName === "STYLE") return true;
+    }
+    for (const node of record.removedNodes) {
+      if (node.nodeName === "STYLE") return true;
+    }
+  }
+  return false;
+}
+
+function observeStyleTags() {
+  if (!document.head) return;
+  new MutationObserver((records) => {
+    if (touchesAStyleTag(records)) reportTheme();
+  }).observe(document.head, { childList: true, subtree: true, characterData: true });
+}
 let lastReport = '';
 function reportTheme() {
   try {
@@ -383,4 +476,7 @@ window.addEventListener('DOMContentLoaded', () => {
     attributes: true,
     attributeFilter: ['data-theme', 'data-theme-mode', 'style', 'class'],
   });
+  // The other half of the same event: a custom theme is a style tag, not an
+  // attribute. See observeStyleTags().
+  observeStyleTags();
 });
