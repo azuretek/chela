@@ -321,15 +321,25 @@ struct WebView: UIViewRepresentable {
     /// observer catches the page repainting after a `prefers-color-scheme` change,
     /// which is the leg the app drives when the appearance is changed here.
     ///
+    /// **And an imported CUSTOM theme is not an attribute at all**, which is the
+    /// leg this missed. Upstream keeps such a theme in a style tag in the head
+    /// and rewrites that tag text for the next import, so the theme attribute
+    /// stays custom and the observer above receives nothing: the strips and the
+    /// token re-read kept the previous theme after a second import. Reported
+    /// 2026-09-25, and measured by CustomThemeFollowTests.
+    ///
     /// `WKWebView.themeColor` is the native route to the same value and was tried
     /// first, on the reasoning that a property beats an injected script. Observed
     /// through KVO it never delivered a value, and left the strips the window's
     /// colour while looking like it worked. A mechanism that silently does nothing
     /// is worse here than no mechanism, so it was replaced rather than kept
     /// alongside this.
-    private static var themeScript: String {
+    /// Not private, deliberately: the tests drive THIS script against a page, so
+    /// what they exercise is the relay that ships rather than a copy of it.
+    static var themeScript: String {
         """
         (function () {
+        \(ThemeTokens.srgbHelper)
           // A colour as three channels, or null. Anything not fully opaque is a
           // failure rather than a colour: `rgba(0, 0, 0, 0)` is what a probe
           // resolves to when the token does not exist at all, and reading it as
@@ -387,7 +397,7 @@ struct WebView: UIViewRepresentable {
           }
 
           function report() {
-            var rgb = channels(pageBackground()) || channels(declaredColour());
+            var rgb = channels(clawSrgb(pageBackground())) || channels(declaredColour());
             if (!rgb) { return; }
             try { window.webkit.messageHandlers.\(themeMessageName).postMessage(rgb); } catch (e) {}
           }
@@ -404,6 +414,33 @@ struct WebView: UIViewRepresentable {
               attributes: true,
               attributeFilter: ['data-theme', 'data-theme-mode', 'data-theme-resolved', 'style', 'class']
             });
+          } catch (e) {}
+          // A CUSTOM theme is not an attribute at all, which is the leg above
+          // cannot see: upstream keeps an imported theme in a STYLE TAG in the
+          // document head and REWRITES that tag text for the next import, so every
+          // root attribute stays put. The head is watched as well, and only for its
+          // STYLE elements: a style tag added, removed or retyped is a palette
+          // change, where the built-in palettes arrive as LINK elements
+          // (syncThemePaletteStylesheet) and cannot wake this.
+          function touchesAStyleTag(records) {
+            for (var i = 0; i < records.length; i += 1) {
+              var record = records[i];
+              if (record.target && record.target.nodeName === 'STYLE') { return true; }
+              var added = record.addedNodes || [];
+              for (var a = 0; a < added.length; a += 1) {
+                if (added[a] && added[a].nodeName === 'STYLE') { return true; }
+              }
+              var removed = record.removedNodes || [];
+              for (var r = 0; r < removed.length; r += 1) {
+                if (removed[r] && removed[r].nodeName === 'STYLE') { return true; }
+              }
+            }
+            return false;
+          }
+          try {
+            new MutationObserver(function (records) {
+              if (touchesAStyleTag(records)) { report(); }
+            }).observe(document.head, { childList: true, subtree: true, characterData: true });
           } catch (e) {}
         })();
         """
