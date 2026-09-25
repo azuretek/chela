@@ -298,11 +298,20 @@ app.whenReady().then(async () => {
   const probe = await frame();
   check('the window can be captured', Boolean(probe), 'desktopCapturer returned nothing for this window, so no claim can be made');
   if (!probe) { finish(); return; }
-  // Settle the bitmap's channel order against the known column rather than assume it.
-  const asIs = sample(probe);
-  order = [0, 1, 2];
-  const swapped = sample(probe);
-  order = far(asIs, COLUMN) <= far(swapped, COLUMN) ? [2, 1, 0] : [0, 1, 2];
+  // Settle the bitmap's channel order against the known column rather than assume
+  // it, on a frame that shows the column: the gateway page's first paint can
+  // trail its load, and on a frame from before it both orders read the same.
+  const orderDeadline = Date.now() + 15000;
+  let settledOrder = null;
+  while (!settledOrder && Date.now() < orderDeadline) {
+    const image = await frame();
+    for (const candidate of [[2, 1, 0], [0, 1, 2]]) {
+      order = candidate;
+      if (image && far(sample(image), COLUMN) <= TOLERANCE) { settledOrder = candidate; break; }
+    }
+    if (!settledOrder) await delay(100);
+  }
+  order = settledOrder || [2, 1, 0];
   // The gateway page's own first paint can trail its load on a slow machine.
   const bare = await still('backdrop-bare', (rgb) => far(rgb, COLUMN) <= TOLERANCE);
   console.log('note bare column rgb(' + bare.join(' ') + '), the dim should read rgb(' + DIMMED.join(' ') + ')');
