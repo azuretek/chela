@@ -53,6 +53,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { generatedFiles, bucketIcons, bucketTrays, iosIconFile, appIcon } from './artwork.mjs';
 import { iconFile, trayFile } from '../../core/app-icons.js';
+import { WINDOWS_SIZES, encodeIco, decodeIco } from './ico.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));   // desktop/
 const repo = path.dirname(root);                                            // the repo
@@ -349,4 +350,31 @@ for (const target of targets) {
   if (target.treatment === 'square' && written.hasAlpha) {
     fail(`${target.file} carries an alpha channel, which App Store Connect rejects`);
   }
+}
+
+// --------------------------------------------------------------------------
+// The Windows icon
+// --------------------------------------------------------------------------
+
+// Our own .ico rather than one electron-builder derives from icon-full.png,
+// because the derived one left out the sizes the shell draws at 125%, 150% and
+// 175% scaling, and the shell does not scale an icon up into a slot it has no
+// image for: it draws the next size down, centred, and the icon reads small.
+// Same artwork, same edge-to-edge framing, one image rendered at each size.
+// See scripts/ico.mjs.
+{
+  const rel = 'desktop/build/icon.ico';
+  const file = path.join(repo, rel);
+  const svg = Buffer.from(appIcon({ full: true }), 'utf8');
+  const images = [];
+  for (const size of WINDOWS_SIZES) {
+    const render = () => sharp(svg, { density: Math.max(72, size) })
+      .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } });
+    const { data } = await render().ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    images.push({ size, rgba: data, png: size >= 256 ? await render().png().toBuffer() : null });
+  }
+  writeFileSync(file, encodeIco(images));
+  const sizes = decodeIco(readFileSync(file)).map((e) => e.size);
+  if (sizes.join() !== WINDOWS_SIZES.join()) fail(rel + ' holds ' + sizes.join(', ') + ', expected ' + WINDOWS_SIZES.join(', '));
+  console.log(rel + '  ' + sizes.join(', ') + '  (ico)');
 }
