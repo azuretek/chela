@@ -64,6 +64,21 @@
     }
   }
 
+  // A surface opened over another surface that already dims the window (About
+  // over Settings) draws no dim of its own, so the window keeps ONE dim rather
+  // than two stacked. The desktop host states it in the URL; read here, before
+  // first paint, so the second dim never shows for a frame. See ui.css,
+  // surface--stacked.
+  (function markStacked() {
+    try {
+      if (new URLSearchParams(location.search).has('stacked')) {
+        document.documentElement.classList.add('surface--stacked');
+      }
+    } catch (e) {
+      // A page that cannot read its URL draws its own dim, which is the safe side.
+    }
+  })();
+
   // Hold a surface's ARRIVAL until the page has painted its first frame, then let
   // it play. A view of ours is attached while its page loads (a surface the reader
   // opened takes the keyboard, see ui/CONVENTIONS.md), so an arrival that started

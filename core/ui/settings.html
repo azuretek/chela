@@ -21,6 +21,12 @@
         content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;">
   <title>Chela Settings</title>
   <link rel="stylesheet" href="ui.css">
+  <!-- In the head rather than at the foot, so what it marks on the root (the
+       arrival held for first paint, and a sheet stacked over another) is in place
+       before anything is painted. At the foot, a slow first paint could show a
+       frame of a second dim before the mark landed: measured on a hosted macOS
+       runner by desktop/scripts/test-settings-backdrop.js. -->
+  <script src="surface.js"></script>
 </head>
 <body>
   <!-- The settings surface, and the ONE copy of it. Both clients render this
@@ -326,7 +332,6 @@
     </div>
   </div>
 
-  <script src="surface.js"></script>
   <script src="settings.js"></script>
 </body>
 </html>
