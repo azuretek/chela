@@ -4,11 +4,13 @@
 //
 // WHY THIS EXISTS. Reported 2026-09-25: "right now the control ui sort of
 // flickers into the background color as the settings/about us pages slide up".
-// Each sheet is a transparent view of ours over the Control UI, and its scrim was
-// the page colour at 70%: as it faded in with the slide, the interface behind it
-// was washed toward the page colour, fast at first on the sheet's curve, which
-// reads as the interface flickering out. About opened over Settings stacked a
-// second wash on the first.
+// Each sheet is a transparent view of ours over the Control UI, but its page
+// painted html and body with the page colour, so the moment the view attached
+// the interface was replaced by a flat sheet of --bg, in the fallback palette for
+// the first frames until the live theme arrived. Its scrim was the page colour at
+// 70% as well. Measured on a macOS desktop, this harness's own frames: the column
+// went from the interface straight to the light fallback and then to the dark
+// page colour, and never showed through again while the sheet was up.
 //
 // The dim is now the Control UI's own mobile nav drawer backdrop, black at 44%,
 // so the interface stays visible and darkens the way it does when its own drawer
@@ -78,7 +80,7 @@ const PAGE = [
   '</html>',
 ].join(NEWLINE);
 
-const { app, BrowserWindow, Menu, desktopCapturer, webContents } = await import('electron');
+const { app, BrowserWindow, Menu, desktopCapturer, screen, webContents } = await import('electron');
 
 const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-backdrop-'));
 app.setPath('userData', PROFILE);
@@ -126,23 +128,54 @@ function menuItem(test, items = Menu.getApplicationMenu()?.items || []) {
 /** Channel order of the capture's bitmap, settled against the bare column. */
 let order = [2, 1, 0];
 
-/** One frame of the composited window: only the OS compositor sees the child views. */
+/** Said once: which capture route this run is on, and what the capturer offered. */
+let routeNoted = false;
+
+/**
+ * One frame of the composited window: only the OS compositor sees the child views.
+ *
+ * The window's own source first. Where the platform does not list the window by
+ * its media id (an X server under xvfb names it differently), the screen it is on
+ * is captured instead and cropped to the window's content, which is the same
+ * composited pixels.
+ */
 async function frame() {
   const win = BrowserWindow.getAllWindows()[0];
   if (!win) return null;
   const [width, height] = win.getContentSize();
   // Bounded: a session with no screen to capture (a Mac at its login window, a
   // display server that is not there) can leave this call unanswered, and a
-  // harness that hangs is one nobody reads.
-  // A refusal (macOS without a signed-in screen or the Screen Recording grant
-  // answers "Failed to get sources") is the same answer: no frame.
-  const sources = await Promise.race([
-    desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width, height } }).catch(() => []),
+  // harness that hangs is one nobody reads. A refusal ("Failed to get sources")
+  // is the same answer: no frame.
+  const ask = (types, size) => Promise.race([
+    desktopCapturer.getSources({ types, thumbnailSize: size }).catch(() => []),
     delay(5000).then(() => []),
   ]);
-  const mine = sources.find((s) => s.id === win.getMediaSourceId());
-  if (!mine || mine.thumbnail.isEmpty()) return null;
-  return mine.thumbnail;
+  const windows = await ask(['window'], { width, height });
+  const mine = windows.find((s) => s.id === win.getMediaSourceId())
+    || windows.find((s) => s.name === win.getTitle());
+  if (mine && !mine.thumbnail.isEmpty()) {
+    if (!routeNoted) { routeNoted = true; console.log('note capturing the window source ' + JSON.stringify(mine.name)); }
+    return mine.thumbnail;
+  }
+  const display = screen.getDisplayMatching(win.getBounds());
+  const { width: sw, height: sh } = display.size;
+  const screens = await ask(['screen'], { width: sw, height: sh });
+  const shot = screens.find((s) => String(s.display_id) === String(display.id)) || (screens.length === 1 ? screens[0] : null);
+  if (!routeNoted) {
+    routeNoted = true;
+    console.log('note no window source matched (' + windows.length + ' offered: ' + JSON.stringify(windows.map((s) => s.name).slice(0, 6))
+      + '), so capturing the screen and cropping to the window: ' + (shot ? 'screen ' + JSON.stringify(shot.name) : 'no screen either'));
+  }
+  if (!shot || shot.thumbnail.isEmpty()) return null;
+  const content = win.getContentBounds();
+  const scale = shot.thumbnail.getSize().width / sw;
+  return shot.thumbnail.crop({
+    x: Math.round((content.x - display.bounds.x) * scale),
+    y: Math.round((content.y - display.bounds.y) * scale),
+    width: Math.round(content.width * scale),
+    height: Math.round(content.height * scale),
+  });
 }
 
 /** The mean colour of a small block inside the column, below any drag band. */
@@ -169,8 +202,28 @@ function offLine(p, from, to) {
   return far(p, from.map((v, i) => v + t * d[i]));
 }
 
-/** Frames spanning an action, sampled in the column. */
-async function through(name, act, ms) {
+/**
+ * Whether one of our pages is up, loaded and done moving: the page's own answer,
+ * so the harness never guesses how long a load or an animation takes.
+ */
+async function settledPage(file) {
+  const wc = view(file);
+  if (!wc) return false;
+  try {
+    return await wc.executeJavaScript(
+      'document.readyState === "complete" && !document.documentElement.classList.contains("surface--pending")'
+      + ' && document.getAnimations().every((a) => a.playState !== "running")',
+    );
+  } catch { return false; }
+}
+const gone = (file) => async () => !view(file);
+
+/**
+ * Frames spanning an action, sampled in the column, until the action's end state
+ * holds (bounded, so a page that never settles is a failure rather than a hang),
+ * and a little past it.
+ */
+async function through(name, act, done) {
   const frames = [];
   let stop = false;
   const started = Date.now();
@@ -184,7 +237,9 @@ async function through(name, act, ms) {
   await delay(60);
   const actedAt = Date.now() - started;
   await act();
-  await delay(ms);
+  const deadline = Date.now() + 10000;
+  while (!(await done()) && Date.now() < deadline) await delay(40);
+  await delay(300);
   stop = true;
   await Promise.all(runs);
   frames.sort((a, b) => a.at - b.at);
@@ -238,7 +293,7 @@ app.whenReady().then(async () => {
   const settingsItem = menuItem((label) => label === 'Settings\u2026');
   check('Settings can be opened from the menu', Boolean(settingsItem), 'no "Settings\u2026" menu item');
   if (!settingsItem) { finish(); return; }
-  const arrival = await through('backdrop-settings-arrival', () => settingsItem.click(), 1400);
+  const arrival = await through('backdrop-settings-arrival', () => settingsItem.click(), () => settledPage('settings.html'));
   const underSettings = await still('backdrop-settings');
   check('under Settings the interface is dimmed, not washed into the page colour',
     far(underSettings, DIMMED) <= TOLERANCE,
@@ -254,7 +309,7 @@ app.whenReady().then(async () => {
   const aboutItem = menuItem((label) => /^About\b/.test(label));
   check('About can be opened from the menu', Boolean(aboutItem), 'no About menu item');
   if (aboutItem) {
-    const stacking = await through('backdrop-about-arrival', () => aboutItem.click(), 1400);
+    const stacking = await through('backdrop-about-arrival', () => aboutItem.click(), () => settledPage('about.html'));
     const underBoth = await still('backdrop-about-over-settings');
     check('About over Settings keeps ONE dim', far(underBoth, DIMMED) <= TOLERANCE,
       'the column reads rgb(' + underBoth.join(' ') + '); one dim is rgb(' + DIMMED.join(' ') + ') and two are rgb('
@@ -264,7 +319,7 @@ app.whenReady().then(async () => {
       strayStack.slice(0, 4).map((f) => f.rel + 'ms rgb(' + f.rgb.join(' ') + ')').join(', '));
     const about = view('about.html');
     if (about) {
-      await through('backdrop-about-departure', () => escape(about), 1200);
+      await through('backdrop-about-departure', () => escape(about), gone('about.html'));
       const afterAbout = await still('backdrop-after-about');
       check('closing About leaves Settings dimming the interface', far(afterAbout, DIMMED) <= TOLERANCE,
         'the column reads rgb(' + afterAbout.join(' ') + ')');
@@ -275,7 +330,7 @@ app.whenReady().then(async () => {
   const settings = view('settings.html');
   check('the Settings surface is up to close', Boolean(settings), 'no settings view');
   if (settings) {
-    const departure = await through('backdrop-settings-departure', () => escape(settings), 1400);
+    const departure = await through('backdrop-settings-departure', () => escape(settings), gone('settings.html'));
     const after = await still('backdrop-closed');
     check('closing Settings gives the interface back undimmed', far(after, bare) <= TOLERANCE,
       'the column reads rgb(' + after.join(' ') + ') where it read rgb(' + bare.join(' ') + ')');

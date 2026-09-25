@@ -503,9 +503,10 @@ upstream-parity check the borrowed tokens face, because both clients read them:
 
 ### The dim behind a sheet
 
-**The Control UI stays on screen behind Settings and About, under a dim.** Abi, 2026-09-25: *"right now the control ui sort of flickers into the background color as the settings/about us pages slide up ... or like a dim like the slide out of the menu on mobile from the left"*. The scrim had been the page colour at 70%, so as it faded in on the sheet's fast-off-the-mark curve the interface washed into the page colour, which read as a flicker.
+**The Control UI stays on screen behind Settings and About, under a dim.** Abi, 2026-09-25: *"right now the control ui sort of flickers into the background color as the settings/about us pages slide up ... or like a dim like the slide out of the menu on mobile from the left"*. Measured on a macOS desktop, frame by frame: the sheet's page painted html and body with the page colour, so the moment its view attached the Control UI was replaced by a flat, opaque sheet of --bg, in the fallback palette for its first frames until the live theme arrived. The scrim over it was the page colour at 70% as well, so there was no interface left to dim.
 
 - **The dim is the Control UI's own**: its mobile nav drawer backdrop (`.shell-nav-backdrop`, black at 44% in every palette), restated as `--scrim` in `ui.css` and held to upstream by `core/test/backdrop.test.js`. It fades in with the slide up and out with the slide down, on the sheet's duration and curve.
+- **A sheet's page paints nothing behind its scrim.** Its html and body are transparent, so what shows through the dim is the Control UI itself, from the first frame.
 - **One dim however many sheets are up.** A sheet opened over another (About from Settings) keeps its own scrim clear: the desktop host adds `?stacked=1` and `ui/surface.js` sets `surface--stacked` before first paint. If the lower sheet leaves first, the host clears the mark so the dim stays.
 - **Where nothing is behind, there is no dim.** Settings as the window's own content keeps the opaque page colour, and inside the phone's native sheet the page draws no dim, because the platform draws one behind the sheet.
 - **No blur.** Deferred by choice (Abi, 2026-09-25): a dim first, and a blur only if the dim turns out not to be enough.

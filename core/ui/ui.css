@@ -323,6 +323,18 @@ body.as-page .scrim { background: var(--bg); }
    before first paint). */
 html.surface--stacked .scrim { background: transparent; }
 
+/* A sheet's page is a transparent view over the Control UI, so the page itself
+   paints nothing behind its scrim and the interface shows through the dim.
+   The page colour on html and body is what hid the Control UI: the moment the
+   view attached, the window went to a flat sheet of --bg, before the scrim had
+   faded in at all, and in the fallback palette until the live theme arrived.
+   Measured frame by frame by desktop/scripts/test-settings-backdrop.js. The
+   page-as-window keeps its page colour, since nothing is behind it, and so does
+   the page inside the phone's native sheet, which is the sheet's own surface and
+   paints the strips around the safe area (ui/CONVENTIONS.md, the seventh rule). */
+html:not(.surface--native-sheet):has(body:not(.as-page) .scrim),
+html:not(.surface--native-sheet) body:not(.as-page):has(.scrim) { background: transparent; }
+
 /* Inside the phone's native sheet the platform draws the dim behind the sheet
    and the page fills the sheet on its own background, so a dim of ours would only
    darken the sheet around the card. The page-as-window case keeps its own rule. */
