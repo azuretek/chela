@@ -302,6 +302,23 @@ const PROBE = `(() => {
     // What a reader sees at the card's edge: the page's own background, the wash
     // over it, and the card, in the order they are painted.
     edge: scrim && group ? { wash: getComputedStyle(scrim).backgroundColor, card: getComputedStyle(group).backgroundColor, page: getComputedStyle(document.documentElement).backgroundColor } : null,
+    // The header mark against the card headings under it, and against its own
+    // name. A heading's rect is its text; the title's text starts inside its
+    // own padding, so that is added to its box rather than read off the box.
+    headline: (() => {
+      const mark = document.querySelector('.modal__headline .modal__icon');
+      const title = document.getElementById('title');
+      const headings = [...document.querySelectorAll('.modal__body .settings-group .settings-row__title')];
+      if (!mark || !title || !headings.length) return null;
+      const m = mark.getBoundingClientRect();
+      const t = title.getBoundingClientRect();
+      return {
+        markLeft: m.left,
+        headingLefts: headings.map((h) => h.getBoundingClientRect().left),
+        markToName: t.left + parseFloat(getComputedStyle(title).paddingLeft) - m.right,
+        space3: parseFloat(root.getPropertyValue('--space-3')),
+      };
+    })(),
     accents: {
       accentToken: root.getPropertyValue('--accent').trim(),
       primaryToken: root.getPropertyValue('--primary').trim(),
@@ -348,6 +365,19 @@ app.whenReady().then(async () => {
       const file = path.join(SHOTS, `${page.name}-${APPEARANCE}-${page.width}.png`);
       fs.writeFileSync(file, (await win.capturePage()).toPNG());
       console.log(`SHOT ${file}`);
+    }
+
+    if (page.file === 'about.html') {
+      // Reported on 1.0.1-dev.358: the mark sat left of the cards' own edge and
+      // 25px off its name. Its left edge is on the card headings' line, and the
+      // gap to the name is --space-3, at every width the page is drawn at.
+      const h = measured.headline;
+      check(page.name + ": the header mark starts on the card headings' line",
+        Boolean(h) && h.headingLefts.length > 1 && h.headingLefts.every((x) => Math.abs(x - h.markLeft) < 0.5),
+        JSON.stringify(h));
+      check(page.name + ': the mark sits --space-3 from its name',
+        Boolean(h) && Number.isFinite(h.space3) && Math.abs(h.markToName - h.space3) < 0.5,
+        JSON.stringify(h));
     }
 
     if (page.name === 'about' && PALETTE === 'none') {
