@@ -169,7 +169,7 @@ struct ContentView: View {
         gatewayPage.liveTokens { tokens in
             if tokens != liveTokens { liveTokens = tokens }
             if tokens != notices.themeTokens { notices.themeTokens = tokens }
-            AppIconOffer.consider(tokens: tokens, board: notices)
+            AppIconFollower.follow(tokens: tokens, deviceIsDark: deviceScheme == .dark)
         }
     }
 
@@ -395,6 +395,8 @@ struct ContentView: View {
         // time", measured 2026-09-16).
         .modifier(LiveTokenRefresh(
             scheme: deviceScheme,
+            pageColour: themeColour,
+            phase: scenePhase,
             showingSettings: $showingSettings,
             showingAbout: $showingAbout,
             refresh: refreshLiveTokens
@@ -529,7 +531,7 @@ struct ContentView: View {
                 // build is actually installed.
                 Task { await TestFlight.open() }
             default:
-                _ = AppIconOffer.run(command, board: notices)
+                break
             }
         }
         // A screenshot run on a simulator, which cannot press the button above.
@@ -726,6 +728,13 @@ private struct LiveTokenRefresh: ViewModifier {
     /// in one mode is the wrong map in the other. It was this app's own stored mode,
     /// which no longer exists.
     let scheme: ColorScheme
+    /// The page's own background, reported by the theme observer the moment the
+    /// Control UI repaints. A theme or mode change made INSIDE the interface moves
+    /// it without the device changing, and that is the change the icon follows.
+    let pageColour: Color
+    /// The app returning to the foreground, the only time iOS accepts an icon
+    /// change, so a theme changed while away is caught up on the way back.
+    let phase: ScenePhase
     @Binding var showingSettings: Bool
     @Binding var showingAbout: Bool
     let refresh: () -> Void
@@ -734,6 +743,8 @@ private struct LiveTokenRefresh: ViewModifier {
         content
             .onAppear(perform: refresh)
             .onChange(of: scheme) { _, _ in refresh() }
+            .onChange(of: pageColour) { _, _ in refresh() }
+            .onChange(of: phase) { _, now in if now == .active { refresh() } }
             .onChange(of: showingSettings) { _, isOpen in if isOpen { refresh() } }
             .onChange(of: showingAbout) { _, isOpen in if isOpen { refresh() } }
     }

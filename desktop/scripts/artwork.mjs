@@ -24,10 +24,7 @@
 // only draws: every icon from palettesFor(), and the in-app mark as CSS that
 // applies the same rule to the live --accent, so no theme is named anywhere.
 
-import {
-  PALETTE, PAPER, BUCKETS, PRIMARY, ROLES, KEY, SECOND_OFFSET, NEUTRAL, LIFT, PAPER_FADE,
-  palettesFor, mix, spec,
-} from '../../core/app-icons.js';
+import { PALETTE, PAPER, BUCKETS, PRIMARY, ROLES, KEY, SECOND_OFFSET, NEUTRAL, LIFT, PAPER_FADE, palettesFor, mix, spec, alternateIconName } from '../../core/app-icons.js';
 
 const r2 = (n) => {
   const v = Math.round(n * 100) / 100;
@@ -393,13 +390,22 @@ export function markCss() {
     '}\n';
 }
 
-// The iOS icon sets, one per bucket. Each holds the paper icon as its default
-// rendition and the neon icon under the dark appearance, so the home screen
-// follows the device's appearance with no code. The primary bucket is the
-// AppIcon set the app ships with; every other bucket is an alternate icon.
+// The iOS icon sets. AppIcon is the primary bucket's, the icon the app ships
+// with and the App Store shows: the paper icon by default and the neon one
+// under the dark appearance. Every bucket then has one ALTERNATE set per mode,
+// each a single rendition, named by core/app-icons.js alternateIconName, which
+// is what the app switches between as the theme and its light or dark mode
+// change (mobile/Chela/AppIcons.swift AppIconFollower).
 const IOS_SETS = 'mobile/Chela/Assets.xcassets/';
-export const iosSetName = (bucket) => (bucket.primary ? 'AppIcon' : 'AppIcon-' + bucket.id);
-export const iosIconFile = (bucket, mode) => iosSetName(bucket) + '.appiconset/' + (bucket.primary ? 'AppIcon-1024' : bucket.id) + (mode === 'dark' ? '-dark' : '') + '.png';
+export const iosSetName = (bucket) => (bucket.primary ? 'AppIcon' : null);
+export const iosIconFile = (bucket, mode) => 'AppIcon.appiconset/AppIcon-1024' + (mode === 'dark' ? '-dark' : '') + '.png';
+export const iosAltIconFile = (bucket, mode) => alternateIconName(bucket, mode) + '.appiconset/' + bucket.id + '-' + (mode === 'light' ? 'light' : 'dark') + '.png';
+function iosAltContents(bucket, mode) {
+  return JSON.stringify({
+    images: [{ filename: iosAltIconFile(bucket, mode).split('/')[1], idiom: 'universal', platform: 'ios', size: '1024x1024' }],
+    info: { author: 'xcode', version: 1 },
+  }, null, 2) + '\n';
+}
 function iosContents(bucket) {
   const file = (mode) => iosIconFile(bucket, mode).split('/')[1];
   return JSON.stringify({
@@ -421,6 +427,9 @@ export function generatedFiles() {
     // between are written out for it, with samples its tests check against.
     'core/spec/app-icons.json': JSON.stringify(spec(), null, 2) + '\n',
   };
-  for (const bucket of BUCKETS) files[IOS_SETS + iosSetName(bucket) + '.appiconset/Contents.json'] = iosContents(bucket);
+  files[IOS_SETS + 'AppIcon.appiconset/Contents.json'] = iosContents(PRIMARY);
+  for (const bucket of BUCKETS) {
+    for (const mode of ['light', 'dark']) files[IOS_SETS + alternateIconName(bucket, mode) + '.appiconset/Contents.json'] = iosAltContents(bucket, mode);
+  }
   return files;
 }
