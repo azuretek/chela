@@ -10,16 +10,18 @@ import UIKit
 /// colour. A theme added upstream is followed with no change here. The spec's
 /// samples are the desktop's own answers, and AppIconsTests holds this to them.
 ///
-/// Light and dark need no code: every icon set carries the paper icon as its
-/// default rendition and the neon icon under dark appearance.
+/// Light and dark are separate alternate icons, one per mode, so the icon
+/// follows the interface's own mode rather than the home screen's.
 enum AppIcons {
     struct Bucket: Decodable, Equatable {
         let id: String
         let hue: Double?
         let primary: Bool
 
-        /// The alternate icon's name, or nil for the primary icon.
-        var alternateIconName: String? { primary ? nil : "AppIcon-\(id)" }
+        /// The alternate icon for this bucket in one mode, as core/app-icons.js
+        /// alternateIconName names it. Every bucket has one per mode, the
+        /// primary's included.
+        func alternateIconName(mode: String) -> String { "AppIcon-\(id)-\(mode == "light" ? "light" : "dark")" }
     }
 
     struct Sample: Decodable {
@@ -36,6 +38,16 @@ enum AppIcons {
     static let spec: Spec? = try? BundledSpec.load("app-icons", as: Spec.self)
     static var buckets: [Bucket] { spec?.buckets ?? [] }
     static var primary: Bucket? { buckets.first(where: { $0.primary }) }
+
+    /// The mode the icon takes: the one the Control UI resolved, published under
+    /// ThemeTokens.schemeKey, and the device's only when the page resolved none.
+    static func mode(scheme: String?, deviceIsDark: Bool) -> String {
+        switch scheme?.lowercased() {
+        case "light": return "light"
+        case "dark": return "dark"
+        default: return deviceIsDark ? "dark" : "light"
+        }
+    }
 
     /// `#rgb`, `#rrggbb`, or `rgb()`/`rgba()` as lowercase `#rrggbb`; nil otherwise.
     /// The same forms core/app-icons.js hex() reads.
@@ -82,51 +94,66 @@ enum AppIcons {
     }
 }
 
-/// Offers the live theme's icon through a notice that can simply be ignored.
+/// Keeps the app icon on the live theme: its accent's bucket, in the mode the
+/// Control UI resolved (paper for light, neon for dark).
 ///
-/// Offered once per bucket: the bucket is remembered when the notice goes up, so
-/// ignoring it means it is not raised again on the next launch, and a theme in a
-/// different colour offers its own. Choosing it applies the icon, which is where
-/// iOS shows its own confirmation. Never automatic, because iOS puts that alert
-/// up on every icon change.
+/// Applied on every change, not offered. It used to be a notice raised once per
+/// bucket, so a second theme change never asked again, and the icon sets carried
+/// both modes as appearance renditions, which follow the DEVICE's home screen
+/// rather than the interface: accepting the offer with the interface pinned to
+/// the other mode showed no change at all (reported 2026-09-24). Each bucket now
+/// ships one alternate icon per mode, and this sets the one the theme calls for
+/// whenever it differs from the one showing. iOS confirms every change with its
+/// own alert, which is accepted as the cost (Abi, 2026-09-24).
 @MainActor
-enum AppIconOffer {
-    static let noticeId = "app-icon"
-    static let commandPrefix = "app-icon:"
-    private static let offeredKey = "chela.appIcon.offeredBucket"
-
-    static func consider(tokens: [String: String], board: NoticeBoard) {
-        guard UIApplication.shared.supportsAlternateIcons,
-              let accent = tokens["--accent"],
-              let bucket = AppIcons.bucket(forAccent: accent) else { return }
-        if UIApplication.shared.alternateIconName == bucket.alternateIconName {
-            board.clear(noticeId)
-            return
-        }
-        let defaults = UserDefaults.standard
-        guard defaults.string(forKey: offeredKey) != bucket.id else { return }
-        defaults.set(bucket.id, forKey: offeredKey)
-        board.raise(noticeId, NoticeRaise(
-            tone: NoticeTone.info,
-            message: "Match the app icon to your theme?",
-            detail: "Paper in light mode, neon in dark. iOS asks you to confirm an icon change.",
-            action: NoticeAction(label: "Use this icon", command: commandPrefix + bucket.id)
-        ))
+enum AppIconFollower {
+    /// The alternate icon the live tokens call for, or nil when there is nothing
+    /// to read yet (no page, or a page that published no accent), which must not
+    /// move the icon.
+    static func target(tokens: [String: String], deviceIsDark: Bool) -> String? {
+        guard let accent = tokens["--accent"], AppIcons.hex(accent) != nil,
+              let bucket = AppIcons.bucket(forAccent: accent) else { return nil }
+        return bucket.alternateIconName(mode: AppIcons.mode(scheme: tokens[ThemeTokens.schemeKey], deviceIsDark: deviceIsDark))
     }
 
-    /// Answers the notice's action. Returns false for a command that is not ours.
-    static func run(_ command: String, board: NoticeBoard) -> Bool {
-        guard command.hasPrefix(commandPrefix) else { return false }
-        let id = String(command.dropFirst(commandPrefix.count))
-        guard let bucket = AppIcons.buckets.first(where: { $0.id == id }) else { return true }
+    /// The name last asked for, so a refresh that lands while iOS is still
+    /// answering does not ask again.
+    private static var inFlight: String?
+
+    /// Sets the icon the tokens call for, when it is not the one showing.
+    /// Returns the name it asked for, or nil when it asked for nothing.
+    @discardableResult
+    static func follow(tokens: [String: String], deviceIsDark: Bool, app: AlternateIconSetting = UIApplication.shared) -> String? {
+        guard app.supportsAlternateIcons, app.isActive,
+              let name = target(tokens: tokens, deviceIsDark: deviceIsDark),
+              name != app.alternateIconName, name != inFlight else { return nil }
+        inFlight = name
         Task { @MainActor in
+            defer { if inFlight == name { inFlight = nil } }
             do {
-                try await UIApplication.shared.setAlternateIconName(bucket.alternateIconName)
-                board.clear(noticeId)
+                try await app.setAlternateIconName(name)
             } catch {
-                NSLog("[claw] could not change the app icon to %@: %@", id, String(describing: error))
+                NSLog("[claw] could not change the app icon to %@: %@", name, String(describing: error))
             }
         }
-        return true
+        return name
     }
+
+    /// For tests: forget a request still in flight.
+    static func reset() { inFlight = nil }
+}
+
+/// The part of UIApplication the follower uses, so the tests can hold it to
+/// asking iOS for the icon without a real icon change.
+@MainActor
+protocol AlternateIconSetting {
+    var supportsAlternateIcons: Bool { get }
+    var alternateIconName: String? { get }
+    /// Whether the app is in the foreground: iOS refuses an icon change otherwise.
+    var isActive: Bool { get }
+    func setAlternateIconName(_ name: String?) async throws
+}
+
+extension UIApplication: AlternateIconSetting {
+    var isActive: Bool { applicationState == .active }
 }
