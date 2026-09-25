@@ -55,6 +55,7 @@ const BUNDLED = {
   'prompt-metadata.json': 'holds the injected script that puts the client-context block on every prompt',
   'reconnect-resume-shim.json': 'holds the one injected script that strips the Control UI reconnect-resume marker from a chat.send frame before it leaves the page',
   'release.json': 'read at runtime for the release asset names the OTA install URL is built from',
+  'render-ready.json': 'holds the one probe that says a loaded page has painted, which the loading cover waits on',
   'settings.json': 'travels with the shared settings page, which cannot read it at runtime itself',
   'tokens.json': 'read at runtime for the notice palettes, the card geometry, the type scale and the tone map',
   'updates.json': 'read at runtime for the check intervals; its action and outcome names are Swift enum raw values, which are compile-time',
