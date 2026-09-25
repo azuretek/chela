@@ -2667,7 +2667,7 @@ function liftWhenAllowed(why) {
  */
 const connectPress = createLoginGateCover({
   cover: () => {
-    console.log('[chela-desktop] Connect pressed on the Control UI login gate; covering until the interface renders');
+    console.log('[chela-desktop] the Control UI login gate is up, or its Connect was pressed; covering it with the loading screen');
     setConnection({
       phase: connectionState.nextPhase(connection.phase, { type: 'connect' }),
       error: null,

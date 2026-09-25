@@ -6,7 +6,7 @@
 // about what is on screen DURING the connect, so it is measured by sampling the
 // app's own view stack from the press to the end, not by where it ended.
 //
-//   npx electron scripts/test-login-gate-connect.js --case gate|connect|refused [--record DIR]
+//   OPENCLAW_SEED_TOKEN=... npx electron scripts/test-login-gate-connect.js --case gate|connect|refused [--record DIR]
 //
 //   gate      the gate is drawn and nothing presses it. The reader must never see
 //             it: the loading cover goes up over it, and lands on its failed state
@@ -37,6 +37,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { createLoginGateProxy, upstreamAnswers } from './lib/login-gate-proxy.js';
+import secrets from '../src/secrets.js';
 
 function arg(name, fallback = null) {
   const i = process.argv.indexOf('--' + name);
@@ -59,6 +60,14 @@ const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-login-gate-' + CASE 
 const { app, webContents } = await import('electron');
 app.setPath('userData', PROFILE);
 app.commandLine.appendSwitch('user-data-dir', PROFILE);
+// A mock keychain, so the throwaway credential never lands in the real one and
+// safeStorage never waits on a prompt nobody is there to answer.
+app.commandLine.appendSwitch('use-mock-keychain');
+// The gateway's token for this run, seeded the way the sibling harnesses do
+// (scripts/test-wake-reconnect.js): the page authenticates, so the gate this
+// measures is the one a dropped socket draws, not one a missing token draws.
+const TOKEN = process.env.OPENCLAW_SEED_TOKEN || '';
+delete process.env.OPENCLAW_SEED_TOKEN;
 fs.writeFileSync(path.join(PROFILE, 'config.json'), JSON.stringify({
   gateways: [{ id: 'gate', label: 'Login gate test', url: BASE + '/' }],
   activeGatewayId: 'gate',
@@ -70,6 +79,10 @@ if (!(await upstreamAnswers(UP_HOST, Number(UP_PORT)))) {
   process.exit(3);
 }
 await proxy.listen(PORT);
+// Registered before main.js is imported, so the credential is there when the
+// first connect reads it (see scripts/test-wake-reconnect.js for why this is not
+// awaited at the top level).
+if (TOKEN) app.whenReady().then(() => { secrets.set('gate', { token: TOKEN }); });
 await import('../src/main.js');
 
 /* ------------------------------------------------------------------ helpers */
