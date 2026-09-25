@@ -2,6 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <!-- The phone hosts this page too (LoadingSurface), and without this a web view
+       lays it out on the 980px desktop viewport and scales it to a speck; see
+       about.html for the same meta and why Chromium ignores it on the desktop. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: file:;">
   <title>Connecting…</title>
