@@ -248,3 +248,79 @@ test('other sessions and the page frames are left alone', async () => {
   assert.deepStrictEqual(env.gateway.requests, [], 'an in-flight sending row is the page\'s');
   assert.deepStrictEqual(JSON.parse(socket.sent[0]).id, 'page-1');
 });
+
+// The polling load. Before this, a row that stayed due (a run still active, a row
+// left for the reader, a resend already recorded) was re-checked with a
+// chat.history on every one-second tick, measured on the gateway 2026-09-25 as
+// 215 calls an hour from one desktop, each a synchronous transcript read.
+const historyCalls = (env) => env.gateway.requests.filter((f) => f.method === 'chat.history').length;
+const chatEvent = (socket, payload) => socket.emit('message', JSON.stringify({ type: 'event', event: 'chat', payload }));
+
+test('a row waiting behind an active run is re-checked on a backoff, not once a second', async () => {
+  const env = install();
+  seed(env.storage, [row('m', 'waiting-reconnect')]);
+  env.gateway.record.sessionInfo = { hasActiveRun: true, status: 'running' };
+  env.open();
+  await env.pass(0);
+  for (let i = 0; i < 60; i++) await env.pass(1000);
+  const calls = historyCalls(env);
+  assert.ok(calls >= 1, 'the row is still checked');
+  assert.ok(calls <= 5, 'one minute of ticks asked chat.history ' + calls + ' times');
+  for (let i = 0; i < 3600; i += 10) await env.pass(10000);
+  assert.ok(historyCalls(env) <= 20, 'one more hour asked chat.history ' + historyCalls(env) + ' times');
+  assert.deepStrictEqual(env.gateway.sends, []);
+});
+
+test('a finished run on the row\'s session re-checks it at once, and a delta or another session does not', async () => {
+  const env = install();
+  seed(env.storage, [row('n', 'waiting-reconnect')]);
+  env.gateway.record.sessionInfo = { hasActiveRun: true, status: 'running' };
+  const socket = env.open();
+  await env.pass(0);
+  await env.pass(4000);
+  assert.strictEqual(historyCalls(env), 1);
+  env.gateway.record.sessionInfo = { hasActiveRun: false, status: 'done' };
+  chatEvent(socket, { sessionKey: SESSION, runId: 'other', state: 'delta' });
+  chatEvent(socket, { sessionKey: 'agent:main:dashboard:elsewhere', runId: 'other', state: 'final' });
+  await env.pass(1000);
+  assert.strictEqual(historyCalls(env), 1, 'neither a delta nor another session wakes the row');
+  chatEvent(socket, { sessionKey: SESSION, runId: 'other', state: 'final' });
+  await env.pass(1000);
+  assert.strictEqual(historyCalls(env), 2, 'the final event woke the row');
+  assert.deepStrictEqual(env.gateway.sends.map((s) => s.idempotencyKey), ['run-n']);
+  assert.deepStrictEqual(queued(env.storage), []);
+});
+
+test('a row left for the reader is not re-asked every second', async () => {
+  const env = install();
+  seed(env.storage, [row('o', 'waiting-reconnect', { attachments: [{ id: 'a1' }] })]);
+  env.open();
+  await env.pass(0);
+  for (let i = 0; i < 60; i++) await env.pass(1000);
+  assert.ok(historyCalls(env) <= 5, 'one minute asked chat.history ' + historyCalls(env) + ' times');
+});
+
+test('a row behind one in backoff keeps its place in the queue', async () => {
+  const env = install();
+  seed(env.storage, [row('p', 'waiting-reconnect', { attachments: [{ id: 'a1' }] }), row('q', 'waiting-reconnect')]);
+  env.open();
+  await env.pass(0);
+  for (let i = 0; i < 30; i++) await env.pass(1000);
+  assert.deepStrictEqual(env.gateway.sends, [], 'the second row is never sent ahead of the first');
+});
+
+test('a reconnect starts the backoff over', async () => {
+  const env = install();
+  seed(env.storage, [row('r', 'waiting-reconnect')]);
+  env.gateway.record.sessionInfo = { hasActiveRun: true, status: 'running' };
+  const socket = env.open();
+  await env.pass(0);
+  for (let i = 0; i < 60; i++) await env.pass(1000);
+  const before = historyCalls(env);
+  socket.readyState = 3;
+  socket.emit('close');
+  env.open();
+  await env.pass(0);
+  await env.pass(4000);
+  assert.strictEqual(historyCalls(env), before + 1, 'the new socket checks the row as soon as it is due');
+});
