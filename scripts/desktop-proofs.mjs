@@ -56,6 +56,14 @@ export const PROOFS = [
   { group: 'proofs', name: 'settings-backdrop-light', script: 'test-settings-backdrop.js', args: ['--appearance', 'light'] },
   // Against the throwaway gateway ci.yml starts on 127.0.0.1:19099.
   { group: 'gateway', name: 'gateway-identity', script: 'test-gateway-identity.js' },
+  // Also against the throwaway gateway, through the login-gate proxy this harness
+  // serves on 127.0.0.1:18996. Three cases, because the claim is about what is on
+  // screen DURING a connect and each case holds a different half of it: the gate
+  // with nothing pressing it, the gate with its own Connect pressed, and the press
+  // refused again.
+  { group: 'gateway', name: 'login-gate-cover-gate', script: 'test-login-gate-connect.js', args: ['--case', 'gate', '--upstream', '127.0.0.1:19099'] },
+  { group: 'gateway', name: 'login-gate-cover-connect', script: 'test-login-gate-connect.js', args: ['--case', 'connect', '--upstream', '127.0.0.1:19099'] },
+  { group: 'gateway', name: 'login-gate-cover-refused', script: 'test-login-gate-connect.js', args: ['--case', 'refused', '--upstream', '127.0.0.1:19099'] },
 ];
 
 /**

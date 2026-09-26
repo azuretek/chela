@@ -109,6 +109,14 @@ targets:
       # the repository's.
       - path: ../core/spec/pairing.json
         buildPhase: resources
+      # The login gate's Connect watcher, bundled rather than mirrored for its ONE
+      # injected script, the same shape as the pairing observer above, whose
+      # channel it posts on. LoginGateConnect reads this at runtime and installs
+      # the script through a WKUserScript at document start, and PageCover answers
+      # its reports; LoginGateConnectParityTests asserts the bundled copy is the
+      # repository's.
+      - path: ../core/spec/login-gate-connect.json
+        buildPhase: resources
       # The reconnect-resume shim, bundled rather than mirrored for its ONE
       # injected script, the same shape as the pairing observer above: it wraps
       # the page's WebSocket.send and drops the Control UI's reserved

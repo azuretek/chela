@@ -253,6 +253,14 @@ nothing at all.** Two controls work this way, and both take the three rows above
   No green line anywhere, because the restart IS the answer, and a reload that
   fails lands on the loading screen's own failed state with Try again, the path a
   failed launch takes.
+- **Connect on the Control UI's own login gate** (its "Gateway unreachable" screen)
+  is upstream's control rather than ours, and it gets the same answer from outside
+  the page (Abi, 2026-09-25): the launch loading screen goes up on the press, stays
+  until the gate has gone and the interface has been presented, held the floor
+  from the press, and a connect the page refuses again, or one with no answer by
+  the deadline, lands on the failed state with Try again. The page's own press is
+  untouched; a script beside the pairing observer only reports it
+  (`spec/login-gate-connect.json`).
 
 **The loading screen is one page on every client** (Abi, 2026-09-25):
 `core/ui/loading.html`, which the desktop hosts in its cover view and the phone
