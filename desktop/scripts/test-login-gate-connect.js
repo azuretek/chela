@@ -24,7 +24,11 @@
 // reconnect of ours loads the page, the page's socket is refused, and the page
 // draws its gate. The proxy is this app's alone, so nothing else on the host is
 // rerouted. The gateway's Control UI must allow the proxy's origin
-// (http://127.0.0.1:18996) in gateway.controlUi.allowedOrigins.
+// (http://127.0.0.1:18996) in gateway.controlUi.allowedOrigins, unless the client
+// runs on the same host as the gateway: there the origin is a loopback one and the
+// gateway accepts it through its own local-loopback rule (measured 2026-09-25
+// against a throwaway gateway started the way ci.yml starts one), which is what lets
+// the desktop job run this harness with no allowedOrigins entry at all.
 //
 // --record writes one PNG per sample of whichever view is on top (the cover sits
 // above the page, which is the z-order main.js keeps), so the frames can be put
