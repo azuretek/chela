@@ -56,6 +56,14 @@ export const PROOFS = [
   { group: 'proofs', name: 'settings-backdrop-light', script: 'test-settings-backdrop.js', args: ['--appearance', 'light'] },
   // Against the throwaway gateway ci.yml starts on 127.0.0.1:19099.
   { group: 'gateway', name: 'gateway-identity', script: 'test-gateway-identity.js' },
+  // Also against the throwaway gateway, through the login-gate proxy this harness
+  // serves on 127.0.0.1:18996. Three cases, because the claim is about what is on
+  // screen DURING a connect and each case holds a different half of it: the gate
+  // with nothing pressing it, the gate with its own Connect pressed, and the press
+  // refused again.
+  { group: 'gateway', name: 'login-gate-cover-gate', script: 'test-login-gate-connect.js', args: ['--case', 'gate', '--upstream', '127.0.0.1:19099'] },
+  { group: 'gateway', name: 'login-gate-cover-connect', script: 'test-login-gate-connect.js', args: ['--case', 'connect', '--upstream', '127.0.0.1:19099'] },
+  { group: 'gateway', name: 'login-gate-cover-refused', script: 'test-login-gate-connect.js', args: ['--case', 'refused', '--upstream', '127.0.0.1:19099'] },
 ];
 
 /**
@@ -63,8 +71,6 @@ export const PROOFS = [
  * so a reason that stops being true is visible as a line to delete.
  */
 export const NOT_IN_CI = {
-  'test-login-gate-connect.js':
-    'needs a gateway whose Control UI allows the SECOND origin the harness serves the page through (the proxy on 127.0.0.1:18996), and a real window per case; the throwaway gateway ci.yml starts allows only its own origin, and a gateway with no token state never draws the login gate the harness measures',
   'test-about-cache.js':
     'runs against the throwaway gateway, and its claim is a DIP in the Control UI\'s cache count during a clear; on the runner the worker refilled the bucket before the dip was sampled (lowest count 5), so the reading is a race with the refill rather than a property of the app',
   'test-affordance-placement.js':
