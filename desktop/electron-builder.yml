@@ -1,6 +1,6 @@
 appId: com.azuretek.claw-desktop
 productName: Chela
-copyright: Copyright © 2026 Abi Renhart
+copyright: MIT License
 
 directories:
   output: dist
