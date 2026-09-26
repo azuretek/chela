@@ -171,7 +171,20 @@ struct WebView: UIViewRepresentable {
             self.gatewayName = gatewayName
             self.gatewayId = gatewayId
             self.appSettings = AppSettingsBridge(onOpen: onOpenAppSettings)
-            self.pairingBridge = PairingBridge(state: pairing)
+            self.pairingBridge = PairingBridge(state: pairing) { [cover] report in
+                // Connect pressed on the Control UI's own login gate: the loading
+                // screen at once, lifted once the interface has rendered, or its
+                // failed state with Try again. See PageCover.connectPressed.
+                switch report {
+                case .pressed: cover.connectPressed()
+                case .rendered: cover.connectRendered()
+                case .failed(let title): cover.connectFailed(title)
+                case .gateShown(let title): cover.gateShown(title: title)
+                case .gateGone: cover.gateGone()
+                case .pageReady: cover.pageReady()
+                case .pairing: cover.connectAnsweredByPairing()
+                }
+            }
         }
 
         func userContentController(
@@ -630,6 +643,18 @@ struct WebView: UIViewRepresentable {
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         ))
+        // The login gate's Connect watcher, the same bytes the desktop installs,
+        // read from core/spec/login-gate-connect.json. It posts on the pairing
+        // observer's channel registered just above, so the Control UI's own
+        // Connect press raises the loading screen. At document START so its
+        // capture listeners are in place before the gate can be drawn.
+        if let connectScript = LoginGateConnect.script {
+            scripts.addUserScript(WKUserScript(
+                source: connectScript,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            ))
+        }
         // The reconnect-resume shim, read from core/spec/reconnect-resume-shim.json
         // rather than ported, for the same reason the observer above is. It wraps
         // the page's `WebSocket.send` and drops the Control UI's reserved

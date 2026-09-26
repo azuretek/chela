@@ -31,8 +31,13 @@ final class PairingBridge: NSObject, WKScriptMessageHandler {
     /// owned by the coordinator for the life of the web view, and so is the state.
     private let state: PairingState
 
-    init(state: PairingState) {
+    /// Where the login gate's Connect reports go. They share this channel with the
+    /// observer (core/spec/login-gate-connect.json), and PageCover answers them.
+    private let onConnect: @MainActor (LoginGateConnect.Report) -> Void
+
+    init(state: PairingState, onConnect: @escaping @MainActor (LoginGateConnect.Report) -> Void = { _ in }) {
         self.state = state
+        self.onConnect = onConnect
         super.init()
     }
 
@@ -56,8 +61,9 @@ final class PairingBridge: NSObject, WKScriptMessageHandler {
             let reason = body["reason"] as? String
             let requestId = body["requestId"] as? String
             state.closed(Self.refusal(reason: reason, requestId: requestId))
+            onConnect(.pairing)
         default:
-            break
+            if let report = LoginGateConnect.read(body) { onConnect(report) }
         }
     }
 
