@@ -21,6 +21,13 @@ export function createLoginGateProxy({ upstreamHost = '127.0.0.1', upstreamPort 
   // loading at all.
   let refused = 0;
   const upgraded = new Set();
+  // Every connection the proxy holds, either side: close() ends them all, because
+  // server.close() waits on any the page still has open, and a page that keeps
+  // retrying (the refused case) always has one, so a close that waited on it
+  // never returned (measured 2026-09-25 on the Linux runner: every check passed,
+  // then the harness sat in close() until its 120s backstop).
+  const open = new Set();
+  const hold = (s) => { open.add(s); s.on('close', () => open.delete(s)); };
   const server = http.createServer((req, res) => {
     const out = http.request({ host: upstreamHost, port: upstreamPort, path: req.url, method: req.method, headers: req.headers }, (answer) => {
       res.writeHead(answer.statusCode, answer.headers);
@@ -29,6 +36,7 @@ export function createLoginGateProxy({ upstreamHost = '127.0.0.1', upstreamPort 
     out.on('error', () => res.destroy());
     req.pipe(out);
   });
+  server.on('connection', hold);
   server.on('upgrade', (req, socket, head) => {
     if (state.socket === 'refuse') { refused += 1; socket.destroy(); return; }
     const forward = () => {
@@ -40,6 +48,7 @@ export function createLoginGateProxy({ upstreamHost = '127.0.0.1', upstreamPort 
         up.pipe(socket);
         socket.pipe(up);
       });
+      hold(up);
       upgraded.add(socket);
       socket.on('close', () => upgraded.delete(socket));
       up.on('error', () => socket.destroy());
@@ -53,7 +62,13 @@ export function createLoginGateProxy({ upstreamHost = '127.0.0.1', upstreamPort 
     /** Drop every socket the proxy is carrying, which is a gateway that went away. */
     cut() { for (const s of upgraded) s.destroy(); upgraded.clear(); },
     listen(port, host = '127.0.0.1') { return new Promise((resolve) => server.listen(port, host, resolve)); },
-    close() { this.cut(); return new Promise((resolve) => server.close(() => resolve())); },
+    close() {
+      this.cut();
+      const closed = new Promise((resolve) => server.close(() => resolve()));
+      for (const s of open) s.destroy();
+      open.clear();
+      return closed;
+    },
     get state() { return { ...state, refused }; },
   };
 }
