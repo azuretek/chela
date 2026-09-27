@@ -36,6 +36,29 @@ set -e
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
 
+# The lint half, first and always: it is seconds, not an Electron launch, so it is never scoped away.
+# (Abi, 2026-09-27: add linting to all our pre-commit hooks.) It lints only what this commit stages:
+# the JS under core/ and desktop/ with the root ESLint config, and the Swift under mobile/ with
+# SwiftLint, the same two linters `pnpm run lint` runs over the whole tree. A host without SwiftLint
+# gets mobile.mjs's own named skip.
+staged_js="$(git diff --cached --name-only --diff-filter=ACMR -- 'core/*.js' 'core/*.mjs' 'core/*.ts' 'desktop/*.js' 'desktop/*.mjs' 'desktop/*.ts')"
+if [ -n "$staged_js" ] && [ ! -x node_modules/.bin/eslint ]; then
+  echo "pre-commit: lint SKIPPED, and the reason is named: no ESLint in node_modules (run pnpm install at the repo root). The staged JS was NOT linted." >&2
+elif [ -n "$staged_js" ]; then
+  echo "pre-commit: lint (ESLint on the staged JS)"
+  if ! printf '%s\n' "$staged_js" | tr '\n' '\0' | xargs -0 pnpm exec eslint --no-warn-ignored; then
+    echo "pre-commit: ESLint refused the commit; fix the findings above." >&2
+    exit 1
+  fi
+fi
+if git diff --cached --name-only --diff-filter=ACMR -- 'mobile/*.swift' | grep -q .; then
+  echo "pre-commit: lint (SwiftLint, because Swift is staged)"
+  if ! node scripts/mobile.mjs lint; then
+    echo "pre-commit: SwiftLint refused the commit; fix the findings above." >&2
+    exit 1
+  fi
+fi
+
 # Scope to the change, before anything heavy is even looked for. The measured
 # half renders core/ui in Electron, so it only means anything when the pages or
 # the code that builds them moved. A commit that touches only mobile/, docs/,
