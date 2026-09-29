@@ -46,10 +46,7 @@ Regenerate after anything that changes the project's shape, meaning
 cd mobile && xcodegen generate
 ```
 
-From the repo root the same step, and the lint that goes with it, are
-`node scripts/mobile.mjs build` (which generates the project first) and
-`node scripts/mobile.mjs lint` (SwiftLint). `pnpm run lint` at the root runs
-SwiftLint alongside the JS lint.
+From the repo root the same step, and the lint that goes with it, are `node scripts/mobile.mjs build` (which generates the project first), `node scripts/mobile.mjs test` (which generates it and builds for testing on the simulator) and `node scripts/mobile.mjs lint` (SwiftLint). `pnpm run lint` at the root runs SwiftLint alongside the JS lint. A fresh checkout has no `Chela.xcodeproj` until one of them, or `xcodegen generate`, has run, and `xcodebuild` before then exits 66 with `'Chela.xcodeproj' does not exist` and builds nothing.
 
 Then, from `mobile/`:
 
@@ -63,10 +60,47 @@ xcodebuild test -project Chela.xcodeproj -scheme Chela \
   -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
+To run part of a suite, name it with `-only-testing` as `<target>/<class>` or `<target>/<class>/<test>`, where the target is `ChelaTests` or `ChelaUITests`:
+
+```
+xcodebuild test -project Chela.xcodeproj -scheme Chela \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
+  -only-testing:ChelaUITests/<class>
+```
+
 Signing is `CODE_SIGN_STYLE = Automatic` with `DEVELOPMENT_TEAM` deliberately
 left blank in `project.yml`: Xcode fills it from the Apple ID that signs in, so
 there is one place the team id lives rather than two that can disagree. Pick the
 team once in Xcode's Signing & Capabilities pane before building for a device.
+
+## Driving a debug build
+
+A script cannot tap, type into or swipe a simulator, so a debug build takes launch arguments that put it in the state a check needs: a gateway to load, a sheet open, a button pressed, a notice or a refusal seeded. Each one drives the app's real path (the real store and raisers, the page's own button handler), so a screenshot or a UI test shows the real screen rather than a mock of it. Every one is compiled out of a release build and does nothing without its argument.
+
+Pass them after the bundle id, which is the app target's `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml`, or in a UI test's `launchArguments`:
+
+```
+xcrun simctl launch booted <bundle id> -claw-open-settings -claw-settings-tab <id>
+```
+
+| Argument | What the run does |
+|---|---|
+| `-claw-gateway-url <url>` | Loads that gateway instead of the list the device keeps. |
+| `-claw-seed-notices` | Fills the notice banner with one sample notice per tone. |
+| `-claw-settings-tab <id>` | Opens the settings page on that tab. |
+| `-claw-open-settings` | Opens the settings sheet at launch. |
+| `-claw-open-about` | Opens About from Settings, by the route its button takes. |
+| `-claw-settings-scroll-bottom` | Scrolls the settings page to its foot, so the footer of a long tab can be shown. |
+| `-claw-check-updates` | Presses About's Check for updates, whose answer is drawn only after a press. |
+| `-claw-open-testflight` | Presses the update notice's own action. |
+| `-claw-press <settings\|about>:<element id>` | Presses that button on the shared page, through the page's own handler. |
+| `-claw-seed-update-feed <version>` | Runs the update check against a seeded feed advertising that version, instead of the network. |
+| `-claw-seed-pairing` | Shows the pairing screen for a sample refusal, through the real pairing state and its retry timer. |
+| `-claw-seed-revocation` | Drives an authenticated session into a revocation and its route to the gateway list. It needs `-claw-gateway-url` for a gateway to draw over. |
+
+The two credentials a run can need are environment variables rather than arguments, so neither appears in the argument list a process listing shows. `OPENCLAW_SEED_TOKEN` is a gateway token, stored for the `-claw-gateway-url` gateway through the settings page's write-only path, so a run can connect and authenticate end to end. `OPENCLAW_SEED_BOOTSTRAP_TOKEN` is a setup-code bootstrap token, handed to the Control UI's pairing handshake on the URL fragment, so a run can take the real pairing path. Set them in a UI test's `launchEnvironment`, or for `simctl launch` with the `SIMCTL_CHILD_` prefix, which `simctl` strips before the app sees them.
+
+Where a check needs a state none of these reaches, add an argument the same way: under `#if DEBUG`, inert without its argument, driving the real path, with a doc comment saying why it exists, and a row in this table.
 
 ## The gateway the app loads
 
@@ -142,7 +176,7 @@ icon from it with one command, from the repo root:
 pnpm --filter chela-desktop run icons
 ```
 
-The icon follows the Control UI's theme without knowing any theme. `core/app-icons.js` owns the design's two palettes (neon for dark, paper for light) and one rule that recolours them for any accent: the accent's hue first, a near-complement 130 degrees round the wheel as a small second accent. The app ships one pair per hue step round the wheel plus a neutral pair, each as its own icon set with paper as the default rendition and neon under dark appearance. `AppIcons.swift` picks the step nearest the live accent and offers it in a notice, since iOS confirms every icon change with its own alert. The buckets it reads come from `core/spec/app-icons.json`, which is generated.
+The icon follows the Control UI's theme without knowing any theme. `core/app-icons.js` owns the design's two palettes (neon for dark, paper for light) and one rule that recolours them for any accent: the accent's hue first, a near-complement 130 degrees round the wheel as a small second accent. The app ships one pair per hue step round the wheel plus a neutral pair, and each half of a pair is its own alternate icon set with a single rendition: paper for light and neon for dark. They are separate sets, not one set with a dark-appearance rendition, because iOS picks a set's rendition by the home screen's icon appearance rather than the app's theme, so with the interface in one mode and the phone in the other, switching to a two-rendition set changes nothing visible. The primary `AppIcon`, the one the App Store and a fresh install show, keeps both renditions. `AppIcons.swift` sets the icon for the live accent in the mode the Control UI resolved (the device's, when the page resolved none), whenever the theme changes and when the app returns to the foreground, and iOS confirms each change with its own alert. The buckets it reads come from `core/spec/app-icons.json`, which is generated.
 
 That writes `Chela/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png`, which is
 the file the icon set names in its `Contents.json`, alongside the desktop app's
@@ -209,6 +243,7 @@ interface:
 | `project.yml` | The xcodegen spec, and the project's only source of truth. |
 | `Chela/` | The app: the SwiftUI shell, the web view host, and the Swift port of the pieces of `core/` the client needs. |
 | `ChelaTests/` | Parity tests, run against `core/fixtures/`. |
+| `ChelaUITests/` | UI tests through XCUITest, which launch the app with the debug arguments above and assert what it draws. |
 
 ## Parity with the desktop client
 
