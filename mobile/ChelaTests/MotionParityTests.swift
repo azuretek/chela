@@ -72,4 +72,34 @@ final class MotionParityTests: XCTestCase {
         XCTAssertTrue(Motion.heldLongEnough(shownAt: shownAt, minMs: 900, now: at(1_000_900)))
         XCTAssertTrue(Motion.heldLongEnough(shownAt: shownAt, minMs: 900, now: at(1_001_500)))
     }
+
+    // MARK: View motion
+
+    /// The raw `motion` block of the token spec, decoded here rather than through
+    /// `NoticeTokens`, so the test holds the app's reading to the file itself.
+    private struct RawSpec: Decodable {
+        struct Motion: Decodable {
+            struct Sheet: Decodable { let enterMs: Int; let leaveMs: Int; let curve: [Double] }
+            struct Spring: Decodable { let responseMs: Int; let dampingFraction: Double }
+            let sheet: Sheet
+            let screenMs: Int
+            let spring: Spring
+        }
+        let motion: Motion
+    }
+
+    func testViewMotionIsTheSpecs() throws {
+        let raw = try BundledSpec.load("tokens", as: RawSpec.self).motion
+        XCTAssertEqual(Motion.sheetEnterMs, raw.sheet.enterMs)
+        XCTAssertEqual(Motion.sheetLeaveMs, raw.sheet.leaveMs)
+        XCTAssertEqual(Motion.sheetCurve, raw.sheet.curve)
+        XCTAssertEqual(Motion.screenMs, raw.screenMs)
+        XCTAssertEqual(Motion.springResponseMs, raw.spring.responseMs)
+        XCTAssertEqual(Motion.springDampingFraction, raw.spring.dampingFraction)
+        // The same ordering core/test/motion.test.js asserts of the JS: leaving is
+        // quicker than arriving, and a screen is quicker than a sheet.
+        XCTAssertLessThan(Motion.sheetLeaveMs, Motion.sheetEnterMs)
+        XCTAssertLessThan(Motion.screenMs, Motion.sheetEnterMs)
+        XCTAssertEqual(Motion.fadeMs, 180, "the reduced-motion fade is not the Control UI's --duration-normal")
+    }
 }

@@ -237,7 +237,38 @@ looking, and it is the phone platforms' own answer for the same job.
 **A result that outlives the press belongs to the banner**, because the reader may
 have looked away, and a result that expired with their attention is one they never
 got. A line under a control is for a report that stays until the surface closes,
-meaning what a clear actually cleared.
+meaning a host that refused the press.
+
+**A press whose answer is the app doing something in front of the reader writes
+nothing at all.** Two controls work this way, and both take the three rows above:
+
+- **Go to the Control UI** says "Opening…" and ignores every press after the first,
+  while the Control UI's own settings arrive behind this surface; the surface goes
+  when they are on screen, held the minimum-visible floor from the press, and a
+  bounded deadline gives the button back if neither happens.
+- **Clear cache and refresh** says "Clearing…", and its answer is a FRESH START of
+  the app (Abi, 2026-09-25): the launch loading screen goes up first, About and
+  Settings slide away onto it, the Control UI reloads from the server behind it, and
+  it comes down once the page has painted, held the floor so the restart is seen.
+  No green line anywhere, because the restart IS the answer, and a reload that
+  fails lands on the loading screen's own failed state with Try again, the path a
+  failed launch takes.
+- **Connect on the Control UI's own login gate** (its "Gateway unreachable" screen)
+  is upstream's control rather than ours, and it gets the same answer from outside
+  the page (Abi, 2026-09-25): the launch loading screen goes up on the press, stays
+  until the gate has gone and the interface has been presented, held the floor
+  from the press, and a connect the page refuses again, or one with no answer by
+  the deadline, lands on the failed state with Try again. The page's own press is
+  untouched; a script beside the pairing observer only reports it
+  (`spec/login-gate-connect.json`).
+
+**The loading screen is one page on every client** (Abi, 2026-09-25):
+`core/ui/loading.html`, which the desktop hosts in its cover view and the phone
+hosts in `LoadingSurface`, so its mark, ring, progress bar, quips and failed state
+change everywhere at once. Each host computes the progress from `spec/progress.json`
+and the quip from `spec/quips.json` and pushes them; the page only draws. A load
+that fails keeps the cover up in its failed state on both clients, never takes it
+down onto a page that did not load.
 
 ## ★ The sixth rule: colour is not ours to choose
 
@@ -251,6 +282,28 @@ does not work right anyway".
 Where a client paints something the page cannot reach, meaning the phone's status
 bar and the strips above and below the web view, it takes the same two answers in
 that order and does not add a third.
+
+**★ Every colour a control of ours paints, in every state, comes from a token the
+theme actually sets.** Rest, hover, focus, pressed and disabled, light and dark. A
+custom theme imported from tweakcn sets a FIXED list of names
+(`live.customTheme` in `spec/tokens.json`, upstream's `MODE_TOKEN_ORDER`), and
+every other name keeps upstream's base value on the page, so a token we take
+live that the theme does not set arrives as upstream's default. Reported
+2026-09-25: the primary button went upstream's red on hover and press inside a
+window wearing the reader's own palette. So:
+
+- **A name a custom theme does not set is DERIVED in `ui.css` from one it does**,
+  and listed as ours rather than live (`--primary-hover` from `--primary`).
+- **Nothing falls through to the platform's colours.** Keyboard focus draws the
+  theme's `--ring`, never the engine's default ring, and a checkbox is drawn by
+  us from theme tokens rather than in the platform's greys.
+- **An error keeps the theme's own `--destructive`.** No red is written anywhere.
+
+Guarded by `core/test/live-tokens.test.js` (every live colour is one a custom
+theme sets) and measured by `desktop/scripts/test-controls-follow-theme.js`, which
+drives every control on every page through every state under two custom themes
+and fails on any colour that does not move between them, with
+`mobile/ChelaTests/ControlsFollowThemeTests.swift` the phone's half.
 
 ## ★ The seventh rule: the colour flows into the strips, from ONE source
 
@@ -270,6 +323,7 @@ screen being different, it should always flow".
 - **The colour is the page's own reported background**, through the theme relay
   (`WebView.themeScript`): the value the interface is actually painted with, not a
   token of ours and not the window's colour.
+- **A colour is read from what the page COMPUTES, converted to sRGB, and never parsed from the authored value**, because a theme authored in `oklch()` keeps that space in its computed value and a reader that parses `#hex` and `rgb()` refuses it (#88).
 - **A band that disagrees is a bug in the wrapper, not a style.** Same shape as the
   sixth rule: the reader must never see our chrome and the interface disagree.
 
@@ -402,46 +456,71 @@ the end of this file.
 
 ## Durations and easing
 
-Two durations, from the shared token layer, and nothing animates for longer:
+Every duration and curve is a token, and nothing animates on a number of its own.
+Two families, and which one a change takes depends on what it is:
 
 | Token | Value | Use |
 |---|---|---|
-| `--duration-fast` | 100ms | A change WITHIN one surface, and every LEAVE. |
-| `--duration-normal` | 180ms | A surface ENTERING the window. |
+| `--motion-sheet-in` | 500ms | Settings and About ARRIVING: a sheet sliding up from the bottom edge. |
+| `--motion-sheet-out` | 400ms | Settings and About LEAVING: the same sheet sliding back down. Also the pairing screen's departure. |
+| `--motion-screen` | 350ms | A screen moving INSIDE a surface: a settings tab, the gateway editor opening and closing. |
+| `--motion-spring` | 730ms | The pairing screen ARRIVING, on a spring. The time the spring takes to settle, not a number chosen beside it. |
+| `--duration-normal` | 180ms | The notice card arriving, the first run's own page arriving, and every arrival under reduced motion. |
+| `--duration-fast` | 100ms | The notice card leaving, the loading cover leaving, and every departure under reduced motion. |
 
-**Leaving is always quicker than arriving.** A surface arriving has to be read;
-a surface leaving has already been read, and the reader is waiting to see what is
-behind it. So arrival takes `--duration-normal` and departure takes
-`--duration-fast`.
+**Settings and About move like an iOS sheet, on every client** (Abi, 2026-09-25,
+emphatically). They slide up from the bottom edge over a fading scrim and slide back
+down on close, at the iOS sheet's own speed and on its curve. About opened from
+Settings is a second sheet over the first, and its departure is what reveals Settings
+again. That is why these are the slowest motions here: a sheet crosses the whole
+window, and at the Control UI's 180ms it would read as a jump rather than as a sheet.
+
+**Leaving is always quicker than arriving.** A surface arriving has to be read; a
+surface leaving has already been read, and the reader is waiting to see what is
+behind it. So a sheet arrives over `--motion-sheet-in` and leaves over the shorter
+`--motion-sheet-out`, and the notice card arrives over `--duration-normal` and
+leaves over `--duration-fast`.
 
 Easing:
 
 | Token | Value | Use |
 |---|---|---|
-| `--ease-out` | `cubic-bezier(0.16, 1, 0.3, 1)` | Entering. Fast off the mark, gentle into place. |
-| `--motion-leave-ease` | `cubic-bezier(0.4, 0, 1, 1)` | Leaving, when the departure is a movement of its own. Accelerates away, so it does not linger at the end. |
-
-The arriving curve decelerates so the thing lands rather than stops. The leaving
-curve accelerates for the mirror reason: a decelerating exit spends its last
-frames almost stationary, which reads as the surface being reluctant to go.
+| `--motion-sheet-ease` | `cubic-bezier(0.32, 0.72, 0, 1)` | A sheet, both ways, and a screen inside a surface. The curve web implementations of the iOS sheet use to match UIKit's own presentation: fast off the mark and a long, gentle settle. |
+| `--motion-spring-ease` | a `linear()` sampling of the spring | The pairing screen's arrival. |
+| `--ease-out` | `cubic-bezier(0.16, 1, 0.3, 1)` | The notice card and the first run's own page. The Control UI's own curve. |
 
 **A departure that is its arrival played backwards keeps the arrival's curve**, and
 takes the shorter duration to say it is going. It is the same movement in reverse
 rather than a movement of its own, so reversing the curve with it is what makes the
-pair read as one object going back the way it came. Leaving by a different path (a
-surface that rose in and drops out) is a movement of its own and takes
-`--motion-leave-ease`.
+pair read as one object going back the way it came. A sheet leaves this way, and so
+does the notice card.
 
-There is a hard constraint behind that rule as well as a design one: `banner.css`
-reads only tokens the layer emits, which `desktop/test/tokens.test.js` asserts, and
-`--motion-leave-ease` is ours rather than borrowed so it is not one of them. The
-notice card's departure is the mirrored kind anyway.
+**The spring is the phone's own.** SwiftUI's `.spring(response:dampingFraction:)`
+is what iOS runs, with the default parameters, and CSS has no spring, so
+`core/ui/motion.js` `springCurve()` samples the same spring into a `linear()`
+easing and the time it takes to settle. `ui.css` restates that string and
+`core/test/motion.test.js` recomputes it, so the two clients run one spring.
 
-Both durations are the Control UI's own borrowed tokens. `--motion-leave-ease` is
-OURS, because upstream publishes one curve and an exit needs the other shape. It
-lives in `ui.css`'s `:root` with the other values we own, and not in
-`spec/tokens.json`: every value in that spec is checked against the upstream
-checkout, so a value of ours there would fail the day upstream has no such name.
+**Where the values live.** The two short durations and `--ease-out` are the Control
+UI's own borrowed tokens. The sheet, screen and spring values are OURS, and they live
+in `motion` in `spec/tokens.json` beside `minVisibleMs`, exempt from the
+upstream-parity check the borrowed tokens face, because both clients read them:
+`core/ui/motion.js` exports them, `ui.css` restates them as custom properties
+(a page cannot import the spec), and `mobile/Chela/Motion.swift` mirrors them.
+`core/test/motion.test.js` holds each CSS literal to the spec and
+`MotionParityTests` holds the Swift mirror to it.
+
+### The dim behind a sheet
+
+**The Control UI stays on screen behind Settings and About, under a dim.** Abi, 2026-09-25: *"right now the control ui sort of flickers into the background color as the settings/about us pages slide up ... or like a dim like the slide out of the menu on mobile from the left"*. Measured on a macOS desktop, frame by frame: the sheet's page painted html and body with the page colour, so the moment its view attached the Control UI was replaced by a flat, opaque sheet of --bg, in the fallback palette for its first frames until the live theme arrived. The scrim over it was the page colour at 70% as well, so there was no interface left to dim.
+
+- **The dim is the Control UI's own**: its mobile nav drawer backdrop (`.shell-nav-backdrop`, black at 44% in every palette), restated as `--scrim` in `ui.css` and held to upstream by `core/test/backdrop.test.js`. It fades in with the slide up and out with the slide down, on the sheet's duration and curve.
+- **A sheet's page paints nothing behind its scrim.** Its html and body are transparent, so what shows through the dim is the Control UI itself, from the first frame.
+- **One dim however many sheets are up.** A sheet opened over another (About from Settings) keeps its own scrim clear: the desktop host adds `?stacked=1` and `ui/surface.js` sets `surface--stacked` before first paint. If the lower sheet leaves first, the host clears the mark so the dim stays.
+- **Where nothing is behind, there is no dim.** Settings as the window's own content keeps the opaque page colour, and inside the phone's native sheet the page draws no dim, because the platform draws one behind the sheet.
+- **No blur.** Deferred by choice (Abi, 2026-09-25): a dim first, and a blur only if the dim turns out not to be enough.
+
+Measured on the composited window by `desktop/scripts/test-settings-backdrop.js`, which samples every frame of each transition and requires the backdrop to move only along the line from the bare interface to the dimmed one.
 
 ## What moves, and what stays still
 
@@ -453,12 +532,16 @@ window or shift the reader's content under them.
 
 | Change | Motion |
 |---|---|
-| A surface entering (overlay, cover, sheet) | Scrim fades in. Card fades in and RISES 8px into place (`--motion-rise`). |
-| A surface leaving | Scrim fades out. Card fades out and drops 4px. No rise: it is going back the way it came. |
-| A panel replacing another in the same surface (settings tabs) | The incoming panel fades in and enters from the side the reader moved TOWARD, 12px (`--motion-slide`). |
+| Settings or About arriving | The dim fades in over the Control UI (see The dim behind a sheet). The card SLIDES UP from below the window's bottom edge into its place, like an iOS sheet, over `--motion-sheet-in` on `--motion-sheet-ease`. No fade and no scale on the card: the slide is the motion. |
+| Settings or About leaving | The dim fades out. The card slides back DOWN past the bottom edge by the same path, over `--motion-sheet-out`. About leaving from over Settings is what reveals Settings. |
+| Settings or About on the phone | The native sheet's own slide, and nothing else: the phone's host marks the page `surface--native-sheet` and the card draws no motion of its own inside it, so there are never two motions for one arrival. |
+| The pairing screen arriving | Rises from below the bottom edge on the spring (`--motion-spring`, `--motion-spring-ease`), on both clients; it leaves by the sheet's path. |
+| The loading cover | Keeps its short fade: it is held back a beat and fades in, so a connect that resolves at once never flashes it, and it fades out over `--duration-fast` once the page under it has painted. |
+| The first run's own settings page | The window's content rather than a sheet over anything, so the card fades in and RISES 8px (`--motion-rise`) over `--duration-normal`. |
+| A panel replacing another in the same surface (settings tabs) | The incoming panel fades in and enters from the side the reader moved TOWARD, 12px (`--motion-slide`), on the sheet's curve over `--motion-screen`. |
 | A notice card appearing | Slides DOWN from above the viewport (already so, and it keeps that direction: it arrives from the edge it occupies). |
 | A notice card being dismissed | Slides back UP by the same path, over `--duration-fast`. |
-| **A disclosure opening or closing in place** (the gateway editor's Edit) | The panel's wrapper opens its track from `0fr` to `1fr`, and the panel underneath fades in and RISES 8px into place (`--motion-rise`), over `--duration-fast`. Closing shuts the same track by the same path, with the panel fading out in place: the arrival's rise has a direction the collapse does not, so only the opacity is mirrored. |
+| **A disclosure opening or closing in place** (the gateway editor's Edit) | The panel's wrapper opens its track from `0fr` to `1fr`, and the panel underneath fades in and RISES 8px into place (`--motion-rise`), on the sheet's curve over `--motion-screen`. Closing shuts the same track by the same path, with the panel fading out in place: the arrival's rise has a direction the collapse does not, so only the opacity is mirrored. |
 
 **Snaps, always, and an animation here is a fault:**
 
@@ -478,7 +561,7 @@ window or shift the reader's content under them.
     three, so with the editor as the item the track floored at 29px and the closing
     press ended in a jump of exactly that height.
   - **Its content still arrives on opacity and transform** underneath the track, and
-    it still takes `--duration-fast` in both directions. Clipping is part of the
+    it takes `--motion-screen` in both directions. Clipping is part of the
     moving classes only, never of the resting rule, so an element at rest is not a
     clip container and no focus ring is cut.
   - **A VIEW's height is still final on its first frame.** This does not license
@@ -525,8 +608,8 @@ way the thing is going:
 
 - Moving to a tab to the RIGHT brings its panel in from the RIGHT. The incoming
   panel starts offset toward the side it is arriving from and settles at zero.
-- A surface arriving comes FORWARD, which is the rise; a surface leaving goes back
-  the way it came, which is the drop.
+- A sheet arrives from the bottom edge and leaves back through it, the way an iOS
+  sheet does.
 - A notice arrives from the edge it lives on (above) and leaves back through it.
 
 Motion that points the wrong way is worse than no motion: it tells the reader they
@@ -537,10 +620,15 @@ went somewhere they did not.
 **Every rule above has a reduced-motion form, and it is part of the rule rather
 than an exception to it.**
 
-`@media (prefers-reduced-motion: reduce)` turns every view-change animation off
-(`animation: none`), which leaves each element at its ordinary resting state, and
-`clawSurface.leave()` resolves at once so a host removes the surface immediately
-instead of waiting a duration it is not going to animate.
+**Reduced motion is a plain fade, everywhere** (Abi, 2026-09-25).
+`@media (prefers-reduced-motion: reduce)` swaps every view change for
+`surface-fade-in` over `--duration-normal` or `surface-fade-out` over
+`--duration-fast`: the sheets, the pairing screen, the settings panels and the
+editor's content all fade and nothing moves, and the editor's track snaps while its
+content fades. `clawSurface.leave()` waits out that short fade rather than a slide,
+so a host removes the surface as the fade ends. On the phone the native sheets and
+the pairing screen take the platform's own reduced-motion cross-fade, and the pairing
+screen's spring becomes a fade.
 
 Two things this must NOT change:
 

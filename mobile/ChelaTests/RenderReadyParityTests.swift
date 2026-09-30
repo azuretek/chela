@@ -57,11 +57,36 @@ final class PageCoverTests: XCTestCase {
         XCTAssertTrue(cover.isCovered, "the earlier load painting must not lift the cover a later load raised")
     }
 
-    func testAFailedLoadLiftsTheCoverSoTheNoticeShows() {
+    /// A failed load keeps the cover up in its failed state, the shared loading
+    /// page's "Not connected" with Try again, as the desktop does (Abi,
+    /// 2026-09-25), and a paint still on its way cannot take it down.
+    func testAFailedLoadHoldsTheCoverInItsFailedState() async {
         let cover = PageCover(backstop: .seconds(60))
         cover.hold()
-        cover.lift("load-failed")
-        XCTAssertFalse(cover.isCovered)
-        XCTAssertEqual(cover.lastLift, "load-failed")
+        var paint: CheckedContinuation<Void, Never>?
+        cover.loaded { await withCheckedContinuation { paint = $0 } }
+        await Task.yield()
+        cover.fail("load-failed")
+        XCTAssertTrue(cover.isCovered)
+        XCTAssertTrue(cover.failed)
+        paint?.resume()
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertTrue(cover.isCovered, "a paint from before the failure took the failed cover down")
+        // Try again starts a new load, which clears the failed state.
+        cover.hold()
+        XCTAssertFalse(cover.failed)
+        XCTAssertTrue(cover.isCovered)
+    }
+
+    /// The progress milestones only move forward, and a new load starts over.
+    func testMilestonesMoveForwardOnly() {
+        let cover = PageCover(backstop: .seconds(60))
+        cover.hold()
+        XCTAssertEqual(cover.milestone, Progress.start)
+        cover.reached("dom")
+        cover.reached("navigated")
+        XCTAssertEqual(cover.milestone, "dom", "a late commit moved the bar backwards")
+        cover.hold()
+        XCTAssertEqual(cover.milestone, Progress.start)
     }
 }

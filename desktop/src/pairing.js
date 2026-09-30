@@ -58,6 +58,7 @@ import {
   readRequestId,
   requirement,
 } from '../../core/pairing.js';
+import { LOGIN_GATE_CONNECT_SCRIPT, readGateReport } from '../../core/login-gate-connect.js';
 
 /** The reason key a payload naming something unknown is narrowed to. */
 const FALLBACK_REASON = 'not-paired';
@@ -100,6 +101,10 @@ export function transportPrelude() {
 /**
  * What goes into the gateway page at document start, in the order it must run.
  *
+ * The third source is the login gate's Connect watcher
+ * (core/spec/login-gate-connect.json). It posts on the same channel as the
+ * observer, so it needs the transport in place first as the observer does.
+ *
  * The injector is src/preload.cjs, which reads this over the synchronous
  * `pairing:script` channel and evaluates each source in the page's main world; a
  * preload is the only surface already running before the page has a document, so
@@ -114,7 +119,7 @@ export function transportPrelude() {
  * arrived before the channel existed would land in a plain global and be lost.
  */
 export function injectedSources() {
-  return [transportPrelude(), observerScript()];
+  return [transportPrelude(), observerScript(), LOGIN_GATE_CONNECT_SCRIPT];
 }
 
 /**
@@ -128,7 +133,10 @@ export function injectedSources() {
  * than arbitrary text on a screen.
  *
  * @param {unknown} payload the report as it arrived (a JSON string, or an object)
- * @returns {{kind: 'open'}|{kind: 'close', refusal: {reason: string, requestId: (string|null)}}|{kind: 'dropped'}|null}
+ * The login gate's Connect reports (core/spec/login-gate-connect.json) share
+ * this channel, and are read through that contract rather than this one.
+ *
+ * @returns {{kind: 'open'}|{kind: 'close', refusal: {reason: string, requestId: (string|null)}}|{kind: 'dropped'}|{kind: 'connect', event: string, title: string}|null}
  */
 export function parseReport(payload) {
   let body = payload;
@@ -147,6 +155,8 @@ export function parseReport(payload) {
   // sees, so it is read here with the other kind the spec names and nothing else
   // is guessed at.
   if (body.kind === SOCKET_CLOSED) return { kind: 'dropped' };
+  const connect = readGateReport(body);
+  if (connect) return { kind: 'connect', ...connect };
   if (body.kind !== PAIRING_REQUIRED) return null;
 
   const named = typeof body.reason === 'string' && PAIRING_REASONS.includes(body.reason) ? body.reason : null;

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en" data-theme="custom" data-theme-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chela custom theme fixture</title>
+<!--
+  A stand-in for the Control UI wearing a theme imported from a palette exporter,
+  for CustomThemeFollowUITests. Upstream keeps such a theme in a STYLE TAG in the
+  head (id "openclaw-custom-theme", syncCustomThemeStyleTag) with one block per
+  appearance, and importing another theme REWRITES that tag's text: data-theme
+  stays "custom" (or "custom-light"), data-theme-mode stays put, and nothing on
+  the root changes. The palettes are authored in oklch(), as tweakcn writes them.
+  The two themes are the ones desktop/scripts/test-custom-theme-follow.js uses:
+  a red accent first, a green one second. Nothing here talks to a gateway.
+-->
+<style>
+  :root { --bg: #0b0d12; --accent: #ff5c5c; --card: #161920; --text: #e8eef4; }
+  html, body { margin: 0; height: 100%; font: 17px -apple-system, system-ui, sans-serif; }
+  body { background: var(--bg); color: var(--text); }
+  html[data-theme="custom-light"] { --text: #1b1f24; }
+  main { padding: 40px 24px; }
+  .swatch { height: 64px; border-radius: 14px; background: var(--accent); margin: 16px 0; }
+  .card { background: var(--card); border-radius: 14px; padding: 12px 16px; margin: 16px 0; }
+  button { display: block; margin: 10px 0; padding: 12px 16px; font-size: 17px; border-radius: 10px; border: 0; background: var(--accent); color: #fff; }
+</style>
+<style id="openclaw-custom-theme"></style>
+</head>
+<body>
+<main>
+  <h1>Fixture ready</h1>
+  <p id="state"></p>
+  <div class="swatch"></div>
+  <div class="card">The page's own card, painted from --card.</div>
+  <button onclick="importTheme('first')">First theme</button>
+  <button onclick="importTheme('second')">Second theme</button>
+  <button onclick="mode('light')">Light mode</button>
+  <button onclick="mode('dark')">Dark mode</button>
+</main>
+<script>
+  var themes = {
+    first: {
+      dark: { '--bg': 'oklch(0.21 0.02 275)', '--accent': 'oklch(0.63 0.21 22)', '--card': 'oklch(0.27 0.02 275)' },
+      light: { '--bg': 'oklch(0.97 0.01 95)', '--accent': 'oklch(0.55 0.19 22)', '--card': 'oklch(1 0 0)' }
+    },
+    second: {
+      dark: { '--bg': 'oklch(0.23 0.03 155)', '--accent': 'oklch(0.72 0.17 155)', '--card': 'oklch(0.29 0.03 155)' },
+      light: { '--bg': 'oklch(0.96 0.02 155)', '--accent': 'oklch(0.66 0.16 155)', '--card': 'oklch(0.99 0.01 155)' }
+    }
+  };
+  function block(id, values) {
+    var lines = [':root[data-theme="' + id + '"] {'];
+    for (var name in values) lines.push('  ' + name + ': ' + values[name] + ';');
+    lines.push('}');
+    return lines.join(String.fromCharCode(10));
+  }
+  function show() {
+    document.getElementById('state').textContent =
+      'Theme ' + (sessionStorage.getItem('fixture-theme') || 'first') + ', ' + document.documentElement.getAttribute('data-theme-mode');
+  }
+  // The rewrite upstream does: the tag's TEXT changes, and no attribute does.
+  function importTheme(name) {
+    var t = themes[name];
+    document.getElementById('openclaw-custom-theme').textContent = block('custom', t.dark) + String.fromCharCode(10) + block('custom-light', t.light);
+    sessionStorage.setItem('fixture-theme', name);
+    show();
+  }
+  // A light/dark change is an attribute change, the path that already worked.
+  function mode(m) {
+    document.documentElement.setAttribute('data-theme', m === 'light' ? 'custom-light' : 'custom');
+    document.documentElement.setAttribute('data-theme-mode', m);
+    sessionStorage.setItem('fixture-mode', m);
+    show();
+  }
+  var startMode = sessionStorage.getItem('fixture-mode') || 'dark';
+  document.documentElement.setAttribute('data-theme', startMode === 'light' ? 'custom-light' : 'custom');
+  document.documentElement.setAttribute('data-theme-mode', startMode);
+  importTheme(sessionStorage.getItem('fixture-theme') || 'first');
+</script>
+</body>
+</html>

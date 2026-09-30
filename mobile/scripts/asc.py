@@ -140,6 +140,37 @@ def token():
     return f"{signing_input}.{b64url(der_to_raw(signed.stdout))}"
 
 
+# A token is minted again once it is this old, well inside its 20 minute life.
+REFRESH_AFTER = 10 * 60
+
+
+class Credential:
+    """The bearer credential, re-minted whenever the one in hand is getting old.
+
+    One token minted at the start of a step does not outlive the step: wait()
+    polls for up to WAIT_SECONDS (45 minutes in the release job) while a token
+    lives 20, so a build Apple took longer than that to process failed the
+    release with a 401 on the next poll rather than with anything about the
+    build. Measured on build 363, 2026-09-25: uploaded, then "listing builds
+    failed: 401 Unauthorized" 22 minutes into the wait. Every request reads the
+    credential through str(), so each one carries a token young enough to be
+    accepted, however long the step runs.
+    """
+
+    def __init__(self, mint=None, clock=time.time):
+        self._mint = mint
+        self._clock = clock
+        self._value = None
+        self._minted_at = 0.0
+
+    def __str__(self):
+        now = self._clock()
+        if self._value is None or now - self._minted_at >= REFRESH_AFTER:
+            self._value = str((self._mint or token)())
+            self._minted_at = now
+        return self._value
+
+
 # --------------------------------------------------------------------------
 # The API
 # --------------------------------------------------------------------------
@@ -359,7 +390,7 @@ def preflight():
     otherwise fail after the archive and the export, which is several minutes
     later and in a place where Apple's message is buried in toolchain output.
     """
-    auth = token()
+    auth = Credential()
     # The team id first, and written out as soon as it is known: it is what the
     # archive signs with, so a failure later in this step still leaves the
     # signing half of the run answerable.
@@ -395,7 +426,7 @@ def wait():
     this polls App Store Connect until the build is there, prints each state it
     moves through, and fails if the build never appears or arrives unusable.
     """
-    auth = token()
+    auth = Credential()
     app_id = env("APP_ID")
     build_number = env("BUILD_NUMBER")
     marketing = env("MARKETING_VERSION")

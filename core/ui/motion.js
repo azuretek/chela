@@ -89,3 +89,66 @@ export function remainingVisibleMs(shownAt, minMs = MIN_VISIBLE_MS, now = Date.n
 export function heldLongEnough(shownAt, minMs = MIN_VISIBLE_MS, now = Date.now()) {
   return remainingVisibleMs(shownAt, minMs, now) === 0;
 }
+
+/* ------------------------------------------------------------ view motion */
+
+// The sheet, screen and spring values below are the ones core/ui/ui.css restates
+// as custom properties (a page cannot import this module), and core/test/
+// motion.test.js holds the two to each other. mobile/Chela/Motion.swift reads the
+// same spec on iOS. The rules that use them are ui/CONVENTIONS.md.
+
+/** How Settings and About arrive and leave: an iOS sheet's slide and its curve. */
+export const SHEET = Object.freeze({
+  enterMs: spec.motion.sheet.enterMs,
+  leaveMs: spec.motion.sheet.leaveMs,
+  curve: Object.freeze([...spec.motion.sheet.curve]),
+});
+
+/** The sheet's curve as the CSS the stylesheet writes it in. */
+export function sheetEase(curve = SHEET.curve) {
+  return `cubic-bezier(${curve.join(', ')})`;
+}
+
+/** How long a screen inside a surface takes to move. */
+export const SCREEN_MS = spec.motion.screenMs;
+
+/** The pairing screen's spring, in SwiftUI's own terms. */
+export const SPRING = Object.freeze({ ...spec.motion.spring });
+
+/**
+ * A spring, sampled into a CSS `linear()` easing and the duration it runs for.
+ *
+ * CSS has no spring, and SwiftUI's `.spring(response:dampingFraction:)` is what
+ * the phone runs, so the desktop runs the SAME spring by sampling its position over
+ * time: a damped harmonic oscillator released from 0 towards 1, with the natural
+ * frequency SwiftUI derives from `response` (2π / response) and the damping ratio
+ * as given. The duration is how long the spring takes to settle within `settle`
+ * of its rest, so the animation ends where the motion does rather than on a
+ * number chosen beside it.
+ *
+ * Deterministic and clock-free, so the stylesheet's restated string can be
+ * recomputed and compared in a test rather than trusted.
+ *
+ * @param {{ responseMs: number, dampingFraction: number }} [spring]
+ * @param {{ samples?: number, settle?: number }} [options]
+ * @returns {{ durationMs: number, linear: string }}
+ */
+export function springCurve(spring = SPRING, { samples = 24, settle = 0.001 } = {}) {
+  const omega = (2 * Math.PI) / (spring.responseMs / 1000);
+  const zeta = spring.dampingFraction;
+  const position = (t) => {
+    if (zeta < 1) {
+      const damped = omega * Math.sqrt(1 - zeta * zeta);
+      return 1 - Math.exp(-zeta * omega * t) * (Math.cos(damped * t) + ((zeta * omega) / damped) * Math.sin(damped * t));
+    }
+    return 1 - Math.exp(-omega * t) * (1 + omega * t);
+  };
+  const settleS = Math.log(1 / settle) / (Math.min(zeta, 1) * omega);
+  const durationMs = Math.round((settleS * 1000) / 10) * 10;
+  const points = [];
+  for (let i = 0; i <= samples; i += 1) {
+    const value = i === samples ? 1 : position((i / samples) * (durationMs / 1000));
+    points.push(Number(value.toFixed(3)));
+  }
+  return { durationMs, linear: `linear(${points.join(', ')})` };
+}

@@ -11,12 +11,11 @@
 #
 # The split, and why this is a second hook rather than more of pre-push.
 #
-# CI covers the headless half: the unit tests, the static import audit, the
-# packaged-artifact audit and the iOS legs. What CI cannot run is anything needing
-# a real GUI session, because GitHub's macOS runners have no session to launch
-# Electron into. That leaves two kinds of check to the local host: the app-level
-# boot smoke (pre-push, `npm run verify`) and the PAGE-level measurements, which is
-# what this hook runs.
+# CI runs these too. The desktop job in .github/workflows/ci.yml runs
+# `npm run measure`, the boot smoke and every proof harness in Electron under a
+# virtual display on Linux, on every pull request, and the merge gate needs it.
+# This hook is the fast local copy of the same measurement, so a fault is seen at
+# the commit rather than at the pull request.
 #
 # A page measurement is the only witness for a claim about what was DRAWN. No
 # unit test and no assertion over source can tell a rule that applies from one that
@@ -42,8 +41,8 @@ cd "$root"
 # the code that builds them moved. A commit that touches only mobile/, docs/,
 # .github/ or other paths cannot change a rendered page, and paying a
 # multi-minute Electron launch for it is what made every commit slow (Abi,
-# 2026-09-18). CI cannot run these at all (no GUI session), so scoping is a local
-# decision, not a hole: every headless check is unchanged.
+# 2026-09-18). CI measures every pull request that touches the pages whatever
+# this hook skips, so scoping here is a local decision, not a hole.
 decision="$(git diff --cached --name-only | node scripts/hook-scope.mjs)"
 if [ "$decision" = "skip" ]; then
   cat >&2 <<'EOF'

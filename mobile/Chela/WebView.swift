@@ -37,6 +37,13 @@ struct WebView: UIViewRepresentable {
     /// not cover.
     @Binding var themeColour: Color
 
+    /// How many times the page has reported its theme. Every report counts, a
+    /// repeat of the same background included, because a theme change can move
+    /// the accent and leave the background where it was: the colour alone did not
+    /// change, so nothing re-read the theme and the app icon stayed on the old one
+    /// (caught by ThemeIconUITests, 2026-09-25).
+    @Binding var themeReports: Int
+
     /// Where a failed or recovered load is reported. Held rather than observed:
     /// this view raises, and the banner in ContentView draws.
     let notices: NoticeBoard
@@ -123,6 +130,7 @@ struct WebView: UIViewRepresentable {
         /// It reads the observer's reports and drives the pairing state.
         let pairingBridge: PairingBridge
         private let themeColour: Binding<Color>
+        private let themeReports: Binding<Int>
         private let notices: NoticeBoard
         private let connection: ConnectionState
         /// The gateway's name, for the notice a failed load raises. Carried
@@ -145,6 +153,7 @@ struct WebView: UIViewRepresentable {
 
         init(
             themeColour: Binding<Color>,
+            themeReports: Binding<Int>,
             notices: NoticeBoard,
             connection: ConnectionState,
             pairing: PairingState,
@@ -155,13 +164,27 @@ struct WebView: UIViewRepresentable {
         ) {
             self.cover = cover
             self.themeColour = themeColour
+            self.themeReports = themeReports
             self.notices = notices
             self.connection = connection
             self.pairing = pairing
             self.gatewayName = gatewayName
             self.gatewayId = gatewayId
             self.appSettings = AppSettingsBridge(onOpen: onOpenAppSettings)
-            self.pairingBridge = PairingBridge(state: pairing)
+            self.pairingBridge = PairingBridge(state: pairing) { [cover] report in
+                // Connect pressed on the Control UI's own login gate: the loading
+                // screen at once, lifted once the interface has rendered, or its
+                // failed state with Try again. See PageCover.connectPressed.
+                switch report {
+                case .pressed: cover.connectPressed()
+                case .rendered: cover.connectRendered()
+                case .failed(let title): cover.connectFailed(title)
+                case .gateShown(let title): cover.gateShown(title: title)
+                case .gateGone: cover.gateGone()
+                case .pageReady: cover.pageReady()
+                case .pairing: cover.connectAnsweredByPairing()
+                }
+            }
         }
 
         func userContentController(
@@ -172,6 +195,7 @@ struct WebView: UIViewRepresentable {
                   let parts = message.body as? [NSNumber],
                   parts.count == 3
             else { return }
+            themeReports.wrappedValue &+= 1
             themeColour.wrappedValue = Color(uiColor: UIColor(
                 red: CGFloat(parts[0].doubleValue) / 255,
                 green: CGFloat(parts[1].doubleValue) / 255,
@@ -188,8 +212,15 @@ struct WebView: UIViewRepresentable {
             Task { @MainActor in cover.hold() }
         }
 
+        /// The response arrived and the page began to load: the cover's progress
+        /// bar reaches the shared curve's `navigated` milestone, as the desktop's does.
+        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            Task { @MainActor in cover.reached("navigated") }
+        }
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             Task { @MainActor in
+                cover.reached("dom")
                 // The cover waits for the page to PAINT, because a finished load is
                 // not a page on screen. See PageCover and core/render-ready.js.
                 if let probe = RenderReady.probe {
@@ -253,7 +284,10 @@ struct WebView: UIViewRepresentable {
             if urlError?.code == .cancelled { return }
             let description = urlError?.localizedDescription ?? error.localizedDescription
             Task { @MainActor in
-                cover.lift("load-failed")
+                // The cover stays, in the shared loading page's failed state with
+                // Try again, rather than coming down onto a page that did not load
+                // (Abi, 2026-09-25). The notice still says why.
+                cover.fail("load-failed")
                 notices.connectionFailed(label: gatewayName, description: description)
                 connection.failed(gatewayId)
                 // A load that never reached a page is a network/host failure, not
@@ -300,15 +334,25 @@ struct WebView: UIViewRepresentable {
     /// observer catches the page repainting after a `prefers-color-scheme` change,
     /// which is the leg the app drives when the appearance is changed here.
     ///
+    /// **And an imported CUSTOM theme is not an attribute at all**, which is the
+    /// leg this missed. Upstream keeps such a theme in a style tag in the head
+    /// and rewrites that tag text for the next import, so the theme attribute
+    /// stays custom and the observer above receives nothing: the strips and the
+    /// token re-read kept the previous theme after a second import. Reported
+    /// 2026-09-25, and measured by CustomThemeFollowTests.
+    ///
     /// `WKWebView.themeColor` is the native route to the same value and was tried
     /// first, on the reasoning that a property beats an injected script. Observed
     /// through KVO it never delivered a value, and left the strips the window's
     /// colour while looking like it worked. A mechanism that silently does nothing
     /// is worse here than no mechanism, so it was replaced rather than kept
     /// alongside this.
-    private static var themeScript: String {
+    /// Not private, deliberately: the tests drive THIS script against a page, so
+    /// what they exercise is the relay that ships rather than a copy of it.
+    static var themeScript: String {
         """
         (function () {
+        \(ThemeTokens.srgbHelper)
           // A colour as three channels, or null. Anything not fully opaque is a
           // failure rather than a colour: `rgba(0, 0, 0, 0)` is what a probe
           // resolves to when the token does not exist at all, and reading it as
@@ -366,7 +410,7 @@ struct WebView: UIViewRepresentable {
           }
 
           function report() {
-            var rgb = channels(pageBackground()) || channels(declaredColour());
+            var rgb = channels(clawSrgb(pageBackground())) || channels(declaredColour());
             if (!rgb) { return; }
             try { window.webkit.messageHandlers.\(themeMessageName).postMessage(rgb); } catch (e) {}
           }
@@ -383,6 +427,33 @@ struct WebView: UIViewRepresentable {
               attributes: true,
               attributeFilter: ['data-theme', 'data-theme-mode', 'data-theme-resolved', 'style', 'class']
             });
+          } catch (e) {}
+          // A CUSTOM theme is not an attribute at all, which is the leg above
+          // cannot see: upstream keeps an imported theme in a STYLE TAG in the
+          // document head and REWRITES that tag text for the next import, so every
+          // root attribute stays put. The head is watched as well, and only for its
+          // STYLE elements: a style tag added, removed or retyped is a palette
+          // change, where the built-in palettes arrive as LINK elements
+          // (syncThemePaletteStylesheet) and cannot wake this.
+          function touchesAStyleTag(records) {
+            for (var i = 0; i < records.length; i += 1) {
+              var record = records[i];
+              if (record.target && record.target.nodeName === 'STYLE') { return true; }
+              var added = record.addedNodes || [];
+              for (var a = 0; a < added.length; a += 1) {
+                if (added[a] && added[a].nodeName === 'STYLE') { return true; }
+              }
+              var removed = record.removedNodes || [];
+              for (var r = 0; r < removed.length; r += 1) {
+                if (removed[r] && removed[r].nodeName === 'STYLE') { return true; }
+              }
+            }
+            return false;
+          }
+          try {
+            new MutationObserver(function (records) {
+              if (touchesAStyleTag(records)) { report(); }
+            }).observe(document.head, { childList: true, subtree: true, characterData: true });
           } catch (e) {}
         })();
         """
@@ -465,6 +536,7 @@ struct WebView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(
             themeColour: $themeColour,
+            themeReports: $themeReports,
             notices: notices,
             connection: connection,
             pairing: pairing,
@@ -571,6 +643,18 @@ struct WebView: UIViewRepresentable {
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         ))
+        // The login gate's Connect watcher, the same bytes the desktop installs,
+        // read from core/spec/login-gate-connect.json. It posts on the pairing
+        // observer's channel registered just above, so the Control UI's own
+        // Connect press raises the loading screen. At document START so its
+        // capture listeners are in place before the gate can be drawn.
+        if let connectScript = LoginGateConnect.script {
+            scripts.addUserScript(WKUserScript(
+                source: connectScript,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            ))
+        }
         // The reconnect-resume shim, read from core/spec/reconnect-resume-shim.json
         // rather than ported, for the same reason the observer above is. It wraps
         // the page's `WebSocket.send` and drops the Control UI's reserved

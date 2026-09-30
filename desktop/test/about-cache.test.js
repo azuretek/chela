@@ -1,10 +1,12 @@
 // Clear cache and refresh, from the About page.
 //
-// The requirement this exists for is honesty rather than presence: a button that
-// clears caches must say WHICH caches it cleared and confirm the reload, and it
-// must reuse the app's one clear-and-reload path rather than growing a second
-// that could come to mean something different. All four of those are checkable
-// from the source and from the shared page, and the live proof is
+// The requirement: the button behaves like a fresh start of the app. The press is
+// answered on the button, the host records what it actually cleared, and the app
+// restarts in front of the reader (the launch loading screen up first, About and
+// Settings away, the Control UI reloaded behind the cover) with no success line
+// anywhere, and it reuses the app's one clear-and-reload path rather than growing
+// a second that could come to mean something different. The shape is checkable
+// from the source and the shared page; the live proof is
 // scripts/test-about-cache.js, which presses the real button in the real app.
 
 import test from 'node:test';
@@ -87,47 +89,74 @@ test('the clear reports what it actually cleared, including what refused', () =>
   assert.match(clearBlock[0], /kinds: \[\.\.\.cache\.CACHE_STORAGES\]/, 'the report does not name what kind of cache this drops');
 });
 
-test('the reload is confirmed from the LOAD, not from the press', () => {
-  // The two are genuinely different events: with a document already on screen the
-  // attempt is made off to the side, so a confirmation sent when the clear
-  // returned would be the app asserting something it had not seen.
-  assert.match(main, /let clearedLoadPending = false/, 'there is no record of a reload the reader asked for');
-  assert.match(main, /clearedLoadPending = true;/, 'the press does not arm the confirmation');
-  const loadHandler = main.match(/wc\.on\('did-finish-load'[\s\S]*?\n  \}\);/);
-  assert.ok(loadHandler, 'the load handler is gone');
-  assert.match(loadHandler[0], /if \(clearedLoadPending\) \{[\s\S]{0,200}notifyCacheCleared\(true,/,
-    'the confirmation is not sent from the load that landed');
-  const failHandler = main.match(/wc\.on\('did-fail-load'[\s\S]*?\n  \}\);/);
-  assert.ok(failHandler, 'the failure handler is gone');
-  assert.match(failHandler[0], /if \(clearedLoadPending\) \{[\s\S]{0,260}notifyCacheCleared\(false,/,
-    'a reload that failed leaves the About box saying "Reloading..." forever');
+test('the clear restarts the Control UI the way a fresh launch does, in order', () => {
+  const clearBlock = main.match(/async function clearCacheAndReload\(\)[\s\S]*?\n\}/);
+  assert.match(clearBlock[0], /void restartAfterClear\(pressedAt\);/, 'the clear does not restart the Control UI');
+  const restart = main.match(/async function restartAfterClear\(pressedAt\) \{[\s\S]*?\n\}/);
+  assert.ok(restart, 'restartAfterClear is gone');
+  const body = restart[0];
+  // The first rule in ui/CONVENTIONS.md, as an order: the cover is up and ON the
+  // window before either sheet moves, so their departure reveals the loading screen
+  // and not the Control UI being replaced; the load happens in place behind it; the
+  // press's own state is held the floor; and the cover is held the floor once seen.
+  const steps = [
+    'payloadGateway = null;',
+    'floorCover(Infinity);',
+    'showLoadingCover();',
+    'await coverOnWindow();',
+    'loadActiveGateway();',
+    'remainingVisibleMs(pressedAt)',
+    "closeOverlay('about')",
+    "closeOverlay('settings')",
+    'floorCover(Date.now() + MIN_VISIBLE_MS);',
+  ];
+  let at = -1;
+  for (const step of steps) {
+    const next = body.indexOf(step, at + 1);
+    assert.ok(next > at, `${step} is missing or out of order in the restart`);
+    at = next;
+  }
 });
 
-test('the confirmation reaches the page on its own channel', () => {
+test('the cover lift waits for the floor, and a new hold voids a waiting lift', () => {
+  // A lift held back by the floor is played when the floor ends rather than
+  // dropped, so the cover cannot be left up over a page that painted; and a cover
+  // raised again in the meantime (a new connect) voids it, so a stale lift cannot
+  // take down a cover that a newer load owns.
+  assert.match(main, /if \(coverFloor\.until > Date\.now\(\)\) \{\s*coverFloor\.pending = why;/,
+    'the cover gate does not hold a lift behind the floor');
+  const show = main.match(/function showLoadingCover\(\) \{[\s\S]*?\n\}/);
+  assert.match(show[0], /coverFloor\.pending = null;/, 'a new hold does not void a lift waiting on the floor');
+  const hide = main.match(/function hideLoadingCover\(\) \{[\s\S]*?\n\}/);
+  assert.match(hide[0], /coverFloor\.until = 0;/, 'the floor outlives the cover it was for');
+});
+
+test('no success line: the old reload confirmation is gone from both halves', () => {
+  // The restart is the answer, played in front of the reader, and a green line on
+  // a surface that is already going away was a claim about a reload that had not
+  // landed. Abi, 2026-09-25: show NO green success text anywhere.
+  assert.doesNotMatch(main, /clearedLoadPending|notifyCacheCleared|app:cache-cleared/,
+    'the main process still carries the old reload confirmation');
   assert.match(preload, /clearCacheAndReload: \(\) => ipcRenderer\.invoke\('app:clear-cache-and-reload'\)/,
     'the preload does not expose the clear command');
-  assert.match(preload, /onCacheCleared: \(fn\) => ipcRenderer\.on\('app:cache-cleared', \(_event, report\) => fn\(report\)\)/,
-    'the preload does not forward the confirmation');
-  // Wrapped rather than handed the raw event, the same as every other listener
-  // here: a renderer given `event` gets a way back into IPC.
-  assert.doesNotMatch(preload, /app:cache-cleared', fn\)/, 'the raw event is handed to the renderer');
+  assert.doesNotMatch(preload, /onCacheCleared|app:cache-cleared/, 'the preload still forwards a confirmation nothing sends');
+  assert.doesNotMatch(page, /onCacheCleared|describeClear|reloadPending/, 'the page still writes the old report');
+  assert.doesNotMatch(page, /setResult\(clearOut,[^;]*'ok'\)/, 'the page writes a success line');
 });
 
-/* ----------------------------------------------------------- the sentence */
+/* --------------------------------------------------------------- the press */
 
-test('the page says what was cleared and what refused, in the reader\'s terms', () => {
-  assert.match(page, /function describeClear\(report\)/, 'there is no reporting function');
-  assert.match(page, /Cleared cached code and service workers for/, 'the report does not name what it cleared');
-  assert.match(page, /No gateway is configured, so there was no cached code to clear/,
-    'the first-run case has no sentence, so the reader sees an empty result');
-  assert.match(page, /refused it/, 'a partial clear is smoothed over rather than reported');
-  assert.match(page, /function reloadPending\(report\)/, 'the pending reload has no sentence');
-  assert.match(page, /Reloading \$\{where\} from the server/, 'the report does not say a reload is coming');
-  // And the confirmation is ADDED to what was cleared rather than replacing it:
-  // the two arrive at different moments, so a line that swapped one for the other
-  // would lose the answer to the question the reader actually asked.
-  assert.match(page, /`\$\{clearSummary \? `\$\{clearSummary\} ` : ''\}\$\{confirmation\}`/,
-    'the confirmation replaces the clear report instead of joining it');
+test('the press is answered on the button, once', () => {
+  // The fifth rule in ui/CONVENTIONS.md: the control disables itself, says what it
+  // is doing, and a bounded deadline gives it back if the host never answers.
+  assert.match(page, /if \(clearing\) return;/, 'a second press is not debounced');
+  assert.match(page, /clearButton\.disabled = true;/, 'the button can be pressed again mid-clear');
+  assert.match(page, /clearButton\.textContent = 'Clearing…';/, 'the button does not say what it is doing');
+  assert.match(page, /clearButton\.setAttribute\('aria-busy', 'true'\);/, 'the busy state is not announced');
+  assert.match(page, /clearDeadline = setTimeout\(endClear, CLEAR_DEADLINE_MS\);/,
+    'a host that never answers leaves the button saying Clearing…');
+  // A host that refused is reported, never silently.
+  assert.match(page, /report\.started === false/, 'a refusal is not told to the reader');
 });
 
 test('the result line is inside the control column, where it can be SEEN', () => {

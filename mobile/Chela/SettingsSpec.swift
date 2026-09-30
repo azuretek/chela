@@ -123,6 +123,23 @@ enum SettingsSpec {
         ProcessInfo.processInfo.arguments.contains("-claw-open-testflight")
     }
 
+    /// A button on one of our shared pages to press, from `-claw-press
+    /// <settings|about>:<element id>`, for a screenshot run: a simulator cannot be
+    /// tapped, and a pressed state ("Opening…", "Clearing…") or what a press
+    /// starts (the cache-clear restart) exists only after a press. The press is
+    /// the page's own button's click, so it runs the page's real handler and the
+    /// real host command behind it. Compiled out of a release build, and inert
+    /// without the argument.
+    static var screenshotPress: (page: String, id: String)? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: "-claw-press"), index + 1 < arguments.count else { return nil }
+        let parts = arguments[index + 1].split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2, ["settings", "about"].contains(parts[0]),
+              parts[1].range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil
+        else { return nil }
+        return (parts[0], parts[1])
+    }
+
     /// Whether this run should drive the update check from a seeded feed rather
     /// than the network, from `-claw-seed-update-feed <version>`.
     ///
@@ -197,6 +214,7 @@ enum SettingsSpec {
     static var screenshotOpensAbout: Bool { false }
     static var screenshotChecksUpdates: Bool { false }
     static var screenshotOpensTestFlight: Bool { false }
+    static var screenshotPress: (page: String, id: String)? { nil }
     static var screenshotScrollsToBottom: Bool { false }
     static var screenshotSeedsUpdateFeed: Bool { false }
     static var screenshotUpdateFeedVersion: String? { nil }

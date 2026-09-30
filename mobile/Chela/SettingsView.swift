@@ -61,9 +61,10 @@ struct SettingsSurface: UIViewRepresentable {
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         // Painted with the PAGE's own resolved background, for the reason About
-        // gives in full: this page draws its card on a wash (\`--scrim\` is the
-        // palette's \`--bg\` at 70%), it is not opaque, and anything behind it shows
-        // through — so a host colour that follows the DEVICE rather than the
+        // gives in full: this page draws its card on a scrim that stays clear
+        // inside a native sheet (the platform draws the dim behind the sheet), so
+        // it is not opaque and whatever is behind it shows through, and a host
+        // colour that follows the DEVICE rather than the
         // palette composites to a second shade at the card's edge. Same map, same
         // page, one rule for both surfaces. A page with no resolved palette keeps
         // the system colour, which is what its first frame is painted on.

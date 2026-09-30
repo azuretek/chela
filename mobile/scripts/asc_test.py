@@ -90,6 +90,49 @@ check("an INVALID build fails the gate", outcome[0] == "fail")
 outcome = run_wait([None, None, None, None])
 check("a build that never appears fails", outcome[0] == "fail")
 
+# 5. A wait longer than a token's life never sends an expired token. The release
+#    job waits up to 45 minutes and a token lives 20; build 363 failed with a 401
+#    22 minutes in. Each poll advances a fake clock by 7 minutes, so a token
+#    minted once would be 21 minutes old by the fourth poll.
+clock = {"now": 1000.0}
+minted = []
+
+
+def fake_token():
+    minted.append(clock["now"])
+    return f"t{len(minted)}"
+
+
+seen = []
+
+
+def aging_fetch_build(auth, app_id, build_number):
+    value = str(auth)
+    seen.append((value, clock["now"] - minted[int(value[1:]) - 1]))
+    clock["now"] += 7 * 60
+    state = "VALID" if len(seen) >= 6 else "PROCESSING"
+    return {"id": "b1", "build_number": build_number, "state": state,
+            "uploaded": "now", "expired": False, "marketing": "1.0"}
+
+
+orig = {"Credential": asc.Credential, "fetch_build": asc.fetch_build, "assign": asc.assign}
+asc.Credential = lambda: orig["Credential"](mint=fake_token, clock=lambda: clock["now"])
+asc.fetch_build = aging_fetch_build
+asc.assign = lambda *a, **k: None
+os.environ.update({"WAIT_SECONDS": "100000", "POLL_SECONDS": "0"})
+try:
+    asc.wait()
+    long_wait = "ok"
+except SystemExit:
+    long_wait = "fail"
+finally:
+    asc.Credential, asc.fetch_build, asc.assign = orig["Credential"], orig["fetch_build"], orig["assign"]
+check("a 40 minute wait reaches VALID", long_wait == "ok")
+check("a 40 minute wait mints more than one token", len(minted) > 1)
+check("no request carries a token older than the refresh age",
+      all(age < asc.REFRESH_AFTER for _, age in seen))
+check("the refresh age leaves the token time to live", asc.REFRESH_AFTER < 20 * 60)
+
 if FAILURES:
     print(f"\n{len(FAILURES)} failed: {', '.join(FAILURES)}")
     sys.exit(1)

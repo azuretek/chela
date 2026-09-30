@@ -179,6 +179,27 @@ test('each stated exception says why, and is really a colour ui.css owns', () =>
   }
 });
 
+// ★ A colour taken live must be one a CUSTOM theme sets. A tweakcn import writes a
+// fixed list of names (live.customTheme, upstream's MODE_TOKEN_ORDER) and every
+// other name keeps upstream's base value on the page, so a live name outside that
+// list reports upstream's DEFAULT under every custom theme. Reported 2026-09-25:
+// --primary-hover was live, not in the list, and the primary button went
+// upstream's red on hover and press inside a window wearing the reader's palette.
+// The derived-once names are the one exception, because upstream derives them ON
+// THE PAGE from --muted, which the list carries. desktop/scripts/
+// test-controls-follow-theme.js is the measured half of this claim.
+test('every live colour is one a custom theme sets, so no live value can be upstream\'s default', () => {
+  const custom = new Set(SPEC.live.customTheme.names);
+  assert.ok(custom.size > 40, 'the custom theme list is too short to be upstream\'s MODE_TOKEN_ORDER');
+  const unset = SPEC.live.tokens
+    .filter(([name, kind]) => kind === 'color' && !custom.has(name) && !DERIVED_ONCE.has(name))
+    .map(([name]) => name);
+  assert.deepStrictEqual(unset, [],
+    'these live colours are not set by a custom theme, so under one the page reports upstream\'s default\n'
+      + 'for them. Derive each in ui.css from a token the theme does set and list it as ours instead:\n'
+      + unset.map((name) => '  - ' + name).join('\n'));
+});
+
 test('both palette blocks declare every live colour, so neither appearance loses one', () => {
   // A live colour declared in one block and not the other is a surface that
   // falls back to nothing when the appearance changes, which is the one moment

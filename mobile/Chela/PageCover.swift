@@ -39,6 +39,15 @@ enum RenderReady {
 @MainActor
 final class PageCover: ObservableObject {
     @Published private(set) var isCovered = false
+    /// Whether the load under the cover failed. The cover then STAYS, in the shared
+    /// loading page's failed state with its Try again, which is what the desktop
+    /// does (Abi, 2026-09-25): a failure is shown where the reader is looking,
+    /// never by taking the cover down onto a page that did not load.
+    @Published private(set) var failed = false
+    /// The furthest load milestone reached, and when, for the shared progress curve
+    /// (`Progress`, core/spec/progress.json). The navigation reports them.
+    private(set) var milestone: String = Progress.start
+    private(set) var milestoneAt = Date()
     /// Why the cover last came down: "rendered", "backstop", "probe-failed",
     /// "no-probe", or a failure's own reason. Read by the tests and the log.
     private(set) var lastLift: String?
@@ -47,15 +56,170 @@ final class PageCover: ObservableObject {
     private var generation = 0
     private var finished: Set<Int> = []
 
+    /// The minimum-visible floor, for the one path that asks for it: a restart the
+    /// reader asked for (Clear cache and refresh) is a state they are meant to SEE,
+    /// and a page that paints while the sheets are still sliding away would lift the
+    /// cover before it was ever on screen. `distantFuture` while the sheets go,
+    /// then the floor from the moment the cover is revealed. Nil otherwise, so a
+    /// launch or a reconnect lifts the moment its page has painted, as before.
+    private var floorUntil: Date?
+    /// A paint that arrived inside the floor, played when the floor ends unless a
+    /// new hold has voided it by then.
+    private var pending: (generation: Int, why: String)?
+    private var pendingTask: Task<Void, Never>?
+
     init(backstop: Duration = .milliseconds(RenderReady.backstopMs)) {
         self.backstop = backstop
     }
 
-    /// A load started: cover the page, and void any lift still on its way.
+    /// A load started: cover the page, and void any lift still on its way. The
+    /// gate goes with it: a load of ours is a fresh document, and only that
+    /// document's own reports say what it is showing.
     func hold() {
+        pageOnGate = false
+        gateTask?.cancel()
+        gateTask = nil
         generation += 1
+        pending = nil
+        failed = false
+        milestone = Progress.start
+        milestoneAt = Date()
         isCovered = true
     }
+
+    /// The load reached `name` (`navigated` on commit, `dom` on finish). Only
+    /// ever forward, so a late event cannot move the bar backwards.
+    func reached(_ name: String) {
+        let order = Progress.order
+        guard let next = order.firstIndex(of: name),
+              next > (order.firstIndex(of: milestone) ?? -1) else { return }
+        milestone = name
+        milestoneAt = Date()
+    }
+
+    /// The page has drawn its OWN login gate (core/spec/login-gate-connect.json).
+    /// It is never revealed: the cover goes up if it is not already, and lands on
+    /// the failed state once the hold has been seen, bounded by gateMs. A gate
+    /// already up is not a second hold. A gate that arrives while a press is in
+    /// flight is the press's answer to come, so the press keeps the cover.
+    func gateShown(title: String) {
+        let wasOnGate = pageOnGate
+        if !isCovered, pressGeneration == nil { hold(); releaseFloor(after: Motion.minVisibleMs) }
+        pageOnGate = true
+        guard pressGeneration == nil, !wasOnGate else { return }
+        let mine = generation
+        gateTask?.cancel()
+        gateTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(LoginGateConnect.gateMs))
+            guard let self, !Task.isCancelled, self.generation == mine, self.pageOnGate,
+                  self.pressGeneration == nil else { return }
+            self.gateTask = nil
+            self.fail(title.isEmpty ? "gate" : "gate: " + title)
+        }
+    }
+
+    /// The gate has gone: the interface is being drawn in its place, so the hold is
+    /// over. A press in flight is answered by its own reports instead.
+    func gateGone() {
+        pageOnGate = false
+        gateTask?.cancel()
+        gateTask = nil
+        guard pressGeneration == nil, !failed else { return }
+        finish(generation, "gate-gone")
+    }
+
+    /// The page's document has begun, so a gate the last one reported is gone with
+    /// it.
+    func pageReady() {
+        pageOnGate = false
+        gateTask?.cancel()
+        gateTask = nil
+    }
+
+    /// The load under the cover failed: keep the cover up in its failed state and
+    /// void any lift in flight, so nothing reveals the page that did not load.
+    /// Try again (or any new load) clears it through `hold()`.
+    func fail(_ why: String) {
+        generation += 1
+        pending = nil
+        floorUntil = nil
+        failed = true
+        isCovered = true
+        lastLift = nil
+        NSLog("[claw] the load under the cover failed (%@); holding it in its failed state", why)
+    }
+
+    /// Hold the cover up through any lift until `releaseFloor` is called. See
+    /// `floorUntil`.
+    func holdFloor() {
+        floorUntil = .distantFuture
+    }
+
+    /// The sheets have gone and the cover is what the reader sees: keep it at
+    /// least `ms` from now, then play any paint that arrived meanwhile.
+    func releaseFloor(after ms: Int) {
+        floorUntil = Date().addingTimeInterval(Double(max(0, ms)) / 1000)
+        schedulePending()
+    }
+
+    /// Connect was pressed on the Control UI's own login gate
+    /// (core/spec/login-gate-connect.json). The gate is the page's, and pressing it
+    /// pins the gate on screen while the page connects, so the loading screen goes
+    /// up at once and is held the minimum-visible floor from the press. Exactly one
+    /// of `connectRendered()` or `connectFailed(_:)` ends it, or the deadline does,
+    /// on the cover's failed state. A press while one is in flight is the same
+    /// attempt, and any new hold (a load of our own) voids the press.
+    func connectPressed(deadline: Duration = .milliseconds(LoginGateConnect.deadlineMs), floorMs: Int = Motion.minVisibleMs) {
+        if let inFlight = pressGeneration, inFlight == generation { return }
+        hold()
+        pressGeneration = generation
+        releaseFloor(after: floorMs)
+        let mine = generation
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: deadline)
+            guard let self, self.pressGeneration == mine, self.generation == mine else { return }
+            self.pressGeneration = nil
+            self.fail("connect-deadline")
+        }
+    }
+
+    /// The gate has gone and the interface is on screen: lift, after the floor.
+    func connectRendered() {
+        guard let mine = pressGeneration, mine == generation else { return }
+        pressGeneration = nil
+        // The press's own answer is authoritative: it means the gate has gone,
+        // whether or not the gate's own report has caught up with it.
+        pageReady()
+        finish(mine, "rendered")
+    }
+
+    /// The page answered the press with its failure again: the cover's failed state.
+    func connectFailed(_ title: String) {
+        guard let mine = pressGeneration, mine == generation else { return }
+        pressGeneration = nil
+        pageReady()
+        fail(title.isEmpty ? "connect-refused" : "connect-refused: " + title)
+    }
+
+    /// The gateway answered the press by refusing this device. The pairing screen
+    /// is that answer, drawn over the page as on any load, so the press ends and
+    /// the cover comes down under the screen rather than failing at the deadline.
+    func connectAnsweredByPairing() {
+        guard let mine = pressGeneration, mine == generation else { return }
+        pressGeneration = nil
+        finish(mine, "pairing")
+    }
+
+    /// The generation a Connect press raised, while that press is in flight.
+    private var pressGeneration: Int?
+
+    /// Whether the page is sitting on its OWN login gate. That gate is the Control
+    /// UI's answer to "this client is not connected", and a page showing it is never
+    /// revealed: the reader's surface for it is this cover in its FAILED state, with
+    /// Try again (core/ui/CONVENTIONS.md, the second rule; Abi, 2026-09-25).
+    private var pageOnGate = false
+    /// The bounded hold over a page that is on its gate.
+    private var gateTask: Task<Void, Never>?
 
     /// The load finished. Lift once the page has painted, or at the backstop.
     func loaded(probe: @escaping @MainActor () async throws -> Void) {
@@ -80,6 +244,9 @@ final class PageCover: ObservableObject {
     func lift(_ why: String) {
         generation += 1
         finished.insert(generation)
+        pending = nil
+        floorUntil = nil
+        failed = false
         isCovered = false
         lastLift = why
     }
@@ -88,27 +255,40 @@ final class PageCover: ObservableObject {
         guard !finished.contains(mine) else { return }
         finished.insert(mine)
         guard mine == generation else { return }
+        // A page sitting on its own login gate is not a page to reveal, whichever
+        // path got here: the cover lands on its failed state instead, which is one of
+        // ours rather than the page's own connection screen.
+        if pageOnGate, why == "rendered" || why == "backstop" {
+            fail("gate")
+            return
+        }
+        if let floorUntil, floorUntil > Date() {
+            pending = (mine, why)
+            schedulePending()
+            return
+        }
+        reveal(why)
+    }
+
+    private func reveal(_ why: String) {
+        floorUntil = nil
         isCovered = false
         lastLift = why
         if why != "rendered" {
             NSLog("[claw] lifting the loading cover on %@ rather than a painted page", why)
         }
     }
-}
 
-/// What the cover draws: the page's own colour, so the handoff to the painted
-/// page is a change of content and not a flash, and a spinner.
-struct PageCoverView: View {
-    let colour: Color
-
-    var body: some View {
-        ZStack {
-            colour
-            ProgressView()
-                .controlSize(.large)
+    private func schedulePending() {
+        pendingTask?.cancel()
+        guard let waiting = pending, let floorUntil, floorUntil != .distantFuture else { return }
+        let wait = max(0, floorUntil.timeIntervalSinceNow)
+        pendingTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(Int(wait * 1000)))
+            guard let self, !Task.isCancelled, let now = self.pending,
+                  now.generation == waiting.generation, now.generation == self.generation else { return }
+            self.pending = nil
+            self.reveal(now.why)
         }
-        .ignoresSafeArea()
-        .accessibilityIdentifier("loading-cover")
-        .accessibilityLabel("Loading")
     }
 }

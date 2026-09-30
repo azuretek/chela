@@ -47,6 +47,7 @@ import { createWake } from './wake.js';
 import { MIN_VISIBLE_MS, remainingVisibleMs } from '../../core/ui/motion.js';
 import * as appIcons from '../../core/app-icons.js';
 import { RENDERED_PROBE, createCoverGate } from '../../core/render-ready.js';
+import { CONNECT_DEADLINE_MS, createLoginGateCover } from '../../core/login-gate-connect.js';
 import * as bannerFacts from '../../core/banner.js';
 import secrets from './secrets.js';
 import defaults from './defaults.js';
@@ -667,6 +668,9 @@ function showSettingsAsPage(opts = {}) {
  * usually re-asserts it and moves it to its stopped state.
  */
 function showConnectionFailure(detail) {
+  // A Connect pressed on the Control UI's login gate is answered by this failure
+  // as much as by its own, so it ends here rather than failing a second time.
+  connectPress.cancel();
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const gw = config.activeGateway();
   const label = gw ? gw.label || gw.url : null;
@@ -774,6 +778,9 @@ function loadActiveGateway() {
  * asynchronously; everything below is the attempt it always was.
  */
 function beginGatewayConnect(gw) {
+  // A load of our own supersedes a Connect pressed on the Control UI's login
+  // gate: this attempt raises its own cover and has its own ending.
+  connectPress.cancel();
   settingsIsPage = false;
   autofilled = false;
   // Re-seed the appearance from the gateway being switched TO, before anything
@@ -946,11 +953,17 @@ async function maybeRefreshForNewBuild(wc) {
 }
 
 /**
- * Manual escape hatch, on the File menu and the tray. Clears the active
- * gateway's caches, or every gateway's, if none is active, which is the case
- * on the error page where this is most likely to be reached for.
+ * Manual escape hatch, on the File menu, the tray and the About page. Clears the
+ * active gateway's caches, or every gateway's, if none is active, which is the
+ * case on the error page where this is most likely to be reached for, and then
+ * restarts the Control UI the way a fresh launch starts it.
+ *
+ * Returns once the clear has been done and the restart has been STARTED, with
+ * what was actually cleared per origin: the restart itself is the reader's
+ * answer, played in front of them, so nothing waits on it here.
  */
 async function clearCacheAndReload() {
+  const pressedAt = Date.now();
   const gw = config.activeGateway();
   const active = activeOrigin();
   const origins = active ? [active] : gatewayOrigins();
@@ -959,45 +972,58 @@ async function clearCacheAndReload() {
   // Drop the recorded ids too, so the load that follows records what it finds
   // instead of comparing against a build whose cache no longer exists.
   forgetBuildIds(origins);
-  // The next gateway load is the one the reader asked for, so it is the one that
-  // reports back to whoever asked. Recorded BEFORE the load is started, because
-  // the load can finish faster than the line after it runs.
-  clearedLoadPending = true;
-  loadActiveGateway();
 
   const failed = results.filter((r) => !r.ok);
-  return {
+  for (const f of failed) console.warn(`[chela-desktop] ${f.origin} refused the cache clear: ${f.error}`);
+  const report = {
     ok: failed.length === 0,
     origins,
-    // What was actually cleared, per origin, so the reader is told the effect
-    // rather than the intention: a step that refused is reported as refused.
+    // What was actually cleared, per origin, so the effect is on record rather
+    // than the intention: a step that refused is reported as refused.
     cleared: results.filter((r) => r.ok).map((r) => r.origin),
     failed: failed.map((r) => ({ origin: r.origin, error: r.error })),
     // The kinds of cache this drops, named for the reader rather than for the API.
     kinds: [...cache.CACHE_STORAGES],
-    reloading: true,
     gateway: gw ? { label: gw.label || gw.url, url: gw.url } : null,
+    // Whether the app is restarting the Control UI. Not when there is no gateway:
+    // there is no Control UI to restart, and the page that asked stays up.
+    started: Boolean(gw),
   };
+  if (!gw) {
+    report.detail = 'Cached code was cleared. No gateway is configured, so there is no Control UI to reload.';
+    return report;
+  }
+  void restartAfterClear(pressedAt);
+  return report;
 }
 
-// Set when the reader presses Clear cache and refresh, cleared by the first
-// gateway load that lands afterwards. Its whole job is that confirmation: the
-// About box says "Reloading..." and can then say the reload really happened,
-// rather than assuming a load that was asked for is a load that arrived.
-let clearedLoadPending = false;
-
 /**
- * Tell the About box that the reload it asked for has landed.
+ * Restart the Control UI after a cache clear, as a fresh launch would.
  *
- * Sent from the load that finishes rather than from the press, and that is the
- * only honest place to send it from: `loadActiveGateway` starts an off-screen
- * attempt when a document is already on screen, so the clear returning is not the
- * same event as the fresh payload arriving. A message that said "reloaded" when
- * the clear returned would be the app asserting something it had not seen.
+ * The ORDER is the whole of it, and it is the first rule in ui/CONVENTIONS.md:
+ *
+ *   1. The launch loading screen goes up first, UNDER Settings and About, and on
+ *      the window before anything moves, so the sheets slide down onto it rather
+ *      than onto the Control UI that is about to be replaced.
+ *   2. The fresh load starts behind it, in place rather than beside the old
+ *      document: nothing on screen may present a gateway view now, which is what
+ *      makes `loadActiveGateway` load the way a launch does.
+ *   3. The press's own "Clearing…" is held the minimum-visible floor, then About
+ *      and Settings slide away together.
+ *   4. The loading screen stays at least the floor once it is revealed, so the
+ *      restart is seen as one, and it comes down once the page has painted (the
+ *      render-ready cover gate). A load that fails lands on the cover's own failed
+ *      state with Try again, through the same failure path a launch takes.
  */
-function notifyCacheCleared(ok, detail) {
-  const view = overlayViews.get('about');
-  if (view && !view.webContents.isDestroyed()) view.webContents.send('app:cache-cleared', { ok, detail });
+async function restartAfterClear(pressedAt) {
+  payloadGateway = null;
+  floorCover(Infinity);
+  showLoadingCover();
+  await coverOnWindow();
+  loadActiveGateway();
+  await new Promise((resolve) => { setTimeout(resolve, remainingVisibleMs(pressedAt)); });
+  await Promise.all([closeOverlay('about'), closeOverlay('settings')]);
+  floorCover(Date.now() + MIN_VISIBLE_MS);
 }
 
 /**
@@ -1436,6 +1462,11 @@ function handlePairingReport(event, payload) {
   const report = pairing.parseReport(payload);
   if (!report) return;
 
+  if (report.kind === 'connect') {
+    connectPress.report(report);
+    return;
+  }
+
   if (report.kind === 'dropped') {
     const wasConnected = connection.phase === connectionState.CONNECTED && !pageReloading;
     handleSocketDropped();
@@ -1460,6 +1491,13 @@ function handlePairingReport(event, payload) {
       loadActiveGateway();
     }
   } else {
+    // The gateway answered a Connect pressed on its login gate by refusing the
+    // device: the pairing screen is that answer, drawn over the page as on any
+    // load, so the press ends and its cover comes down under the screen.
+    if (connectPress.active) {
+      connectPress.cancel();
+      liftWhenAllowed('pairing');
+    }
     pairingState.closed(report.refusal);
     console.warn(`[chela-desktop] gateway refused this device: ${report.refusal.reason}` +
       `${report.refusal.requestId ? ` (requestId: ${report.refusal.requestId})` : ''}; showing the pairing screen`);
@@ -1705,16 +1743,6 @@ function createGatewayView({ attempt = false } = {}) {
       // because a finished load is not a page on screen; see coverGate.
       clearNotice('connection');
       coverGate.loaded(wc);
-      // The reader asked for a reload from the About box, and this is the load that
-      // answered it. Reported from the LOAD rather than from the press, because
-      // the clear returning and a fresh payload arriving are two different events
-      // here: with a document already on screen the attempt is made off to the
-      // side, so "reloaded" said at the press would be the app asserting something
-      // it had not seen yet.
-      if (clearedLoadPending) {
-        clearedLoadPending = false;
-        notifyCacheCleared(true, `The Control UI reloaded from ${wc.getURL()}.`);
-      }
     }
     maybeAutofill(wc);
     void maybeRefreshForNewBuild(wc);
@@ -1723,14 +1751,6 @@ function createGatewayView({ attempt = false } = {}) {
   wc.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!connectionState.isRealFailure({ code: errorCode, isMainFrame })) return;
     pageReloading = false;
-    // A reload the reader asked for from the About box that then failed is told to
-    // them there, rather than left as a box still saying "Reloading...": a
-    // confirmation that never arrives looks the same as one that was never asked
-    // for, and the reader would be left waiting on a page that is not coming.
-    if (clearedLoadPending) {
-      clearedLoadPending = false;
-      notifyCacheCleared(false, `The cache was cleared, but the Control UI did not reload: ${errorDescription || `error ${errorCode}`}.`);
-    }
     // The connection this app was showing is over, whichever view failed, so the
     // hold ends: a failed attempt must not leave the document it was going to
     // replace on screen, and the visible view's failure must not either. Without
@@ -2082,7 +2102,7 @@ function openOverlay(name, opts = {}) {
   attachedViews.add(view);
   restackViews();
   layoutViews();
-  wc.loadFile(path.join(UI_DIR, OVERLAY_PAGES[name]), { search: opts.search || overlaySearch() });
+  wc.loadFile(path.join(UI_DIR, OVERLAY_PAGES[name]), { search: stackedSearch(name, opts.search || overlaySearch()) });
   wc.once('did-finish-load', () => {
     applyThemeCss(wc);
     wc.focus();
@@ -2091,17 +2111,43 @@ function openOverlay(name, opts = {}) {
 }
 
 /**
+ * The overlays whose page dims the window behind its card. Pairing draws its own
+ * full-window screen and no scrim, so it is not one.
+ */
+const DIMMING_OVERLAYS = ['settings', 'about'];
+
+/** Whether a dimming overlay other than `name` is up. */
+function dimmedBelow(name) {
+  return DIMMING_OVERLAYS.some((other) => other !== name && overlayAlive(other));
+}
+
+/**
+ * An overlay's URL, told whether a dim is already up under it.
+ *
+ * About opened over Settings lands on a window Settings has already dimmed, and
+ * two dims stacked read as the interface going nearly black. So the page is told
+ * to keep its scrim clear (ui/surface.js, ui.css surface--stacked), in the URL
+ * rather than over IPC because it decides the first frame's paint.
+ */
+function stackedSearch(name, search) {
+  if (!DIMMING_OVERLAYS.includes(name) || !dimmedBelow(name)) return search;
+  const params = new URLSearchParams(search);
+  params.set('stacked', '1');
+  return '?' + params;
+}
+
+/**
  * How long the host waits for a page to say its departure is done, before taking
  * the view away regardless.
  *
  * NOT a duration the reader sees. The page owns that number, because its stylesheet
  * is what declares it. This is the point at which the host stops trusting an answer
- * that has not arrived, and it is generous on purpose: the page's own bound is one
- * `--duration-fast` plus a frame, so anything near this ceiling means the page is not
- * answering at all, and a view the host can no longer take away is a worse fault
+ * that has not arrived, and it is generous on purpose: the page's own bound is its
+ * departure (a sheet's `--motion-sheet-out`, 400ms, at the longest) plus a frame,
+ * so anything near this ceiling means the page is not answering at all, and a view the host can no longer take away is a worse fault
  * than an un-animated dismissal.
  */
-const SURFACE_LEAVE_CEILING_MS = 500;
+const SURFACE_LEAVE_CEILING_MS = 1000;
 
 /**
  * Ask a page to play its own departure, and resolve when it has.
@@ -2159,6 +2205,18 @@ async function closeOverlay(name, { animate = true } = {}) {
   try {
     if (!view.webContents.isDestroyed()) view.webContents.close();
   } catch { /* already torn down */ }
+  // The dim belonged to the surface that just left, so a surface that was
+  // stacked over it takes the dim over rather than leaving the window undimmed
+  // behind its card. There are two dimming surfaces, so whichever is still up is
+  // now the only one.
+  if (DIMMING_OVERLAYS.includes(name)) {
+    for (const other of DIMMING_OVERLAYS) {
+      if (other === name || !overlayAlive(other)) continue;
+      overlayViews.get(other).webContents
+        .executeJavaScript("document.documentElement.classList.remove('surface--stacked')", true)
+        .catch(() => {});
+    }
+  }
   // About shown over Settings must hand focus back to Settings, not to the
   // gateway page buried under both of them.
   const remaining = [...overlayViews.values()].filter((v) => !v.webContents.isDestroyed());
@@ -2227,6 +2285,10 @@ function closeSettings() {
  * wait for.
  */
 async function openControlUiSettings() {
+  // The press put "Opening…" on the button, and a Control UI that answers at once
+  // would take this surface away before that was read, so the reveal waits out the
+  // minimum-visible floor from the press (the eighth rule in ui/CONVENTIONS.md).
+  const pressedAt = Date.now();
   const wc = page();
   // Nothing behind this surface to hand off to (a first run, where settings IS the
   // window's content), so there is nothing to wait for and the card that carries
@@ -2243,6 +2305,7 @@ async function openControlUiSettings() {
   }
   if (asked === true) await waitForControlUiSettings(wc);
   else console.warn('[chela-desktop] the Control UI has no footer settings control to press; the reader stays on the page');
+  await new Promise((resolve) => { setTimeout(resolve, remainingVisibleMs(pressedAt)); });
   closeSettings();
 }
 
@@ -2505,7 +2568,10 @@ async function styleLoadingCover(wc) {
 function showLoadingCover() {
   // Any lift still waiting on an earlier page's paint is void from here: the
   // cover is wanted again, and only a load that finishes after this may take it.
+  // That includes one held back by the floor.
   coverGate.hold();
+  coverFloor.pending = null;
+  scheduleFlooredLift();
   if (!mainWindow || mainWindow.isDestroyed() || loadingView) {
     // Already up: a second connect attempt reuses the same cover, so the ticker
     // has to be (re)started here rather than only where the view is built.
@@ -2550,21 +2616,157 @@ function showLoadingCover() {
 // failed in the meantime keeps its cover: the failure owns the screen then.
 const coverGate = createCoverGate({
   probe: (wc) => (wc.isDestroyed() ? Promise.resolve() : wc.executeJavaScript(RENDERED_PROBE)),
+  lift: (why) => liftWhenAllowed(why),
+});
+
+/**
+ * Take the cover down for a page that is on screen, unless something says not yet.
+ *
+ * A connection that failed keeps its cover, since the failure owns the screen. A
+ * restart or a Connect the reader asked for holds the cover until it has been
+ * seen; see floorCover. The lift is kept rather than dropped, and played when the
+ * floor ends, unless a new hold has voided it by then.
+ */
+/** What the cover says when the page is on its own login gate rather than connecting. */
+const GATE_UNREACHABLE = 'The gateway is not answering.';
+
+function liftWhenAllowed(why) {
+  if (connection.phase === connectionState.FAILED) return;
+  // A page sitting on its OWN login gate is not a page to reveal: that gate is the
+  // Control UI's answer to "this client is not connected", and the reader's surface
+  // for it is the loading screen's failed state with Try again, never the page's own
+  // screen (core/ui/CONVENTIONS.md, the second rule; Abi, 2026-09-25). The gate
+  // module owns whether the page is on it, and this is the ONE gate the cover comes
+  // down through, so a paint on the gate is answered the way a refused connect is.
+  if (connectPress.onGate) { showConnectionFailure({ errorCode: null, errorDescription: GATE_UNREACHABLE }); return; }
+  if (coverFloor.until > Date.now()) {
+    coverFloor.pending = why;
+    scheduleFlooredLift();
+    return;
+  }
+  liftCover(why);
+}
+
+/**
+ * Connect pressed on the Control UI's OWN login gate.
+ *
+ * The page's 'Gateway unreachable' screen is upstream's, and pressing its Connect
+ * pins that gate on screen while the page connects, so the reader watched an
+ * unchanged screen for as long as the attempt took (Abi, 2026-09-25: 'it just
+ * hangs there for a while, we should do the load page there until the UI
+ * renders'). The watcher injected beside the pairing observer reports the press,
+ * and this answers it the way a launch is answered: the loading screen goes up at
+ * once, and comes down only once the gate has gone and the interface has been
+ * presented, held the minimum-visible floor from the press so it is seen as a
+ * connect rather than a flash. A press with no answer by the spec deadline, or one
+ * the page answers with its failure again, lands on the cover's failed state with
+ * Try again, through the same failure path a launch takes. The page's own handler
+ * runs untouched: nothing here changes what the press does.
+ *
+ * See core/spec/login-gate-connect.json, and core/ui/CONVENTIONS.md for the rules.
+ */
+const connectPress = createLoginGateCover({
+  cover: () => {
+    console.log('[chela-desktop] the Control UI login gate is up, or its Connect was pressed; covering it with the loading screen');
+    setConnection({
+      phase: connectionState.nextPhase(connection.phase, { type: 'connect' }),
+      error: null,
+      milestone: progress.START,
+      milestoneAt: Date.now(),
+    });
+    showLoadingCover();
+    floorCover(Date.now() + MIN_VISIBLE_MS);
+  },
   lift: (why) => {
-    if (connection.phase === connectionState.FAILED) return;
-    if (why !== 'rendered') console.warn(`[chela-desktop] lifting the loading cover on ${why} rather than a painted page`);
-    hideLoadingCover();
-    // The wake rule terminal event, and this is where it belongs: its own spec
-    // says the cover is kept until the page has rendered, so the report is the
-    // lift rather than the load that preceded the paint. Reported for every
-    // reason the cover comes down, because each one means the page is on screen
-    // again, which is the thing the state machine is waiting to hear.
-    wake.reportRaw('page:rendered');
+    setConnection({
+      phase: connectionState.nextPhase(connection.phase, { type: 'connected' }),
+      error: null,
+      milestone: progress.DONE,
+      milestoneAt: Date.now(),
+    });
+    liftWhenAllowed(why);
+  },
+  fail: (why, title) => {
+    const description = why === 'deadline'
+      ? 'The gateway did not answer the connect within ' + Math.round(CONNECT_DEADLINE_MS / 1000) + ' seconds.'
+      : why === 'gate'
+        ? (title || GATE_UNREACHABLE)
+        : (title || 'The gateway refused the connect.');
+    showConnectionFailure({ errorCode: null, errorDescription: description });
   },
 });
 
+/**
+ * The loading cover's minimum-visible floor, for the one path that asks for it.
+ *
+ * A fresh start from Clear cache and refresh is a transient state the reader is
+ * meant to SEE (the eighth rule in ui/CONVENTIONS.md): the app is restarting in
+ * front of them, and a page that paints in the time About and Settings take to
+ * slide away would lift the cover before it had ever been on screen. So the lift
+ * waits, first for the sheets to go (`until` is Infinity while they do) and then
+ * for the floor from the moment the cover is revealed. Nothing else sets it, so a
+ * launch or a reconnect lifts the moment its page has painted, as before.
+ */
+const coverFloor = { until: 0, pending: null, timer: 0 };
+
+function floorCover(until) {
+  coverFloor.until = until;
+  scheduleFlooredLift();
+}
+
+function scheduleFlooredLift() {
+  clearTimeout(coverFloor.timer);
+  coverFloor.timer = 0;
+  if (!coverFloor.pending || coverFloor.until === Infinity) return;
+  coverFloor.timer = setTimeout(() => {
+    coverFloor.timer = 0;
+    const why = coverFloor.pending;
+    coverFloor.pending = null;
+    if (!why || !loadingView || connection.phase === connectionState.FAILED) return;
+    liftCover(why);
+  }, Math.max(0, coverFloor.until - Date.now()));
+}
+
+/**
+ * Resolve once the loading cover is on the window, or at a short bound.
+ *
+ * The cover is loaded off the window and attached once its page is styled (see
+ * styleLoadingCover), so "shown" is a moment after the call. A caller about to
+ * take a surface away from in front of it waits for this first, so what the
+ * departure reveals is the cover. Bounded, because a cover that never styles is
+ * still a departure that has to happen.
+ */
+function coverOnWindow(timeoutMs = 1500) {
+  const started = Date.now();
+  return new Promise((resolve) => {
+    const check = () => {
+      if (!loadingView || attachedViews.has(loadingView) || Date.now() - started >= timeoutMs) {
+        resolve();
+        return;
+      }
+      setTimeout(check, 16);
+    };
+    check();
+  });
+}
+
+/** Take the cover down now that the page under it is on screen. */
+function liftCover(why) {
+  if (why !== 'rendered') console.warn(`[chela-desktop] lifting the loading cover on ${why} rather than a painted page`);
+  hideLoadingCover();
+  // The wake rule terminal event, and this is where it belongs: its own spec
+  // says the cover is kept until the page has rendered, so the report is the
+  // lift rather than the load that preceded the paint. Reported for every
+  // reason the cover comes down, because each one means the page is on screen
+  // again, which is the thing the state machine is waiting to hear.
+  wake.reportRaw('page:rendered');
+}
+
 function hideLoadingCover() {
   stopProgressTicker();
+  coverFloor.until = 0;
+  coverFloor.pending = null;
+  scheduleFlooredLift();
   if (!loadingView) return;
   const view = loadingView;
   // Cleared first: removing the view can throw if the window is already going,

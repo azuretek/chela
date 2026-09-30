@@ -38,6 +38,14 @@ function have(bin) {
 function skip(reason) {
   // A SKIP is not a pass. It is named so a green root script cannot hide a
   // platform that was never exercised.
+  //
+  // Where the caller has said the tools must be there, a skip is a FAILURE: the
+  // CI job that sets this installs them, so a missing one is a broken job, and
+  // it once reported success in 6s having skipped both lint and build.
+  if (process.env.CHELA_REQUIRE_MOBILE_TOOLS === '1') {
+    console.log(`mobile:${task}: FAILED, ${reason}, and CHELA_REQUIRE_MOBILE_TOOLS says this may not skip`);
+    process.exit(1);
+  }
   console.log(`mobile:${task}: SKIPPED, ${reason}`);
   process.exit(0);
 }

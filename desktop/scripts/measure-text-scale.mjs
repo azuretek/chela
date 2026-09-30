@@ -38,7 +38,7 @@ fs.writeFileSync(PRELOAD, `
 const { contextBridge } = require('electron');
 const state = JSON.parse(process.env.CLAW_SCALE_STATE || '{}');
 contextBridge.exposeInMainWorld('clawSettings',{ asPage:false, invoke:async()=>state, on:()=>{} });
-contextBridge.exposeInMainWorld('clawDesktop',{ about:async()=>state, checkUpdates:async()=>{}, openReleases:()=>{}, closeOverlay:()=>{}, onAboutChanged:()=>{}, clearCacheAndReload:async()=>({cleared:[],failed:[],origins:[],gateway:null}), onCacheCleared:()=>{}, notices:async()=>[], onNoticesChanged:()=>{}, bannerHeight:()=>{}, sweepBounds:()=>{}, dismissNotice:()=>{}, noticeAction:()=>{}, markNoticesRead:()=>{} });
+contextBridge.exposeInMainWorld('clawDesktop',{ about:async()=>state, checkUpdates:async()=>{}, openReleases:()=>{}, closeOverlay:()=>{}, onAboutChanged:()=>{}, clearCacheAndReload:async()=>({cleared:[],failed:[],origins:[],gateway:null}), notices:async()=>[], onNoticesChanged:()=>{}, bannerHeight:()=>{}, sweepBounds:()=>{}, dismissNotice:()=>{}, noticeAction:()=>{}, markNoticesRead:()=>{} });
 `);
 
 // Measure a representative set of OUR-OWN text elements: the heading, a tab label,

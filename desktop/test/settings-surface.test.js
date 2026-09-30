@@ -765,3 +765,24 @@ test('no client draws an appearance control', () => {
   );
 });
 
+
+test('the handoff press is answered on the button, once, and held long enough to read', () => {
+  // The fifth rule in ui/CONVENTIONS.md, for "Go to the Control UI": the host holds
+  // this surface up while the destination arrives, which can take a visible second
+  // or two, and a press that showed nothing in that time was pressed again.
+  const settingsPage = read(DESKTOP, '..', 'core', 'ui', 'settings.js');
+  assert.match(settingsPage, /if \(openingControlUi \|\| !hasCommand\('openControlUiSettings'\)\) return;/,
+    'a second press is not debounced');
+  assert.match(settingsPage, /openControlUiSettings\.disabled = true;/, 'the button can be pressed again mid-handoff');
+  assert.match(settingsPage, /openControlUiSettings\.textContent = 'Opening…';/, 'the button does not say what it is doing');
+  assert.match(settingsPage, /openControlUiSettings\.setAttribute\('aria-busy', 'true'\);/, 'the busy state is not announced');
+  assert.match(settingsPage, /setTimeout\(\(\) => endOpeningControlUi\(shownAt\), OPEN_CONTROL_UI_DEADLINE_MS\)/,
+    'a Control UI that never answers leaves the button busy for good');
+  // The host holds the surface the floor from the press, so "Opening…" is read
+  // rather than flashed when the Control UI answers at once.
+  const main = read(DESKTOP, 'src', 'main.js');
+  const body = functionBody(main, 'async function openControlUiSettings(');
+  const floor = body.indexOf('remainingVisibleMs(pressedAt)');
+  assert.ok(floor >= 0, 'the reveal does not wait out the floor from the press');
+  assert.ok(floor < body.lastIndexOf('closeSettings()'), 'the floor is waited after the surface has already gone');
+});

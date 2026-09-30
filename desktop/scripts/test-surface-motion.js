@@ -273,19 +273,17 @@ app.whenReady().then(async () => {
   check('the settings surface arrives and settles', arrivalDone !== null,
     `the first frame showing it was at ${arrivalPaint}ms and it never settled`);
   check('the arrival completes inside its token',
-    arrivalMs !== null && arrivalMs <= (REDUCED ? 90 : 250),
-    `the arrival took ${arrivalMs}ms against a ${REDUCED ? 'no-motion' : '180ms'} token`);
-  // The animated pass would LIKE to assert that the arrival took a moment, so that a
-  // stylesheet whose animation silently stopped working could not pass by doing
-  // nothing. On THIS path it measured 0ms, and the reason is a fact about the
-  // arrangement rather than a fault: the overlay view is attached and its page loads
-  // while it is already compositing, so a 180ms enter animation is over before the
-  // first frame of the view reaches the screen. The reader therefore sees the surface
-  // APPEAR WHOLE, which is the good outcome and not an animated one, and the honest
-  // thing is to report it rather than to demand motion the path cannot show. The two
-  // transitions below are where the animation is genuinely visible, and they assert
-  // it. The phone's sheet animates its own presentation natively.
-  console.log(`note the arrival shows the surface whole: its enter animation is shorter than the overlay's own load, so no frame of it reaches the screen on this path`);
+    arrivalMs !== null && arrivalMs <= (REDUCED ? 260 : 650),
+    `the arrival took ${arrivalMs}ms against a ${REDUCED ? '180ms fade' : '500ms sheet'} token`);
+  // The arrival is not asserted to have taken a moment, and the reason is a fact
+  // about the arrangement rather than a fault: the overlay view is attached and its
+  // page loads while it is already compositing, so the first part of the enter
+  // animation can be spent before the view's first frame reaches the screen. When
+  // the enter was the Control UI's 180ms it measured 0ms here; the sheet's 500ms
+  // slide leaves most of itself visible, and the frames are kept as the record. The
+  // two transitions below are where the animation is asserted. The phone's sheet
+  // animates its own presentation natively.
+  console.log(`note the arrival: first visible at ${arrivalPaint}ms, settled at ${arrivalDone}ms`);
   check('and it is not still moving after its own animation says it is done',
     arrival.frames.every((f) => f.rel < (arrivalDone === null ? 0 : arrivalDone) + 60 || frameDiff(f.sig, settingsSettled.sig) <= tol),
     'frames after the surface settled differ from the settled surface');
@@ -361,14 +359,15 @@ app.whenReady().then(async () => {
     const tabDone = settledAt(tabBurst.frames, tabSettled.sig, tol);
     console.log(`note tab change: settled at ${tabDone}ms after the click, in ${tabBurst.frames.length} frames`);
     check('the tab change completes inside its token',
-      tabDone !== null && tabDone <= (REDUCED ? 90 : 190),
-      `it settled at ${tabDone}ms against a ${REDUCED ? 'no-motion' : '100ms'} expectation`);
+      tabDone !== null && tabDone <= (REDUCED ? 190 : 450),
+      `it settled at ${tabDone}ms against a ${REDUCED ? '100ms fade' : '350ms screen'} expectation`);
     // And the animated pass is asserted to have actually MOVED, so a disabled
-    // animation cannot pass by doing nothing at all.
+    // animation cannot pass by doing nothing at all. Reduced motion is a short fade
+    // rather than nothing, so it is held to the fade's bound instead.
     check(REDUCED
-      ? 'the panel arrives at once with motion turned off'
+      ? 'the panel fades in quickly with motion turned off'
       : 'the panel takes a moment to arrive, so the animation really ran',
-      REDUCED ? tabDone !== null && tabDone <= 90 : tabDone !== null && tabDone >= 30,
+      REDUCED ? tabDone !== null && tabDone <= 190 : tabDone !== null && tabDone >= 100,
       `it settled at ${tabDone}ms`);
     check('the tab change never showed a view the reader did not ask for',
       routeHeld(tabBurst.routes, startRoute).length === 0,
@@ -417,13 +416,13 @@ app.whenReady().then(async () => {
     check('the window really did start from the surface',
       departureFrom, 'the surface and the Control UI look the same, so this step measured nothing');
     check(REDUCED
-      ? 'the surface goes at once with motion turned off'
-      : 'the departure is ANIMATED rather than cut away',
-      REDUCED ? goneMs !== null && goneMs <= 90 : goneMs !== null && goneMs >= 40,
-      `the view went after ${goneMs}ms, which is ${REDUCED ? 'not immediate with motion off' : 'a cut rather than a fade'}`);
+      ? 'the surface fades out with motion turned off, rather than sliding'
+      : 'the departure is ANIMATED rather than cut away: the sheet slides down',
+      REDUCED ? goneMs !== null && goneMs >= 40 && goneMs <= 250 : goneMs !== null && goneMs >= 300,
+      `the view went after ${goneMs}ms, which is ${REDUCED ? 'not the short fade' : 'a cut rather than a slide'}`);
     check('the departure completes inside its token',
-      goneMs !== null && goneMs <= (REDUCED ? 90 : 250),
-      `it took ${goneMs}ms against a ${REDUCED ? 'no-motion' : '100ms'} token`);
+      goneMs !== null && goneMs <= (REDUCED ? 250 : 650),
+      `it took ${goneMs}ms against a ${REDUCED ? '100ms fade' : '400ms sheet'} token`);
     check('the surface departing never showed a view the reader did not ask for',
       routeHeld(departure.routes, startRoute).length === 0,
       JSON.stringify(routeHeld(departure.routes, startRoute).slice(0, 3)));

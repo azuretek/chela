@@ -10,12 +10,15 @@
 //   OPENCLAW_CONFIG_PATH=/tmp/claw-affordance-gw/openclaw.json \
 //   openclaw gateway --port 19099 --auth none --bind loopback --allow-unconfigured
 //
-// What is asserted is the two things the button promises and one thing it must
-// never do. The promises: it CLEARS something, and it says what it cleared; and
-// the reload brings the SERVER's current payload rather than the cached one. The
-// thing it must not do: touch the origin's storage, which is where the gateway's
-// paired-device identity lives, so a clear that reached it would make the gateway
-// see a brand-new client and raise a login alert.
+// What is asserted is what the button promises and one thing it must never do.
+// The promises: the press is answered on the button ("Clearing…", and a second
+// press does nothing); it CLEARS something; it restarts the Control UI the way a
+// fresh launch does, meaning About and Settings go away, the launch loading screen
+// is what they reveal, and it comes down on the SERVER's current payload rather
+// than the cached one; and it writes no success line anywhere. The thing it must
+// not do: touch the origin's storage, which is where the gateway's paired-device
+// identity lives, so a clear that reached it would make the gateway see a
+// brand-new client and raise a login alert.
 //
 // Every measurement here is taken in the GATEWAY page, which is the page whose
 // caches are in question, read before the press and after the reload.
@@ -151,6 +154,11 @@ app.whenReady().then(async () => {
   const before = await gatewayPage.executeJavaScript(PAGE_MEASURE);
   console.log(`note before: ${JSON.stringify({ ...before, url: undefined })}`);
 
+  // Settings first and About over it, which is how a reader reaches About on every
+  // client, so the restart has both sheets to take away.
+  const settingsItem = menuItem('Settings…');
+  check('the app can open its Settings surface', Boolean(settingsItem), 'no Settings menu item');
+  if (settingsItem) { settingsItem.click(); await delay(1500); }
   const about = menuItem('About Chela');
   check('the app can open its About surface', Boolean(about), 'no About menu item');
   if (about) { about.click(); await delay(2500); }
@@ -192,53 +200,74 @@ app.whenReady().then(async () => {
     }
   })();
 
-  await aboutView.executeJavaScript("document.getElementById('clear-cache').click()");
-  await delay(600);
-  const immediate = await aboutView.executeJavaScript("document.getElementById('clear-result').textContent");
-  console.log(`note immediately after the press: ${immediate}`);
+  // The surfaces, sampled alongside the page: which of ours are up, and what the
+  // About page's button and result line say while it is still there.
+  const surfaces = [];
+  let watching = true;
+  const surfaceWatch = (async () => {
+    while (watching) {
+      const about = view('/about.html');
+      let button = null;
+      if (about) {
+        try {
+          button = await about.executeJavaScript(`(() => {
+            const b = document.getElementById('clear-cache');
+            const r = document.getElementById('clear-result');
+            return { label: b.textContent, disabled: b.disabled, result: r ? r.textContent : '' };
+          })()`);
+        } catch { /* the page is going away */ }
+      }
+      surfaces.push({
+        at: Date.now(),
+        about: Boolean(about),
+        settings: Boolean(view('/settings.html')),
+        cover: Boolean(view('/loading.html')),
+        button,
+      });
+      // eslint-disable-next-line no-await-in-loop
+      await delay(50);
+    }
+  })();
 
-  // Long enough for the clear and for the reload the main process starts after it.
+  const pressedAt = Date.now();
+  await aboutView.executeJavaScript("document.getElementById('clear-cache').click()");
+  await delay(150);
+  // A second press, which the debounce must swallow: the button is already busy.
+  const second = await aboutView.executeJavaScript(`(() => {
+    const b = document.getElementById('clear-cache');
+    b.click();
+    return { label: b.textContent, disabled: b.disabled, busy: b.getAttribute('aria-busy') };
+  })()`).catch(() => null);
+  console.log(`note just after the press: ${JSON.stringify(second)}`);
+  check('the press is answered on the button, which says Clearing… and cannot be pressed again',
+    second && second.label === 'Clearing…' && second.disabled === true && second.busy === 'true', JSON.stringify(second));
+  await grab('about-clear-cache-pressed');
+
+  // Long enough for the clear, the sheets leaving, the reload and the cover's floor.
   await delay(9000);
   sampling = false;
+  watching = false;
   await sampler;
-  const settled = await aboutView.executeJavaScript("document.getElementById('clear-result').textContent");
-  console.log(`note settled: ${settled}`);
-  check('the button says what it cleared rather than that it tried',
-    /Cleared cached code and service workers for/i.test(settled), settled);
-  check('and names the origin it cleared',
-    settled.includes(new URL(GATEWAY).host), settled);
-  check('and confirms the reload landed, from the load rather than from the press',
-    /reloaded from/i.test(settled), settled);
+  await surfaceWatch;
 
-  // Present is not the same as READABLE, and a report nobody can see is the same
-  // fault as no report at all. Measured on 2026-09-16: the line read back
-  // correctly from textContent and was INVISIBLE, because it sat after a
-  // width:100% control in a non-wrapping actions row and was clipped by the
-  // group's overflow:hidden. So this asserts the line has a box, AND that the box
-  // is inside the card the reader is looking at rather than past its edge.
-  const shown = await aboutView.executeJavaScript(`(() => {
-    const node = document.getElementById('clear-result');
-    const box = node.getBoundingClientRect();
-    const group = node.closest('.settings-group').getBoundingClientRect();
-    const style = getComputedStyle(node);
-    return {
-      text: node.textContent,
-      onScreen: node.offsetParent !== null && box.width > 0 && box.height > 0,
-      insideCard: box.left >= group.left - 1 && box.right <= group.right + 1,
-      box: [Math.round(box.left), Math.round(box.top), Math.round(box.width), Math.round(box.height)],
-      card: [Math.round(group.left), Math.round(group.right)],
-      colour: style.color,
-      visibility: style.visibility,
-      textLength: (node.textContent || '').length,
-    };
-  })()`);
-  console.log(`note the result line on screen: ${JSON.stringify(shown)}`);
-  check('and the line is actually ON SCREEN, not merely in the DOM',
-    shown.onScreen === true && shown.box[3] > 8 && shown.textLength > 40,
-    JSON.stringify(shown));
-  check('and it is inside the card the reader is looking at, not clipped past its edge',
-    shown.insideCard === true,
-    `the line spans x ${shown.box[0]}..${shown.box[0] + shown.box[2]} and the card ${shown.card[0]}..${shown.card[1]}`);
+  const aboutGoneAt = surfaces.find((s) => s.at > pressedAt && !s.about)?.at;
+  const settingsGoneAt = surfaces.find((s) => s.at > pressedAt && !s.settings)?.at;
+  const coverSeen = surfaces.filter((s) => s.at > pressedAt && s.cover);
+  const coverGoneAt = surfaces.find((s) => s.at > (coverSeen[0]?.at || Infinity) && !s.cover)?.at;
+  console.log(`note about gone +${aboutGoneAt - pressedAt}ms, settings gone +${settingsGoneAt - pressedAt}ms, cover seen ${coverSeen.length} samples, cover gone +${coverGoneAt - pressedAt}ms`);
+  check('About and Settings both went away, as a fresh start has neither',
+    Boolean(aboutGoneAt) && Boolean(settingsGoneAt) && !surfaces[surfaces.length - 1].about && !surfaces[surfaces.length - 1].settings,
+    JSON.stringify(surfaces[surfaces.length - 1]));
+  check('the button held "Clearing…" at least the minimum-visible floor before the surface went',
+    Boolean(aboutGoneAt) && aboutGoneAt - pressedAt >= 900, `About went at +${aboutGoneAt - pressedAt}ms`);
+  check('the launch loading screen was up BEFORE the sheets left, so they revealed it',
+    coverSeen.length > 0 && coverSeen[0].at <= Math.min(aboutGoneAt || Infinity, settingsGoneAt || Infinity),
+    `first cover sample +${(coverSeen[0]?.at || 0) - pressedAt}ms`);
+  check('and it came down once the page had painted, after being seen for the floor',
+    Boolean(coverGoneAt) && Boolean(aboutGoneAt) && coverGoneAt - Math.max(aboutGoneAt, settingsGoneAt || 0) >= 850,
+    `the cover went ${coverGoneAt - Math.max(aboutGoneAt || 0, settingsGoneAt || 0)}ms after the sheets`);
+  const wrote = surfaces.map((s) => s.button && s.button.result).filter(Boolean);
+  check('and no success line was written anywhere', wrote.length === 0, `the result line said: ${[...new Set(wrote)].join(' | ')}`);
   await grab('about-clear-cache-done');
 
   /* ------------------------------------------------- what it actually did */

@@ -298,7 +298,6 @@ contextBridge.exposeInMainWorld('clawDesktop', {
   // app (desktop/src/preload.cjs) has always had them. A capture harness whose
   // host is thinner than the real one is measuring a page nobody ships.
   clearCacheAndReload: async () => ({ cleared: ['example.invalid'], failed: [], origins: ['example.invalid'], gateway: null }),
-  onCacheCleared: () => {},
   // The banner's own host, so the same stub serves all three pages. It reports a
   // height rather than sizing anything: the view is sized to exactly what the
   // page reports, and this harness has no view to size.

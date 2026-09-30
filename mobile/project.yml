@@ -109,6 +109,14 @@ targets:
       # the repository's.
       - path: ../core/spec/pairing.json
         buildPhase: resources
+      # The login gate's Connect watcher, bundled rather than mirrored for its ONE
+      # injected script, the same shape as the pairing observer above, whose
+      # channel it posts on. LoginGateConnect reads this at runtime and installs
+      # the script through a WKUserScript at document start, and PageCover answers
+      # its reports; LoginGateConnectParityTests asserts the bundled copy is the
+      # repository's.
+      - path: ../core/spec/login-gate-connect.json
+        buildPhase: resources
       # The reconnect-resume shim, bundled rather than mirrored for its ONE
       # injected script, the same shape as the pairing observer above: it wraps
       # the page's WebSocket.send and drops the Control UI's reserved
@@ -184,6 +192,16 @@ targets:
       - path: ../core/spec/naming.json
         buildPhase: resources
       - path: ../core/spec/progress.json
+        buildPhase: resources
+      # The loading screen is the shared page too (Abi, 2026-09-25): the
+      # desktop's own core/ui/loading.html, hosted by LoadingSurface, so its mark,
+      # ring, progress bar, quips and failed state with Try again are one copy on
+      # every platform. The quips travel with it for the host to rotate.
+      - path: ../core/ui/loading.html
+        buildPhase: resources
+      - path: ../core/ui/loading.js
+        buildPhase: resources
+      - path: ../core/spec/quips.json
         buildPhase: resources
       # Everything else the app needed as a value is bundled here too, one loader
       # for all of them: the feed paths and channel names, the notice tones and
