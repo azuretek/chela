@@ -43,7 +43,7 @@ export function nextPatch(base) {
 }
 
 /**
- * The version an untagged build should carry: `1.0.1-dev.<count>.<sha>`.
+ * The version an untagged build should carry: `0.0.1-dev.<count>.<sha>`.
  *
  * Three things have to be true at once, and each part earns its place.
  *
