@@ -829,6 +829,24 @@ a  { color: var(--accent); }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* ★ A gateway row's control column is a state pill plus three action buttons,
+   and that cluster is wider than upstream's cap on the control column at every
+   width a window narrower than the full modal gives the row. The cap did not
+   shrink the cluster, because a badge and a button label are nowrap: it clamped
+   the control's BOX, and the cluster spilled out of it toward the text column
+   (the control justifies its content to its END), straight across the row's own
+   gap. That is only SEEN where the address reaches that far: a long address
+   truncates to its column's edge and the pill sits on top of it with no gap,
+   while a short one leaves the empty tail of its column lying under the pill and
+   looks fine. Reported as the Zilla row running into the CONNECTED pill while the
+   row below kept its gap (issue #109). So the gateway control takes the width its
+   content needs and the text column gives up the rest, where the address
+   truncates by the deliberate one-line exception above; the row's own `gap`
+   owns the space between them at every width, and the row keeps one line until
+   the 601px query stacks it. Measured by desktop/scripts/test-settings-layout.js. */
+#gateways > .settings-group > .settings-row > .settings-row__control {
+  max-width: none;
+}
 /* A row that is a click target, so a checkbox row toggles from anywhere on it.
    `default` rather than `pointer` is upstream's choice and it is deliberate:
    the hover fill is what says the row is live. */
@@ -1652,13 +1670,15 @@ body:not(.frameless) .scrim { padding-top: 24px; }
 
 /* --------------------------------------------------------------- title strip */
 
-/* The Windows title bar the app draws for itself, above the page rather than
-   over it. Geometry arrives from src/chrome.js as --strip-* so the height has
-   one owner; the fallbacks here only have to hold for the first paint.
+/* The title bar the app draws for itself, above the page rather than over it.
+   Geometry arrives from src/chrome.js as --strip-* so the height has one owner;
+   the fallbacks here only have to hold for the first paint.
 
-   The whole strip drags. There is nothing to carve back out, it holds no
-   controls, and the caption buttons floating over its right end are the OS's,
-   not the page's, so `app-region` never reaches them. */
+   The strip is a drag surface, and the hairline along its bottom edge is the
+   only thing separating it from the page. Our own window controls (Windows
+   only; see --strip-controls) sit ON that hairline rather than over it, which is
+   what keeps the line unbroken to the corner: the OS caption buttons used to be
+   painted over the strip's right end and cut it short. */
 .strip-body {
   margin: 0;
   height: 100vh;
@@ -1672,10 +1692,10 @@ body:not(.frameless) .scrim { padding-top: 24px; }
   display: flex;
   align-items: center;
   height: var(--strip-height, 36px);
-  /* Keep the label clear of the window buttons at whichever end they are:
-     traffic lights on the left on macOS, caption buttons on the right on
-     Windows. Both come from src/chrome.js. */
-  padding-inline: var(--strip-pad-start, 12px) var(--strip-pad-end, 160px);
+  /* Clear the window buttons at whichever end they are: traffic lights on the
+     left on macOS (from src/chrome.js). On Windows our controls are a flex child,
+     and the label's own padding keeps the text off them. */
+  padding-inline: var(--strip-pad-start, 12px) 0;
   /* A hairline is the only thing separating strip from page; without it a
      light theme reads as one flat field and the window looks unfinished. */
   border-bottom: 1px solid var(--border);
@@ -1683,6 +1703,11 @@ body:not(.frameless) .scrim { padding-top: 24px; }
 }
 
 .strip__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Keep the text off the first control, and off the right edge on macOS where
+     there are no controls to reach. */
+  padding-inline-end: 12px;
   color: var(--muted);
   font: 500 calc(12px * var(--control-ui-text-scale))/1 var(--font-body);
   letter-spacing: .01em;
@@ -1693,6 +1718,69 @@ body:not(.frameless) .scrim { padding-top: 24px; }
      window by its title should not start a selection. */
   user-select: none;
 }
+
+/* The window controls (Windows only). Whether they exist at all is not decided
+   here: `display` comes from src/chrome.js as --strip-controls, so the strip has
+   one owner for it, exactly as it has one owner for its height. */
+.strip__controls {
+  display: var(--strip-controls, none);
+  align-self: stretch;
+  flex: 0 0 auto;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.strip__control {
+  width: 46px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* A button is only a control if the click reaches it: left in the drag region
+     it would move the window instead. */
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  transition: background-color .1s ease, color .1s ease;
+}
+
+.strip__control:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.strip__control:active {
+  background: var(--border);
+}
+
+.strip__control--close:hover {
+  background: var(--destructive);
+  color: var(--text-strong);
+}
+
+.strip__control svg {
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+
+.strip__control svg path,
+.strip__control svg rect {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+/* The one button that changes shape: a maximised window shows the restore glyph
+   (two overlapping squares), one that is not shows a single square. titlebar.js
+   sets data-maximized on the button from the window's own state. */
+.strip__control-restore { display: none; }
+.strip__control[data-maximized="true"] .strip__control-max { display: none; }
+.strip__control[data-maximized="true"] .strip__control-restore { display: block; }
 
 /* ------------------------------------------------------------------- motion */
 

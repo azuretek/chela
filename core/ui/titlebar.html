@@ -3,24 +3,37 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; style-src 'self';">
+        content="default-src 'none'; style-src 'self'; script-src 'self';">
   <title>Chela</title>
   <link rel="stylesheet" href="ui.css">
 </head>
 <!-- The title strip reserved above the page on Windows.
 
-     It carries no controls on purpose. Windows draws the real minimise,
-     maximise and close buttons over its right end (titleBarOverlay), painted in
-     the same surface colour, so the two read as one bar, and because they are
-     the OS's own buttons, snap layouts and the taskbar preview keep working,
-     and the window can never be made unclosable by a CSS mistake of ours.
+     It carries the app's own minimise, maximise and close controls on Windows,
+     drawn and wired by titlebar.js. They are ours rather than the platform's so
+     the hairline can run the full width: the OS caption buttons were painted
+     over the strip's bottom edge and cut the line short of the corner. macOS
+     keeps its traffic lights and draws no controls here.
 
-     So everything here is either a drag region or text, and the CSP forbids
-     script outright: the label is written in by the main process, which is the
-     only thing that knows which gateway is loaded. See createStrip in main.js. -->
+     Everything except the buttons is a drag region, and the label is written in
+     by the main process, the only thing that knows which gateway is loaded. See
+     createStrip in main.js. -->
 <body class="strip-body">
   <div class="strip">
     <span class="strip__label" id="label">Chela</span>
+    <div class="strip__controls">
+      <button type="button" class="strip__control" id="minimize" aria-label="Minimise" title="Minimise">
+        <svg viewBox="0 0 10 10" aria-hidden="true" focusable="false"><path d="M0 5h10"/></svg>
+      </button>
+      <button type="button" class="strip__control" id="maximize" aria-label="Maximise" title="Maximise">
+        <svg class="strip__control-max" viewBox="0 0 10 10" aria-hidden="true" focusable="false"><rect x="0.5" y="0.5" width="9" height="9"/></svg>
+        <svg class="strip__control-restore" viewBox="0 0 10 10" aria-hidden="true" focusable="false"><rect x="0.5" y="2.5" width="7" height="7"/><path d="M2.5 2.5V0.5h7v7h-2"/></svg>
+      </button>
+      <button type="button" class="strip__control strip__control--close" id="close" aria-label="Close" title="Close">
+        <svg viewBox="0 0 10 10" aria-hidden="true" focusable="false"><path d="M0 0l10 10M10 0L0 10"/></svg>
+      </button>
+    </div>
   </div>
+  <script src="titlebar.js" defer></script>
 </body>
 </html>
