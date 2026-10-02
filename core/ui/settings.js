@@ -1059,13 +1059,11 @@ function renderPrefs() {
   if (hasSetting('startHidden')) $('startHidden').checked = Boolean(s.startHidden);
   if (hasSetting('promptMetadata')) $('promptMetadata').checked = Boolean(s.promptMetadata);
   if (hasSetting('globalShortcut')) $('globalShortcut').value = s.globalShortcut || '';
-  // The icon select: the options are built once from the host's own list (see
-  // renderAppIconOptions), and this is the value that list is showing. The auto
-  // choice is the host's own string, never a literal here, so the value that
-  // means "follow the theme" has one owner.
-  if (hasSetting('appIcon') && $('appIcon')) {
-    $('appIcon').value = s.appIcon || ((state.iconChoices && state.iconChoices.auto) || '');
-  }
+  // The icon picker: the grid is built once from the host's own list (see
+  // renderAppIconOptions); this marks the chosen cell, from the same stored
+  // value. The auto choice is the host's own string, never a literal here, so
+  // the value that means "follow the theme" has one owner.
+  if (hasSetting('appIcon')) paintAppIconSelection();
 
   if (!hasSetting('autoUpdate')) return;
   // A build that could never install an update has nothing to switch on, so the
@@ -1080,21 +1078,76 @@ function renderPrefs() {
   }
 }
 
-// The app-icon options, built from the list the host hands over rather than
-// written into this file. core/app-icons.js owns the buckets and their names,
-// the desktop puts the ids, the names and the auto value in the state it already
-// sends, and this turns them into options: an icon set added upstream is offered
-// with no change here. Built once, because rebuilding a control under a hand
-// that is using it is the fault wirePreferences already exists to avoid.
+// The app-icon picker, built from the list the host hands over rather than
+// written into this file. core/app-icons.js owns the buckets, their names and
+// the colour that stands for each; the host sends ids, names and accents in its
+// state, and this draws one mark per bucket. Each mark is the same .chela-mark
+// the About page draws, recoloured by the shared rule from the bucket's own
+// --accent, so a bucket added upstream is offered with no change here and
+// nothing painted in this file. Built once, because rebuilding a control under a
+// hand that is using it is the fault wirePreferences already exists to avoid.
 function renderAppIconOptions() {
-  const select = $('appIcon');
+  const grid = $('appIcon-grid');
   const choices = state && state.iconChoices;
-  if (!select || !choices || !Array.isArray(choices.buckets)) return;
-  const options = [
-    el('option', { value: choices.auto, textContent: 'Theme (follow the accent)' }),
-    ...choices.buckets.map((b) => el('option', { value: b.id, textContent: b.name })),
+  if (!grid || !choices || !Array.isArray(choices.buckets)) return;
+  const cells = [
+    appIconCell(choices.auto, 'Theme (follow the accent)', null),
+    ...choices.buckets.map((b) => appIconCell(b.id, b.name, b.accent)),
   ];
-  select.replaceChildren(...options);
+  grid.replaceChildren(...cells);
+  // The host's own appearance first, so the set opens showing what the app is
+  // drawing now; the reader's toggle changes it from there and owns it after.
+  setAppIconPreviewMode(appIconPreviewMode || (choices.mode === 'light' ? 'light' : 'dark'));
+  paintAppIconSelection();
+}
+
+/** One cell of the picker: the bucket's mark, its name, and the commit it makes. */
+function appIconCell(id, label, accent) {
+  const mark = el('span', { className: 'chela-mark app-icon__mark' }, [
+    el('span', { className: 'chela-mark__neon' }),
+  ]);
+  // The colour that stands for the bucket. Absent for the auto cell, which draws
+  // the live theme accent exactly as the app's own surfaces do.
+  if (accent) mark.style.setProperty('--accent', accent);
+  const cell = el('button', { type: 'button', className: 'app-icon__cell' }, [
+    mark,
+    el('span', { className: 'app-icon__name', textContent: label }),
+  ]);
+  cell.dataset.id = id;
+  cell.setAttribute('role', 'radio');
+  // A press on the cell IS the reader's commit gesture, the same as a switch's
+  // flip: there is nothing else to press, and the host answers on its own push.
+  cell.addEventListener('click', () => void commitSetting('appIcon', id));
+  return cell;
+}
+
+/** Mark the cell the stored choice names, and only that one. */
+function paintAppIconSelection() {
+  const grid = $('appIcon-grid');
+  const choices = state && state.iconChoices;
+  if (!grid || !choices) return;
+  const chosen = (state.settings && state.settings.appIcon) || choices.auto;
+  for (const cell of grid.children) {
+    const on = Boolean(cell.dataset) && cell.dataset.id === chosen;
+    cell.setAttribute('aria-checked', on ? 'true' : 'false');
+    cell.className = on ? 'app-icon__cell is-selected' : 'app-icon__cell';
+  }
+}
+
+// The preview mode belongs to this picker alone. Forcing color-scheme on the
+// grid shows the icons in the chosen appearance whatever the app's theme is, and
+// a choice can be made in either mode; it is kept for the life of the page so
+// toggling back and forth does not reset on a re-render.
+let appIconPreviewMode = null;
+function setAppIconPreviewMode(mode) {
+  const grid = $('appIcon-grid');
+  if (!grid) return;
+  appIconPreviewMode = mode === 'light' ? 'light' : 'dark';
+  grid.className = `app-icon__grid app-icon__grid--${appIconPreviewMode}`;
+  for (const value of ['light', 'dark']) {
+    const button = $('appIcon-mode-' + value);
+    if (button) button.setAttribute('aria-pressed', value === appIconPreviewMode ? 'true' : 'false');
+  }
 }
 
 // The "looking for the gateway's own settings?" card, under every tab.
@@ -1644,12 +1697,14 @@ function wirePreferences() {
     });
   }
 
-  // The icon select. Choosing an option IS the reader's commit gesture, the same
-  // as a switch's flip, so there is nothing else to press: the host answers on
-  // its own push and the preview moves with it.
-  const iconSelect = $('appIcon');
-  if (iconSelect && hasSetting('appIcon')) {
-    iconSelect.addEventListener('change', () => void commitSetting('appIcon', iconSelect.value));
+  // The picker's light/dark toggle. Choosing a cell IS the reader's commit
+  // gesture, so the toggle only previews: it forces color-scheme on the grid and
+  // never touches the app's theme, and a choice can be made in either mode.
+  for (const mode of ['light', 'dark']) {
+    const button = $('appIcon-mode-' + mode);
+    if (button && hasSetting('appIcon')) {
+      button.addEventListener('click', () => setAppIconPreviewMode(mode));
+    }
   }
 
   // The shortcut is the one preference on this tab with nothing to show for
