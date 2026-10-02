@@ -819,6 +819,14 @@ struct ContentView: View {
 /// area itself (see `SettingsSurface`), so the sheet must not inset it a second
 /// time.
 ///
+/// `.presentationBackgroundInteraction(.enabled(upThrough: .large))` turns off the
+/// dim iOS draws behind the sheet, which is the only thing that modifier is here
+/// for. The band a large sheet leaves above itself is the interface's own top
+/// inset, painted with the palette's `--bg`, and under the platform's dim a dark
+/// palette read black there (#127). The interface is still dimmed and blurred to
+/// the shared value, by `SurfaceBackdropView`, which leaves that band alone. See
+/// `SurfaceBackdrop`.
+///
 /// The notice stack rides HERE rather than only on the page, and this is the
 /// second half of the stacking fix. A sheet is its own presentation layer: it is
 /// presented over the view that asked for it, so an overlay on that view is
@@ -872,6 +880,7 @@ private struct FullScreenSurfaceSheet<Surface: View>: ViewModifier {
             surface()
                 .ignoresSafeArea()
                 .presentationDetents([.large])
+                .presentationBackgroundInteraction(.enabled(upThrough: .large))
         }
     }
 }
