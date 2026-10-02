@@ -37,11 +37,22 @@ final class NoticeBannerUITests: XCTestCase {
     private var clearButtons: XCUIElementQuery { banner.matching(NSPredicate(format: "label == %@", "Clear")) }
 
 
+    // Each evaluation of `count` is a fresh accessibility snapshot of the app, and on
+    // the iOS 26 CI leg one snapshot of this hierarchy took 2 to 4.5 seconds, longer
+    // again when the banner's window was torn down mid-snapshot and XCTest retried it.
+    // A 5 second wait left room for one evaluation, so a banner that had cleared still
+    // failed the wait. 20 seconds admits several, and a banner that never clears fails
+    // the same way it always did.
+    private static let countTimeout: TimeInterval = 20
+
     private func waitForCount(_ query: XCUIElementQuery, _ expected: Int, _ message: String) {
         let predicate = NSPredicate(format: "count == %d", expected)
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: query)
-        XCTAssertEqual(XCTWaiter().wait(for: [expectation], timeout: 5), .completed,
-                       "\(message): expected \(expected), found \(query.count)")
+        let result = XCTWaiter().wait(for: [expectation], timeout: Self.countTimeout)
+        // Read after the wait has ended, so it is the count now, not the one the wait last saw.
+        XCTAssertEqual(result, .completed,
+                       "\(message): expected \(expected) within \(Int(Self.countTimeout))s, "
+                       + "and \(query.count) once the wait had ended")
     }
 
     func testTheXOnACardMarksItRead() {
