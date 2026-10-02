@@ -396,10 +396,19 @@ const EMPTY_PROBE = `(() => [...document.querySelectorAll('.settings-group.empty
     };
   }))()`;
 
-/** Open one tab the way a reader does, by pressing it. */
+/**
+ * Open one tab the way a reader does, by pressing it, and return once the
+ * panel's own motion has finished. A tab change slides and fades the panel in,
+ * and a screenshot taken on a timer caught it half-faded and mid-slide, so this
+ * waits on the page's animations themselves, then one frame for the paint.
+ */
 async function openTab(win, id) {
-  await win.webContents.executeJavaScript(`document.getElementById(${JSON.stringify(id)}).click()`);
-  await new Promise((r) => setTimeout(r, 400));
+  await win.webContents.executeJavaScript(`(async () => {
+    document.getElementById(${JSON.stringify(id)}).click();
+    await new Promise((r) => requestAnimationFrame(r));
+    await Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {})));
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  })()`);
 }
 
 let failed = false;
