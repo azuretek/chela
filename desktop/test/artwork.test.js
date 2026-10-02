@@ -8,9 +8,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { generatedFiles, appIcon, paperIcon, trayIcon, TILE } from '../scripts/artwork.mjs';
+import { generatedFiles, appIcon, paperIcon, trayIcon, trayTemplate, TILE } from '../scripts/artwork.mjs';
 import { existsSync } from 'node:fs';
-import { BUCKETS, iconFile, trayFile, palettesFor, choose } from '../../core/app-icons.js';
+import { inflateSync } from 'node:zlib';
+import { BUCKETS, iconFile, trayFile, palettesFor, choose, trayFor, trayIsTemplate, TRAY_TEMPLATE } from '../../core/app-icons.js';
 
 const repo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (p) => readFileSync(path.join(repo, p), 'utf8');
@@ -93,6 +94,96 @@ test('the tray follows the app icon\'s mode as well as its bucket', () => {
   assert.notEqual(dark.tray, light.tray, 'one tray icon for both modes cannot match both app icons');
   assert.equal(dark.tray, trayFile(dark.bucket, 'dark'));
   assert.equal(light.tray, trayFile(light.bucket, 'light'));
+});
+
+test('the macOS tray is a template image, and the Windows and Linux trays are not', () => {
+  // #139: macOS draws every menu-bar item as a one-colour glyph in the bar's own
+  // colour, and the coloured tile was the one item that did not follow it.
+  // Windows and Linux keep the coloured app icon, small (#114).
+  const coloured = choose('#ff5e62', 'dark').tray;
+  assert.deepEqual(trayFor('darwin', coloured), { file: TRAY_TEMPLATE, template: true });
+  for (const platform of ['win32', 'linux']) {
+    assert.deepEqual(trayFor(platform, coloured), { file: coloured, template: false }, platform);
+    assert.equal(trayIsTemplate(platform), false, platform);
+  }
+  assert.equal(trayIsTemplate('darwin'), true);
+  // The menu-bar glyph does not change with the icon choice or the theme (#132):
+  // a template carries no colour for either to change.
+  for (const bucket of BUCKETS) {
+    for (const mode of ['dark', 'light']) assert.equal(trayFor('darwin', trayFile(bucket, mode)).file, TRAY_TEMPLATE);
+  }
+  // Electron also reads a name ending in Template as a template image, so the
+  // file says what it is even where the flag is not set.
+  assert.match(TRAY_TEMPLATE, /Template\.png$/);
+});
+
+test('main.js sets the tray image and its template flag from trayFor, on every path', () => {
+  // The first image (trayImage) and every later swap (applyAppIcon) both draw
+  // from trayFor, and the flag comes from it too, so no path can put the
+  // coloured tile in the macOS menu bar or a template in the Windows tray.
+  const main = read('desktop/src/main.js');
+  const fn = (name) => {
+    const body = main.slice(main.indexOf(`function ${name}()`));
+    return body.slice(0, body.indexOf('\n}\n'));
+  };
+  for (const name of ['trayImage', 'applyAppIcon']) {
+    const body = fn(name);
+    assert.match(body, /appIcons\.trayFor\(process\.platform, /, name + ' does not ask trayFor what the tray draws');
+    assert.match(body, /setTemplateImage\(\w+\.template\)/, name + ' does not set the template flag from trayFor');
+  }
+  assert.doesNotMatch(main, /setTemplateImage\((true|false)\)/, 'a tray image has a hard-coded template flag again');
+});
+
+// The RGBA pixels of an 8-bit, non-interlaced RGBA PNG, which is what the icon
+// pipeline writes. Read here with zlib rather than sharp so the suite needs no
+// native image library.
+function pngPixels(file) {
+  const buf = readFileSync(file);
+  let at = 8, width = 0, height = 0;
+  const idat = [];
+  while (at < buf.length) {
+    const len = buf.readUInt32BE(at), type = buf.toString('latin1', at + 4, at + 8), data = buf.subarray(at + 8, at + 8 + len);
+    if (type === 'IHDR') {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      assert.deepEqual([data[8], data[9], data[12]], [8, 6, 0], `${file} is not 8-bit non-interlaced RGBA`);
+    } else if (type === 'IDAT') idat.push(data);
+    at += 12 + len;
+  }
+  const raw = inflateSync(Buffer.concat(idat)), stride = width * 4, px = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)], line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    for (let x = 0; x < stride; x++) {
+      const a = x >= 4 ? px[y * stride + x - 4] : 0, b = y ? px[(y - 1) * stride + x] : 0, c = x >= 4 && y ? px[(y - 1) * stride + x - 4] : 0;
+      const pred = [0, a, b, (a + b) >> 1, (() => { const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c); return pa <= pb && pa <= pc ? a : pb <= pc ? b : c; })()][filter];
+      px[y * stride + x] = (line[x] + pred) & 255;
+    }
+  }
+  return { width, height, px };
+}
+
+test('the menu-bar glyph is the claw in alpha alone, at 16 pt with its @2x', () => {
+  // macOS reads a template image's alpha and nothing else, so the glyph is black
+  // on transparent: any colour in it is a sign it was drawn as something else.
+  const svg = trayTemplate();
+  assert.doesNotMatch(svg, /<rect|Gradient|url\(/, 'the glyph has a tile or a gradient in it');
+  assert.deepEqual([...new Set(svg.match(/#[0-9a-fA-F]{3,8}\b/g))], ['#000000'], 'the glyph is drawn in more than one colour');
+  for (const [rel, size] of [[TRAY_TEMPLATE, 16], [TRAY_TEMPLATE.replace(/\.png$/, '@2x.png'), 32]]) {
+    const file = path.join(repo, 'desktop', 'src', 'assets', rel);
+    assert.ok(existsSync(file), `${file} is missing: run npm run icons`);
+    const { width, height, px } = pngPixels(file);
+    assert.deepEqual([width, height], [size, size], rel);
+    let covered = 0, opaque = 0;
+    for (let i = 0; i < px.length; i += 4) {
+      assert.deepEqual([px[i], px[i + 1], px[i + 2]], [0, 0, 0], `${rel} pixel ${i / 4} carries colour`);
+      if (px[i + 3]) covered++;
+      if (px[i + 3] === 255) opaque++;
+    }
+    // A claw, not an empty frame and not a filled square: measured 129 of 256
+    // and 452 of 1024 pixels covered when this was written.
+    assert.ok(covered > size * size * 0.25 && covered < size * size * 0.75, `${rel} covers ${covered} of ${size * size} pixels`);
+    assert.ok(opaque > 0, rel + ' has no solid pixel');
+  }
 });
 
 test('the paper icon carries the one edge hairline too', () => {

@@ -16,7 +16,9 @@
 // the floor and the hairline left out and the claw filled rather than lined,
 // because at that size those are under a pixel and turn to mush (#114).
 // Rendering one file at both sizes is what forces artwork to be timid at large
-// sizes and illegible at small ones.
+// sizes and illegible at small ones. The macOS menu-bar glyph (#139) is a third
+// drawing, artwork.mjs trayTemplate(): the same tray claw with no tile and no
+// colour, rasterised straight from the generator like the edge-to-edge icons.
 //
 // The outputs are COMMITTED to the repo on purpose: sharp is the only heavy
 // native dependency here, and baking the PNGs in keeps `npm start` and the
@@ -52,8 +54,8 @@ import sharp from 'sharp';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { generatedFiles, bucketIcons, bucketTrays, iosIconFile, iosAltIconFile, appIcon } from './artwork.mjs';
-import { iconFile, trayFile } from '../../core/app-icons.js';
+import { generatedFiles, bucketIcons, bucketTrays, iosIconFile, iosAltIconFile, appIcon, trayTemplate } from './artwork.mjs';
+import { iconFile, trayFile, TRAY_TEMPLATE } from '../../core/app-icons.js';
 import { WINDOWS_SIZES, WINDOW_SIZES, encodeIco, decodeIco } from './ico.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));   // desktop/
@@ -96,6 +98,12 @@ const targets = [
   { file: 'desktop/src/assets/icon-full.png', size: 512, svg: Buffer.from(appIcon({ full: true }), 'utf8'), treatment: 'canvas' },
   { file: 'desktop/src/assets/tray.png', size: 16, svg: artwork.tray, treatment: 'canvas' },
   { file: 'desktop/src/assets/tray@2x.png', size: 32, svg: artwork.tray, treatment: 'canvas' },
+  // The macOS menu-bar glyph (#139), a template image: the claw alone, black on
+  // transparent, which macOS recolours to the bar. 16 pt with its @2x, the size
+  // a menu-bar extra is drawn at. The `Template` suffix is Electron's own cue as
+  // well as the explicit setTemplateImage(true) in main.js.
+  { file: 'desktop/src/assets/' + TRAY_TEMPLATE, size: 16, svg: Buffer.from(trayTemplate(), 'utf8'), treatment: 'canvas' },
+  { file: 'desktop/src/assets/' + TRAY_TEMPLATE.replace(/\.png$/, '@2x.png'), size: 32, svg: Buffer.from(trayTemplate(), 'utf8'), treatment: 'canvas' },
 
   // The iOS app icon, one 1024x1024 entry that Xcode derives every size the app
   // needs from, so there is no AppIcon60x60@2x.png to keep in step with

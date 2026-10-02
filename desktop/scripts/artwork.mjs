@@ -202,9 +202,18 @@ function simplify(loop, tol) {
 
 const pathOf = (loops) => loops.map((l) => 'M' + l.map(([x, y]) => r2(x) + ' ' + r2(y)).join(' L') + 'Z').join(' ');
 
+// The smallest box round a set of loops, in artwork units.
+function bounds(loops) {
+  const xs = loops.flat().map(([x]) => x), ys = loops.flat().map(([, y]) => y);
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+}
+
 let cache = null;
 function outlines() {
-  cache ??= { icon: pathOf(trace(PLACEMENTS.icon)), tray: pathOf(trace(PLACEMENTS.tray)) };
+  if (!cache) {
+    const tray = trace(PLACEMENTS.tray);
+    cache = { icon: pathOf(trace(PLACEMENTS.icon)), tray: pathOf(tray), trayBounds: bounds(tray) };
+  }
   return cache;
 }
 
@@ -349,6 +358,38 @@ export function trayIcon({ mode = 'dark', palette = palettesFor(PRIMARY)[mode ==
     '</defs>' +
     tile('url(#tile)') +
     '<path d="' + claw + '" fill="url(#sunset)" transform="' + place + '"/>' +
+    '</svg>\n';
+}
+
+/**
+ * The macOS menu-bar glyph (#139): the tray placement's claw, filled, in one
+ * colour on transparent, as a template image.
+ *
+ * macOS draws a template image itself, from its alpha alone, in the menu bar's
+ * own colour: dark on a light bar, light on a dark one, dimmed when the bar is
+ * inactive and inverted under a highlight. Every other menu-bar item is drawn
+ * that way, and a coloured tile among them is the one item that does not follow
+ * the bar. So this carries no colour at all, only coverage: the claw is filled
+ * opaque black and everything else is transparent, and the colour channels are
+ * never read.
+ *
+ * It is the bare claw, not the tile trayIcon() draws. A silhouette of a tile is
+ * a featureless square, which is why the coloured tray is not a template; here
+ * the claw IS the silhouette, so it fills the frame. The viewBox is the claw's
+ * own bounds, squared and centred, with a unit of room so the antialiased edge
+ * is not clipped, because a menu-bar glyph is measured by what it draws and the
+ * tile's margin would only make the claw smaller than its neighbours.
+ *
+ * Windows and Linux keep trayIcon(): their trays are not one colour, and their
+ * own items carry colour (#114). core/app-icons.js trayFor() makes that split.
+ */
+export function trayTemplate() {
+  const { tray: claw, trayBounds: b } = outlines();
+  const side = Math.max(b.x1 - b.x0, b.y1 - b.y0) + 2;
+  const x = (b.x0 + b.x1 - side) / 2, y = (b.y0 + b.y1 - side) / 2;
+  return HEAD('macOS menu-bar template glyph') +
+    '<svg viewBox="' + [x, y, side, side].map(r2).join(' ') + '" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+    '<path d="' + claw + '" fill="#000000"/>' +
     '</svg>\n';
 }
 

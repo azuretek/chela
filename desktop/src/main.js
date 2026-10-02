@@ -453,7 +453,8 @@ function layoutViews() {
 // the choice from the accent alone, so a theme added upstream is followed with
 // no change here, and the iOS client makes the same choice from the same rule.
 // macOS shows the icon in the Dock; Windows and Linux show the window's own
-// icon, which is the taskbar's. The tray glyph follows the same bucket. The
+// icon, which is the taskbar's. The tray glyph follows the same bucket on
+// Windows and Linux; the macOS menu bar has one template glyph (#139). The
 // packaged icon is what the OS shows while the app is not running.
 let appliedIconFile = null;
 let appliedTrayFile = null;
@@ -479,14 +480,17 @@ function applyAppIcon() {
       else if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setIcon(img);
     }
   }
-  if (tray && !tray.isDestroyed() && choice.tray !== appliedTrayFile) {
-    const img = nativeImage.createFromPath(path.join(ASSETS, choice.tray));
+  // On macOS the tray is the menu-bar template glyph whatever the choice (#139),
+  // so trayFor hands back the same file every time and this sets it once.
+  const trayArt = appIcons.trayFor(process.platform, choice.tray);
+  if (tray && !tray.isDestroyed() && trayArt.file !== appliedTrayFile) {
+    const img = nativeImage.createFromPath(path.join(ASSETS, trayArt.file));
     if (img.isEmpty()) {
-      console.warn(`[chela-desktop] no themed tray glyph at ${choice.tray}; keeping the one showing`);
+      console.warn(`[chela-desktop] no themed tray glyph at ${trayArt.file}; keeping the one showing`);
     } else {
-      img.setTemplateImage(false);
+      img.setTemplateImage(trayArt.template);
       tray.setImage(img);
-      appliedTrayFile = choice.tray;
+      appliedTrayFile = trayArt.file;
     }
   }
   // The strip's mark is the same choice again, so the icon beside the session
@@ -520,12 +524,16 @@ function applyStripIcon(file) {
 }
 
 function trayImage() {
-  // Not a macOS template image. A template is drawn as a one-colour silhouette,
-  // and the tray shows the app icon itself, small, on its own tile (#114): a
-  // tile carries its own contrast on a light or a dark menu bar, and a
-  // silhouette of it would be a featureless square. So it keeps its colour.
-  const img = nativeImage.createFromPath(path.join(ASSETS, 'tray.png'));
-  img.setTemplateImage(false);
+  // macOS: a template image, the claw alone, which the system draws in the menu
+  // bar's own colour like every other item there (#139). The coloured tile it
+  // replaced was the one item in the bar that did not follow its light or dark
+  // appearance. Windows and Linux: the app icon itself, small, on its own tile
+  // (#114), which is not a template because a silhouette of a tile is a
+  // featureless square; applyAppIcon then swaps it for the live icon's.
+  // core/app-icons.js trayFor owns the split, the file and the flag together.
+  const art = appIcons.trayFor(process.platform, 'tray.png');
+  const img = nativeImage.createFromPath(path.join(ASSETS, art.file));
+  img.setTemplateImage(art.template);
   return img;
 }
 
