@@ -30,6 +30,7 @@ import path from 'node:path';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SPECS = path.join(HERE, '..', 'spec');
 const PROJECT = path.join(HERE, '..', '..', 'mobile', 'project.yml');
+const ANDROID_PROJECT = path.join(HERE, '..', '..', 'android', 'app', 'build.gradle.kts');
 
 // Still ported as constants, proven against the spec by a parity test. Nothing
 // is left here: every spec a client reads is bundled now, and this map stays as
@@ -63,6 +64,23 @@ const BUNDLED = {
   'tokens.json': 'read at runtime for the notice palettes, the card geometry, the type scale and the tone map',
   'updates.json': 'read at runtime for the check intervals; its action and outcome names are Swift enum raw values, which are compile-time',
   'upstream-reference.json': 'read at runtime by the reference page host',
+};
+
+// What the ANDROID app ships, and the authority it is checked against.
+//
+// The iOS list above is asserted against mobile/project.yml, which is the file
+// that knows there. Android's authority is the same question answered in the place
+// that knows it: the list in android/app/build.gradle.kts that the copy task reads,
+// so a spec added to the APK without a classification here fails, and a spec this
+// test calls bundled that the build does not copy fails too.
+//
+// Only what this client genuinely reads at runtime is here. naming.json is read by
+// Naming.kt, settings.json by HostBridge for its command vocabulary, and
+// tokens.json is imported by ui/motion.js so the page cannot paint without it.
+const ANDROID_BUNDLED = {
+  'naming.json': 'read at runtime for the product and client names',
+  'settings.json': 'read at runtime for the command vocabulary this client answers',
+  'tokens.json': 'imported by core/ui/motion.js, so the shared pages cannot paint without it',
 };
 
 // Read by nothing in this repo's clients.
@@ -119,5 +137,33 @@ test('a mirrored spec holds no program, so a mirror of it stays comparable', () 
       !/"hook"\s*:/.test(text),
       name + ' now holds a script, so it cannot be mirrored any more: move it to BUNDLED and ship it.',
     );
+  }
+});
+
+// What the Android build says it copies, read from the file that knows.
+function shippedByAndroid() {
+  const text = readFileSync(ANDROID_PROJECT, 'utf8');
+  const block = text.match(/val androidSpecs = listOf\(([\s\S]*?)\)/);
+  assert.ok(block, 'android/app/build.gradle.kts no longer declares androidSpecs, so this test has nothing to check against');
+  const found = new Set();
+  for (const line of block[1].split('\n')) {
+    const match = line.match(/^\s*"([a-z0-9-]+\.json)"/);
+    if (match) found.add(match[1]);
+  }
+  return found;
+}
+
+test('the Android client bundles exactly what it says, and the build is the authority', () => {
+  const shipped = shippedByAndroid();
+  // A test that silently checked nothing would pass, which is the failure this
+  // whole file exists to prevent, so an empty authority is a failure here.
+  assert.ok(shipped.size > 0, 'no spec was parsed out of androidSpecs, so this test would have held nothing');
+  assert.deepEqual(
+    [...shipped].sort(),
+    Object.keys(ANDROID_BUNDLED).sort(),
+    'android/app/build.gradle.kts and this test disagree about which specs the Android client reads at runtime',
+  );
+  for (const name of shipped) {
+    assert.ok(specNames().includes(name), name + ' is copied into the APK but is not a spec in core/spec');
   }
 });

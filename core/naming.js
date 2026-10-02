@@ -43,6 +43,7 @@ export const releasesUrl = `${repoUrl}/releases`;
  */
 export const desktop = spec.clients.desktop;
 export const mobile = spec.clients.mobile;
+export const android = spec.clients.android;
 
 /**
  * How a client names itself where a person and a machine both read it. The
@@ -52,6 +53,7 @@ export const mobile = spec.clients.mobile;
 export const clientLabel = {
   desktop: `${product} (${desktop.shorthand})`,
   mobile: `${product} (${mobile.shorthand})`,
+  android: `${product} (${android.shorthand})`,
 };
 
 /** Product names this one replaced, for the sweep in test/naming.test.js. */

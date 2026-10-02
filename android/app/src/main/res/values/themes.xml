@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The cover is drawn before any page exists, so it cannot read the design
+      tokens. The window background is transparent behind it and the cover itself
+      is white in MainActivity, matching the iOS loading cover rather than the
+      device theme, because a themed splash would flash a colour the design
+      language does not use.
+    -->
+    <style name="Theme.Chela" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+</resources>
