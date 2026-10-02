@@ -12,10 +12,9 @@ import XCTest
 /// test also reads the Control UI's own drawer backdrop out of an OpenClaw checkout
 /// when one is present, which a simulator test has no business reaching for.
 ///
-/// The second half is the arithmetic that is specific to iOS. The platform dims the
-/// presenter itself and will not say by how much, so the value this client paints is
-/// what is LEFT of the shared dim after the platform's share, not the shared value
-/// painted under it.
+/// There is no iOS arithmetic left to hold: the sheet is presented undimmed (#127),
+/// so the veil is the shared value as it is. That the band above the sheet stays the
+/// page's own colour is SheetBandUITests, on a simulator.
 final class SurfaceBackdropParityTests: XCTestCase {
     private func stylesheet() throws -> String {
         let url = try Fixtures.root().appendingPathComponent("core/ui/ui.css")
@@ -83,31 +82,4 @@ final class SurfaceBackdropParityTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(SurfaceBackdrop.scrimAlpha, 0.55,
                                     "the dim is too light to read as one")
     }
-
-    func testTheVeilCompositesToTheSharedValueOverThePlatformsOwnDim() {
-        let composite = 1 - (1 - SurfaceBackdrop.platformDimAlpha) * (1 - SurfaceBackdrop.ownAlpha)
-        XCTAssertEqual(composite, SurfaceBackdrop.scrimAlpha, accuracy: 0.0001,
-                       "the layer behind a sheet does not composite to the shared dim")
-        XCTAssertGreaterThan(SurfaceBackdrop.platformDimAlpha, 0,
-                             "the platform draws a dim behind a sheet, so its share is not zero")
-        XCTAssertGreaterThan(SurfaceBackdrop.ownAlpha, 0,
-                             "some of the dim has to be ours, or the shared value is not being reached here")
-    }
-
-    func testThePlatformsShareIsTakenOutRatherThanAddedTo() {
-        // Painting the shared value directly under the platform's dim would land darker
-        // than anything that was chosen. That is the whole reason this is arithmetic
-        // rather than a colour.
-        XCTAssertLessThan(SurfaceBackdrop.ownAlpha, SurfaceBackdrop.scrimAlpha,
-                          "the veil is not smaller than the shared dim")
-    }
-
-    func testAPlatformDimAlreadyAtTheSharedValueAsksForNoVeil() {
-        // The clamp, not the measurement: a future SDK whose own dim already reaches
-        // the shared value must ask for nothing rather than for a negative alpha.
-        let platform = SurfaceBackdrop.scrimAlpha
-        let remaining = (1 - SurfaceBackdrop.scrimAlpha) / (1 - platform)
-        XCTAssertEqual(1 - remaining, 0, accuracy: 0.0001)
-    }
 }
-

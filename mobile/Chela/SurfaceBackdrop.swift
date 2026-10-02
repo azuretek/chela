@@ -8,25 +8,33 @@ import UIKit
 /// A `backdrop-filter` samples only the document it is in. The interface this
 /// dims is a `WKWebView` in a layer of its own, so the page inside a native sheet
 /// has no backdrop to sample at all, and `core/ui/ui.css` leaves that page's scrim
-/// clear under `surface--native-sheet` for exactly that reason: the platform
-/// draws the dim instead. The blur therefore cannot come from the sheet's page,
+/// clear under `surface--native-sheet` for exactly that reason. The blur therefore cannot come from the sheet's page,
 /// and the layer that does the work has to be native and has to belong to the
 /// presenter. That is what this is: it is installed in the Control UI's own view,
 /// and the sheet is presented over it.
 ///
-/// ## Why the veil is not simply the shared value
+/// ## The dim is ours alone, and it stops at the band above the sheet
 ///
-/// iOS dims the presenter itself and the SDK publishes no way to set, clear or
-/// read that dim. Read on the iOS 27 SDK's SwiftUI interface:
-/// `presentationBackground` sets the sheet's OWN background, and
-/// `presentationBackgroundInteraction`, `presentationDetents`,
-/// `presentationCornerRadius`, `presentationContentInteraction`,
-/// `presentationSizing`, `presentationDragIndicator`,
-/// `presentationCompactAdaptation` and `presentationPlacement` none of them
-/// touch the dim behind the sheet. So the platform's dim is a fixed term that is
-/// always under ours, and painting the shared value on top of it would land
-/// somewhere nobody chose. Ours is solved against it, so the COMPOSITE over the
-/// interface is the shared value.
+/// iOS draws a dim of its own behind a sheet, over the whole presenter, and the
+/// strip a large sheet leaves uncovered is where it showed: the band above the
+/// sheet is the interface's own top inset, which the page paints with its `--bg`,
+/// so under the platform's dim and this layer's veil a dark palette read as black
+/// there. Reported 2026-10-02 (#127): the band must be the palette's `--bg`, the
+/// same colour as the background behind the page.
+///
+/// Two things make it so, one per layer over that band:
+///
+/// 1. **The platform's dim is switched off.** `FullScreenSurfaceSheet` sets
+///    `presentationBackgroundInteraction(.enabled(upThrough: .large))`, which is
+///    the sheet's largest undimmed detent: at or below it iOS draws no dim behind
+///    the sheet. An earlier reading of the SDK interface (#106) listed this
+///    modifier among those that do not touch the dim; measured, it removes it, and
+///    the band read the strip's own colour once it was set.
+/// 2. **This layer starts below the top safe-area inset**, so the veil and the blur
+///    cover the interface and leave the band to the page.
+///
+/// With the platform's share gone, the shared value is painted as it is, rather
+/// than solved against a dim nobody chose.
 enum SurfaceBackdrop {
     /// ★ The dim behind a sheet, over the interface: black at 60%.
     ///
@@ -39,67 +47,85 @@ enum SurfaceBackdrop {
     /// so there is nothing at runtime to read it from. `SurfaceBackdropParityTests`
     /// reads that declaration out of ui.css and fails if this drifts from it.
     static let scrimAlpha: Double = 0.60
-
-    /// The dim iOS already draws behind a sheet of its own, as a black veil's
-    /// alpha, measured rather than assumed.
-    ///
-    /// Measured 2026-10-01 on an iPhone 17 simulator at iOS 27.0, by photographing
-    /// a flat #808080 field behind a presented sheet and dividing: the field read
-    /// 0.522 against the same pixels with no sheet up, so the platform contributes the
-    /// other 0.478. Read from two places in one frame, which is why it is worth
-    /// stating as a number: the app's own strip above the sheet (128 to 66) and the
-    /// sliver of interface the sheet's rounded corners leave at the screen edges (255
-    /// to 133), both at the same factor. The measurement is the METHOD rather than a
-    /// constant worth trusting: it is a fact about this SDK's presentation, so a run
-    /// that measures a different number is reporting a real change in the platform,
-    /// which is what `SurfacesHandoffUITests` is for.
-    static let platformDimAlpha: Double = 0.478
-
-    /// The veil this layer paints, so the composite over the interface is
-    /// `scrimAlpha` rather than that value stacked on the platform's.
-    ///
-    /// Two veils over one pixel multiply what they let through, so the composite
-    /// is `1 - (1 - platformDimAlpha) * (1 - ownAlpha)` and this is that solved
-    /// for `scrimAlpha`. Painting `scrimAlpha` directly would composite to
-    /// `1 - (1 - platformDimAlpha) * (1 - scrimAlpha)`, which is darker than
-    /// anything that was chosen. Clamped, because a platform dim strong enough to
-    /// reach `scrimAlpha` on its own would otherwise ask for a negative veil.
-    static var ownAlpha: Double {
-        guard platformDimAlpha < scrimAlpha else { return 0 }
-        let remaining = (1 - scrimAlpha) / (1 - platformDimAlpha)
-        return min(1, max(0, 1 - remaining))
-    }
 }
 
 /// The blur plus the veil, as one view: what `ContentView` lays over the Control
 /// UI while a surface is up.
 ///
-/// `allowsHitTesting(false)` because this is a veil and not a control: the reader
-/// has nothing to touch here, and a layer that swallowed taps would make the
-/// screen behind a sheet feel frozen in the one place it is still alive.
-///
 /// The blur is a `UIVisualEffectView` rather than a SwiftUI `Material` for one
 /// reason: this has to blur a `UIView`-hosted web view that is a sibling in the
 /// same window, and the effect view samples its window's backdrop directly, which
-/// is the behaviour this depends on. Nothing picks the radius: iOS publishes blur
-/// styles and no radius, so the desktop's `blur(14px)` has no iOS counterpart and
-/// this is the platform's own thin material instead of a number invented here.
+/// is the behaviour this depends on.
+///
+/// It is laid over the whole presenter and its veil and blur start at the top
+/// safe-area inset, so the band above the sheet is the page's own `--bg` (see
+/// above). The inset is read from the window, by `BandClearingBackdrop`, because
+/// this layer rides on a page laid out edge to edge (`ignoresSafeArea`), and a
+/// SwiftUI child of that page sees no safe area to stop at: told to keep its top
+/// edge, it covered the band anyway (measured on the simulator, #127).
+///
+/// `allowsHitTesting(false)` because this is a veil and not a control. With the
+/// platform's dim off, nothing outside the sheet reaches the interface either:
+/// the sliver at the sheet's rounded corners is still inside the sheet's own
+/// frame, and the band is the status bar's. `SheetBandUITests` taps both and
+/// checks the page behind received nothing.
 struct SurfaceBackdropView: View {
     var body: some View {
-        SurfaceBackdropBlur()
-            .overlay(Color.black.opacity(SurfaceBackdrop.ownAlpha))
+        SurfaceBackdropLayer()
+            .ignoresSafeArea()
             .allowsHitTesting(false)
     }
 }
 
-/// `UIVisualEffectView`, wrapped. See `SurfaceBackdropView` for why.
-private struct SurfaceBackdropBlur: UIViewRepresentable {
-    func makeUIView(context: Context) -> UIVisualEffectView {
-        let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
-        view.isUserInteractionEnabled = false
-        return view
-    }
-
-    func updateUIView(_ view: UIVisualEffectView, context: Context) {}
+/// `BandClearingBackdrop`, wrapped. See `SurfaceBackdropView` for why.
+private struct SurfaceBackdropLayer: UIViewRepresentable {
+    func makeUIView(context: Context) -> BandClearingBackdrop { BandClearingBackdrop() }
+    func updateUIView(_ view: BandClearingBackdrop, context: Context) { view.setNeedsLayout() }
 }
 
+/// The platform's thin material and the shared veil over it, laid out from the
+/// window's top safe-area inset down. Nothing picks the radius: iOS publishes blur
+/// styles and no radius, so the desktop's `blur(14px)` has no iOS counterpart and
+/// this is the platform's own material instead of a number invented here.
+final class BandClearingBackdrop: UIView {
+    private let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+    private let veil = UIView()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        backgroundColor = .clear
+        veil.backgroundColor = UIColor.black.withAlphaComponent(SurfaceBackdrop.scrimAlpha)
+        addSubview(blur)
+        addSubview(veil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    /// How far down this view the band reaches: the window's top inset, less
+    /// however far below the window's top this view already starts.
+    var bandHeight: CGFloat {
+        let top = WebView.windowSafeAreaInsets(for: self).top
+        let origin = window.map { convert(CGPoint.zero, to: $0).y } ?? 0
+        return max(0, min(bounds.height, top - origin))
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let band = bandHeight
+        let covered = CGRect(x: 0, y: band, width: bounds.width, height: bounds.height - band)
+        blur.frame = covered
+        veil.frame = covered
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        setNeedsLayout()
+    }
+
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        setNeedsLayout()
+    }
+}

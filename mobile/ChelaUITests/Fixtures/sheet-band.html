@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Sheet band fixture</title>
+<!--
+  A stand-in for the Control UI for SheetBandUITests: one flat --bg per
+  appearance, so the strip the app paints around the page, and the band a sheet
+  leaves above itself, are one known colour. The palette follows the device's
+  appearance, the way the Control UI's does with its theme left on system.
+
+  Two query parameters stand in for the reader changing the theme:
+  ?theme=second starts on the second theme, and ?flip=N starts on the first and
+  moves to the second after N seconds, so the change lands while a sheet is up.
+  It also counts the touches it receives ("Taps N"), so a test can tell
+  whether the interface behind a sheet is live. Nothing here talks to a
+  gateway.
+-->
+<style>
+  :root { --bg: #f2ede4; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1d2230; } }
+  :root[data-theme="second"] { --bg: #e3eef2; }
+  @media (prefers-color-scheme: dark) { :root[data-theme="second"] { --bg: #302024; } }
+  html, body { margin: 0; height: 100%; background: var(--bg); }
+  p { font: 16px -apple-system; color: #888; margin: 40px 16px; }
+</style>
+</head>
+<body>
+  <p>Fixture ready</p>
+  <p id="taps">Taps 0</p>
+  <script>
+    var query = new URLSearchParams(location.search);
+    if (query.get('theme') === 'second') document.documentElement.setAttribute('data-theme', 'second');
+    // Every touch the page itself receives, so a test can tell whether the
+    // interface behind a sheet is live.
+    var taps = 0;
+    document.addEventListener('pointerdown', function () {
+      taps += 1;
+      document.getElementById('taps').textContent = 'Taps ' + taps;
+    }, true);
+    var flip = Number(query.get('flip'));
+    if (flip > 0) setTimeout(function () { document.documentElement.setAttribute('data-theme', 'second'); }, flip * 1000);
+  </script>
+</body>
+</html>
