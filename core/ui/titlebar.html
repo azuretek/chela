@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; style-src 'self'; script-src 'self';">
+        content="default-src 'none'; style-src 'self'; script-src 'self'; img-src data:;">
   <title>Chela</title>
   <link rel="stylesheet" href="ui.css">
 </head>
@@ -15,11 +15,14 @@
      over the strip's bottom edge and cut the line short of the corner. macOS
      keeps its traffic lights and draws no controls here.
 
-     Everything except the buttons is a drag region, and the label is written in
-     by the main process, the only thing that knows which gateway is loaded. See
-     createStrip in main.js. -->
+     Everything except the buttons and the app icon is a drag region, and the
+     label is written in by the main process, the only thing that knows which
+     gateway is loaded. The icon beside it is the app's own, handed in by the main
+     process as a data URL (hence img-src data:) and hidden until it arrives; a
+     right click on it opens the tray's menu. See createStrip in main.js. -->
 <body class="strip-body">
   <div class="strip">
+    <img class="strip__icon" id="icon" alt="" hidden draggable="false">
     <span class="strip__label" id="label">Chela</span>
     <div class="strip__controls">
       <button type="button" class="strip__control" id="minimize" aria-label="Minimise" title="Minimise">

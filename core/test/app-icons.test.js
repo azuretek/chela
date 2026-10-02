@@ -120,3 +120,44 @@ test('Windows swaps its live icon as an .ico, every other platform as a PNG', as
   assert.equal(choose(null, 'light', { full: true, ico: true }).file, 'icons/' + PRIMARY.id + '-light.ico');
   assert.equal(choose(null, 'light', { full: true }).file, 'icons/' + PRIMARY.id + '-light-full.png');
 });
+
+test('every bucket carries the name a reader picks it by, and no two share one', async () => {
+  const { BUCKETS, HUE_NAMES, STEPS, spec } = await import('../app-icons.js');
+  assert.equal(HUE_NAMES.length, STEPS, 'the hue-name list and STEPS have drifted apart');
+  const names = BUCKETS.map((b) => b.name);
+  assert.equal(names.length, STEPS + 1, 'the name list no longer covers every bucket');
+  for (const name of names) assert.ok(typeof name === 'string' && name.trim().length > 0, 'a bucket has no name');
+  assert.equal(new Set(names).size, names.length, 'two buckets share a name');
+  // And the generated spec carries them, so the one owner writes them out.
+  for (const b of spec().buckets) assert.ok(typeof b.name === 'string' && b.name.length > 0, b.id + ' has no name in the spec');
+});
+
+test('a stored choice resolves to its bucket or the accent, and anything unknown reads as auto', async () => {
+  const { AUTO, normalizeChoice, isManualChoice, bucketForChoice, bucketFor, BUCKETS } = await import('../app-icons.js');
+  assert.equal(AUTO, 'theme');
+  assert.equal(normalizeChoice(AUTO), AUTO);
+  assert.equal(normalizeChoice(undefined), AUTO);
+  assert.equal(normalizeChoice(null), AUTO);
+  assert.equal(normalizeChoice('nonsense'), AUTO, 'an unknown value must read as auto, not as an accidental bucket');
+
+  const pick = BUCKETS[3];
+  assert.equal(normalizeChoice(pick.id), pick.id);
+  assert.equal(isManualChoice(pick.id), true);
+  assert.equal(isManualChoice(AUTO), false);
+  assert.equal(isManualChoice('nonsense'), false);
+
+  assert.equal(bucketForChoice(pick.id, '#808080'), pick, 'a manual choice must not fall back to the accent');
+  assert.equal(bucketForChoice(AUTO, '#e77686'), bucketFor('#e77686'));
+  assert.equal(bucketForChoice('nonsense', '#e77686'), bucketFor('#e77686'));
+});
+
+test('the colour that stands for a bucket maps straight back to it, for the in-app mark', async () => {
+  const { BUCKETS, accentFor, bucketFor, lch, NEUTRAL } = await import('../app-icons.js');
+  for (const b of BUCKETS) {
+    const accent = accentFor(b);
+    assert.equal(bucketFor(accent).id, b.id, b.id + ': accentFor does not round-trip through bucketFor');
+    const { C, h } = lch(accent);
+    if (b.hue === null) assert.ok(C < NEUTRAL.chroma, b.id + ': the neutral accent has real colour (' + C + ')');
+    else assert.ok(hueGap(h, b.hue) < 1, b.id + ': the accent is not on the bucket hue');
+  }
+});
