@@ -4,6 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import defaults from './defaults.js';
 import * as model from '../../core/config-model.js';
+import * as appIcons from '../../core/app-icons.js';
 
 // Desktop's config file: the persistence around the shared config model.
 //
@@ -45,18 +46,27 @@ export function setUserDataDir(dir) {
 }
 
 function blank() {
-  return model.blank({
-    suggestedGateways: defaults.suggestedGateways,
-    uuid: () => crypto.randomUUID(),
-    window: {
-      width: defaults.windowDefaults.width,
-      height: defaults.windowDefaults.height,
-      x: null,
-      y: null,
-      maximized: false,
-    },
-    globalShortcut: defaults.globalShortcut,
-  });
+  return {
+    ...model.blank({
+      suggestedGateways: defaults.suggestedGateways,
+      uuid: () => crypto.randomUUID(),
+      window: {
+        width: defaults.windowDefaults.width,
+        height: defaults.windowDefaults.height,
+        x: null,
+        y: null,
+        maximized: false,
+      },
+      globalShortcut: defaults.globalShortcut,
+    }),
+    // The app icon to draw: a bucket id, or appIcons.AUTO to follow the accent.
+    // Added here rather than in the shared model because it is desktop-only for
+    // now: the phone has no equivalent, so its config carries no such key and
+    // nothing there reads one. The shared model owns the shape both clients DO
+    // have; this is the desktop's own preference, beside the window bounds and
+    // the global shortcut. core/app-icons.js owns the values it may hold.
+    appIcon: appIcons.AUTO,
+  };
 }
 
 function read() {

@@ -8,9 +8,15 @@
 // no single commit to claim. It says so instead of guessing.
 
 import fs from 'node:fs';
-import { product } from '../../core/naming.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+// What a version IS and how its release reads are core's to decide; this module
+// only formats the stamp for a person. `channelOf` is the one owner of which
+// prerelease identifier is the channel, so the version a reader sees reads its
+// channel through the same function the update check does.
+import { parse, format } from '../../core/version.js';
+import { channelOf } from '../../core/updates.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -19,7 +25,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 // string's whole job is to identify one build unambiguously.
 export const SHORT_LENGTH = 10;
 
-const UNKNOWN = { commit: null, shortCommit: null, branch: null, dirty: false, builtAt: null };
+const UNKNOWN = { commit: null, shortCommit: null, branch: null, dirty: false, count: null, builtAt: null };
 
 /**
  * Coerce whatever was on disk into the shape the rest of the app expects.
@@ -29,7 +35,7 @@ const UNKNOWN = { commit: null, shortCommit: null, branch: null, dirty: false, b
  * settings page down with it.
  *
  * @param {unknown} raw
- * @returns {{commit: string|null, shortCommit: string|null, branch: string|null, dirty: boolean, builtAt: string|null}}
+ * @returns {{commit: string|null, shortCommit: string|null, branch: string|null, dirty: boolean, count: number|null, builtAt: string|null}}
  */
 export function normalize(raw) {
   if (!raw || typeof raw !== 'object') return { ...UNKNOWN };
@@ -43,6 +49,10 @@ export function normalize(raw) {
     shortCommit: commit ? commit.slice(0, SHORT_LENGTH) : null,
     branch: typeof raw.branch === 'string' && raw.branch ? raw.branch : null,
     dirty: raw.dirty === true,
+    // The build number, a positive integer or nothing. A string, a zero or a
+    // fraction is a truncated or hand-edited stamp, and a build number that
+    // lies about which build this is would be worse than one that is absent.
+    count: Number.isInteger(raw.count) && raw.count > 0 ? raw.count : null,
     builtAt: typeof raw.builtAt === 'string' && raw.builtAt ? raw.builtAt : null,
   };
 }
@@ -67,29 +77,74 @@ export function formatBuiltAt(builtAt) {
 }
 
 /**
- * The one-line identity shown in Settings.
+ * The version a person reads: the release and its channel, with the build and
+ * commit tail removed.
  *
- * Reads as a parenthetical after the version, which is the part people quote:
+ *   `0.0.1-dev.383.59f34d85a8` -> `0.0.1-dev`
+ *   `1.0.1`                    -> `1.0.1`
  *
- *   1.0.0 (a1b2c3d4e5, built 2026-09-02 08:41Z)
- *   1.0.0 (fix-clicks a1b2c3d4e5, built 2026-09-02 08:41Z)
- *   1.0.0 (a1b2c3d4e5-dirty, built 2026-09-02 08:41Z)
- *   1.0.0 (source build)
+ * The full string is the BUILD version, and it has to stay whole. It is what
+ * electron-builder stamps as `app.getVersion()`, what `artifactName`
+ * interpolates into every installer filename, and what the update check ranks;
+ * the count is what makes one dev build order above the next and the sha is
+ * what names the exact code, so neither can be dropped without losing ordering
+ * or an installer's identity. See scripts/version.js for that argument in full.
  *
- * The branch is shown only when it is not `main`, because on `main` it is noise
- * and off it, it is the single most useful thing on the line.
+ * What a person READS is the front of it: the release and its channel. The
+ * count and the commit are shown on About as rows of their own (see
+ * `identityFields`) instead of being welded into the version here.
  *
- * @param {string} version
- * @param {ReturnType<typeof normalize>} info
+ * The first prerelease identifier is the channel -- `channelOf` reads the same
+ * one -- so it stays: `-dev` is what tells a reader, and the client-context
+ * block, that this is not a stable build. An unreadable string is returned
+ * unchanged rather than dressed up as a version, since inventing one for
+ * something that is not a version would be worse than showing what arrived.
+ *
+ * @param {string} version  the build version, from app.getVersion()
  */
-export function describe(version, info) {
+export function readableVersion(version) {
+  const parsed = parse(version);
+  if (!parsed) return version == null ? '' : String(version);
+  return format({
+    major: parsed.major,
+    minor: parsed.minor,
+    patch: parsed.patch,
+    prerelease: channelOf(version),
+  });
+}
+
+/**
+ * The build's identity as About's own rows: which commit, how many commits in,
+ * when it was built, and the branch when it is not `main`.
+ *
+ * A `{ label, value }` per row, the shape the shared page draws, so the host
+ * hands them straight over and the page keeps holding no formatting of its own.
+ * This is where the count and the commit live now that the version string does
+ * not carry them.
+ *
+ * Nothing is invented for a field the stamp does not have: a source run (no
+ * stamp at all) has no commit to claim, so it shows no rows, and a shallow
+ * checkout with no count shows a commit row without a build row. That honesty
+ * is the point of the stamp rather than a gap in it.
+ *
+ * The branch is named only when it is not `main`, because on `main` it is noise
+ * and off it, it is the single most useful thing on the row.
+ *
+ * @param {ReturnType<typeof normalize>} info
+ * @returns {Array<{label: string, value: string}>}
+ */
+export function identityFields(info) {
   const stamp = normalize(info);
-  if (!stamp.shortCommit) return `${version} (source build)`;
+  if (!stamp.commit) return [];
 
   const sha = stamp.dirty ? `${stamp.shortCommit}-dirty` : stamp.shortCommit;
-  const named = stamp.branch && stamp.branch !== 'main' ? `${stamp.branch} ${sha}` : sha;
   const built = formatBuiltAt(stamp.builtAt);
-  return `${version} (${named}${built ? `, built ${built}` : ''})`;
+  return [
+    { label: 'Commit', value: sha },
+    ...(stamp.count ? [{ label: 'Build', value: String(stamp.count) }] : []),
+    ...(built ? [{ label: 'Built', value: built }] : []),
+    ...(stamp.branch && stamp.branch !== 'main' ? [{ label: 'Branch', value: stamp.branch }] : []),
+  ];
 }
 
 /**
@@ -103,47 +158,4 @@ export function describe(version, info) {
 export function buildId(info) {
   const stamp = normalize(info);
   return stamp.commit && !stamp.dirty ? stamp.commit : null;
-}
-
-/**
- * The platform name a person would use, from process.platform.
- *
- * `darwin` and `win32` are what the runtime calls the two platforms and what
- * nobody else calls them. About is read by whoever is filing the bug report.
- */
-const PLATFORM_NAMES = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
-
-/**
- * The About dialog's contents.
- *
- * Every line is something someone gets asked for when reporting a problem, and
- * none of it is something they could look up: the version and commit identify
- * the build exactly, the update line says what this build does about new
- * versions and when it last looked, and the runtime versions are what a
- * rendering bug is usually blamed on.
- *
- * Formatted here rather than handed to Electron's own `role: 'about'` panel,
- * which shows a fixed name/version/copyright and has no room for any of it,
- * nor for the buttons an About box is opened for. See showAbout() in main.js.
- *
- * Pure, so the wording is testable without launching Electron, the same split
- * as describe() above.
- *
- * @param {object} opts
- * @param {string} opts.version
- * @param {ReturnType<typeof normalize>} opts.info
- * @param {string} [opts.updateStatus]  one line from updates.statusLine()
- * @param {string} [opts.electron]
- * @param {string} [opts.chrome]
- * @param {string} [opts.platform]
- * @param {string} [opts.arch]
- */
-export function about({ version, info, updateStatus, electron, chrome, platform, arch }) {
-  const detail = [
-    describe(version, info),
-    ...(updateStatus ? [updateStatus] : []),
-    ...(electron ? [`Electron ${electron}, Chromium ${chrome}`] : []),
-    ...(platform ? [`${PLATFORM_NAMES[platform] || platform} ${arch}`] : []),
-  ].join('\n');
-  return { message: product, detail };
 }
