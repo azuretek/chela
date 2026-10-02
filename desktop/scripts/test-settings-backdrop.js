@@ -12,16 +12,21 @@
 // went from the interface straight to the light fallback and then to the dark
 // page colour, and never showed through again while the sheet was up.
 //
-// The dim is now the Control UI's own mobile nav drawer backdrop, black at 44%,
-// so the interface stays visible and darkens the way it does when its own drawer
-// opens (core/ui/ui.css, --scrim; the stylesheet guard is core/test/backdrop.test.js).
+// The dim is a value of ours now. It began as the Control UI own mobile nav drawer
+// backdrop, black at 44%, and it is black at 60% since 2026-10-01, when Abi asked
+// for it darker and blurred (core/ui/ui.css, --scrim; the stylesheet guard is
+// core/test/backdrop.test.js). The BLUR is deliberately not measured here: it is a
+// layer the desktop host injects into the Control UI view, and this harness loads
+// the pages with a stub host rather than through the app own main process. It is
+// proven by desktop/test/settings-backdrop.test.js reading the host, and seen in
+// the shots the harness writes.
 //
 // WHAT IS MEASURED. A stub gateway page paints a column of one known colour down
 // its left edge, inside the scrim's own padding where no card ever sits. Every
 // frame of the window is sampled there, through each transition:
 //
-//   1. At rest under Settings the column reads the drawer dim over the column's
-//      colour, and not the page colour mixed in.
+//   1. At rest under Settings the column reads the dim over the column's colour,
+//      and not the page colour mixed in.
 //   2. Through the arrival and the departure every frame lies on the straight line
 //      from the bare column to the dimmed one: the backdrop only darkens and
 //      lightens, and never moves toward another colour, which is what the wash
@@ -53,8 +58,8 @@ const NEWLINE = String.fromCharCode(10);
 
 /** The column's colour, chosen to be far from both palettes' page colour. */
 const COLUMN = [255, 92, 92];
-/** The drawer backdrop's alpha (upstream .shell-nav-backdrop, rgb(0 0 0 / 44%)). */
-const DIM_ALPHA = 0.44;
+/** The dim's alpha (core/ui/ui.css --scrim, black at 60% since 2026-10-01). */
+const DIM_ALPHA = 0.6;
 const DIMMED = COLUMN.map((c) => Math.round(c * (1 - DIM_ALPHA)));
 /** How far a sample may sit from where it should be, per channel, for encoding noise. */
 const TOLERANCE = 8;
@@ -331,7 +336,7 @@ app.whenReady().then(async () => {
   const underSettings = await still('backdrop-settings', (rgb) => far(rgb, bare) > TOLERANCE);
   check('under Settings the interface is dimmed, not washed into the page colour',
     far(underSettings, DIMMED) <= TOLERANCE,
-    'the column reads rgb(' + underSettings.join(' ') + '); the drawer dim over it is rgb(' + DIMMED.join(' ') + ')');
+    'the column reads rgb(' + underSettings.join(' ') + '); the dim over it is rgb(' + DIMMED.join(' ') + ')');
   const strayIn = arrival.filter((f) => offLine(f.rgb, bare, DIMMED) > TOLERANCE);
   check('every frame of the arrival only darkens the interface toward the dim', strayIn.length === 0,
     strayIn.slice(0, 4).map((f) => f.rel + 'ms rgb(' + f.rgb.join(' ') + ')').join(', ') + ' left the line from the bare interface to the dim');
