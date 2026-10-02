@@ -457,6 +457,7 @@ function layoutViews() {
 // packaged icon is what the OS shows while the app is not running.
 let appliedIconFile = null;
 let appliedTrayFile = null;
+let appliedStripIconFile = null;
 function applyAppIcon() {
   // The reader's own choice, or the theme's accent-driven one, resolved in ONE
   // place (bucketForChoice, core/app-icons.js) and used for the window, the Dock
@@ -488,6 +489,34 @@ function applyAppIcon() {
       appliedTrayFile = choice.tray;
     }
   }
+  // The strip's mark is the same choice again, so the icon beside the session
+  // title is always the one in the Dock or taskbar. Always the edge-to-edge
+  // rendition: the strip draws it at a glyph's size, where the Dock's margin
+  // would only make it smaller than the label beside it.
+  applyStripIcon(appIcons.iconFile(choice.bucket, choice.mode, { full: true }));
+}
+
+/**
+ * Draw the app icon at the start of the title strip, beside the session title.
+ *
+ * Handed over as a data URL, rather than pointed at by path, because the strip
+ * is a sandboxed file:// page whose CSP admits images only as `data:`, and the
+ * assets directory is not beside it in a packaged build. Resized once here to
+ * twice the size the strip draws it at, so the page never decodes a 1024 px
+ * PNG for a 16 px mark. A no-op until the strip has loaded; createStrip
+ * applies it then.
+ */
+function applyStripIcon(file) {
+  const wc = stripView && !stripView.webContents.isDestroyed() ? stripView.webContents : null;
+  if (!wc || wc.isLoading() || file === appliedStripIconFile) return;
+  const img = nativeImage.createFromPath(path.join(ASSETS, file));
+  if (img.isEmpty()) {
+    console.warn(`[chela-desktop] no themed icon at ${file} for the title strip; keeping the one showing`);
+    return;
+  }
+  const url = img.resize({ width: chrome.STRIP_ICON_PX * 2, height: chrome.STRIP_ICON_PX * 2, quality: 'best' }).toDataURL();
+  appliedStripIconFile = file;
+  wc.executeJavaScript(chrome.stripIconScript(url), true).catch(() => { appliedStripIconFile = null; });
 }
 
 function trayImage() {
@@ -1630,6 +1659,11 @@ function attachContextMenu(wc) {
  * the window. macOS keeps its traffic lights and takes no preload, there is
  * nothing on the strip to press. The label is still written in from here, the
  * one place that knows which session is loaded.
+ *
+ * The app icon sits at the strip's start, beside the label (applyStripIcon), and
+ * a right click on it opens the tray's menu (onStripContextMenu). That needs no
+ * preload either: the strip's own context-menu event carries the point, and the
+ * page answers whether the icon is under it.
  */
 function createStrip() {
   if (chrome.contentInset().top === 0) return null;
@@ -1645,8 +1679,35 @@ function createStrip() {
     applyThemeCss(wc);
     // A window that opened maximised needs its button to say so.
     syncStripMaximized(mainWindow.isMaximized());
+    // A fresh document has no icon in it, whatever was applied to the last one.
+    appliedStripIconFile = null;
+    applyAppIcon();
   });
+  wc.on('context-menu', (_event, params) => { void onStripContextMenu(wc, params); });
   return stripView;
+}
+
+/**
+ * A right click on the strip: the tray's menu when it landed on the app icon,
+ * and nothing otherwise.
+ *
+ * The icon is the strip's only element besides the window controls that is out of
+ * the drag region, so it is nearly the only place a right click reaches the page
+ * at all; the rest of the strip is the OS's (on Windows, its system menu). Asking
+ * the page what is under the point, rather than holding the icon's rectangle here,
+ * keeps the layout in ui.css alone. The menu is the tray's own template built
+ * fresh, so it carries the same items in the same state, the gateway radio and a
+ * pending update included. A left click on the icon has no handler: it does
+ * nothing, and being out of the drag region it does not maximise the window on a
+ * double click either.
+ */
+async function onStripContextMenu(wc, { x, y }) {
+  let onIcon = false;
+  try {
+    onIcon = await wc.executeJavaScript(chrome.stripIconHitScript(x, y), true);
+  } catch { return; }
+  if (!onIcon || !mainWindow || mainWindow.isDestroyed()) return;
+  Menu.buildFromTemplate(trayMenuTemplate()).popup({ window: mainWindow });
 }
 
 /**
@@ -4947,11 +5008,21 @@ function buildTray() {
     tray.on('click', () => (process.platform === 'darwin' ? tray.popUpContextMenu() : toggleMainWindow()));
     tray.on('double-click', showMainWindow);
   }
+  tray.setContextMenu(Menu.buildFromTemplate(trayMenuTemplate()));
+}
+
+/**
+ * The tray's menu, as a template. Defined once because the title strip's icon
+ * opens the same menu on a right click (onStripContextMenu), and two copies of
+ * it would drift. Built fresh on every call, so it reflects the gateways and any
+ * pending update as they are now.
+ */
+function trayMenuTemplate() {
   const cfg = config.get();
   // The same command objects the menu bar uses, so a label or a behaviour cannot
   // differ between the two places someone might reach for it.
   const cmd = menuCommands();
-  tray.setContextMenu(Menu.buildFromTemplate([
+  return [
     { label: `Open ${chrome.APP_NAME}`, click: showMainWindow },
     // Only once there is genuinely something to install. A permanently present
     // "Install update" that usually does nothing teaches people to ignore it,
@@ -4982,7 +5053,7 @@ function buildTray() {
     cmd.about,
     { type: 'separator' },
     cmd.quit,
-  ]));
+  ];
 }
 
 function switchGateway(id) {
