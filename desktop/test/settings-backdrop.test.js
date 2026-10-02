@@ -87,3 +87,19 @@ test('the surface left up takes the dim over when the one under it leaves', () =
   assert.match(close, /DIMMING_OVERLAYS[\s\S]*classList\.remove\('surface--stacked'\)/,
     'closing Settings under About would leave the window undimmed behind the About card');
 });
+
+test('About takes the settings card out of the way before it arrives', () => {
+  const about = functionBody(MAIN, 'async function openAboutSurface(');
+  assert.match(about, /coverBelow\('about'\)[\s\S]{0,120}openOverlay\('about'\)/,
+    'the settings card must be out of the way before the About card arrives, or both are on screen at once');
+  const close = functionBody(MAIN, 'async function closeOverlay(');
+  assert.match(close, /revealBelow\(name\)/, 'closing About must bring the settings card back');
+});
+
+test('the interface behind a sheet blurs while a dimming one is up', () => {
+  const sync = functionBody(MAIN, 'async function syncSurfaceBehind(');
+  assert.match(sync, /DIMMING_OVERLAYS\.some\(/, 'the blur is not tied to the overlays that dim');
+  assert.match(MAIN, /const SURFACE_BEHIND_CSS = \[[\s\S]{0,1200}backdrop-filter: blur/, 'the injected stylesheet carries no blur');
+  assert.match(functionBody(MAIN, 'function openOverlay('), /syncSurfaceBehind\(\)/, 'opening a sheet never raises the blur behind it');
+  assert.match(functionBody(MAIN, 'async function closeOverlay('), /syncSurfaceBehind\(\)/, 'closing a sheet never drops the blur behind it');
+});

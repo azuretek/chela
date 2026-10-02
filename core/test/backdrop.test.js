@@ -32,7 +32,12 @@ const UI_CSS = fs.readFileSync(path.join(REPO, 'core', 'ui', 'ui.css'), 'utf8');
 const SURFACE_JS = fs.readFileSync(path.join(REPO, 'core', 'ui', 'surface.js'), 'utf8');
 
 /** The drawer backdrop's colour, as upstream declares it. */
-const DIM = 'rgb(0 0 0 / 44%)';
+/**
+ * The dim, as the stylesheet declares it. It began as the Control UI drawer backdrop
+ * and is a value of ours since 2026-10-01 (Abi: "make that a bit darker and
+ * blurred"); the test below still reads the reference, and asserts ours is darker.
+ */
+const DIM = 'rgb(0 0 0 / 60%)';
 
 /** Every value a custom property is given, in source order, comments removed. */
 function declarations(css, name) {
@@ -59,25 +64,32 @@ const property = (body, name) => {
   return m ? m[1].trim() : null;
 };
 
-test('the dim is the drawer backdrop, black at 44%, in both appearances', () => {
+test('the dim is black at 60%, in both appearance blocks', () => {
   const values = declarations(UI_CSS, '--scrim');
   assert.deepStrictEqual(values, [DIM, DIM],
     'the scrim must be declared once per appearance block as ' + DIM + ', and reads ' + JSON.stringify(values)
     + '. A value derived from --bg is the wash that faded the Control UI into the page colour.');
 });
 
-test('the dim matches the Control UI drawer backdrop upstream declares', (t) => {
+test('the dim is darker than the drawer backdrop it was restated from', (t) => {
+  // It began as upstream drawer backdrop, restated so the two dims matched
+  // (2026-09-25). Reported 2026-10-01: "make that a bit darker and blurred", so the
+  // dim is a value of ours now. The reference is still read, because it is where
+  // the shape came from and a drift there is worth seeing, but the claim is no
+  // longer equality: ours is the darker of the two.
+  const alphaOf = (value) => Number((/\/\s*([0-9.]+)%/.exec(String(value)) || [])[1]);
+  assert.ok(alphaOf(DIM) >= 55, 'the dim must be dark enough to read as a dim: ' + DIM);
   const where = checkout();
   const file = path.join(where.dir, 'src', 'styles', 'layout.mobile.css');
   if (!where.present || !fs.existsSync(file)) {
-    t.skip('no OpenClaw checkout at ' + where.source + ', so the recorded value stands unverified');
+    t.skip('no OpenClaw checkout at ' + where.source + ', so the reference value stands unread');
     return;
   }
   const rule = topLevelRules(fs.readFileSync(file, 'utf8'))
     .find((r) => r.selector.replace(/\s+/g, ' ').trim() === '.shell--mobile-nav .shell-nav-backdrop');
   assert.ok(rule, 'upstream no longer declares .shell--mobile-nav .shell-nav-backdrop, so the dim has lost its reference');
-  assert.equal(property(rule.body, 'background'), DIM,
-    'upstream now paints its drawer backdrop differently, so the two dims no longer match');
+  const theirs = alphaOf(property(rule.body, 'background'));
+  assert.ok(theirs < alphaOf(DIM), 'the dim must stay darker than the drawer backdrop it came from: ' + theirs + '% against ' + alphaOf(DIM) + '%');
 });
 
 test('a sheet dims with the scrim, and the page-as-window keeps its page colour', () => {
@@ -122,4 +134,21 @@ test('a sheet over a sheet keeps one dim, and the native sheet draws none of its
   const markAt = SURFACE_JS.indexOf("classList.add('surface--stacked')");
   const surfaceObject = SURFACE_JS.indexOf('window.clawSurface = {');
   assert.ok(markAt > 0 && markAt < surfaceObject, 'the stacked mark must run as the script loads, not on a later call');
+});
+
+test('a covered surface slides away, and the dim stays with it', () => {
+  const covered = ruleBodies(UI_CSS, 'body.surface--covered .modal').map((b) => property(b, 'animation')).filter(Boolean);
+  assert.ok(covered.length >= 1, 'a covered card has no rule of its own');
+  assert.ok(covered[0].startsWith('surface-sheet-out '), 'a covered card must leave by the sheet path: ' + covered[0]);
+  // Reduced motion replaces the slide with the fade, the same swap every other
+  // view change in this stylesheet makes.
+  assert.ok(covered.some((a) => a.startsWith('surface-fade-out ')), 'reduced motion must still cover the card, as a fade');
+  // And the SCRIM is deliberately not covered. The dim is the window one dim and
+  // the sheet arriving above keeps its own clear (surface--stacked), so moving the
+  // dim too would leave the interface undimmed for the length of the handoff.
+  assert.deepStrictEqual(ruleBodies(UI_CSS, 'body.surface--covered .scrim'), [], 'the dim must not leave with the card');
+  // One motion, in the shared page, so both clients play it: the class coming off
+  // restores the arrival animation the stylesheet already declares.
+  assert.match(SURFACE_JS, /cover: function/, 'ui/surface.js has no cover for a sheet to push a surface out of the way with');
+  assert.match(SURFACE_JS, /reveal: function/, 'ui/surface.js has no reveal, so a covered surface could never come back');
 });
