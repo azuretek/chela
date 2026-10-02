@@ -48,6 +48,7 @@ import { forPages as bannerSpec } from '../../core/banner.js';
 // report a palette the app would never hand out, which is how a two-palette page
 // passed here on the day it was reported.
 import { themeCss, themeFromReport } from '../src/chrome.js';
+import { capturePage } from './lib/capture.js';
 
 /**
  * A running Control UI's palette, as the app receives it from the page probe.
@@ -559,7 +560,10 @@ async function capture(page, mode, win) {
 
   const probe = await win.webContents.executeJavaScript(PROBE);
   const shot = path.join(OUT, `${page.name}-${mode}.png`);
-  const image = await win.capturePage();
+  // Through the shared helper: a first capture of a never-shown window can fail
+  // its compositor copy ("UnknownVizError"), and that is a shot to take again,
+  // not a page that failed. See scripts/lib/capture.js.
+  const image = await capturePage(win.webContents, { label: `${page.name} ${mode}` });
   fs.writeFileSync(shot, image.toPNG());
 
   // What the page actually COVERED, read off the composited pixels rather than
