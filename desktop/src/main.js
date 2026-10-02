@@ -520,10 +520,10 @@ function applyStripIcon(file) {
 }
 
 function trayImage() {
-  // Not a macOS template image. A template adapts to the menu bar automatically,
-  // which is the more native behaviour, but legibility is the reason to want
-  // one, and the mark was checked against both a light and a dark menu bar and
-  // holds contrast in its sunset gradient on either. So it keeps the app's colour.
+  // Not a macOS template image. A template is drawn as a one-colour silhouette,
+  // and the tray shows the app icon itself, small, on its own tile (#114): a
+  // tile carries its own contrast on a light or a dark menu bar, and a
+  // silhouette of it would be a featureless square. So it keeps its colour.
   const img = nativeImage.createFromPath(path.join(ASSETS, 'tray.png'));
   img.setTemplateImage(false);
   return img;
