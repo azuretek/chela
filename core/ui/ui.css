@@ -1210,13 +1210,36 @@ select:focus { outline: none; border-color: var(--ring); }
    opens follows the palette without anything here painting it. */
 option { background: var(--input); color: var(--text); }
 
-/* The app-icon row: the mark's preview beside the picker, on one line. The
-   preview is the same .chela-mark the About page draws (there at 56px,
-   .modal__icon); here it is a swatch beside the select, which takes the rest of
-   the row. No fixed TEXT box, so the tenth rule is not in play: the mark holds no
-   text, and 28px is its whole size rather than a line-height reservation. */
-.app-icon__preview { flex: none; width: 28px; height: 28px; }
-.app-icon select { flex: 1 1 auto; min-width: 0; }
+/* The app-icon picker: a grid of the shipped marks, each drawn in its own
+   colour, with a light/dark toggle above it. The toggle forces color-scheme on
+   the grid alone, so the set previews in either appearance regardless of the
+   app's own theme; the surrounding chrome keeps the theme's tokens, because it
+   is the picker that is being previewed, not the page. Each mark is the same
+   .chela-mark the About page draws, recoloured by the shared rule from the
+   bucket's own --accent, which settings.js sets from the host's state. */
+.app-icon { display: flex; flex-direction: column; gap: var(--space-3); align-items: stretch; }
+.app-icon__mode { display: inline-flex; gap: var(--space-1); align-self: flex-start; }
+.app-icon__mode-btn {
+  background: var(--panel-hover); color: var(--text); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 3px 10px; font: inherit; font-size: var(--control-ui-text-sm); cursor: pointer;
+}
+.app-icon__mode-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--text-strong); background: var(--accent-subtle); }
+.app-icon__grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: var(--space-2);
+  padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel);
+}
+.app-icon__grid--dark { color-scheme: dark; }
+.app-icon__grid--light { color-scheme: light; }
+.app-icon__cell {
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-1);
+  padding: var(--space-2) var(--space-1); background: transparent; border: 1px solid transparent;
+  border-radius: var(--radius-sm); color: var(--text); font: inherit; cursor: pointer;
+}
+.app-icon__cell:hover:not(:disabled) { border-color: var(--border-hover); }
+.app-icon__cell.is-selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.app-icon__mark { width: 32px; height: 32px; }
+.app-icon__name { font-size: var(--control-ui-text-xs); color: var(--muted); }
+.app-icon__cell.is-selected .app-icon__name { color: var(--text-strong); }
 
 button {
   background: var(--panel-hover); color: var(--text); border: 1px solid var(--border);
