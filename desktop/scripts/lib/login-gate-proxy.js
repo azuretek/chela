@@ -14,7 +14,13 @@
 import http from 'node:http';
 import net from 'node:net';
 
-export function createLoginGateProxy({ upstreamHost = '127.0.0.1', upstreamPort = 18995 } = {}) {
+// How long an upstream request may go without an answer before the browser's
+// request is failed instead of held. The assets are local, so a real answer is
+// milliseconds: anything near this is a gateway that is not going to answer, and
+// holding the browser's request on it holds the page open with it.
+export const UPSTREAM_TIMEOUT_MS = 15000;
+
+export function createLoginGateProxy({ upstreamHost = '127.0.0.1', upstreamPort = 18995, upstreamTimeoutMs = UPSTREAM_TIMEOUT_MS } = {}) {
   const state = { socket: 'pass', delay: 0 };
   // How many sockets were refused: proof the page loaded and tried to connect,
   // so a client test can tell the gate was reached rather than the page never
@@ -32,8 +38,22 @@ export function createLoginGateProxy({ upstreamHost = '127.0.0.1', upstreamPort 
     const out = http.request({ host: upstreamHost, port: upstreamPort, path: req.url, method: req.method, headers: req.headers }, (answer) => {
       res.writeHead(answer.statusCode, answer.headers);
       answer.pipe(res);
+      // `pipe` ends the browser's response on the upstream's `end`, and ONLY there:
+      // an upstream response that is aborted, reset or cut short emits `aborted` /
+      // `close` with no `end`, and without this the browser's request is held open
+      // forever. A load-blocking one holds the whole page's load with it, which is
+      // how a client sees a page that never stops loading and a harness bound that
+      // sits BETWEEN samples never gets to run.
+      const finish = () => { if (!res.writableEnded) res.end(); };
+      answer.on('aborted', finish);
+      answer.on('error', finish);
+      answer.on('close', finish);
     });
-    out.on('error', () => res.destroy());
+    // A gateway that accepts a request and never answers must not hold the browser's
+    // request either: bound it, and fail the request when the clock trips.
+    out.setTimeout(upstreamTimeoutMs, () => out.destroy(new Error('no upstream answer within ' + upstreamTimeoutMs + 'ms')));
+    out.on('error', () => { if (!res.writableEnded) res.destroy(); });
+    req.on('error', () => out.destroy());
     req.pipe(out);
   });
   server.on('connection', hold);
@@ -62,6 +82,8 @@ export function createLoginGateProxy({ upstreamHost = '127.0.0.1', upstreamPort 
     /** Drop every socket the proxy is carrying, which is a gateway that went away. */
     cut() { for (const s of upgraded) s.destroy(); upgraded.clear(); },
     listen(port, host = '127.0.0.1') { return new Promise((resolve) => server.listen(port, host, resolve)); },
+    /** The address it is actually listening on, for a test that asked for port 0. */
+    address() { return server.address(); },
     close() {
       this.cut();
       const closed = new Promise((resolve) => server.close(() => resolve()));
