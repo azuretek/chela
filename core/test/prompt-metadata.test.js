@@ -33,11 +33,16 @@ function stripInboundMetadata(text) {
   const out = [];
   let i = 0;
   while (i < lines.length) {
-    if (lines[i].endsWith(CONTEXT_MARKER) && lines[i].length > CONTEXT_MARKER.length) {
+    // The gateway trims the line before it looks at it, so this does too: its
+    // rule is the trimmed line ENDING with the marker.
+    const head = lines[i].trim();
+    if (head.endsWith(CONTEXT_MARKER) && head.length > CONTEXT_MARKER.length) {
       // Drop the header and every line until the first blank line, inclusive.
       i += 1;
       while (i < lines.length && lines[i].trim() !== '') i += 1;
-      if (i < lines.length) i += 1; // consume the blank separator too
+      // Every blank line after the block goes, not only the separator: the
+      // gateway block end skips them all (skipEmptyLines).
+      while (i < lines.length && lines[i].trim() === '') i += 1;
       continue;
     }
     out.push(lines[i]);
@@ -578,6 +583,66 @@ test('installing the script twice updates the configuration and hooks send once'
 
   assert.strictEqual(context.WebSocket.prototype.send, installed, 'a second install must not stack another hook');
   assert.strictEqual(context.window.__clawPromptMetadata.block, second, 'the configuration is what updates');
+});
+
+/* ------------------------------------------- every shape a rewind can arrive in */
+
+/*
+ * The shape table, and the reason it exists.
+ *
+ * Reported 2026-10-01: "when I hit rewind to a specific message I get the device
+ * info that we inject with chela ... my suspicion is we are matching a certain
+ * shape and not every rewind looks the same". The suspicion was right. The header
+ * was matched on the RAW line, so the only shape that could differ was the CRLF
+ * one the fix before this one added by hand, and the block end stopped at the
+ * FIRST blank line where the gateway skips them all.
+ *
+ * Every row below is driven through the REAL hook and asserted twice: against the
+ * words the reader typed, and against the local model of the gateway own
+ * stripInboundMetadata above. The second is the point of the table. This hook
+ * exists to apply the GATEWAY rule to the one field the gateway never reaches, so
+ * a shape it answers differently is the fault, and a shape only this file knows
+ * about is a shape nobody chose.
+ */
+const NL = '\n';
+const CRLF = '\r\n';
+const REWIND_BLOCK = formatBlock(SAMPLE_FACTS);
+const REWIND_PHONE_BLOCK = formatBlock({ host: 'iPhone', os: 'iOS 26.0 (iPhone17,1)' }, 'mobile');
+const REWIND_WORDS = 'what time is it?';
+
+/** The same block, restitched with a chosen line ending or a chosen header line. */
+function blockWith({ eol = NL, header = DESKTOP_HEADER } = {}) {
+  const blockLines = REWIND_BLOCK.split(NL);
+  blockLines[0] = header;
+  return blockLines.join(eol);
+}
+
+const REWIND_SHAPES = [
+  { name: 'LF, the ordinary shape', stored: REWIND_BLOCK + NL + NL + REWIND_WORDS },
+  { name: 'CRLF, the shape measured 2026-09-18', stored: blockWith({ eol: CRLF }) + CRLF + CRLF + REWIND_WORDS },
+  { name: 'a trailing space on the header line', stored: blockWith({ header: DESKTOP_HEADER + ' ' }) + NL + NL + REWIND_WORDS },
+  { name: 'an indented header line', stored: blockWith({ header: '  ' + DESKTOP_HEADER }) + NL + NL + REWIND_WORDS },
+  { name: 'two blank lines between the block and the words', stored: REWIND_BLOCK + NL + NL + NL + REWIND_WORDS },
+  { name: 'a separator made of spaces', stored: REWIND_BLOCK + NL + '   ' + NL + REWIND_WORDS },
+  { name: 'the phone header', stored: REWIND_PHONE_BLOCK + NL + NL + REWIND_WORDS },
+  { name: 'the block with nothing after it', stored: REWIND_BLOCK, expected: '' },
+  { name: 'the block with no blank separator', stored: REWIND_BLOCK + NL + REWIND_WORDS, expected: '' },
+  { name: 'words after the marker on the header line', stored: blockWith({ header: DESKTOP_HEADER + ' says' }) + NL + NL + REWIND_WORDS, keepsEverything: true },
+];
+
+test('every shape a rewind arrives in is stripped, and answers the gateway rule', () => {
+  const { socket, received } = listeningSocket({ enabled: true, block: REWIND_BLOCK });
+  for (const shape of REWIND_SHAPES) {
+    received.length = 0;
+    socket.deliver(rewindAnswer('rewind-shape', shape.stored));
+    const restored = JSON.parse(received[0]).result.editorText;
+    // The last row is the one shape that is NOT a block: a line carrying the
+    // marker without ENDING in it is not a header to the gateway either, so
+    // nothing is removed and the reader gets their own text back.
+    const expected = shape.keepsEverything ? shape.stored : (shape.expected === undefined ? REWIND_WORDS : shape.expected);
+    assert.strictEqual(restored, expected, shape.name + ': the composer was handed ' + JSON.stringify(restored));
+    assert.strictEqual(restored, stripInboundMetadata(shape.stored), shape.name + ': the hook and the gateway rule disagree');
+  }
 });
 
 /* ------------------------------------------------- the script matches the rules */
