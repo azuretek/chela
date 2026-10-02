@@ -133,6 +133,11 @@ const UI = path.join(REPO, 'core', 'ui');
 // only the narrow-width rules differ. The floor is asserted at both.
 const WIDTHS = [
   { name: 'wide', width: 900 },
+  // The band between the 601px stacking query and the full modal: the row is
+  // still ONE line there, and a gateway row's pill plus three buttons is wider
+  // than upstream's cap on the control column, which is the width at which the
+  // pill ran into the address. The phone's width alone would never ask it.
+  { name: 'band', width: 620 },
   { name: 'narrow', width: 402 },
 ];
 
@@ -148,7 +153,7 @@ const SMALL_STATE = {
     {
       id: 'alpha',
       label: 'Alpha gateway',
-      url: 'http://127.0.0.1:19001/',
+      url: 'https://zilla-gateway.tail1a2b3c.ts.net:18789/',
       credentials: { hasToken: true, hasPassword: false, headers: [] },
       status: { tone: 'ok', label: 'Connected', detail: null },
     },
@@ -282,6 +287,29 @@ const PROBE = `(() => {
       marginBottom: getComputedStyle(node).marginBottom,
     }));
 
+  // The gateway rows' own spacing, which no block gap measures: the address
+  // column and the state pill are two boxes in ONE row, so whether they overlap
+  // is a question the surface's gaps cannot answer. Read off the rendered row
+  // rather than the stylesheet, because which of two rules wins is a question
+  // about a box, and only the pill sharing the text column's line is a case.
+  const rows = [...document.querySelectorAll('#gateways > .settings-group .settings-row')].map((row) => {
+    const text = row.querySelector('.settings-row__text');
+    const badge = row.querySelector('.badge');
+    if (!text || !badge) return null;
+    const t = text.getBoundingClientRect();
+    const b = badge.getBoundingClientRect();
+    const title = row.querySelector('.settings-row__title');
+    return {
+      title: title ? title.textContent : '',
+      textRight: Math.round(t.right * 100) / 100,
+      badgeLeft: Math.round(b.left * 100) / 100,
+      // Side by side only while the badge's line crosses the text column's own
+      // vertical span; once the 601px query stacks the row the two are on
+      // different lines and their horizontal distance is not a gap at all.
+      sameLine: b.top < t.bottom - 2 && b.bottom > t.top + 2,
+    };
+  }).filter(Boolean);
+
   const header = document.querySelector('.modal__header');
   const back = document.getElementById('close');
   const title = document.getElementById('title');
@@ -307,6 +335,7 @@ const PROBE = `(() => {
     bodyPadding: getComputedStyle(document.querySelector('.modal__body')).padding,
     firstBlockLeft: blocks.length ? blocks[0].box.left : null,
     blocks,
+    rows,
   };
 })()`;
 
@@ -418,6 +447,20 @@ app.whenReady().then(async () => {
         check(`${where}: no two blocks of the settings surface are flush`,
           pairs.length >= 4 && touching.length === 0,
           `only ${pairs.length} pairs measured; touching: ${JSON.stringify(touching)}`);
+
+        // ---- and the state pill keeps clear of the address ------------------
+        // The ROW's own gap, which no block gap above can see: the address column
+        // and the state pill are two boxes in ONE row. Upstream caps the control
+        // column, and a gateway row's pill plus three buttons is wider than that
+        // cap, so without the scoped rule in ui.css the cluster overflows its own
+        // box toward the text column and lands on a truncated address -- a pill
+        // with no gap in front of it, and only where the address reaches that far
+        // (issue #109). The floor is 8px, the same smallest separation the block
+        // check uses: a gap that vanished, not a pinned distance.
+        const crossing = probe.rows.filter((r) => r.sameLine && r.badgeLeft < r.textRight + 8);
+        check(`${where}: the state pill keeps clear of the address`,
+          probe.rows.length >= 2 && crossing.length === 0,
+          `the pill reaches into the address column: ${JSON.stringify(crossing)}`);
       }
 
       // ---- the headline starts on the header's own edge -----------------

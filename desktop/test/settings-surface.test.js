@@ -520,6 +520,40 @@ test('the measured half of this still asks the phone\'s question, on both pages'
   assert.match(harness, /no two blocks of the settings surface are flush/,
     'the harness no longer asserts that the surface\'s blocks are separated');
   assert.match(harness, /share one leading edge/, 'the harness no longer asserts the header\'s leading edge');
+  // And the ROW's own gap, which the block check cannot see: the address column
+  // and the state pill are two boxes in one row. It needs a pass between the
+  // stacking query and the wide one, because that band is the only width at which
+  // the pill overflows the control column onto the address (issue #109).
+  assert.ok(widths.some((w) => w > 601 && w < 700),
+    `the harness has no pass in the band above the stacking query: widths ${JSON.stringify(widths)}`);
+  assert.match(harness, /the state pill keeps clear of the address/,
+    'the harness no longer asserts the gateway row\'s pill clears the address column');
+});
+
+test('the gateway row lifts the borrowed cap on its control column, outside the width query', () => {
+  // The SHAPE half of the gap above, and it exists for the same reason the block
+  // gap's does: a rendered box is the only thing that can say whether the rule
+  // APPLIED, but a rule that was deleted or moved inside the width query would
+  // render a passing row at the phone's width and an overflowing one at the band
+  // the report came from. So the spring is held here.
+  //
+  // Upstream caps `.settings-row__control` at 60% of the row and the pin in
+  // core/test/upstream-classes.test.js holds our copy of it to that exact list, so
+  // the fix is a rule of our OWN for the gateway list rather than an edit to the
+  // borrowed one. It must sit OUTSIDE the 601px query, where the row is still one
+  // line: inside the query it would do nothing for the wide row, and the pill
+  // would keep overflowing its box onto the address.
+  const css = read(REPO, 'core', 'ui', 'ui.css');
+  const at = css.indexOf('@media (max-width: 601px)');
+  assert.ok(at > 0, 'the narrow-width media query is gone');
+  const lifted = /#gateways > \.settings-group > \.settings-row > \.settings-row__control\s*\{[^}]*max-width:\s*none/.exec(css.slice(0, at));
+  assert.ok(lifted, 'the gateway row no longer lifts the 60% cap on its control column outside the width query');
+
+  // And the borrowed rule keeps the cap the pin records: the lift is ours, scoped
+  // to the gateway list, and it never became an edit to upstream's declaration.
+  const borrowed = /\n\.settings-row__control\s*\{([^}]*)\}/.exec(css);
+  assert.match(borrowed ? borrowed[1] : '', /max-width:\s*60%/,
+    'the borrowed .settings-row__control rule lost its 60% cap');
 });
 
 /* ---------------------------------------- the handoff to the Control UI */

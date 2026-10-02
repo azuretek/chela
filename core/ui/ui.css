@@ -829,6 +829,24 @@ a  { color: var(--accent); }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* ★ A gateway row's control column is a state pill plus three action buttons,
+   and that cluster is wider than upstream's cap on the control column at every
+   width a window narrower than the full modal gives the row. The cap did not
+   shrink the cluster, because a badge and a button label are nowrap: it clamped
+   the control's BOX, and the cluster spilled out of it toward the text column
+   (the control justifies its content to its END), straight across the row's own
+   gap. That is only SEEN where the address reaches that far: a long address
+   truncates to its column's edge and the pill sits on top of it with no gap,
+   while a short one leaves the empty tail of its column lying under the pill and
+   looks fine. Reported as the Zilla row running into the CONNECTED pill while the
+   row below kept its gap (issue #109). So the gateway control takes the width its
+   content needs and the text column gives up the rest, where the address
+   truncates by the deliberate one-line exception above; the row's own `gap`
+   owns the space between them at every width, and the row keeps one line until
+   the 601px query stacks it. Measured by desktop/scripts/test-settings-layout.js. */
+#gateways > .settings-group > .settings-row > .settings-row__control {
+  max-width: none;
+}
 /* A row that is a click target, so a checkbox row toggles from anywhere on it.
    `default` rather than `pointer` is upstream's choice and it is deliberate:
    the hover fill is what says the row is live. */
