@@ -122,3 +122,57 @@ no rework; nothing is built for it yet. Prune keeps the newest 10 published dev
 releases and deletes their tags with them, and it is deliberately narrow: a
 prerelease whose tag carries a `-dev.` identifier is the only thing it will
 ever reach.
+
+## TestFlight builds past the current line
+
+A version line can move and leave TestFlight behind, and nothing shows it. The
+releases feed lists what exists, and a build is not on a page anyone reads by
+accident.
+
+Measured 2026-10-01: the repository had moved to the 0.0.x line and 91 of the 92
+builds in the app record were still 1.0.1, with the nine GitHub releases beside
+them on 1.0.1 too. A phone could install a line nobody was building.
+
+**One line at a time.** Every unexpired build must name the line the repository is
+publishing. `scripts/release/testflight-audit.mjs` reads the app record and reports
+the live builds on any other line, taking that line from the newest release
+(`--line` names it outright).
+
+★ **The line is not the newest, or the highest, version TestFlight holds.** A line
+can move DOWN, which is what naming pre-1.0 builds `0.0.*` did: semver ranks
+`1.0.1` above `0.0.1`, so a rule that read the line off the builds themselves
+would have kept the 91 stranded ones and reported the single current build as the
+stray. It is the same reason an update check seeds from the feed rather than from
+the highest number on the device.
+
+**Which app record.** `fullName` and `clients.mobile.bundleId` in
+`core/spec/naming.json`, matched by BUNDLE ID rather than by name: the account
+holds more than one product, and on 2026-10-01 a set of queries meant for this app
+was run against another product's record, which answered coherently and wrongly.
+
+**The API key cannot expire a build.** `PATCH /v1/builds/{id}` answers `403
+FORBIDDEN_ERROR` ("The API key in use does not allow this request") for `expired:
+true` and `expired: false` alike, while the same key reads the same builds
+happily. The key authenticates the audit and the CI upload; build state is not its
+business.
+
+**Expiring goes through the signed-in web session.** App Store Connect's own API
+takes the same JSON:API body from any page on `appstoreconnect.apple.com`, with
+the session cookie, which is the call the UI itself makes:
+
+    PATCH /iris/v1/builds/{id}
+    {"data":{"type":"builds","id":"<id>","attributes":{"expired":true}}}
+
+Getting in needs the account's password and, on a browser Apple does not already
+trust, a second factor only a person has. After that it is one call per build: 91
+builds took two batched requests (measured 2026-10-01).
+
+**Verify through the API, never the writer's own status.** A `200` from the expiry
+call is a claim, and a partially applied batch looks exactly like a successful one
+from the writer's side. Re-read the builds and count what is expired.
+
+**What the prune does not cover.** `release.yml`'s prune keeps the newest 10
+published dev releases by DATE, so a release from an older line survives a rename
+for as long as it is recent enough, which is how nine 1.0.1 releases outlived the
+move to 0.0.x. Pruning by line rather than by count is not implemented, so the
+releases side of this is manual today while the audit above covers TestFlight.
