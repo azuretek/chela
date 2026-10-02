@@ -76,12 +76,29 @@ android {
     }
 }
 
+// The specs this client ships, named ONE BY ONE rather than copied wholesale.
+//
+// Both reasons are the inventory in core/test/specs.test.js doing its job: it
+// asserts that each client bundles exactly what it says it does, and it reads THIS
+// list as the Android side authority the way it reads mobile/project.yml for iOS.
+// A blanket copy would ship specs this client never reads and would leave that
+// assertion with nothing to hold.
+val androidSpecs = listOf(
+    "naming.json",     // the product name, read at runtime by Naming.kt
+    "settings.json",   // the settings surface split, read by HostBridge for its command vocabulary
+    "tokens.json",     // imported by ui/motion.js, so the page cannot paint without it
+)
+
 // Copy the shared tree beside the app before the asset merger runs, so the APK
 // carries the one owner of every page, spec and fixture rather than a copy that
 // can drift.
 val copyCore by tasks.registering(Copy::class) {
     from(rootProject.file("../core/ui")) { into("ui") }
-    from(rootProject.file("../core/spec")) { into("spec") }
+    androidSpecs.forEach { name ->
+        from(rootProject.file("../core/spec/$name")) { into("spec") }
+    }
+    // Every fixture, because they are the golden pairs the parity tests compare
+    // against rather than content a client reads at runtime.
     from(rootProject.file("../core/fixtures")) { into("fixtures") }
     into(layout.buildDirectory.dir("generated/coreAssets"))
 }
