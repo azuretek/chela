@@ -8,9 +8,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { generatedFiles, appIcon, paperIcon, TILE } from '../scripts/artwork.mjs';
+import { generatedFiles, appIcon, paperIcon, trayIcon, TILE } from '../scripts/artwork.mjs';
 import { existsSync } from 'node:fs';
-import { BUCKETS, iconFile, trayFile } from '../../core/app-icons.js';
+import { BUCKETS, iconFile, trayFile, palettesFor, choose } from '../../core/app-icons.js';
 
 const repo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (p) => readFileSync(path.join(repo, p), 'utf8');
@@ -32,9 +32,9 @@ test('every themed icon the desktop can switch to ships under src/assets', () =>
   // main.js applyAppIcon loads these by the name core/app-icons.js gives, and a
   // missing one is refused at runtime rather than drawn, so it would never show.
   for (const bucket of BUCKETS) {
-    const tray = trayFile(bucket);
+    const trays = ['dark', 'light'].flatMap((mode) => [trayFile(bucket, mode), trayFile(bucket, mode).replace(/\.png$/, '@2x.png')]);
     const icons = [iconFile(bucket, 'dark'), iconFile(bucket, 'light'), iconFile(bucket, 'dark', { full: true }), iconFile(bucket, 'light', { full: true })];
-    for (const rel of [...icons, tray, tray.replace(/\.png$/, '@2x.png')]) {
+    for (const rel of [...icons, ...trays]) {
       const file = path.join(repo, 'desktop', 'src', 'assets', rel);
       assert.ok(existsSync(file), `${file} is missing: run npm run icons`);
     }
@@ -64,6 +64,35 @@ test('Windows and Linux package the edge-to-edge icon, macOS the one on Apple\'s
   assert.equal(iconOf('linux'), 'build/icon-full.png');
   assert.match(read('desktop/src/main.js'), /icon: process\.platform === 'linux' \? path\.join\(ASSETS, 'icon-full\.png'\)/);
   assert.match(read('desktop/src/main.js'), /appIcons\.choose\([^)]*full: appIcons\.fillsSquare\(process\.platform\)/);
+});
+
+test('the tray icon is the app icon, small: the same tile in the same palette, per mode', () => {
+  // #114: the tray showed the bare claw, which read badly at tray size. It is the
+  // app icon's own tile now, framed edge to edge like the full icon, in the
+  // bucket's neon or paper palette, so it follows whichever icon is showing.
+  for (const bucket of BUCKETS) {
+    const p = palettesFor(bucket);
+    const neon = trayIcon({ mode: 'dark', palette: p.dark });
+    const paper = trayIcon({ mode: 'light', palette: p.light });
+    for (const svg of [neon, paper]) {
+      assert.match(svg, new RegExp(`viewBox="${TILE.x} ${TILE.y} ${TILE.size} ${TILE.size}"`), 'the tray is framed to the tile');
+      assert.match(svg, new RegExp(`<rect x="${TILE.x}" y="${TILE.y}" width="${TILE.size}" height="${TILE.size}" rx="23"`), 'the tray carries the icon\'s tile');
+    }
+    // The tile's colours are the app icon's own, in that bucket and mode.
+    assert.ok(neon.includes(p.dark.tileTop) && neon.includes(p.dark.tileBottom) && neon.includes(p.dark.coral), bucket.id + ' neon');
+    assert.ok(paper.includes(p.light.skyTop) && paper.includes(p.light.deep), bucket.id + ' paper');
+    assert.ok(appIcon({ palette: p.dark }).includes(p.dark.tileTop) && paperIcon({ palette: p.light }).includes(p.light.skyTop));
+  }
+  // Nothing under a pixel at 16 px: no hairline, no title-bar dots.
+  assert.doesNotMatch(trayIcon(), /stroke-opacity="0\.07"|<circle/);
+});
+
+test('the tray follows the app icon\'s mode as well as its bucket', () => {
+  const dark = choose('#ff5e62', 'dark'), light = choose('#ff5e62', 'light');
+  assert.equal(dark.bucket.id, light.bucket.id);
+  assert.notEqual(dark.tray, light.tray, 'one tray icon for both modes cannot match both app icons');
+  assert.equal(dark.tray, trayFile(dark.bucket, 'dark'));
+  assert.equal(light.tray, trayFile(light.bucket, 'light'));
 });
 
 test('the paper icon carries the one edge hairline too', () => {

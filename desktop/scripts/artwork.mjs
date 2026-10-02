@@ -310,19 +310,58 @@ export function bucketIcons({ square = false, full = false } = {}) {
   });
 }
 
-/** The tray and menu-bar glyph: the claw alone, filled with the neon line's gradient. */
-export function trayIcon({ palette = palettesFor(PRIMARY).dark } = {}) {
-  const P = palette;
-  return HEAD('tray and menu-bar glyph') +
-    '<svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-    '<defs><linearGradient id="sunset" gradientUnits="userSpaceOnUse" x1="0" y1="4" x2="0" y2="116"><stop offset="0" stop-color="' + P.sunrise + '"/><stop offset="0.5" stop-color="' + P.coral + '"/><stop offset="1" stop-color="' + P.violet + '"/></linearGradient></defs>' +
-    '<path d="' + outlines().tray + '" fill="url(#sunset)"/>' +
+/**
+ * The tray and menu-bar icon: the app icon, small (#114). The same tile in the
+ * same palette, neon or paper by mode, framed edge to edge, so what sits in the
+ * tray is recognisably the icon in the Dock or the taskbar and changes with it.
+ *
+ * What is left out is what cannot survive 16 pixels, the way a platform's own
+ * small icon renditions simplify: the title-bar dots and rule, the synthwave
+ * floor and the hairline are each under a pixel there and only muddy the tile.
+ * The claw is the tray placement (larger, forearm cut off below the joint) and
+ * FILLED rather than drawn as the icon's 2.2-unit neon line, which at 16 px
+ * would be a third of a pixel wide and vanish. Neon fills it with the line's
+ * own sunset gradient; paper is the white sheet over its deep sheet, as on the
+ * icon.
+ */
+export function trayIcon({ mode = 'dark', palette = palettesFor(PRIMARY)[mode === 'light' ? 'light' : 'dark'] } = {}) {
+  const P = palette, rx = 23, claw = outlines().tray;
+  // The tray placement fills the 120-unit canvas; brought inside the tile with
+  // a little room round it.
+  const place = 'translate(60 60) scale(0.78) translate(-60 -60)';
+  const tile = (fill) => '<rect x="' + TILE.x + '" y="' + TILE.y + '" width="' + TILE.size + '" height="' + TILE.size + '" rx="' + rx + '" fill="' + fill + '"/>';
+  const open = HEAD((mode === 'light' ? 'paper' : 'neon') + ' tray and menu-bar icon') +
+    '<svg viewBox="' + viewBox(true) + '" fill="none" xmlns="http://www.w3.org/2000/svg">';
+  if (mode === 'light') {
+    return open +
+      '<defs><linearGradient id="sky" x1="0" y1="0" x2="0.6" y2="1"><stop offset="0" stop-color="' + P.skyTop + '"/>' +
+      PAPER_FADE.map(([o, w]) => '<stop offset="' + o + '" stop-color="' + mix(P.skyBottom, w, P.skyTop) + '"/>').join('') + '</linearGradient></defs>' +
+      tile('url(#sky)') +
+      '<g transform="' + place + '">' +
+      '<path d="' + claw + '" fill="' + P.deep + '" transform="translate(6 6)"/>' +
+      '<path d="' + claw + '" fill="#ffffff"/>' +
+      '</g></svg>\n';
+  }
+  return open +
+    '<defs>' +
+    '<linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + P.tileTop + '"/><stop offset="1" stop-color="' + P.tileBottom + '"/></linearGradient>' +
+    '<linearGradient id="sunset" gradientUnits="userSpaceOnUse" x1="0" y1="4" x2="0" y2="116"><stop offset="0" stop-color="' + P.sunrise + '"/><stop offset="0.5" stop-color="' + P.coral + '"/><stop offset="1" stop-color="' + P.violet + '"/></linearGradient>' +
+    '</defs>' +
+    tile('url(#tile)') +
+    '<path d="' + claw + '" fill="url(#sunset)" transform="' + place + '"/>' +
     '</svg>\n';
 }
 
-/** One tray glyph per bucket, so the menu bar follows the theme too. */
+/** One tray icon per bucket and mode, the same set as the app icon, so the
+ *  tray changes whenever the app icon does. */
 export function bucketTrays() {
-  return BUCKETS.map((bucket) => ({ bucket, svg: trayIcon({ palette: palettesFor(bucket).dark }) }));
+  return BUCKETS.flatMap((bucket) => {
+    const p = palettesFor(bucket);
+    return [
+      { bucket, mode: 'dark', svg: trayIcon({ mode: 'dark', palette: p.dark }) },
+      { bucket, mode: 'light', svg: trayIcon({ mode: 'light', palette: p.light }) },
+    ];
+  });
 }
 
 // The in-app mark's masks. White on transparent, framed to the tile alone

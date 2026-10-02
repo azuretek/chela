@@ -11,11 +11,12 @@
 // workflow already runs that one from this directory.
 //
 // Two sources, not one. core/ui/assets/claw.svg is the application icon, a tile with
-// a window and a title bar in it. core/ui/assets/claw-tray.svg is the same mark with
-// all of that removed, because at 16 physical pixels the frame and the title-bar
-// dots turn to mush, and a filled dark square is the wrong shape to hang in a
-// menu bar. Rendering one file at both sizes is what forces artwork to be timid
-// at large sizes and illegible at small ones.
+// a window and a title bar in it. core/ui/assets/claw-tray.svg is the same icon
+// drawn for 16 physical pixels: the same tile and palette, with the title bar,
+// the floor and the hairline left out and the claw filled rather than lined,
+// because at that size those are under a pixel and turn to mush (#114).
+// Rendering one file at both sizes is what forces artwork to be timid at large
+// sizes and illegible at small ones.
 //
 // The outputs are COMMITTED to the repo on purpose: sharp is the only heavy
 // native dependency here, and baking the PNGs in keeps `npm start` and the
@@ -115,8 +116,8 @@ for (const { bucket, mode, svg } of bucketIcons()) {
 for (const { bucket, mode, svg } of bucketIcons({ full: true })) {
   targets.push({ file: 'desktop/src/assets/' + iconFile(bucket, mode, { full: true }), size: 512, svg: Buffer.from(svg, 'utf8'), treatment: 'canvas' });
 }
-for (const { bucket, svg } of bucketTrays()) {
-  const file = 'desktop/src/assets/' + trayFile(bucket);
+for (const { bucket, mode, svg } of bucketTrays()) {
+  const file = 'desktop/src/assets/' + trayFile(bucket, mode);
   targets.push({ file, size: 16, svg: Buffer.from(svg, 'utf8'), treatment: 'canvas' });
   targets.push({ file: file.replace(/\.png$/, '@2x.png'), size: 32, svg: Buffer.from(svg, 'utf8'), treatment: 'canvas' });
 }
