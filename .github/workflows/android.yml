@@ -1,0 +1,80 @@
+name: chela-android pipeline
+
+# The Android half: build the debug app on every pull request, boot it in an
+# emulator, capture the proof and run the instrumented tests.
+#
+# ★ This workflow deliberately has NO publish job yet. Android has no release
+# artifact until the release gate is generalised for a third pipeline, and a
+# publish job that nothing gates is exactly the fault the gate exists to prevent:
+# a release published from a commit whose other platform was red. The signing
+# job lands with that gate, not before it.
+#
+# CI runs the emulator on a standard GitHub Linux runner, which carries the
+# virtualization the emulator needs. No household host has an Android toolchain,
+# so this workflow is the gate rather than a fallback for one.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build-and-boot:
+    name: build and boot (emulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The emulator needs the KVM device the runner exposes.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # The acceptance: a shell that only compiles is not a shell that runs. One
+      # emulator boot serves both the capture and the instrumented tests.
+      - name: Boot the app, capture the proof and run the instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          working-directory: android
+          script: |
+            bash scripts/boot-proof.sh
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest
+
+      - name: The root fan out reaches Android, and must not skip here
+        working-directory: .
+        env:
+          CHELA_REQUIRE_ANDROID_TOOLS: '1'
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+        run: node scripts/android.mjs build
+
+      - name: Keep the boot proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-boot-proof
+          path: android/proof
+          if-no-files-found: warn
