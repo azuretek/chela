@@ -197,30 +197,36 @@ struct ContentView: View {
     /// solver will take in one piece.
     @ViewBuilder
     private func settingsSheetContent(_ host: SettingsHost) -> some View {
-        SettingsSurface(host: host, tokens: liveTokens, appearance: AppearanceMode.system)
-            // About is presented from the settings surface, so the second sheet
-            // stacks over the first the way the desktop's About-over-Settings
-            // overlay does, and lands back on settings when dismissed.
-            .aboutSheet(
-                isPresented: $showingAbout,
-                host: aboutHost,
-                appearance: AppearanceMode.system,
-                tokens: liveTokens
+        surfacesHandoff(host: host)
+    }
+
+    /// Settings and About as ONE presented surface, with the handoff between them
+    /// ours.
+    ///
+    /// One presentation, not a sheet over a sheet: see `SurfacesHandoff` for why,
+    /// which is also this client's answer to `cover()` answering `false` inside a
+    /// native sheet. About's host is built in `prepare`, before this view exists, so
+    /// the `if let` here is the one frame before it is.
+    @ViewBuilder
+    private func surfacesHandoff(host: SettingsHost) -> some View {
+        if let aboutHost {
+            SurfacesHandoff(
+                settings: SettingsSurface(host: host, tokens: liveTokens, appearance: AppearanceMode.system),
+                about: AboutSurface(host: aboutHost, appearance: AppearanceMode.system, tokens: liveTokens),
+                showingAbout: $showingAbout,
+                reduceMotion: reduceMotion
             )
+        } else {
+            SettingsSurface(host: host, tokens: liveTokens, appearance: AppearanceMode.system)
+        }
     }
 
     /// The app itself when no gateway is configured: the settings page IS the
     /// surface, with About riding it and the notice stack over both.
     @ViewBuilder
     private func SettingsAsApp(host: SettingsHost) -> some View {
-        SettingsSurface(host: host, tokens: liveTokens, appearance: AppearanceMode.system)
+        surfacesHandoff(host: host)
             .ignoresSafeArea()
-            .aboutSheet(
-                isPresented: $showingAbout,
-                host: aboutHost,
-                appearance: AppearanceMode.system,
-                tokens: liveTokens
-            )
     }
 
     /// Whether this client holds a credential for `gateway`, a token or a password,
@@ -357,6 +363,18 @@ struct ContentView: View {
                 // Neither sheet draws a notice stack, and neither does the page
                 // under them: the stack is drawn once, for the whole app, on a
                 // layer above all three. See noticeLayer and NoticeWindow.
+                // The interface behind a sheet: blurred here, and darkened to the
+                // shared dim. It belongs to the PRESENTER rather than to the sheet,
+                // because the sheet is a native presentation over a WKWebView it
+                // cannot reach, so the layer that does this work has to be native
+                // and has to be here. See SurfaceBackdrop.
+                .overlay {
+                    if showingSettings { SurfaceBackdropView() }
+                }
+                .animation(
+                    Motion.handoffAnimation(reduceMotion: reduceMotion, leaving: false),
+                    value: showingSettings
+                )
                 .fullScreenSurfaceSheet(isPresented: $showingSettings) {
                     if let host { settingsSheetContent(host) }
                 }
@@ -519,14 +537,16 @@ struct ContentView: View {
         gatewayPage.reloadFromServer()
         let owed = Motion.remainingVisibleMs(shownAt: pressedAt)
         if owed > 0 { try? await Task.sleep(for: .milliseconds(owed)) }
-        // Settings is the sheet About is presented from, so dismissing it takes
-        // both away in ONE slide; dismissing About first played two, About down
-        // onto Settings and then Settings down onto the cover.
+        // Settings and About are ONE presentation, so both facts are cleared in the
+        // same transaction and the reader sees ONE slide off the screen; two steps
+        // played About down onto Settings and then Settings down onto the cover.
+        // About's state goes first, so a surface presented again later starts on
+        // Settings rather than on a handoff that was interrupted.
+        showingAbout = false
         showingSettings = false
-        // The sheets take the platform's own time to go; the floor starts once the
+        // The sheet takes the platform's own time to go; the floor starts once the
         // cover is what the reader sees.
         try? await Task.sleep(for: .milliseconds(Motion.sheetLeaveMs))
-        showingAbout = false
         cover.releaseFloor(after: Motion.minVisibleMs)
         return (true, "Cleared cached code\(cleared) and restarted the Control UI from the server.")
     }
@@ -805,9 +825,9 @@ struct ContentView: View {
 /// behind the sheet no matter what order the overlays were applied in. That is
 /// how a notice could be raised and drawn while the surface it was raised from was
 /// the only thing on screen. Drawing the stack inside the sheet puts it above the
-/// surface, and `aboutSheet` routes through this same modifier, so About over
-/// Settings is covered without a third copy. One modifier, applied at each layer
-/// boundary, rather than a height or a z-index nudged on the card.
+/// surface, and Settings and About share ONE presentation of it (`SurfacesHandoff`),
+/// so there is no second sheet left for a banner to be behind. One modifier, applied
+/// at each layer boundary, rather than a height or a z-index nudged on the card.
 /// Read the interface's live palette at the moments it can have changed.
 ///
 /// A modifier rather than links on `ContentView`'s chain, for the reason the chain
@@ -865,57 +885,13 @@ extension View {
     ) -> some View {
         modifier(FullScreenSurfaceSheet(isPresented: isPresented, surface: surface))
     }
-
-    /// Present the About surface as a full-screen sheet over the settings surface.
-    ///
-    /// Attached to the settings surface rather than to an ancestor, so About is the
-    /// second sheet over the first the way the desktop stacks About over Settings,
-    /// and fills the screen the same way. A nil host draws nothing, which is the one
-    /// frame before `onAppear` builds it.
-    ///
-    /// A concrete modifier rather than the generic `fullScreenSurfaceSheet` it is
-    /// modelled on, because this one carries five things into the sheet and the
-    /// type checker gave up on the generic form once the token layer arrived:
-    /// "unable to type-check this expression in reasonable time", measured on
-    /// 2026-09-16. One owner for the stacking, and a shape the solver accepts.
-    func aboutSheet(
-        isPresented: Binding<Bool>,
-        host: AboutHost?,
-        appearance: AppearanceMode,
-        tokens: [String: String]
-    ) -> some View {
-        modifier(AboutSheetModifier(
-            isPresented: isPresented,
-            host: host,
-            appearance: appearance,
-            tokens: tokens
-        ))
-    }
-}
-
-/// About over Settings, as one modifier: see `aboutSheet`.
-private struct AboutSheetModifier: ViewModifier {
-    @Binding var isPresented: Bool
-    let host: AboutHost?
-    let appearance: AppearanceMode
-    let tokens: [String: String]
-
-    func body(content: Content) -> some View {
-        content.sheet(isPresented: $isPresented) {
-            if let host {
-                AboutSurface(host: host, appearance: appearance, tokens: tokens)
-                    .ignoresSafeArea()
-                    .presentationDetents([.large])
-            }
-        }
-    }
 }
 
 /// Draw the notice banner over whatever this view is.
 ///
 /// ONE modifier, applied at each layer boundary where the banner has to be on top,
-/// rather than a copy of `NoticeStack` per surface: the page, the settings sheet
-/// and the About sheet each own a layer, and a banner is only above everything if
+/// rather than a copy of `NoticeStack` per surface: the page and the one surface sheet
+/// own a layer each, and a banner is only above everything if
 /// it is drawn in the topmost layer that is actually on screen.
 ///
 /// It stays an overlay rather than becoming part of any page's layout: a notice is

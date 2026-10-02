@@ -60,6 +60,19 @@ await new Promise((r) => server.listen(PORT, '127.0.0.1', r));
 await import('../src/main.js');
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Ask a page something, but never wait on one that cannot answer. A read on a
+// web contents that is being torn down never settles: measured 2026-10-02 on
+// Linux, an executeJavaScript issued just before wc.destroy() never resolved
+// and never rejected, so a bare await on it stops the harness dead with no OK
+// and no FAIL (try/catch runs on neither). The same clock the sibling
+// harnesses use (test-banner-clicks.js, test-banner-focus.js), and the read is
+// what the checks assert on, so it must never be able to hang them.
+const ask = (wc, script, ms = 2000) => Promise.race([
+  wc.executeJavaScript(script).catch(() => null),
+  delay(ms).then(() => null),
+]);
+
 const live = () => webContents.getAllWebContents().filter((wc) => !wc.isDestroyed());
 const overlayWc = (f) => live().find((wc) => wc.getURL().includes('/' + f)) || null;
 const settingsWc = () => live().find((wc) => /settings\.html/.test(wc.getURL())) || null;
@@ -71,7 +84,17 @@ function check(name, ok, detail) {
 }
 async function shoot(wc, name) {
   if (!SHOTS || !wc) return;
-  try { fs.writeFileSync(path.join(SHOTS, name), (await wc.capturePage()).toPNG()); } catch { /* evidence, not the check */ }
+  try {
+    // Bounded by a clock for the reason dump-overlays.js gives: capturePage()
+    // does not reject when it cannot take a shot, it simply never settles, and a
+    // bare await on it would stop the harness dead. The shot is evidence, never
+    // the check, so it must not be able to hang the assertions.
+    const shot = await Promise.race([
+      wc.capturePage(),
+      delay(4000).then(() => { throw new Error('no shot within 4s'); }),
+    ]);
+    fs.writeFileSync(path.join(SHOTS, name), shot.toPNG());
+  } catch { /* evidence, not the check */ }
 }
 
 const WATCHDOG_MS = 90000;
@@ -110,14 +133,12 @@ app.whenReady().then(async () => {
     await delay(150);
     const b = overlayWc('banner.html');
     if (!b) continue;
-    try {
-      const text = await b.executeJavaScript('document.body.innerText');
-      if (/Cannot connect|not an OpenClaw gateway/i.test(text)) { banner = b; break; }
-    } catch { /* rewriting */ }
+    const text = await ask(b, 'document.body.innerText');
+    if (text && /Cannot connect|not an OpenClaw gateway/i.test(text)) { banner = b; break; }
   }
   check('the failed connect raises a banner', Boolean(banner), 'no failure banner within 20s');
   if (!banner) { fs.rmSync(PROFILE, { recursive: true, force: true }); app.exit(1); return; }
-  const action = await banner.executeJavaScript("(document.querySelector('.banner__action')||{}).textContent || null");
+  const action = await ask(banner, "(document.querySelector('.banner__action')||{}).textContent || null");
   check('the banner offers the one way out', action === 'Open Settings', `action: ${action}`);
   await shoot(banner, 'banner.png');
 
@@ -140,10 +161,15 @@ app.whenReady().then(async () => {
   const failureCardGone = async () => {
     const b = overlayWc('banner.html');
     if (!b) return true; // the whole bar went, so the failure card certainly did
-    try {
-      const text = await b.executeJavaScript('document.body.innerText');
-      return !/Cannot connect|not an OpenClaw gateway/i.test(text);
-    } catch { return true; } // mid-teardown reads throw; the bar is going
+    // The click above tears the bar's view down while this read is in flight, and
+    // a read on a web contents that goes away never settles: the very destruction
+    // that made the click's own promise non-settling (see above) would stop this
+    // poll dead, and no catch runs on a promise that neither resolves nor rejects.
+    // So the read is raced against a clock, and a bar that stops answering is read
+    // as gone, exactly as a throwing read already was.
+    const text = await ask(b, 'document.body.innerText');
+    if (text === null) return true; // unreadable mid-teardown; the bar is going
+    return !/Cannot connect|not an OpenClaw gateway/i.test(text);
   };
   let cleared = false;
   const clearDl = Date.now() + 8000;
