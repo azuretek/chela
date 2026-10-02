@@ -259,21 +259,25 @@
            the accent-driven behaviour as the DEFAULT rather than as the one that
            was taken away.
 
-           The list of buckets is not written here. core/app-icons.js owns the
-           buckets and their names, the host hands them over in its state, and
-           settings.js builds the options from what it is given, so a bucket
-           added upstream appears here with nothing in this file to change. The
-           preview is the same .chela-mark the About page draws: what it shows is
-           what the app's own surfaces show, because the host publishes the
-           chosen bucket as the accent the mark is recoloured from. -->
+           The list of buckets is not written here, and neither is a colour.
+           core/app-icons.js owns the buckets, their names and the colour that
+           stands for each; the host hands ids, names and accents over in its
+           state, and settings.js draws one .chela-mark per bucket from what it
+           is given, so a bucket added upstream appears here with nothing in this
+           file to change. The light/dark toggle previews the set in either
+           appearance without touching the app's theme: it forces color-scheme on
+           the grid alone (see .app-icon__grid in ui.css). -->
       <div class="settings-row settings-row--stacked" data-setting="appIcon">
         <div class="settings-row__text">
-          <label class="settings-row__title" for="appIcon">App icon</label>
+          <span class="settings-row__title" id="appIcon-label">App icon</span>
           <span class="settings-row__desc">The icon this app shows in the window, the taskbar and the tray. Theme follows the Control UI's accent; picking a specific icon stops following it.</span>
         </div>
         <div class="settings-row__control app-icon">
-          <span class="chela-mark app-icon__preview" id="appIcon-preview" aria-hidden="true"><span class="chela-mark__neon"></span></span>
-          <select id="appIcon"></select>
+          <div class="app-icon__mode" role="group" aria-label="Preview the icons in">
+            <button type="button" class="app-icon__mode-btn" id="appIcon-mode-light" aria-pressed="false">Light</button>
+            <button type="button" class="app-icon__mode-btn" id="appIcon-mode-dark" aria-pressed="false">Dark</button>
+          </div>
+          <div class="app-icon__grid" id="appIcon-grid" role="radiogroup" aria-labelledby="appIcon-label"></div>
         </div>
       </div>
     </div>

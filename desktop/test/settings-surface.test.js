@@ -772,20 +772,20 @@ test('every preference on this tab commits from its own control', () => {
   const listed = wired[1].split(',').map((entry) => entry.trim().replace(/'/g, '')).sort();
   // The switch LIST is the checkbox rows only. The two preferences that are not a
   // switch are excluded here and each held to its own gesture below: the shortcut
-  // FIELD (Enter and blur) and the icon SELECT (its change), which are the other
-  // two shapes a reader commits a value from.
+  // FIELD (Enter and blur) and the icon GRID (a press on a cell), which are the
+  // other two shapes a reader commits a value from.
   const declared = spec.settings.map((setting) => setting.id)
     .filter((id) => id !== 'globalShortcut' && id !== 'gatewayHeaders' && id !== 'appearance' && id !== 'appIcon')
     .sort();
   assert.deepStrictEqual(listed, declared,
     'the switches the page commits from are not the ones the spec declares');
 
-  // The icon select commits on the choice itself, the same way a switch commits
-  // on its flip, so it is wired apart from the checkbox loop rather than added to
-  // it: a select has no checked property, and reading box.checked there would
+  // The icon grid commits on the press itself, the same way a switch commits on
+  // its flip, so it is wired apart from the checkbox loop rather than added to
+  // it: a cell is a button, not a checkbox, and reading box.checked there would
   // send undefined to the host.
-  assert.match(page, /iconSelect\.addEventListener\('change'/,
-    'the icon select does not commit on the choice the reader made');
+  assert.match(page, /cell\.addEventListener\('click', \(\) => void commitSetting\('appIcon', id\)\)/,
+    'the icon grid does not commit on the choice the reader made');
 
   // And the one preference with nothing to show for itself commits on the reader's
   // own gesture, both of them: Enter, and leaving the field having changed it.

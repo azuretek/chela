@@ -3432,22 +3432,17 @@ function stateFallbackPalette() {
   console.log(`[chela-desktop] theme: no resolved palette, so our pages are using their own ${currentTheme.mode} fallback palette from ui.css`);
 }
 
-// The theme the app's OWN pages are told, which is the live theme with one
-// substitution: a chosen app icon replaces the accent our pages are recoloured
-// from, so the in-app mark (ui.css's .chela-mark, drawn for the About page and
-// the loading and pairing screens) shows the bucket the reader picked rather
-// than the theme's. The live theme's own accent is untouched for everything
-// else, and with the auto choice this returns the live theme unchanged.
-function pagesTheme() {
-  const choice = appIcons.normalizeChoice(config.get().appIcon);
-  if (!appIcons.isManualChoice(choice)) return currentTheme;
-  const bucket = appIcons.bucketForChoice(choice, currentTheme.tokens?.['--accent']);
-  return { ...currentTheme, tokens: { ...(currentTheme.tokens || {}), '--accent': appIcons.accentFor(bucket) } };
-}
-
+// The app icon is the app's own identity and NOT the interface palette: it is
+// drawn on the window, the Dock, the tray and the title strip, all through
+// applyAppIcon, and it never rewrites a theme token. There used to be a step
+// here that swapped the accent for a manual choice, which recoloured every one
+// of our own pages the moment you picked an icon (issue #132). The picker draws
+// its own previews in the page, from state, so nothing has to move a token.
+//
+// So our pages are handed the live theme and nothing else, in both appearances.
 async function applyThemeCss(wc) {
   if (!wc || wc.isDestroyed()) return;
-  const css = chrome.themeCss(pagesTheme());
+  const css = chrome.themeCss(currentTheme);
   if (!css) stateFallbackPalette();
   try {
     const previous = themeCssKeys.get(wc.id);
@@ -5527,7 +5522,15 @@ function currentState() {
     // bucket added upstream is offered with no change to the page.
     iconChoices: {
       auto: appIcons.AUTO,
-      buckets: appIcons.BUCKETS.map((b) => ({ id: b.id, name: b.name })),
+      // The mode the picker previews in first: the appearance in force, so the
+      // grid opens showing the icons as the app draws them now.
+      mode: currentTheme.mode === 'light' ? 'light' : 'dark',
+      // Each bucket carries the colour that STANDS FOR it (accentFor), so the
+      // page can draw the bucket's own mark by overriding --accent on the cell.
+      // The page is shared with the phone and must not carry a list or a colour
+      // of its own; a bucket added upstream arrives here with a pass through the
+      // same rule.
+      buckets: appIcons.BUCKETS.map((b) => ({ id: b.id, name: b.name, accent: appIcons.accentFor(b) })),
     },
     // Why the automatic-updates toggle is unavailable, where it is. A build
     // that could never install one has nothing to switch on, and saying so
@@ -5678,14 +5681,13 @@ function registerIpc() {
     applyUpdatePreference();
     installPromptMetadata(page());
     buildTray();
-    // A changed icon is the same shape: applyAppIcon redraws the window, the Dock
-    // and the tray from the new choice, and refreshThemedPages republishes the
-    // accent our own pages recolour the in-app mark from, so the Settings preview
-    // and the About page move with the picker. Both no-op when the choice did not
-    // change, and only an appIcon patch can have moved either.
+    // A changed icon is the same shape: applyAppIcon redraws the window, the Dock,
+    // the tray and the title strip from the new choice, and nothing else. The
+    // theme tokens are deliberately NOT republished, because an icon choice must
+    // not move one (issue #132); the Settings picker draws its own previews from
+    // state, so there is nothing here for it to repaint.
     if (Object.prototype.hasOwnProperty.call(patch || {}, 'appIcon')) {
       applyAppIcon();
-      refreshThemedPages();
     }
     return { ...currentState(), shortcut, login };
   });
