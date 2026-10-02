@@ -726,6 +726,13 @@ struct WebView: UIViewRepresentable {
         webView.isOpaque = false
         webView.backgroundColor = .systemBackground
         webView.scrollView.backgroundColor = .systemBackground
+        // No scroll edge effect under the status bar. The web view runs edge to
+        // edge, so iOS fades the top of its scroll view into the bar, and in the
+        // dark palette that fade read as a strip darker than the page: measured on
+        // the simulator, #101319 at the top of the band against a `--bg` of
+        // #1d2230, sheet or no sheet (#127). The band is the page's `--bg`, so
+        // nothing is drawn over it.
+        webView.scrollView.topEdgeEffect.isHidden = true
 
         // The appearance the app is in, applied where the page can see it. A
         // WKWebView resolves a page's `prefers-color-scheme` from its own trait
