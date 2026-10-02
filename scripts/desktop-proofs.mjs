@@ -122,7 +122,7 @@ export const NOT_IN_CI = {
 };
 
 /** The page measurements, which run as `npm run measure` (desktop/package.json) rather than from here. */
-export const MEASURE = ['capture-pages.js', 'capture-gateway-form.js', 'measure-text-scale.mjs', 'prove-banner-width.mjs', 'prove-frame-inset.mjs'];
+export const MEASURE = ['capture-pages.js', 'capture-gateway-form.js', 'measure-text-scale.mjs', 'prove-banner-width.mjs', 'prove-frame-inset.mjs', 'prove-titlebar-icon.mjs'];
 
 function flag(name) {
   const i = process.argv.indexOf('--' + name);

@@ -52,6 +52,11 @@ import { pageColorScheme } from '../../core/appearance.js';
 // so it is kept as small as the buttons allow.
 export const STRIP_HEIGHT = 36;
 
+// The app icon at the strip's start, beside the session title: the size Windows
+// draws a window's own caption icon at, which also sits level with the 12px
+// label and the macOS traffic lights without crowding the strip's height.
+export const STRIP_ICON_PX = 16;
+
 // There are surfaces the Control UI's stylesheet can never reach: the Windows
 // caption strip (drawn by the OS, above the web contents), the window's own
 // background behind an unpainted page, and our settings/error pages. They used
@@ -148,9 +153,29 @@ export function stripCss(platform = process.platform) {
   const controls = platform === 'win32' ? 'flex' : 'none';
   return `:root {
   --strip-height: ${STRIP_HEIGHT}px;
+  --strip-icon-size: ${STRIP_ICON_PX}px;
   --strip-pad-start: ${start};
   --strip-controls: ${controls};
 }`;
+}
+
+/**
+ * The script that shows the app icon on the strip (core/ui/titlebar.html), given
+ * the image as a data URL. The value is JSON-encoded, so nothing in it is code.
+ * Here rather than in main.js so a harness can draw the strip exactly as the app
+ * does.
+ */
+export function stripIconScript(dataUrl) {
+  return `(() => { const i = document.getElementById('icon'); if (!i) return false; i.src = ${JSON.stringify(String(dataUrl))}; i.hidden = false; return true; })();`;
+}
+
+/**
+ * The script that answers whether the strip's point (x, y), in the strip's own
+ * CSS pixels as a context-menu event reports it, is on the app icon. Coerced to
+ * numbers, so an event's fields can never become code.
+ */
+export function stripIconHitScript(x, y) {
+  return `!!document.elementFromPoint(${Number(x) || 0}, ${Number(y) || 0})?.closest('#icon:not([hidden])')`;
 }
 
 // Nothing is injected into the gateway page. That is the point of the strip.
@@ -579,8 +604,11 @@ export function applyTheme(theme, windows = []) {
 
 export default {
   STRIP_HEIGHT,
+  STRIP_ICON_PX,
   contentInset,
   stripCss,
+  stripIconScript,
+  stripIconHitScript,
   MAC_LIGHTS_X,
   MAC_LIGHTS_SPAN,
   MAC_LIGHTS_GAP,
