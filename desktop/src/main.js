@@ -293,7 +293,10 @@ function promptMetadataConfig() {
   return {
     enabled: config.get().promptMetadata === true,
     block: promptMetadata.formatBlock(promptMetadata.collectMetadata({
-      appVersion: app.getVersion(),
+      // The version a person reads, not the build version: the client-context
+      // block names the client to an agent, and the count and commit are not
+      // part of that name any more. See buildInfo.readableVersion.
+      appVersion: buildInfo.readableVersion(app.getVersion()),
     })),
   };
 }
@@ -456,7 +459,16 @@ let appliedIconFile = null;
 let appliedTrayFile = null;
 let appliedStripIconFile = null;
 function applyAppIcon() {
-  const choice = appIcons.choose(currentTheme.tokens?.['--accent'], currentTheme.mode, { full: appIcons.fillsSquare(process.platform), ico: appIcons.iconsAsIco(process.platform) });
+  // The reader's own choice, or the theme's accent-driven one, resolved in ONE
+  // place (bucketForChoice, core/app-icons.js) and used for the window, the Dock
+  // and the tray glyph alike, so a chosen icon cannot show in one of them and the
+  // accent's in another. What the tray DRAWS for a bucket is separate work (#114);
+  // this only decides which bucket each of them draws.
+  const choice = appIcons.choose(currentTheme.tokens?.['--accent'], currentTheme.mode, {
+    full: appIcons.fillsSquare(process.platform),
+    ico: appIcons.iconsAsIco(process.platform),
+    choice: appIcons.normalizeChoice(config.get().appIcon),
+  });
   if (choice.file !== appliedIconFile) {
     const img = nativeImage.createFromPath(path.join(ASSETS, choice.file));
     if (img.isEmpty()) {
@@ -1791,7 +1803,16 @@ function createGatewayView({ attempt = false } = {}) {
   // and all the progress bar gets to work with. A navigation that commits means
   // the host replied; `dom-ready` means the document parsed. Subresources are
   // deliberately not tracked: the bar would then be waiting on fonts.
-  wc.on('did-navigate', () => reachMilestone(progress.NAVIGATED));
+  // A committed navigation replaces the document, so the surface-behind
+  // stylesheet that lived in the old one is gone with it; forgetSurfaceBehind
+  // drops the stale key and re-raises the blur if a sheet is still up (the
+  // Refresh and Clear cache and reload commands reload the live document under
+  // whatever is on screen). See forgetSurfaceBehind for why the key outlives
+  // the rule it names.
+  wc.on('did-navigate', () => {
+    reachMilestone(progress.NAVIGATED);
+    forgetSurfaceBehind(wc);
+  });
   wc.on('dom-ready', () => {
     reachMilestone(progress.DOM);
     // No prompt-metadata install here. executeJavaScript at dom-ready lands
@@ -1926,6 +1947,10 @@ function destroyGatewayView(view) {
   if (!view) return;
   if (attemptView === view) attemptView = null;
   themeCssKeys.delete(view.webContents.id);
+  // The behind stylesheet died with the document too; a discarded view must not
+  // leave its id behind to be read as "already inserted" by a later view that
+  // reuses the slot.
+  behindCssKeys.delete(view.webContents.id);
   try { mainWindow?.contentView.removeChildView(view); } catch { /* window already gone */ }
   // Detaching is the part that unblocks things, so nothing after it may throw:
   // this runs on the crash path too, where the contents are already gone.
@@ -2440,6 +2465,28 @@ async function syncSurfaceBehind() {
   } catch (err) {
     console.warn('[chela-desktop] could not ' + (wanted ? 'raise' : 'drop') + ' the blur behind the sheets: ' + err.message);
   }
+}
+
+/**
+ * Forget a document's surface-behind stylesheet, and restore it if one is owed.
+ *
+ * `insertCSS` lives in the DOCUMENT it was inserted into, but `behindCssKeys`
+ * is keyed by the WebContents, and a WebContents outlives its documents. A
+ * reload -- the Refresh and Clear cache and reload commands, and any navigation
+ * the Control UI commits -- swaps in a new document that does not hold the
+ * injected rule, while the map still says the id has one. The next sheet then
+ * flips `claw-behind-on` against a stylesheet that is not there: no rule, no
+ * blur. That is the blur that is right at app start and gone after a reload,
+ * and it returns on a restart only because the map is rebuilt empty.
+ *
+ * Dropping the entry is what makes the cache per-document again. Re-running the
+ * sync is for the reload that happened UNDER a sheet, where the class died with
+ * the old document too and nothing else would raise it until the next open.
+ */
+function forgetSurfaceBehind(wc) {
+  if (!wc || wc.isDestroyed()) return;
+  behindCssKeys.delete(wc.id);
+  if (wc === page()) void syncSurfaceBehind();
 }
 
 /**
@@ -3385,9 +3432,22 @@ function stateFallbackPalette() {
   console.log(`[chela-desktop] theme: no resolved palette, so our pages are using their own ${currentTheme.mode} fallback palette from ui.css`);
 }
 
+// The theme the app's OWN pages are told, which is the live theme with one
+// substitution: a chosen app icon replaces the accent our pages are recoloured
+// from, so the in-app mark (ui.css's .chela-mark, drawn for the About page and
+// the loading and pairing screens) shows the bucket the reader picked rather
+// than the theme's. The live theme's own accent is untouched for everything
+// else, and with the auto choice this returns the live theme unchanged.
+function pagesTheme() {
+  const choice = appIcons.normalizeChoice(config.get().appIcon);
+  if (!appIcons.isManualChoice(choice)) return currentTheme;
+  const bucket = appIcons.bucketForChoice(choice, currentTheme.tokens?.['--accent']);
+  return { ...currentTheme, tokens: { ...(currentTheme.tokens || {}), '--accent': appIcons.accentFor(bucket) } };
+}
+
 async function applyThemeCss(wc) {
   if (!wc || wc.isDestroyed()) return;
-  const css = chrome.themeCss(currentTheme);
+  const css = chrome.themeCss(pagesTheme());
   if (!css) stateFallbackPalette();
   try {
     const previous = themeCssKeys.get(wc.id);
@@ -4770,9 +4830,14 @@ const PLATFORM_NAMES = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
 
 function aboutState() {
   const plan = updatePolicy();
+  // The version a person reads: the build version with its commit count and sha
+  // removed. The full string stays on app.getVersion(), where the updater ranks
+  // it and where installer filenames interpolate it; About shows the count and
+  // the commit as rows of their own (buildInfo.identityFields).
+  const version = buildInfo.readableVersion(app.getVersion());
   return {
-    version: app.getVersion(),
-    build: buildInfo.describe(app.getVersion(), buildStamp),
+    version,
+    build: version,
     channel: updates.channelOf(app.getVersion()) || 'stable',
     updateStatus: updates.statusLine({
       action: plan.action,
@@ -4800,14 +4865,16 @@ function aboutState() {
     //
     // The build stamp, the runtime and the config path used to be a raw string
     // in the settings footer; that footer is now the way into this page, so its
-    // diagnostic detail lives here instead. The commit and build date ride on the
-    // header `build` line above (buildInfo.describe), and these rows carry the
-    // rest. The config path is read at runtime from the real environment rather
-    // than hardcoded, which is the whole reason it cannot live in a committed
-    // file: config.path() answers where this install actually keeps it.
+    // diagnostic detail lives here instead. The commit, the commit count and the
+    // build date are rows of their own (buildInfo.identityFields), which is why
+    // the version above does not carry them. The config path is read at runtime
+    // from the real environment rather than hardcoded, which is the whole reason
+    // it cannot live in a committed file: config.path() answers where this
+    // install actually keeps it.
     facts: [
-      { label: 'Version', value: app.getVersion() },
+      { label: 'Version', value: version },
       { label: 'Channel', value: updates.channelOf(app.getVersion()) || 'stable' },
+      ...buildInfo.identityFields(buildStamp),
       { label: 'Electron', value: `${process.versions.electron} · Chromium ${process.versions.chrome}` },
       // The version comes from the same helper the client-context block sends, so
       // what About shows and what an agent is told cannot disagree. Deliberately
@@ -5448,6 +5515,19 @@ function currentState() {
       startHidden: cfg.startHidden,
       autoUpdate: cfg.autoUpdate !== false,
       promptMetadata: cfg.promptMetadata === true,
+      // The app-icon choice: the auto value or a bucket id, normalised so a
+      // hand-edited value reads as auto rather than stranding the picker on an
+      // option it does not offer. The buckets themselves are below.
+      appIcon: appIcons.normalizeChoice(cfg.appIcon),
+    },
+    // The list the icon choice is picked from, handed over because the page
+    // cannot import core/app-icons.js (it is a file:// document with no fetch).
+    // core/app-icons.js owns the buckets and their names, written out to
+    // core/spec/app-icons.json; this is that list, not a second copy of it, so a
+    // bucket added upstream is offered with no change to the page.
+    iconChoices: {
+      auto: appIcons.AUTO,
+      buckets: appIcons.BUCKETS.map((b) => ({ id: b.id, name: b.name })),
     },
     // Why the automatic-updates toggle is unavailable, where it is. A build
     // that could never install one has nothing to switch on, and saying so
@@ -5467,8 +5547,10 @@ function currentState() {
     platform: process.platform,
     // Pre-formatted rather than sent as parts: the settings page is sandboxed
     // and cannot require src/build-info.js, so formatting it there would mean a
-    // second copy of the rules that would drift.
-    build: buildInfo.describe(app.getVersion(), buildStamp),
+    // second copy of the rules that would drift. The version a person reads, not
+    // the build version: the commit and count belong on About, which is where
+    // this line leads.
+    build: buildInfo.readableVersion(app.getVersion()),
     versions: { electron: process.versions.electron, chrome: process.versions.chrome },
     configPath: config.path(),
   };
@@ -5596,6 +5678,15 @@ function registerIpc() {
     applyUpdatePreference();
     installPromptMetadata(page());
     buildTray();
+    // A changed icon is the same shape: applyAppIcon redraws the window, the Dock
+    // and the tray from the new choice, and refreshThemedPages republishes the
+    // accent our own pages recolour the in-app mark from, so the Settings preview
+    // and the About page move with the picker. Both no-op when the choice did not
+    // change, and only an appIcon patch can have moved either.
+    if (Object.prototype.hasOwnProperty.call(patch || {}, 'appIcon')) {
+      applyAppIcon();
+      refreshThemedPages();
+    }
     return { ...currentState(), shortcut, login };
   });
   ipcMain.handle('app:open-settings', () => { openSettings(); });

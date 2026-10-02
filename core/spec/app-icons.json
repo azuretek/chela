@@ -4,66 +4,79 @@
   "buckets": [
     {
       "id": "h22",
+      "name": "Red",
       "hue": 22.374,
       "primary": true
     },
     {
       "id": "h52",
+      "name": "Orange",
       "hue": 52.374,
       "primary": false
     },
     {
       "id": "h82",
+      "name": "Amber",
       "hue": 82.374,
       "primary": false
     },
     {
       "id": "h112",
+      "name": "Lime",
       "hue": 112.374,
       "primary": false
     },
     {
       "id": "h142",
+      "name": "Green",
       "hue": 142.374,
       "primary": false
     },
     {
       "id": "h172",
+      "name": "Teal",
       "hue": 172.374,
       "primary": false
     },
     {
       "id": "h202",
+      "name": "Cyan",
       "hue": 202.374,
       "primary": false
     },
     {
       "id": "h232",
+      "name": "Sky",
       "hue": 232.374,
       "primary": false
     },
     {
       "id": "h262",
+      "name": "Blue",
       "hue": 262.374,
       "primary": false
     },
     {
       "id": "h292",
+      "name": "Violet",
       "hue": 292.374,
       "primary": false
     },
     {
       "id": "h322",
+      "name": "Magenta",
       "hue": 322.374,
       "primary": false
     },
     {
       "id": "h352",
+      "name": "Rose",
       "hue": 352.374,
       "primary": false
     },
     {
       "id": "neutral",
+      "name": "Graphite",
       "hue": null,
       "primary": false
     }

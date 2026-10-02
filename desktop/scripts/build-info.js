@@ -59,10 +59,20 @@ export function collect(env = process.env) {
   const head = git('rev-parse', '--abbrev-ref', 'HEAD');
   const branch = (head && head !== 'HEAD' ? head : null) || env.GITHUB_REF_NAME || null;
 
+  // The build number: reachable commits, the same count the dev version leads
+  // with and the number build-version.js publishes to CI because Apple accepts
+  // it as a bundle build number. Stamped here too so About can show it in a
+  // field of its own rather than the version string carrying it. Null when git
+  // cannot say (a shallow checkout, or a tarball with no .git), which the
+  // reader reports rather than inventing a number for.
+  const counted = Number(git('rev-list', '--count', 'HEAD'));
+  const count = Number.isInteger(counted) && counted > 0 ? counted : null;
+
   return {
     commit,
     branch,
     dirty,
+    count,
     // Second precision: this is read by a human, and a fingerprint that carried
     // millisecond noise would differ between two builds of the same commit.
     builtAt: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
