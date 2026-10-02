@@ -446,11 +446,18 @@ test('★ main.js re-decides the version electron-updater refused, before report
   assert.match(offer[0], /outcome: updates\.AVAILABLE/, 'its wording comes from the shared answer');
 });
 
-test('the About page still shows the full version, tail and all', () => {
-  // What changed is what is COMPARED, never what is shown: the build and commit
-  // tail is the useful part of the number when reporting a problem.
+test('the About page shows the version a person reads, never the release-only form', () => {
+  // #37 changed what is COMPARED (compareRelease), never what is shown, and that
+  // half still holds: the display is the readable version -- the release and its
+  // channel -- and NOT the release-only `updates.release()` the comparison uses.
+  // Issue #111 then moved the count and the commit out of that version and into
+  // About's own rows, which build-info.test.js asserts. This test was titled
+  // "still shows the full version, tail and all" and passed only by matching an
+  // unrelated `version: app.getVersion()` elsewhere in main.js; it is the
+  // display rule it was guarding that #111 deliberately reverses.
   const main = readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
-  assert.match(main, /version: app\.getVersion\(\),/, 'About reports the version of the build it is running');
+  assert.match(main, /const version = buildInfo\.readableVersion\(app\.getVersion\(\)\);/,
+    'About reports the version a person reads');
   assert.doesNotMatch(main, /version: updates\.release\(/, 'the release-only form is never what is displayed');
 });
 

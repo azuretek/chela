@@ -293,7 +293,10 @@ function promptMetadataConfig() {
   return {
     enabled: config.get().promptMetadata === true,
     block: promptMetadata.formatBlock(promptMetadata.collectMetadata({
-      appVersion: app.getVersion(),
+      // The version a person reads, not the build version: the client-context
+      // block names the client to an agent, and the count and commit are not
+      // part of that name any more. See buildInfo.readableVersion.
+      appVersion: buildInfo.readableVersion(app.getVersion()),
     })),
   };
 }
@@ -4709,9 +4712,14 @@ const PLATFORM_NAMES = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
 
 function aboutState() {
   const plan = updatePolicy();
+  // The version a person reads: the build version with its commit count and sha
+  // removed. The full string stays on app.getVersion(), where the updater ranks
+  // it and where installer filenames interpolate it; About shows the count and
+  // the commit as rows of their own (buildInfo.identityFields).
+  const version = buildInfo.readableVersion(app.getVersion());
   return {
-    version: app.getVersion(),
-    build: buildInfo.describe(app.getVersion(), buildStamp),
+    version,
+    build: version,
     channel: updates.channelOf(app.getVersion()) || 'stable',
     updateStatus: updates.statusLine({
       action: plan.action,
@@ -4739,14 +4747,16 @@ function aboutState() {
     //
     // The build stamp, the runtime and the config path used to be a raw string
     // in the settings footer; that footer is now the way into this page, so its
-    // diagnostic detail lives here instead. The commit and build date ride on the
-    // header `build` line above (buildInfo.describe), and these rows carry the
-    // rest. The config path is read at runtime from the real environment rather
-    // than hardcoded, which is the whole reason it cannot live in a committed
-    // file: config.path() answers where this install actually keeps it.
+    // diagnostic detail lives here instead. The commit, the commit count and the
+    // build date are rows of their own (buildInfo.identityFields), which is why
+    // the version above does not carry them. The config path is read at runtime
+    // from the real environment rather than hardcoded, which is the whole reason
+    // it cannot live in a committed file: config.path() answers where this
+    // install actually keeps it.
     facts: [
-      { label: 'Version', value: app.getVersion() },
+      { label: 'Version', value: version },
       { label: 'Channel', value: updates.channelOf(app.getVersion()) || 'stable' },
+      ...buildInfo.identityFields(buildStamp),
       { label: 'Electron', value: `${process.versions.electron} · Chromium ${process.versions.chrome}` },
       // The version comes from the same helper the client-context block sends, so
       // what About shows and what an agent is told cannot disagree. Deliberately
@@ -5396,8 +5406,10 @@ function currentState() {
     platform: process.platform,
     // Pre-formatted rather than sent as parts: the settings page is sandboxed
     // and cannot require src/build-info.js, so formatting it there would mean a
-    // second copy of the rules that would drift.
-    build: buildInfo.describe(app.getVersion(), buildStamp),
+    // second copy of the rules that would drift. The version a person reads, not
+    // the build version: the commit and count belong on About, which is where
+    // this line leads.
+    build: buildInfo.readableVersion(app.getVersion()),
     versions: { electron: process.versions.electron, chrome: process.versions.chrome },
     configPath: config.path(),
   };
