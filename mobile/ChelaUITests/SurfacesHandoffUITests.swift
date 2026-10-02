@@ -165,10 +165,9 @@ final class SurfacesHandoffUITests: XCTestCase {
         let message = "the dim behind a sheet is black at \(String(format: "%.3f", composite)) "
             + "(\(String(format: "%.1f", open)) to \(String(format: "%.1f", covered)), and the shared value is "
             + "\(sharedDim)"
-        // Held in both appearances: the material under the veil is pinned dark and the
-        // veil is solved against it, so the appearance's own tint does not reach the
-        // dim. With the material following the appearance this read 0.488 in light
-        // and 0.684 in dark (#128).
+        // Held in both appearances: the blur under the veil is the page's own and adds
+        // no tint, so the veil is the whole of the dim. With the platform's material
+        // under the veil this read 0.488 in light and 0.684 in dark (#128).
         // Named as an activity so the reading is in the run's log when it passes too.
         XCTContext.runActivity(named: message) { _ in
             XCTAssertEqual(composite, sharedDim, accuracy: 0.06, message)

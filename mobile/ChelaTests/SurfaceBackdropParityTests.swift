@@ -12,12 +12,12 @@ import XCTest
 /// test also reads the Control UI's own drawer backdrop out of an OpenClaw checkout
 /// when one is present, which a simulator test has no business reaching for.
 ///
-/// The one piece of iOS arithmetic: the sheet is presented undimmed (#127), and the
-/// veil is solved against the material under it (#128), so the veil and the
-/// material's measured transmission together have to let through what the shared
-/// value does. That the composite is that value on screen, in both appearances, is
-/// SurfacesHandoffUITests; that the band above the sheet stays the page's own
-/// colour is SheetBandUITests, both on a simulator.
+/// There is no iOS arithmetic to hold: the sheet is presented undimmed (#127) and
+/// the blur under the veil is the page's own, with no tint (#128), so the veil is
+/// the shared value as it is. The blur's radius is mirrored from the desktop's, and
+/// held to it here the same way. That the composite is the shared value on screen,
+/// in both appearances, is SurfacesHandoffUITests; that the band above the sheet
+/// stays the page's own colour is SheetBandUITests, both on a simulator.
 final class SurfaceBackdropParityTests: XCTestCase {
     private func stylesheet() throws -> String {
         let url = try Fixtures.root().appendingPathComponent("core/ui/ui.css")
@@ -79,15 +79,21 @@ final class SurfaceBackdropParityTests: XCTestCase {
                        "the dim is one value in both appearance blocks, and ui.css reads " + String(describing: values))
     }
 
-    func testTheVeilAndTheMaterialCompositeToTheSharedDim() {
-        let through = (1 - SurfaceBackdrop.veilAlpha) * SurfaceBackdrop.materialTransmission
-        XCTAssertEqual(1 - through, SurfaceBackdrop.scrimAlpha, accuracy: 0.0001,
-                       "the veil at \(SurfaceBackdrop.veilAlpha) over a material passing "
-                       + "\(SurfaceBackdrop.materialTransmission) is black at \(1 - through)")
-        // A veil outside 0...1 would mean the material alone is darker than the dim,
-        // which no veil can lighten.
-        XCTAssertGreaterThan(SurfaceBackdrop.veilAlpha, 0, "the material alone is darker than the shared dim")
-        XCTAssertLessThanOrEqual(SurfaceBackdrop.veilAlpha, 1)
+    func testTheBlurIsTheDesktopsRadius() throws {
+        // The desktop's backdrop is injected from its main process as CSS text, so
+        // the radius is read out of that source the way the dim is read out of ui.css.
+        let url = try Fixtures.root().appendingPathComponent("desktop/src/main.js")
+        let source = try String(contentsOf: url, encoding: .utf8)
+        let radii = source.components(separatedBy: "backdrop-filter: blur(").dropFirst().compactMap { tail in
+            tail.split(separator: ")", maxSplits: 1).first.flatMap { value -> Double? in
+                value.hasSuffix("px") ? Double(value.dropLast(2)) : nil
+            }
+        }
+        XCTAssertFalse(radii.isEmpty, "desktop/src/main.js declares no backdrop blur, so this would assert nothing")
+        for radius in radii {
+            XCTAssertEqual(Double(SurfaceBackdrop.blurRadius), radius, accuracy: 0.0001,
+                           "the blur behind a sheet is \(SurfaceBackdrop.blurRadius)pt here and \(radius)px on the desktop")
+        }
     }
 
     func testTheDimIsDarkEnoughToReadAsADim() throws {
