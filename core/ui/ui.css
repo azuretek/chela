@@ -182,15 +182,18 @@
   /* Ours: the Control UI has no equivalent, so these are never overridden. */
   --ok: #3ddc84;
   --warn: #ffb020;
-  /* The dim behind a sheet, taken from the Control UI's own mobile nav drawer
+  /* The dim behind a sheet. It STARTED as the Control UI own mobile nav drawer
      backdrop (.shell-nav-backdrop in upstream ui/src/styles/layout.mobile.css),
-     so the two dims match. Restated rather than read live because upstream paints
-     it as a literal and publishes no token for it. Black at 44% in every palette:
-     the interface stays readable behind Settings and About and darkens, where a
-     wash of --bg at 70% faded it into the page colour as the sheet rose.
-     Declared with the one value in both appearance blocks, because the dim does
-     not follow the mode. See ui/CONVENTIONS.md, "The dim behind a sheet". */
-  --scrim: rgb(0 0 0 / 44%);
+     restated so the two dims matched, and it is OURS now: reported 2026-10-01,
+     "make that a bit darker and blurred", so it is black at 60% rather than the
+     drawer 44%, and the page behind it is blurred by the host that owns that
+     page (the desktop blurs the Control UI view; the phone blurs the app behind
+     the sheet). The blur cannot be a backdrop-filter here: this page is a view
+     OVER the interface, in its own document, and a backdrop-filter samples only
+     the document it is in. Declared with the one value in both appearance
+     blocks, because the dim does not follow the mode. See ui/CONVENTIONS.md,
+     "The dim behind a sheet". */
+--scrim: rgb(0 0 0 / 60%);
 }
 /* Warm neutrals rather than pure white, to sit beside the Control UI's light
    palettes without looking like a different application bolted on. Reached via
@@ -216,7 +219,7 @@
     --border: #e3dfd2;
     --border-strong: #cdc7b6;
     --border-hover: #ada694;
-    --scrim: rgb(0 0 0 / 44%);
+    --scrim: rgb(0 0 0 / 60%);
     --text: #3d3a33;
     --text-strong: #1f1d1a;
     --muted: #6b655b;
@@ -1753,6 +1756,16 @@ body.as-page .modal { animation: surface-card-in var(--duration-normal) var(--ea
 body.surface--leaving .scrim { animation: surface-scrim-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
 body.surface--leaving .modal { animation: surface-sheet-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
 
+/* A COVERED surface: a sheet has gone over it and taken the window, so its card
+   slides down out of the way and stays there. One surface on screen at a time is
+   the whole point, and the DIM deliberately does not go with it: the dim is the
+   window one dim, and the sheet arriving above keeps its own scrim clear
+   (surface--stacked), so the interface behind stays dimmed across the handoff
+   instead of flashing undimmed between two surfaces. Revealing is this class
+   coming off, which changes the card animation-name back to the arrival one and
+   plays the same slide up rather than a second motion written for the return. */
+body.surface--covered .modal { animation: surface-sheet-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
+
 /* The pairing screen rises on a spring, the phone's own `.spring()` sampled into
    linear(), and leaves by the sheet's path. */
 .pairing { animation: surface-sheet-in var(--motion-spring) var(--motion-spring-ease) both; }
@@ -1876,6 +1889,7 @@ html.surface--native-sheet body.surface--leaving .modal { animation: none; }
   body.surface--leaving .scrim,
   body.surface--leaving .modal,
   body.surface--leaving .pairing { animation: surface-fade-out var(--duration-fast) ease both; }
+  body.surface--covered .modal { animation: surface-fade-out var(--duration-fast) ease both; }
   .panel--in-from-left,
   .panel--in-from-right,
   .editor-disclosure--arriving > * { animation: surface-fade-in var(--duration-fast) ease both; }

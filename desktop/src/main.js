@@ -2103,6 +2103,10 @@ function openOverlay(name, opts = {}) {
   restackViews();
   layoutViews();
   wc.loadFile(path.join(UI_DIR, OVERLAY_PAGES[name]), { search: stackedSearch(name, opts.search || overlaySearch()) });
+  // The interface behind a dimming sheet blurs while it is up, and stops when the
+  // last one is gone. Asked from the live views rather than counted, so a close
+  // that came from the crash path leaves it right too.
+  void syncSurfaceBehind();
   wc.once('did-finish-load', () => {
     applyThemeCss(wc);
     wc.focus();
@@ -2177,6 +2181,143 @@ function leaveSurface(view) {
 }
 
 /**
+ * The overlay a surface was pushed out of the way for, if any.
+ *
+ * One pair is possible today, About over Settings. It is a Map rather than a
+ * boolean because the DIRECTION is the whole of the claim: whoever covered it is
+ * whoever brings it back.
+ */
+const coveredBelow = new Map();
+
+/**
+ * Ask a page to do something and wait for its answer, under the departure ceiling.
+ *
+ * Every non-answer means the page did not run it, which is the state before any of
+ * this existed, so a page that is going or a script that never loaded leaves the
+ * host where it was rather than stranded mid-handoff.
+ */
+async function askSurface(view, expression) {
+  const wc = view && view.webContents;
+  if (!wc || wc.isDestroyed()) return false;
+  const asked = wc
+    .executeJavaScript(expression, true)
+    .then((answered) => answered === true)
+    .catch(() => false);
+  return Promise.race([
+    asked,
+    new Promise((resolve) => setTimeout(() => resolve(false), SURFACE_LEAVE_CEILING_MS)),
+  ]);
+}
+
+/**
+ * Move the settings surface out of the way for a sheet that is going over it.
+ *
+ * Reported 2026-10-01: About and Settings were both on screen at once, the About
+ * card sitting in the middle of the Settings card. They are two views in one
+ * window, so the lower one has to GO rather than be drawn under, and its page
+ * slides the card down and holds it there (ui/surface.js cover). The view is not
+ * closed, which is what keeps what the reader was looking at, tab and scroll
+ * position included, and what keeps the dim from flickering: it stays with the
+ * surface that owns it.
+ */
+async function coverBelow(coverer) {
+  if (coveredBelow.get('settings') === coverer) return;
+  if (!overlayAlive('settings')) return;
+  coveredBelow.set('settings', coverer);
+  const animated = await askSurface(
+    overlayViews.get('settings'),
+    'window.clawSurface && window.clawSurface.cover ? window.clawSurface.cover() : null',
+  );
+  console.log('[chela-desktop] the settings card was covered for ' + coverer + ' (animated: ' + animated + ')');
+}
+
+/** Bring back whatever coverer pushed out of the way, if anything. */
+async function revealBelow(coverer) {
+  for (const [name, by] of [...coveredBelow.entries()]) {
+    if (by !== coverer) continue;
+    coveredBelow.delete(name);
+    const view = overlayViews.get(name);
+    if (!view || view.webContents.isDestroyed()) continue;
+    await view.webContents
+      .executeJavaScript('window.clawSurface && window.clawSurface.reveal ? window.clawSurface.reveal() : null', true)
+      .catch(() => {});
+  }
+}
+
+/**
+ * About, raised the one way: the settings card goes down first, then About comes up.
+ *
+ * The order IS the behaviour. Opening About over Settings put two cards on screen
+ * at once, and closing it left the reader on whichever card happened to be in
+ * front. So the cover is awaited and About is opened only after it, which makes the
+ * handoff one motion and then another rather than two at the same time, and the
+ * departure plays on the SHORTER sheet duration so the pause between them is the
+ * shortest it can be without the two overlapping.
+ */
+async function openAboutSurface() {
+  await coverBelow('about');
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  openOverlay('about');
+}
+
+/**
+ * The blur of the interface behind a sheet, injected into the page that IS the
+ * interface.
+ *
+ * A backdrop-filter samples only the document it is in. Our sheets are separate
+ * views over the Control UI, so a blur on a sheet own scrim would blur nothing at
+ * all: there is no backdrop in that document to sample. The page BEHIND has to
+ * blur itself, which is what this does, on the same curve and duration the sheet
+ * arrives over. Measured 2026-10-01, and it is why the blur is not one more line
+ * in ui.css. Reported the same day: "make that a bit darker and blurred".
+ */
+const SURFACE_BEHIND_CSS = [
+  'html::before {',
+  '  content: "";',
+  '  position: fixed;',
+  '  inset: 0;',
+  '  z-index: 2147483000;',
+  '  pointer-events: none;',
+  '  opacity: 0;',
+  '  transition: opacity var(--motion-sheet-in, 500ms) var(--motion-sheet-ease, ease);',
+  '  backdrop-filter: blur(14px);',
+  '  -webkit-backdrop-filter: blur(14px);',
+  '}',
+  'html.claw-behind-on::before { opacity: 1; }',
+].join('\n');
+
+/** Which stylesheet key holds the behind CSS for each page, so it is inserted once. */
+const behindCssKeys = new Map();
+
+/**
+ * Put the interface behind a sheet into the state the sheets up demand.
+ *
+ * Asked at every overlay open and close rather than tracked as a counter: what
+ * matters is whether a DIMMING overlay is up right now, and the live views are the
+ * only answer to that. The class flip is what animates; the stylesheet is inserted
+ * once per document and left there, because a rule that only bites when the class
+ * is on costs nothing when it is off.
+ */
+async function syncSurfaceBehind() {
+  const wc = page();
+  if (!wc || wc.isDestroyed()) return;
+  const wanted = DIMMING_OVERLAYS.some((name) => overlayAlive(name));
+  try {
+    if (wanted && !behindCssKeys.has(wc.id)) {
+      behindCssKeys.set(wc.id, await wc.insertCSS(SURFACE_BEHIND_CSS));
+    }
+    await wc.executeJavaScript(
+      wanted
+        ? "document.documentElement.classList.add('claw-behind-on')"
+        : "document.documentElement.classList.remove('claw-behind-on')",
+      true,
+    );
+  } catch (err) {
+    console.warn('[chela-desktop] could not ' + (wanted ? 'raise' : 'drop') + ' the blur behind the sheets: ' + err.message);
+  }
+}
+
+/**
  * Close one of our surfaces, playing its departure first.
  *
  * The view leaves the map BEFORE the fade, so the surface is logically gone the
@@ -2216,6 +2357,15 @@ async function closeOverlay(name, { animate = true } = {}) {
         .executeJavaScript("document.documentElement.classList.remove('surface--stacked')", true)
         .catch(() => {});
     }
+  }
+  // The blur and the covered card follow the same question the dim does: is a
+  // dimming sheet still up?
+  if (DIMMING_OVERLAYS.includes(name)) {
+    void syncSurfaceBehind();
+    // About leaving hands the window back to the surface it was COVERING, and
+    // that surface is still loaded: its card slides back up rather than the
+    // surface being reopened, so the tab and the scroll position survive.
+    await revealBelow(name);
   }
   // About shown over Settings must hand focus back to Settings, not to the
   // gateway page buried under both of them.
@@ -4598,7 +4748,10 @@ function notifyStateChanged() {
  */
 function showAbout() {
   showMainWindow();
-  openOverlay('about');
+  // The settings card goes down first and About comes up after it; see
+  // openAboutSurface. Not awaited, because both entry points are a menu click and
+  // an IPC handler, and neither of them has anything to do with the answer.
+  void openAboutSurface();
 }
 
 /**

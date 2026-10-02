@@ -171,5 +171,56 @@
         setTimeout(function () { resolve(true); }, wait + SLACK_MS);
       });
     },
+
+    /**
+     * Move this surface out of the way, and hold it there.
+     *
+     * For the one case where two of our surfaces would otherwise be on screen at
+     * the same time: About goes over Settings, and two cards in one window is a
+     * view nobody asked for. Reported 2026-10-01.
+     *
+     * The card plays its departure and stays at its last frame, and the view is
+     * NOT removed: what the reader was looking at is still there to come back to,
+     * with the tab and the scroll position it had. The dim is left alone on
+     * purpose, because it is the window one dim and the sheet arriving above keeps
+     * its own scrim clear (surface--stacked); covering it too would leave the
+     * interface undimmed for the length of the handoff.
+     *
+     * Resolves with whether anything was animated, like leave(), and never
+     * rejects, so a page that throws here is a surface the host still covers.
+     */
+    cover: function () {
+      var wait;
+      try {
+        var body = document.body;
+        if (!body) return Promise.resolve(false);
+        // A native sheet is the platform own presentation, so there is no card of
+        // ours to move: the host dismisses the sheet instead, which is the same
+        // rule leave() follows.
+        if (nativeSheet()) return Promise.resolve(false);
+        body.classList.add('surface--covered');
+        wait = reduced() ? durationMs('--duration-fast') : durationMs('--motion-sheet-out');
+      } catch (e) {
+        return Promise.resolve(false);
+      }
+      return new Promise(function (resolve) {
+        setTimeout(function () { resolve(true); }, wait + SLACK_MS);
+      });
+    },
+
+    /**
+     * Bring a covered surface back.
+     *
+     * Synchronous, and there is nothing to wait for: taking the class off changes
+     * the card animation-name back to the arrival the stylesheet already declares,
+     * and a changed animation-name starts a new animation, so the slide up is the
+     * same motion as the original arrival. A caller may not read its own result as
+     * a signal either, so an answer would be a second way to get this wrong.
+     */
+    reveal: function () {
+      try {
+        if (document.body) document.body.classList.remove('surface--covered');
+      } catch (e) { /* a page with no body has nothing to reveal */ }
+    },
   };
 })();
