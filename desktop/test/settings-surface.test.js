@@ -448,6 +448,38 @@ test('the gap between two blocks belongs to the element that holds them', () => 
     `the gap above a settings group is declared ${declared.length} times: ${JSON.stringify(declared)}`);
 });
 
+test('an empty list is inset like a card, from the same tokens, for every empty state', () => {
+  // Issue #142: "No certificates have been pinned." sat flush against its box's
+  // left edge and its top and bottom borders. Every empty state the page draws is
+  // a settings group holding its sentence directly, with no row inside it, so it
+  // took the group's border and none of a row's padding.
+  //
+  // Two halves, both about SHAPE. The page draws its empty states as one class, so
+  // a fix to it is a fix to all of them and a new empty state that invents its own
+  // shape is caught. And that class takes the row's padding as the row declares it,
+  // token for token, so a card's text and an empty sentence cannot drift apart by
+  // one of them gaining a number of its own. What that produces on screen is
+  // measured by scripts/test-settings-layout.js, on the Certificates and Problems
+  // tabs, at three widths and in both appearances.
+  const empties = [...page.matchAll(/className:\s*'([^']*\bempty\b[^']*)'/g)].map((m) => m[1]);
+  assert.ok(empties.length >= 4, `expected the page's four empty states, found ${empties.length}`);
+  assert.deepEqual([...new Set(empties)], ['settings-group empty'],
+    `an empty state is drawn with a class of its own: ${JSON.stringify(empties)}`);
+
+  const css = read(REPO, 'core', 'ui', 'ui.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const paddingOf = (selector) => {
+    const rule = new RegExp(`^${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(css);
+    assert.ok(rule, `${selector} is not declared in ui.css`);
+    const padding = /(?:^|;)\s*padding:\s*([^;}]+)/.exec(rule[1]);
+    assert.ok(padding, `${selector} declares no padding`);
+    return padding[1].trim();
+  };
+  const row = paddingOf('.settings-row');
+  assert.match(row, /^var\(--space-\d\) var\(--space-\d\)$/, `a row's padding is no longer drawn from the spacing scale: ${row}`);
+  assert.equal(paddingOf('.settings-group.empty'), row,
+    'an empty state is not padded like a row, so its sentence sits elsewhere than every card\'s text');
+});
+
 test('every text line in the header declares its own inset from the header edge', () => {
   // The misalignment Abi reported, in the stylesheet's terms: the heading and its
   // subtitle did not share a leading edge. The title is upstream's rule and insets

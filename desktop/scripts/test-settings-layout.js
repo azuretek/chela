@@ -25,12 +25,18 @@
 //                   group and the About footer, read in the order they are drawn,
 //                   which is what makes this a rule about the SURFACE rather than
 //                   about the two places that happened to be reported.
+//   the empty state on the Certificates and Problems tabs, the sentence a list
+//                   draws when it has nothing in it sits inside its box by the
+//                   same inset a row gives the text of every other card: its
+//                   leading edge on the gateway rows' text column, and the row's
+//                   own padding above and below it (issue #142). A screenshot of
+//                   each of those panels is kept beside the page's.
 //   the heading     the title and its subtitle start on one edge (both pages), and
 //                   on the settings page that edge is the back control's own, which
 //                   is upstream's arrangement for this header: the control's 9px
 //                   inset and the title's 9px inset are the same edge on purpose.
 //
-//   npx electron scripts/test-settings-layout.js [--out DIR] [--report]
+//   npx electron scripts/test-settings-layout.js [--out DIR | --shots DIR] [--report]
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -122,7 +128,10 @@ const argOf = (flag, fallback) => {
   return i === -1 ? fallback : process.argv[i + 1];
 };
 const REPORT = process.argv.includes('--report');
-const OUT = argOf('--out', path.join(os.tmpdir(), 'claw-settings-layout'));
+// --shots is the name scripts/desktop-proofs.mjs passes, and CI keeps that
+// directory as the desktop-shots artifact. Read only as --out, this harness
+// wrote every screenshot it took into a temp directory nobody kept.
+const OUT = argOf('--shots', argOf('--out', path.join(os.tmpdir(), 'claw-settings-layout')));
 fs.mkdirSync(OUT, { recursive: true });
 
 const REPO = path.join(import.meta.dirname, '..', '..');
@@ -217,7 +226,9 @@ const state = JSON.parse(process.env.CLAW_CAPTURE_STATE || '{}');
 // hides the back control, and this surface's header is half of what is measured.
 contextBridge.exposeInMainWorld('clawSettings', {
   asPage: false,
-  invoke: async (command) => (command === 'state' ? state : state),
+  // An empty failure log for the Problems tab, so it draws its empty state the
+  // way a host with nothing logged does; every other command reads the state.
+  invoke: async (command) => (command === 'noticeHistory' ? [] : state),
   on: () => {},
 });
 contextBridge.exposeInMainWorld('clawDesktop', {
@@ -319,7 +330,20 @@ const PROBE = `(() => {
   // here measured one page's subtitle and returned a null edge for the other's,
   // which reads as a page with nothing under its title.
   const subtitle = document.getElementById('subtitle') || document.querySelector('.modal__header .sub');
+
+  // The inset a CARD gives its text, read off a gateway row: how far the row's
+  // title starts inside its group's border, and the row's own padding. This is
+  // the reference the empty states are held to, measured rather than restated.
+  const refRow = document.querySelector('#gateways > .settings-group > .settings-row');
+  const refGroup = refRow ? refRow.parentElement : null;
+  const cardInset = refRow ? {
+    left: textLeft(refRow.querySelector('.settings-row__title')) - refGroup.getBoundingClientRect().left
+      - parseFloat(getComputedStyle(refGroup).borderLeftWidth),
+    top: parseFloat(getComputedStyle(refRow).paddingTop),
+    bottom: parseFloat(getComputedStyle(refRow).paddingBottom),
+  } : null;
   return {
+    cardInset,
     width: document.documentElement.clientWidth,
     header: box(header),
     headerPadding: header ? getComputedStyle(header).padding : null,
@@ -338,6 +362,45 @@ const PROBE = `(() => {
     rows,
   };
 })()`;
+
+/**
+ * The empty states on screen, and the inset each one gives its sentence.
+ *
+ * From the TEXT RUN rather than the element's padding, for the same reason the
+ * header is: the fault is where the words are drawn inside the box. Left is the
+ * text's leading edge from the inside of the border. Top and bottom are the room
+ * between the line box and the border, so a box whose padding was applied and
+ * then cancelled by a negative margin or a fixed height still reads as flush.
+ */
+const EMPTY_PROBE = `(() => [...document.querySelectorAll('.settings-group.empty')]
+  .filter((node) => !node.closest('[hidden]') && node.getBoundingClientRect().height > 0)
+  .map((node) => {
+    const cs = getComputedStyle(node);
+    const r = node.getBoundingClientRect();
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+    let first = walker.nextNode();
+    while (first && !first.textContent.trim()) first = walker.nextNode();
+    const range = document.createRange();
+    range.selectNodeContents(first);
+    const t = range.getBoundingClientRect();
+    // The line box, not the glyphs: half-leading is the line's, not the box's.
+    const lineHeight = parseFloat(cs.lineHeight) || t.height;
+    const lineTop = t.top - (lineHeight - t.height) / 2;
+    const lineBottom = t.bottom + (lineHeight - t.height) / 2;
+    return {
+      text: first.textContent.trim(),
+      heldBy: node.parentElement.id,
+      left: t.left - r.left - parseFloat(cs.borderLeftWidth),
+      top: lineTop - r.top - parseFloat(cs.borderTopWidth),
+      bottom: r.bottom - parseFloat(cs.borderBottomWidth) - lineBottom,
+    };
+  }))()`;
+
+/** Open one tab the way a reader does, by pressing it. */
+async function openTab(win, id) {
+  await win.webContents.executeJavaScript(`document.getElementById(${JSON.stringify(id)}).click()`);
+  await new Promise((r) => setTimeout(r, 400));
+}
 
 let failed = false;
 function check(name, ok, detail = '') {
@@ -461,6 +524,33 @@ app.whenReady().then(async () => {
         check(`${where}: the state pill keeps clear of the address`,
           probe.rows.length >= 2 && crossing.length === 0,
           `the pill reaches into the address column: ${JSON.stringify(crossing)}`);
+
+        // ---- an empty list's sentence is inset like a card's text ---------
+        // Issue #142: "No certificates have been pinned." sat flush against its
+        // box's left edge and its top and bottom borders. The empty state is a
+        // settings group holding its sentence directly, with no row inside, so it
+        // took a card's border and none of a card's padding. Held to the inset a
+        // gateway row gives its own title on this same page at this same width,
+        // and asserted on every tab that draws one empty, each panel kept as a
+        // screenshot. Half a pixel of tolerance for sub-pixel text placement.
+        const ref = probe.cardInset;
+        console.log(`    card text inset left ${round(ref && ref.left)} top ${round(ref && ref.top)} bottom ${round(ref && ref.bottom)}`);
+        for (const tab of ['certificates', 'problems']) {
+          await openTab(win, `tab-${tab}`);
+          const empties = await win.webContents.executeJavaScript(EMPTY_PROBE);
+          const shot = path.join(OUT, `settings-${tab}-${width.name}-${mode}.png`);
+          fs.writeFileSync(shot, (await win.capturePage()).toPNG());
+          console.log(`SHOT ${shot}`);
+          for (const e of empties) {
+            console.log(`    empty ${e.heldBy}: inset left ${round(e.left)} top ${round(e.top)} bottom ${round(e.bottom)}   "${e.text}"`);
+          }
+          const off = empties.filter((e) => !ref
+            || Math.abs(e.left - ref.left) > 0.5 || e.top < ref.top - 0.5 || e.bottom < ref.bottom - 0.5);
+          check(`${where}: the ${tab} tab's empty state is inset like a card's text`,
+            empties.length >= 1 && off.length === 0,
+            empties.length ? `card inset ${JSON.stringify(ref)}; empty states ${JSON.stringify(off)}` : 'no empty state drawn on this tab');
+        }
+        await openTab(win, 'tab-gateways');
       }
 
       // ---- the headline starts on the header's own edge -----------------
