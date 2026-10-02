@@ -75,10 +75,22 @@ function requireToolchain() {
   if (!fs.existsSync(sdk)) skip(`the Android SDK path does not exist: ${sdk}`);
 }
 
+/**
+ * Run Gradle, with the DAEMON reused rather than refused.
+ *
+ * `--no-daemon` was copied from an older shell and it is what made the Android leg
+ * slow: the job runs Gradle three times (the app, the instrumented tests, then the
+ * root fan out), and refusing the daemon makes every one of them pay a fresh JVM
+ * start and a full configuration on a runner that is already carrying an emulator.
+ * The daemon lives for the job and is torn down with the machine, so the second and
+ * third invocations are warm. Set CHELA_GRADLE_NO_DAEMON=1 when a fresh JVM per call
+ * is genuinely wanted.
+ */
 function gradle(args) {
   const wrapper = path.join(ANDROID, process.platform === "win32" ? "gradlew.bat" : "gradlew");
-  console.log(`android:${task}: gradlew ${args.join(" ")}`);
-  const r = spawnSync(wrapper, args, { cwd: ANDROID, stdio: "inherit" });
+  const argv = process.env.CHELA_GRADLE_NO_DAEMON === "1" ? ["--no-daemon", ...args] : args;
+  console.log(`android:${task}: gradlew ${argv.join(" ")}`);
+  const r = spawnSync(wrapper, argv, { cwd: ANDROID, stdio: "inherit" });
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
 
