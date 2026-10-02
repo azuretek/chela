@@ -119,6 +119,11 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const UI_DIR = path.join(HERE, '..', '..', 'core', 'ui');
 const ASSETS = path.join(HERE, 'assets');
 const PRELOAD = path.join(HERE, 'preload.cjs');
+// The strip's own bridge. It carries our window controls (minimise, maximise,
+// close), which are the strip's page and so need a way back to the window. Only
+// the Windows strip has controls; macOS keeps its traffic lights and loads no
+// preload.
+const TITLEBAR_PRELOAD = path.join(HERE, 'titlebar-preload.cjs');
 
 // Read once: the stamp is baked into the bundle at pack time and cannot change
 // while the app is running.
@@ -1605,18 +1610,20 @@ function attachContextMenu(wc) {
 /* --------------------------------------------------------------- title strip */
 
 /**
- * The strip the app draws above the page, carrying the window buttons.
+ * The strip the app draws above the page, carrying the label and — on Windows —
+ * our own minimise, maximise and close controls.
  *
- * Deliberately inert: no preload, no IPC bridge, no script (its CSP forbids
- * one). It is a coloured, draggable band with a label, and the label is written
- * in from here, the one place that knows which session is loaded. Giving it a
- * bridge would mean a second privileged page for no gain.
+ * The controls are the strip's own page (titlebar.html), so on Windows the view
+ * gets a small preload (titlebar-preload.cjs) that bridges the three clicks to
+ * the window. macOS keeps its traffic lights and takes no preload, there is
+ * nothing on the strip to press. The label is still written in from here, the
+ * one place that knows which session is loaded.
  */
 function createStrip() {
   if (chrome.contentInset().top === 0) return null;
-  stripView = new WebContentsView({
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
-  });
+  const webPreferences = { contextIsolation: true, nodeIntegration: false, sandbox: true };
+  if (process.platform === 'win32') webPreferences.preload = TITLEBAR_PRELOAD;
+  stripView = new WebContentsView({ webPreferences });
   stripView.setBackgroundColor(currentTheme.surface);
   mainWindow.contentView.addChildView(stripView);
   const wc = stripView.webContents;
@@ -1624,6 +1631,8 @@ function createStrip() {
   wc.once('did-finish-load', () => {
     wc.insertCSS(chrome.stripCss()).catch(() => {});
     applyThemeCss(wc);
+    // A window that opened maximised needs its button to say so.
+    syncStripMaximized(mainWindow.isMaximized());
   });
   return stripView;
 }
@@ -1643,6 +1652,16 @@ function setStripLabel(session) {
     `document.getElementById('label').textContent = ${JSON.stringify(text)};`,
     true,
   ).catch(() => {});
+}
+
+/**
+ * Tell the strip's own controls whether the window is maximised, so the maximise
+ * button shows the restore glyph in step with the window. A no-op on a window
+ * with no strip (Linux) or before the strip has loaded.
+ */
+function syncStripMaximized(isMaximized) {
+  const wc = stripView && !stripView.webContents.isDestroyed() ? stripView.webContents : null;
+  if (wc) wc.send('window:maximize-changed', !!isMaximized);
 }
 
 /**
@@ -1873,7 +1892,7 @@ function createMainWindow() {
 
   mainWindow = new BrowserWindow({
     ...restoredBounds(),
-    ...chrome.windowOptions(currentTheme),
+    ...chrome.windowOptions(),
     minWidth: defaults.minWindow.width,
     minHeight: defaults.minWindow.height,
     show: false,
@@ -1899,8 +1918,8 @@ function createMainWindow() {
   // is a page that does not fill the window rather than a cosmetic slip.
   mainWindow.on('resize', () => { layoutViews(); schedulePersist(); });
   mainWindow.on('move', schedulePersist);
-  mainWindow.on('maximize', () => { layoutViews(); schedulePersist(); });
-  mainWindow.on('unmaximize', () => { layoutViews(); schedulePersist(); });
+  mainWindow.on('maximize', () => { layoutViews(); schedulePersist(); syncStripMaximized(true); });
+  mainWindow.on('unmaximize', () => { layoutViews(); schedulePersist(); syncStripMaximized(false); });
   mainWindow.on('enter-full-screen', layoutViews);
   mainWindow.on('leave-full-screen', layoutViews);
 
@@ -5385,6 +5404,29 @@ function currentState() {
 }
 
 function registerIpc() {
+  // The strip's own window controls (Windows). Each acts on the window that owns
+  // the strip; `BrowserWindow.fromWebContents` resolves it from the view, with the
+  // main window as the fallback for a view it cannot place.
+  const stripWindow = (event) => BrowserWindow.fromWebContents(event.sender) || mainWindow;
+  ipcMain.on('window:minimize', (event) => {
+    const win = stripWindow(event);
+    if (win && !win.isDestroyed()) win.minimize();
+  });
+  ipcMain.on('window:toggle-maximize', (event) => {
+    const win = stripWindow(event);
+    if (!win || win.isDestroyed()) return;
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+  });
+  ipcMain.on('window:close', (event) => {
+    const win = stripWindow(event);
+    if (win && !win.isDestroyed()) win.close();
+  });
+  ipcMain.handle('window:is-maximized', (event) => {
+    const win = stripWindow(event);
+    return !!(win && !win.isDestroyed() && win.isMaximized());
+  });
+
   ipcMain.handle('app:state', () => currentState());
   ipcMain.handle('app:test-gateway', (_e, url) => testGateway(url));
   // The same clear-and-reload the File menu and the tray offer, reached from the

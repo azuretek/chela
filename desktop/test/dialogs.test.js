@@ -28,14 +28,10 @@ const UI = path.join(HERE, '..', '..', 'core', 'ui');
 // packing flattens `desktop/` into the archive's root. See the note on UI_DIR in
 // src/main.js.
 
-/**
- * The one page with no script, and why. It is a title strip, drawn and sized by
- * the main process, with nothing in it to click. Every other page here has
- * controls, and a page whose script did not load is a page whose buttons do
- * nothing, which is why the rest are required to load one. The assertion below
- * fails if this page gains a script, so the list cannot go stale.
- */
-const SCRIPTLESS = new Set(['titlebar.html']);
+// Every page of ours now carries a script. The title strip was the last
+// exception — a drawn band with nothing to click — until it grew our own window
+// controls (the OS caption buttons were cutting the hairline short), so its
+// buttons need titlebar.js the way every other page's controls do.
 
 /** Every page in the pages directory, with its own text. */
 function pages() {
@@ -110,11 +106,8 @@ test('every page the app can load is loadable and locked down', () => {
     assert.doesNotMatch(html, /<script>/, `${file} has an inline script its CSP blocks`);
     // Every page is loaded into a sandboxed view with contextIsolation on (or,
     // on iOS, into a web view whose only bridge is a named message handler), so
-    // its own script is the only way it can do anything at all.
-    if (SCRIPTLESS.has(file)) {
-      assert.doesNotMatch(html, /<script/, `${file} has a script now: take it off SCRIPTLESS`);
-      continue;
-    }
+    // its own script is the only way it can do anything at all, and one that did
+    // not load is a page whose buttons do nothing.
     const script = /<script src="([^"]+)"/.exec(html);
     assert.ok(script, `${file} loads no script`);
     assert.ok(fs.existsSync(path.join(UI, script[1])), `${file} loads a missing ${script[1]}`);

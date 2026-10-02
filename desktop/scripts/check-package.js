@@ -116,7 +116,7 @@ if (!coreInAsar && !coreInResources) {
 const CORE_UI = [
   'ui/settings.html', 'ui/settings.js', 'ui/ui.css', 'ui/assets/claw.svg', 'ui/assets/claw-mark.css',
   'ui/about.html', 'ui/about.js', 'ui/banner.html', 'ui/banner.js', 'ui/banner.css',
-  'ui/loading.html', 'ui/loading.js', 'ui/titlebar.html',
+  'ui/loading.html', 'ui/loading.js', 'ui/titlebar.html', 'ui/titlebar.js',
 ];
 const uiInAsar = CORE_UI.every((f) => entries.has(`/core/${f}`));
 const uiInResources = CORE_UI.every((f) => fs.existsSync(path.join(resourcesDir, 'core', f)));

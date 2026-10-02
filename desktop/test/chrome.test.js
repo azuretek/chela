@@ -3,8 +3,15 @@
 
 import test from 'node:test';
 import assert from 'node:assert';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
 import chrome from '../src/chrome.js';
+
+// The strip and its stylesheet, for the one test that has to read what they
+// declare rather than what the module returns.
+const UI = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'core', 'ui');
 
 // Collapse whitespace so assertions describe the rule, not the indentation.
 const flat = (css) => css.replace(/\s+/g, ' ').trim();
@@ -54,23 +61,40 @@ test('the strip clears the window buttons at whichever end they are', () => {
 
   // macOS: traffic lights at the left, so the label starts after them.
   assert.ok(mac.includes(`--strip-pad-start: ${chrome.MAC_CONTENT_INSET}px`));
-  assert.ok(!mac.includes('titlebar-area'), 'macOS has no window controls overlay');
 
-  // Windows: caption buttons at the right.
+  // Windows: the label starts at the ordinary inset. There is no platform
+  // clearance to reserve any more: our own controls are laid out by the strip
+  // itself, so nothing about the hairline depends on the Window Controls
+  // Overlay's geometry (which is gone).
   assert.ok(win.includes('--strip-pad-start: 12px'), 'nothing to clear on the left');
-  assert.match(win, /--strip-pad-end: max\(/, 'clearance must have a floor');
-  assert.ok(win.includes(`${chrome.WIN_CONTROLS_FALLBACK}px`));
+  assert.ok(!win.includes('titlebar-area'), 'the Window Controls Overlay is gone');
 });
 
-test('the Windows caption width is measured, with a floor when it cannot be', () => {
-  // A constant cannot follow DPI changes, resize or maximise: a 150px guess was
-  // wrong by 13px against a real 150%-scaled display, which measured 137px.
-  assert.match(chrome.WIN_CONTROLS_WIDTH, /env\(titlebar-area-x, 0px\)/);
-  assert.match(chrome.WIN_CONTROLS_WIDTH, /env\(titlebar-area-width, 100vw\)/);
-  // Those env vars are published to the window's main frame, and the strip is a
-  // child view where they may be absent -- the calc would then resolve to 0px
-  // and put the label under the close button. Hence the floor.
-  assert.ok(chrome.WIN_CONTROLS_FALLBACK >= 137, 'floor must clear real buttons');
+test('the strip carries our own window controls on Windows only', () => {
+  assert.ok(flat(chrome.stripCss('win32')).includes('--strip-controls: flex'));
+  assert.ok(flat(chrome.stripCss('darwin')).includes('--strip-controls: none'),
+    'macOS keeps its traffic lights, so the strip draws no controls there');
+});
+
+test('the strip draws its own controls on a hairline that runs the full width', () => {
+  // Static, because the fault is a look rather than a value the module returns:
+  // the OS caption buttons were painted over the strip's right end, so the
+  // hairline stopped short of the corner. Our buttons must therefore be the
+  // strip's own elements, and the line must live on the strip that holds them.
+  const html = readFileSync(path.join(UI, 'titlebar.html'), 'utf8');
+  for (const id of ['minimize', 'maximize', 'close']) {
+    assert.ok(html.includes(`id="${id}"`), `titlebar.html has no ${id} control`);
+  }
+  assert.match(html, /<script src="titlebar\.js"/, 'the controls need their script');
+  assert.match(html, /script-src 'self'/, 'the strip page needs a script-src the script can pass');
+
+  const css = readFileSync(path.join(UI, 'ui.css'), 'utf8');
+  const strip = /\.strip\s*\{([^}]*)\}/.exec(css)?.[1] || '';
+  assert.match(strip, /border-bottom:\s*1px solid var\(--border\)/,
+    'the hairline must live on the strip that holds the controls, so it runs underneath them');
+  // The buttons sit inside the drag region, so each must give the drag back up
+  // or a click starts a window drag instead of reaching the control.
+  assert.match(css, /\.strip__control\s*\{[^}]*-webkit-app-region:\s*no-drag/);
 });
 
 test('the macOS label inset stays the sum of its parts', () => {
