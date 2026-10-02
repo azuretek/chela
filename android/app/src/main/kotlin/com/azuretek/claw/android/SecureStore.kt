@@ -37,16 +37,23 @@ class SecureStore(private val context: Context) {
     /** Storage keys are lower-case words joined by dots, the desktop's own shape. */
     fun has(key: String): Boolean = prefs.contains(key)
 
-    fun set(key: String, value: String): Boolean = try {
-        if (value.isEmpty()) { clear(key); return true }
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey())
-        val body = Base64.encodeToString(cipher.doFinal(value.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
-        val iv = Base64.encodeToString(cipher.iv, Base64.NO_WRAP)
-        prefs.edit().putString(key + ".body", body).putString(key + ".iv", iv).apply()
-        true
-    } catch (e: Exception) {
-        false
+    fun set(key: String, value: String): Boolean {
+        // A BLOCK body, not an expression body, because the empty case returns
+        // early and Kotlin prohibits `return` inside `= try { ... }`. The compiler
+        // says so plainly and CI caught it: returns are prohibited for functions
+        // with an expression body. An empty value clears the key rather than
+        // storing nothing, which is what the page means when it sends one.
+        if (value.isEmpty()) return clear(key)
+        return try {
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.ENCRYPT_MODE, secretKey())
+            val body = Base64.encodeToString(cipher.doFinal(value.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
+            val iv = Base64.encodeToString(cipher.iv, Base64.NO_WRAP)
+            prefs.edit().putString(key + ".body", body).putString(key + ".iv", iv).apply()
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     fun clear(key: String): Boolean {
