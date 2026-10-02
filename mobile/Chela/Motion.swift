@@ -86,6 +86,25 @@ enum Motion {
     static let sheetLeaveMs: Int = NoticeTokens.sheetLeaveMs
     static let sheetCurve: [Double] = NoticeTokens.sheetCurve
 
+    /// How a surface's card moves when another surface goes over it, and how it
+    /// comes back.
+    ///
+    /// On the phone both journeys are this client's rather than the stylesheet's,
+    /// because a native sheet cannot be slid out of the way without being dismissed:
+    /// the settings card goes down and About comes up inside ONE presentation
+    /// (`SurfacesHandoff`). The distances and the curve are still the shared sheet's,
+    /// read from the token spec above, so a change to `motion.sheet` moves the
+    /// desktop's CSS and this one together, and a reader who asked for no motion gets
+    /// the shared short fade instead, which is the swap ui.css makes for a sheet.
+    static func handoffAnimation(reduceMotion: Bool, leaving: Bool) -> Animation {
+        if reduceMotion { return .easeInOut(duration: Double(fadeMs) / 1000) }
+        // A spec that lost its curve falls back to the curve this file's own comment
+        // names, rather than to an index out of range.
+        let curve = sheetCurve.count == 4 ? sheetCurve : [0.32, 0.72, 0, 1]
+        let ms = leaving ? sheetLeaveMs : sheetEnterMs
+        return .timingCurve(curve[0], curve[1], curve[2], curve[3], duration: Double(ms) / 1000)
+    }
+
     /// How long a screen inside a surface takes to move.
     static let screenMs: Int = NoticeTokens.screenMs
 
