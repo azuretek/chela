@@ -1,0 +1,119 @@
+name: chela-android pipeline
+
+# The Android half: build the debug app on every pull request, boot it in an
+# emulator, capture the proof and run the instrumented tests.
+#
+# ★ This workflow deliberately has NO publish job yet. Android has no release
+# artifact until the release gate is generalised for a third pipeline, and a publish
+# job that nothing gates is exactly the fault the gate exists to prevent: a release
+# published from a commit whose other platform was red. The signing job lands with
+# that gate, not before it.
+
+# CI runs the emulator on a standard GitHub Linux runner, which carries the
+# virtualization the emulator needs. No household host has an Android toolchain, so
+# this workflow is the gate rather than a fallback for one.
+
+# ★ What this job is shaped around, measured 2026-10-01: the first version of it ran
+# for its WHOLE 45-minute budget and was cancelled, with eight seconds spent before the
+# emulator step and all the rest inside it. Two causes, both fixed here and both
+# recorded in the script: an unbounded `adb wait-for-device`, and a build repeated
+# three times per job with the daemon refused every time. So:
+#
+#   the app is BUILT ONCE, in its own step, and the boot script installs that APK
+#   rather than assembling a second one that could differ from what CI tested;
+#   the Gradle daemon is REUSED across the job instead of refused;
+#   every wait in the boot script is BOUNDED, and an exhausted wait is a named
+#   failure rather than a silent fall-through;
+#   and the budget is 20 minutes rather than 45, so anything that does wedge again
+#   fails sooner and says so. A green run only ever needs about a third of it.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build-and-boot:
+    name: build and boot (emulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The app, built ONCE. The emulator step installs this artifact rather than
+      # assembling its own, so the thing that boots is the thing this step built, and
+      # the runner pays one configuration instead of three. The daemon started here is
+      # reused by the steps below rather than refused.
+      - name: Build the debug app
+        run: ./gradlew :app:assembleDebug
+
+      - name: Keep the debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: chela-android-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      # The emulator needs the KVM device the runner exposes.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # The acceptance: a shell that only compiles is not a shell that runs. One
+      # emulator boot serves both the capture and the instrumented tests.
+      #
+      # Animations are off because this is a screenshot of a settled screen rather than
+      # of a transition, and an emulator that is not animating boots and draws sooner.
+      - name: Boot the app, capture the proof and run the instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-boot-timeout: 600
+          working-directory: android
+          script: |
+            bash scripts/boot-proof.sh
+            ./gradlew :app:connectedDebugAndroidTest
+
+      # ★ The root fan out must reach Android here rather than skip, which is the half
+      # of the named skip that a host without an SDK can never show: the skip itself is
+      # asserted locally and on the JS runner, where there is no SDK to find.
+      #
+      # It is also the cheapest possible proof of that, because the APK is already
+      # built and the daemon is warm, so this configuration is incremental.
+      - name: The root fan out reaches Android, and must not skip here
+        working-directory: .
+        env:
+          CHELA_REQUIRE_ANDROID_TOOLS: '1'
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+        run: node scripts/android.mjs build
+
+      - name: Keep the boot proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-boot-proof
+          path: android/proof
+          if-no-files-found: warn
