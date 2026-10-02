@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The fallback label. The real name is read from core/spec/naming.json at
+         runtime by Naming.kt, and the launcher label is asserted against that spec
+         by a test rather than being a second owner of the value. -->
+    <string name="product_name">Chela</string>
+</resources>

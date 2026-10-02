@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A placeholder mark until the icon is generated from core/ui/assets/claw.svg,
+  which is the one owner of the artwork. A bitmap copied from another platform
+  would be a second owner of it, so the vector below is deliberately a plain
+  claw silhouette rather than a copy of the desktop tile.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#c62828"
+        android:pathData="M54,30c-6,0 -11,5 -11,11c0,4 2,7 5,9v10c0,2 -2,4 -4,4h-6c-2,0 -4,2 -4,4v4h8v-4h4c6,0 10,-4 10,-10v-6c3,-2 5,-5 5,-9c0,-6 -5,-11 -7,-11z" />
+    <path
+        android:fillColor="#c62828"
+        android:pathData="M54,30c6,0 11,5 11,11c0,4 -2,7 -5,9v10c0,2 2,4 4,4h6c2,0 4,2 4,4v4h-8v-4h-4c-6,0 -10,-4 -10,-10v-6c-3,-2 -5,-5 -5,-9c0,-6 5,-11 7,-11z" />
+</vector>

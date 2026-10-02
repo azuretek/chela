@@ -26,6 +26,10 @@
     "mobile": {
       "shorthand": "chela-mobile",
       "bundleId": "com.azuretek.claw-mobile"
+    },
+    "android": {
+      "shorthand": "chela-android",
+      "applicationId": "com.azuretek.claw.android"
     }
   },
   "retired": {
