@@ -37,10 +37,18 @@ final class NoticeBannerUITests: XCTestCase {
     private var clearButtons: XCUIElementQuery { banner.matching(NSPredicate(format: "label == %@", "Clear")) }
 
 
+    /// The budget covers several snapshots of the app, not the banner's own
+    /// motion: each `count` is a full accessibility snapshot, and on the iOS 26
+    /// runner one took four seconds and was retried twice before the next began,
+    /// so a five second wait timed out on a banner that was already empty and the
+    /// message then read "expected 0, found 0". The banner itself goes in one
+    /// refresh, so a longer wait costs nothing when it passes.
+    private static let countBudget: TimeInterval = 30
+
     private func waitForCount(_ query: XCUIElementQuery, _ expected: Int, _ message: String) {
         let predicate = NSPredicate(format: "count == %d", expected)
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: query)
-        XCTAssertEqual(XCTWaiter().wait(for: [expectation], timeout: 5), .completed,
+        XCTAssertEqual(XCTWaiter().wait(for: [expectation], timeout: Self.countBudget), .completed,
                        "\(message): expected \(expected), found \(query.count)")
     }
 
