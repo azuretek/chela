@@ -293,6 +293,21 @@ struct ContentView: View {
             cover: cover
         )
         page
+            // The interface behind a sheet is blurred by its own view, rather
+            // than by a material laid over it: a material carries a tint that
+            // follows the appearance, and under the veil it pulled the dim off
+            // the shared value (#128). A blur of the page itself adds no tint.
+            // The radius is applied always and is zero with no sheet up, so the
+            // page keeps one identity and its web view is never rebuilt.
+            // `opaque` clamps the edges, so the strip at the screen's edge is the
+            // page's own pixels rather than a fade to whatever is under the page.
+            //
+            // It is applied BEFORE `ignoresSafeArea` on purpose: a blur renders
+            // only its own frame, and applied outside, that frame was the safe
+            // area, so the band above the sheet lost the page and showed the
+            // window behind it (white, measured on the simulator). See
+            // SurfaceBackdrop.
+            .blur(radius: showingSettings ? SurfaceBackdrop.blurRadius : 0, opaque: true)
             // Edge to edge, so the Control UI's own `100dvh` means the whole
             // screen and a full-height overlay it slides open, its navigation
             // drawer, reaches the top rather than stopping at the safe-area
@@ -363,7 +378,7 @@ struct ContentView: View {
                 // Neither sheet draws a notice stack, and neither does the page
                 // under them: the stack is drawn once, for the whole app, on a
                 // layer above all three. See noticeLayer and NoticeWindow.
-                // The interface behind a sheet: blurred here, and darkened to the
+                // The interface behind a sheet, blurred above: darkened here to the
                 // shared dim. It belongs to the PRESENTER rather than to the sheet,
                 // because the sheet is a native presentation over a WKWebView it
                 // cannot reach, so the layer that does this work has to be native
