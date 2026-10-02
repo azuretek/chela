@@ -544,8 +544,15 @@ app.whenReady().then(async () => {
           for (const e of empties) {
             console.log(`    empty ${e.heldBy}: inset left ${round(e.left)} top ${round(e.top)} bottom ${round(e.bottom)}   "${e.text}"`);
           }
+          // Left is exact to half a pixel. Above and below are read off the glyph
+          // run centred in its line box, and a font's ascent and descent are not
+          // equal, so the line splits its room a fraction of a pixel unevenly
+          // (measured: 11.43 above and 12.57 below for a 12px padding). The room
+          // the two sides share is exact, and each side is held to within a pixel.
           const off = empties.filter((e) => !ref
-            || Math.abs(e.left - ref.left) > 0.5 || e.top < ref.top - 0.5 || e.bottom < ref.bottom - 0.5);
+            || Math.abs(e.left - ref.left) > 0.5
+            || e.top + e.bottom < ref.top + ref.bottom - 0.5
+            || e.top < ref.top - 1 || e.bottom < ref.bottom - 1);
           check(`${where}: the ${tab} tab's empty state is inset like a card's text`,
             empties.length >= 1 && off.length === 0,
             empties.length ? `card inset ${JSON.stringify(ref)}; empty states ${JSON.stringify(off)}` : 'no empty state drawn on this tab');
