@@ -24,6 +24,11 @@ import XCTest
 ///    it, because the two colours average into each other. So the spread across the
 ///    stripes at the sheet's rounded corners is what separates a blur from a dim.
 ///
+/// The shared dim, black at 60%: the owner is `--scrim` in `core/ui/ui.css`, and
+/// `SurfaceBackdropParityTests` is what holds the app side to it. It is stated here
+/// because a UI test runs in a process of its own and cannot import the app module,
+/// so the value has to be mirrored rather than read.
+private let sharedDim = 0.60
 /// **What this cannot prove**: the region a large sheet leaves uncovered on a phone
 /// is a strip at the top, so the blur has little to work on there. That the backdrop
 /// is right under the reader's thumb while a sheet is DRAGGED is not exercised here,
@@ -57,7 +62,7 @@ final class SurfacesHandoffUITests: XCTestCase {
 
     private func screen(_ app: XCUIApplication, _ name: String) -> CGImage {
         let image = app.screenshot().image
-        if let shots { try? image.pngRepresentation.write(to: shots.appendingPathComponent(name + ".png")) }
+        if let shots { try? image.pngData()?.write(to: shots.appendingPathComponent(name + ".png")) }
         guard let cg = image.cgImage else {
             XCTFail("the screenshot has no bitmap to read")
             return CGRect(x: 0, y: 0, width: 1, height: 1).toImage()!
@@ -86,8 +91,13 @@ final class SurfacesHandoffUITests: XCTestCase {
         }
 
         /// The grey value at a pixel, counting from the TOP of the frame.
+        ///
+        /// The row is used as given: drawing the screenshot into this context lays
+        /// its first row at the top, which was measured rather than assumed (the
+        /// first version of this reader indexed from the bottom and read the sheet's
+        /// own card instead of the strip above it).
         func grey(x: Int, topY: Int) -> Double {
-            let row = height - 1 - topY
+            let row = topY
             let i = (row * width + x) * 4
             return Double(data[i])
         }
@@ -123,7 +133,7 @@ final class SurfacesHandoffUITests: XCTestCase {
         bare.terminate()
 
         let sheeted = launch(["-claw-open-settings"])
-        XCTAssertTrue(sheeted.webViews.buttons["About Chela"].waitForExistence(timeout: 30),
+        XCTAssertTrue(sheeted.webViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "About Chela")).firstMatch.waitForExistence(timeout: 30),
                       "the settings surface never drew over the fixture")
         sleep(2)
         let withSheet = try XCTUnwrap(Bitmap(screen(sheeted, "backdrop-settings")), "no bitmap")
@@ -145,8 +155,8 @@ final class SurfacesHandoffUITests: XCTestCase {
         let composite = 1 - (covered / open)
         let message = "the dim behind a sheet is black at \(String(format: "%.3f", composite)) "
             + "(\(String(format: "%.1f", open)) to \(String(format: "%.1f", covered)), and the shared value is "
-            + "\(SurfaceBackdrop.scrimAlpha)"
-        XCTAssertEqual(composite, SurfaceBackdrop.scrimAlpha, accuracy: 0.06, message)
+            + "\(sharedDim)"
+        XCTAssertEqual(composite, sharedDim, accuracy: 0.06, message)
     }
 
     // MARK: - The blur
@@ -164,7 +174,7 @@ final class SurfacesHandoffUITests: XCTestCase {
         bare.terminate()
 
         let sheeted = launch(["-claw-open-settings"])
-        XCTAssertTrue(sheeted.webViews.buttons["About Chela"].waitForExistence(timeout: 30),
+        XCTAssertTrue(sheeted.webViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "About Chela")).firstMatch.waitForExistence(timeout: 30),
                       "the settings surface never drew over the fixture")
         sleep(2)
         let withSheet = try XCTUnwrap(Bitmap(screen(sheeted, "blur-settings")), "no bitmap")
@@ -179,7 +189,7 @@ final class SurfacesHandoffUITests: XCTestCase {
         }
         // A veil alone would leave the stripe contrast scaled by what it lets through,
         // which is `255 * (1 - composite)`; a blur leaves much less than that.
-        let dimOnly = 255 * (1 - SurfaceBackdrop.scrimAlpha)
+        let dimOnly = 255 * (1 - sharedDim)
         XCTAssertLessThan(best, dimOnly * 0.8,
                           "the stripes behind the sheet keep their contrast (\(best) of \(dimOnly)), "
                           + "so what is over the interface is a dim and not a blur")
@@ -189,7 +199,7 @@ final class SurfacesHandoffUITests: XCTestCase {
 
     func testAboutCoversSettingsAndComesBackToTheSameTab() throws {
         let app = launch(["-claw-settings-tab", "behaviour", "-claw-open-settings"])
-        let about = app.webViews.buttons["About Chela"]
+        let about = app.webViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "About Chela")).firstMatch
         XCTAssertTrue(about.waitForExistence(timeout: 30), "the settings surface never drew")
         // The tab the reader was on, established by what is NOT there: the Gateways
         // tab's search field, which the page draws on its first tab only.
@@ -208,9 +218,16 @@ final class SurfacesHandoffUITests: XCTestCase {
         // the control that opened About is neither on screen nor hittable.
         XCTAssertFalse(about.isHittable, "the settings card is still on screen under About")
 
-        app.webViews.buttons["Back to settings"].tap()
+        app.webViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Back to settings")).firstMatch.tap()
         XCTAssertTrue(about.waitForExistence(timeout: 20), "About left nothing to come back to")
-        XCTAssertTrue(about.isHittable, "the settings card never came back")
+        // The reveal is a real animation, so the settings card is up but not yet
+        // settled the instant the tap returns: wait for the control to be REACHABLE
+        // rather than reading the first frame of the slide.
+        let reachable = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isHittable == true"), object: about
+        )
+        XCTAssertEqual(XCTWaiter().wait(for: [reachable], timeout: 10), .completed,
+                       "the settings card never came back")
         // Its state came back with it: the tab is still Behaviour, which the absent
         // search field says, and a page whose state had been rebuilt would be on
         // Gateways.

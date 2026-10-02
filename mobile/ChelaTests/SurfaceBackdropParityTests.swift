@@ -49,7 +49,13 @@ final class SurfaceBackdropParityTests: XCTestCase {
     /// The alpha of a `rgb(0 0 0 / NN%)` value.
     private func alpha(_ value: String) -> Double? {
         guard let slash = value.range(of: "/") else { return nil }
-        let tail = value[slash.upperBound...].trimmingCharacters(in: .whitespaces)
+        var tail = value[slash.upperBound...].trimmingCharacters(in: .whitespaces)
+        // The declaration is written `rgb(0 0 0 / 60%)`, so the alpha is inside the
+        // function's closing paren: dropping only the percent left "60%)" and every
+        // value failed to parse, which read as the mirror disagreeing with ui.css.
+        if tail.hasSuffix(")") {
+            tail = String(tail.dropLast()).trimmingCharacters(in: .whitespaces)
+        }
         guard tail.hasSuffix("%") else { return nil }
         return Double(tail.dropLast()).map { $0 / 100 }
     }

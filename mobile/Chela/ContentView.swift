@@ -885,12 +885,13 @@ extension View {
     ) -> some View {
         modifier(FullScreenSurfaceSheet(isPresented: isPresented, surface: surface))
     }
+}
 
 /// Draw the notice banner over whatever this view is.
 ///
 /// ONE modifier, applied at each layer boundary where the banner has to be on top,
-/// rather than a copy of `NoticeStack` per surface: the page, the settings sheet
-/// and the About sheet each own a layer, and a banner is only above everything if
+/// rather than a copy of `NoticeStack` per surface: the page and the one surface sheet
+/// own a layer each, and a banner is only above everything if
 /// it is drawn in the topmost layer that is actually on screen.
 ///
 /// It stays an overlay rather than becoming part of any page's layout: a notice is
