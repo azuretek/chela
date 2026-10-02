@@ -249,6 +249,27 @@ export const iconFile = (bucket, mode, { full = false, ico = false } = {}) => (i
  *  it. The tray shows the app icon itself, small, so it has one per mode exactly
  *  as the app icon does, and changes with it (#114). */
 export const trayFile = (bucket, mode) => `icons/tray-${bucket.id}-${mode === 'light' ? 'light' : 'dark'}.png`;
+/** The macOS menu-bar glyph (#139), relative to the desktop's assets directory,
+ *  with its `@2x` beside it. One file for every bucket and mode: it is a
+ *  template image, which macOS draws in the menu bar's own colour, so there is
+ *  no palette in it for a theme or an icon choice to change. */
+export const TRAY_TEMPLATE = 'trayTemplate.png';
+
+/** Whether a platform's tray icon is a template image. macOS draws every
+ *  menu-bar item as a one-colour glyph in the bar's own colour, light or dark,
+ *  and a coloured tile among them is the one that does not follow the bar
+ *  (#139). Windows and Linux trays are not one colour, and there the tray is
+ *  the app icon itself, small, in its own colours (#114). */
+export const trayIsTemplate = (platform) => platform === 'darwin';
+
+/** What the tray draws on a platform: the template glyph on macOS, otherwise
+ *  `tray`, the coloured file for the icon showing (choose().tray). main.js
+ *  sets the image's template flag from `template`, so the file and the flag
+ *  cannot disagree. */
+export function trayFor(platform, tray) {
+  return trayIsTemplate(platform) ? { file: TRAY_TEMPLATE, template: true } : { file: tray, template: false };
+}
+
 /** The iOS alternate icon for a bucket in one mode. Every bucket has one per
  *  mode, the primary's included, so the icon follows the Control UI's own light
  *  or dark palette rather than the home screen's appearance: an icon set that
