@@ -41,6 +41,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { createLoginGateProxy, upstreamAnswers } from './lib/login-gate-proxy.js';
+import { capturePage } from './lib/capture.js';
+import { evaluate } from './lib/probe.js';
 import secrets from '../src/secrets.js';
 
 function arg(name, fallback = null) {
@@ -104,14 +106,19 @@ const pageWc = () => live().find((wc) => wc.getURL().startsWith(BASE)) || null;
 const coverWc = () => live().find((wc) => wc.getURL().includes('loading.html')) || null;
 const GATE_PROBE = "(function(){return JSON.stringify({gate:!!document.querySelector('openclaw-login-gate'),failure:!!document.querySelector('.login-gate__failure'),text:((document.body&&document.body.innerText)||'').length})})()";
 
-/** What is on top, by the app's own stacking: the cover over the page. */
+// What is on top, by the app's own stacking: the cover over the page. Every read
+// goes through lib/probe.js, because executeJavaScript is unbounded while the page
+// is still loading: a frame that never reaches did-stop-loading holds the call
+// forever, so the 30s bound below (which sits BETWEEN samples) would never run and
+// the harness would die at its 120s watchdog saying nothing about the page it waited
+// on. The probe cuts the call off and names the page's loading state instead.
 async function sample() {
   const cover = coverWc();
   const page = pageWc();
   let coverTitle = null;
   let gate = null;
-  if (cover) { try { coverTitle = await cover.executeJavaScript("document.getElementById('title').textContent", true); } catch { coverTitle = '?'; } }
-  if (page) { try { gate = JSON.parse(await page.executeJavaScript(GATE_PROBE, true)); } catch { gate = null; } }
+  if (cover) { try { coverTitle = await evaluate(cover, "document.getElementById('title').textContent", { label: 'the loading cover' }); } catch { coverTitle = '?'; } }
+  if (page) { try { gate = JSON.parse(await evaluate(page, GATE_PROBE, { label: 'the Control UI page' })); } catch { gate = null; } }
   return { cover: coverTitle, gate: gate ? gate.gate : null, failure: gate ? gate.failure : null, text: gate ? gate.text : 0 };
 }
 
@@ -131,7 +138,7 @@ async function record(label) {
   const top = coverWc() || pageWc();
   if (!top) return;
   try {
-    const image = await top.capturePage();
+    const image = await capturePage(top, { label: 'record' });
     if (!image.isEmpty()) {
       frameNo += 1;
       fs.writeFileSync(path.join(RECORD, String(frameNo).padStart(4, '0') + '-' + label + '.png'), image.toPNG());
@@ -164,7 +171,13 @@ app.whenReady().then(async () => {
   await record('gate');
   // Driven in the page rather than by a tap, so the press is measured even though
   // the cover is over it: that is the point of the cover.
-  if (CASE !== 'gate') await pageWc().executeJavaScript("document.querySelector('.login-gate__connect').click()", true);
+  if (CASE !== 'gate') {
+    const page = pageWc();
+    if (page) {
+      try { await evaluate(page, "document.querySelector('.login-gate__connect').click()", { label: 'the login gate press' }); }
+      catch { /* the probe named it; the checks below measure the cover either way */ }
+    }
+  }
   const windowMs = CASE === 'connect' ? CONNECT_DELAY_MS + 4000 : (CASE === 'gate' ? 5000 : 6000);
   while (Date.now() - pressedAt < windowMs) {
     const s = await sample();
