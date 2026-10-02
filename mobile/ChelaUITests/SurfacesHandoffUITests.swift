@@ -130,7 +130,10 @@ final class SurfacesHandoffUITests: XCTestCase {
 
     func testTheBackdropBehindASheetIsTheSharedDim() throws {
         let bare = launch([])
-        XCTAssertTrue(bare.webViews.firstMatch.waitForExistence(timeout: 30), "the fixture never painted")
+        // The fixture's own text, not just a web view: on a cold simulator the web view
+        // exists for a while before the page paints, and a blank white page was read
+        // as the interface with no sheet up.
+        XCTAssertTrue(bare.webViews.staticTexts["Fixture ready"].waitForExistence(timeout: 30), "the fixture never painted")
         sleep(2)
         let withoutSheet = try XCTUnwrap(Bitmap(screen(bare, "backdrop-no-sheet")), "no bitmap")
         bare.terminate()
@@ -162,10 +165,12 @@ final class SurfacesHandoffUITests: XCTestCase {
         let message = "the dim behind a sheet is black at \(String(format: "%.3f", composite)) "
             + "(\(String(format: "%.1f", open)) to \(String(format: "%.1f", covered)), and the shared value is "
             + "\(sharedDim)"
-        // The ultra-thin material under the veil tints by appearance, so the composite
-        // reads 0.49 in light and 0.68 in dark rather than the shared value (#128).
-        // Expected to fail until that is fixed; a pass here means it has been.
-        XCTExpectFailure("the material under the veil tints by appearance (#128)") {
+        // Held in both appearances: the material under the veil is pinned dark and the
+        // veil is solved against it, so the appearance's own tint does not reach the
+        // dim. With the material following the appearance this read 0.488 in light
+        // and 0.684 in dark (#128).
+        // Named as an activity so the reading is in the run's log when it passes too.
+        XCTContext.runActivity(named: message) { _ in
             XCTAssertEqual(composite, sharedDim, accuracy: 0.06, message)
         }
     }
@@ -174,7 +179,7 @@ final class SurfacesHandoffUITests: XCTestCase {
 
     func testTheInterfaceBehindASheetIsBlurred() throws {
         let bare = launch([])
-        XCTAssertTrue(bare.webViews.firstMatch.waitForExistence(timeout: 30), "the fixture never painted")
+        XCTAssertTrue(bare.webViews.staticTexts["Fixture ready"].waitForExistence(timeout: 30), "the fixture never painted")
         sleep(2)
         let withoutSheet = try XCTUnwrap(Bitmap(screen(bare, "blur-no-sheet")), "no bitmap")
         let page = try XCTUnwrap(withoutSheet.firstStripeRow, "the fixture drew no stripe band")

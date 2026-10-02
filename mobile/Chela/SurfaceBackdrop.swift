@@ -33,8 +33,24 @@ import UIKit
 /// 2. **This layer starts below the top safe-area inset**, so the veil and the blur
 ///    cover the interface and leave the band to the page.
 ///
-/// With the platform's share gone, the shared value is painted as it is, rather
-/// than solved against a dim nobody chose.
+/// With the platform's share gone, nothing outside this layer darkens the
+/// interface, so the shared value is what this layer composites to on its own.
+///
+/// ## The material is pinned dark, and the veil is solved against it
+///
+/// The blur is the platform's ultra-thin material, and a material is not only a
+/// blur: it carries a tint of its own, which follows the appearance. Under the
+/// shared veil painted as it is, the interface behind a sheet read black at 0.488
+/// in the light appearance and 0.684 in the dark one (#128), because the light
+/// material LIFTS what is behind it (about 1.27 times) and the dark one dims it
+/// (about 0.79 times).
+///
+/// So the material is pinned to its dark variant, in both appearances, and the veil
+/// over it is solved against what that material passes, so the two together are
+/// the shared dim. Dark rather than light because the dim is black: the dark
+/// material darkens toward black the way the veil does, where the light one would
+/// add a light tint the veil then has to undo, and over a dark palette, where
+/// there is little light behind it to scale, that tint would be all that shows.
 enum SurfaceBackdrop {
     /// ★ The dim behind a sheet, over the interface: black at 60%.
     ///
@@ -47,6 +63,19 @@ enum SurfaceBackdrop {
     /// so there is nothing at runtime to read it from. `SurfaceBackdropParityTests`
     /// reads that declaration out of ui.css and fails if this drifts from it.
     static let scrimAlpha: Double = 0.60
+
+    /// What the dark ultra-thin material passes of the light behind it, as a
+    /// fraction: measured, because iOS publishes no number for a material.
+    ///
+    /// Read by `SurfacesHandoffUITests.testTheBackdropBehindASheetIsTheSharedDim`
+    /// on the iOS 27 simulator: the mean over whole stripe periods of a mid-grey
+    /// fixture behind a sheet, against the same pixels with no sheet up, divided by
+    /// what the veil alone lets through. That test is what fails when this drifts.
+    static let materialTransmission: Double = 0.79
+
+    /// The veil laid over the material: the black that, with the material under
+    /// it, lets through `1 - scrimAlpha` of the interface.
+    static var veilAlpha: Double { 1 - (1 - scrimAlpha) / materialTransmission }
 }
 
 /// The blur plus the veil, as one view: what `ContentView` lays over the Control
@@ -83,19 +112,20 @@ private struct SurfaceBackdropLayer: UIViewRepresentable {
     func updateUIView(_ view: BandClearingBackdrop, context: Context) { view.setNeedsLayout() }
 }
 
-/// The platform's thin material and the shared veil over it, laid out from the
-/// window's top safe-area inset down. Nothing picks the radius: iOS publishes blur
-/// styles and no radius, so the desktop's `blur(14px)` has no iOS counterpart and
-/// this is the platform's own material instead of a number invented here.
+/// The platform's thin material, pinned dark, and the veil solved against it, laid
+/// out from the window's top safe-area inset down. Nothing picks the radius: iOS
+/// publishes blur styles and no radius, so the desktop's `blur(14px)` has no iOS
+/// counterpart and this is the platform's own material instead of a number
+/// invented here. See `SurfaceBackdrop` for why the material is pinned.
 final class BandClearingBackdrop: UIView {
-    private let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+    private let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
     private let veil = UIView()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         isUserInteractionEnabled = false
         backgroundColor = .clear
-        veil.backgroundColor = UIColor.black.withAlphaComponent(SurfaceBackdrop.scrimAlpha)
+        veil.backgroundColor = UIColor.black.withAlphaComponent(SurfaceBackdrop.veilAlpha)
         addSubview(blur)
         addSubview(veil)
     }
