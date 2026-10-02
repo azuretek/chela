@@ -1059,6 +1059,13 @@ function renderPrefs() {
   if (hasSetting('startHidden')) $('startHidden').checked = Boolean(s.startHidden);
   if (hasSetting('promptMetadata')) $('promptMetadata').checked = Boolean(s.promptMetadata);
   if (hasSetting('globalShortcut')) $('globalShortcut').value = s.globalShortcut || '';
+  // The icon select: the options are built once from the host's own list (see
+  // renderAppIconOptions), and this is the value that list is showing. The auto
+  // choice is the host's own string, never a literal here, so the value that
+  // means "follow the theme" has one owner.
+  if (hasSetting('appIcon') && $('appIcon')) {
+    $('appIcon').value = s.appIcon || ((state.iconChoices && state.iconChoices.auto) || '');
+  }
 
   if (!hasSetting('autoUpdate')) return;
   // A build that could never install an update has nothing to switch on, so the
@@ -1071,6 +1078,23 @@ function renderPrefs() {
     $('autoUpdate-hint').textContent =
       `This build cannot install its own updates, ${state.updates.reason}. It will still tell you when a new version exists.`;
   }
+}
+
+// The app-icon options, built from the list the host hands over rather than
+// written into this file. core/app-icons.js owns the buckets and their names,
+// the desktop puts the ids, the names and the auto value in the state it already
+// sends, and this turns them into options: an icon set added upstream is offered
+// with no change here. Built once, because rebuilding a control under a hand
+// that is using it is the fault wirePreferences already exists to avoid.
+function renderAppIconOptions() {
+  const select = $('appIcon');
+  const choices = state && state.iconChoices;
+  if (!select || !choices || !Array.isArray(choices.buckets)) return;
+  const options = [
+    el('option', { value: choices.auto, textContent: 'Theme (follow the accent)' }),
+    ...choices.buckets.map((b) => el('option', { value: b.id, textContent: b.name })),
+  ];
+  select.replaceChildren(...options);
 }
 
 // The "looking for the gateway's own settings?" card, under every tab.
@@ -1620,6 +1644,14 @@ function wirePreferences() {
     });
   }
 
+  // The icon select. Choosing an option IS the reader's commit gesture, the same
+  // as a switch's flip, so there is nothing else to press: the host answers on
+  // its own push and the preview moves with it.
+  const iconSelect = $('appIcon');
+  if (iconSelect && hasSetting('appIcon')) {
+    iconSelect.addEventListener('change', () => void commitSetting('appIcon', iconSelect.value));
+  }
+
   // The shortcut is the one preference on this tab with nothing to show for
   // itself: a switch that is on looks on, and a field looks the same whether or
   // not it was sent. So its row reports the commit, and the commit is the reader's
@@ -1721,6 +1753,9 @@ on('state', async () => {
   // What this client has, before anything is drawn: the spec's split decides
   // both the rows and which of them the first render is allowed to touch.
   applySurface();
+  // The icon select's options, from the host's own list, before the controls
+  // that read them are wired: a select with no options has no value to send.
+  renderAppIconOptions();
   // Then the controls, which are gated on that surface. See wirePreferences for
   // why this cannot happen at module scope.
   wirePreferences();

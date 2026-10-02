@@ -98,6 +98,15 @@
       "tab": "behaviour",
       "clients": ["desktop", "ios"],
       "note": "The one Behaviour setting that means the same thing on both clients, and therefore the one they have in common there. The facts gathered differ (a phone has no home folder worth naming and no global shortcut), and that difference belongs to core/spec/prompt-metadata.json rather than to this tab."
+    },
+    {
+      "id": "appIcon",
+      "tab": "behaviour",
+      "clients": ["desktop"],
+      "note": "The app icon to DRAW: a bucket chosen by hand, or the shared theme choice that follows the Control UI's accent. The value is either the auto choice or one bucket id, and the bucket NAMES are not repeated here: core/app-icons.js owns the buckets and writes core/spec/app-icons.json, and the desktop hands the page the ids, the names and the auto value in its state, so a bucket added upstream is offered with no change to the page or to this file.",
+      "absent": {
+        "ios": "The choice is not offered on the phone yet: iOS sets its alternate icon through setAlternateIconName, and this item leaves that host and its own UI to separate work rather than half-building them. Nothing here blocks it, though: the value shape and bucketForChoice/accentFor in core/app-icons.js are platform-free and the buckets already ship as alternate icons, so turning it on is that host's command plus an 'ios' entry in the clients list here."
+      }
     }
   ],
 

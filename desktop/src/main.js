@@ -458,7 +458,16 @@ function layoutViews() {
 let appliedIconFile = null;
 let appliedTrayFile = null;
 function applyAppIcon() {
-  const choice = appIcons.choose(currentTheme.tokens?.['--accent'], currentTheme.mode, { full: appIcons.fillsSquare(process.platform), ico: appIcons.iconsAsIco(process.platform) });
+  // The reader's own choice, or the theme's accent-driven one, resolved in ONE
+  // place (bucketForChoice, core/app-icons.js) and used for the window, the Dock
+  // and the tray glyph alike, so a chosen icon cannot show in one of them and the
+  // accent's in another. What the tray DRAWS for a bucket is separate work (#114);
+  // this only decides which bucket each of them draws.
+  const choice = appIcons.choose(currentTheme.tokens?.['--accent'], currentTheme.mode, {
+    full: appIcons.fillsSquare(process.platform),
+    ico: appIcons.iconsAsIco(process.platform),
+    choice: appIcons.normalizeChoice(config.get().appIcon),
+  });
   if (choice.file !== appliedIconFile) {
     const img = nativeImage.createFromPath(path.join(ASSETS, choice.file));
     if (img.isEmpty()) {
@@ -3327,9 +3336,22 @@ function stateFallbackPalette() {
   console.log(`[chela-desktop] theme: no resolved palette, so our pages are using their own ${currentTheme.mode} fallback palette from ui.css`);
 }
 
+// The theme the app's OWN pages are told, which is the live theme with one
+// substitution: a chosen app icon replaces the accent our pages are recoloured
+// from, so the in-app mark (ui.css's .chela-mark, drawn for the About page and
+// the loading and pairing screens) shows the bucket the reader picked rather
+// than the theme's. The live theme's own accent is untouched for everything
+// else, and with the auto choice this returns the live theme unchanged.
+function pagesTheme() {
+  const choice = appIcons.normalizeChoice(config.get().appIcon);
+  if (!appIcons.isManualChoice(choice)) return currentTheme;
+  const bucket = appIcons.bucketForChoice(choice, currentTheme.tokens?.['--accent']);
+  return { ...currentTheme, tokens: { ...(currentTheme.tokens || {}), '--accent': appIcons.accentFor(bucket) } };
+}
+
 async function applyThemeCss(wc) {
   if (!wc || wc.isDestroyed()) return;
-  const css = chrome.themeCss(currentTheme);
+  const css = chrome.themeCss(pagesTheme());
   if (!css) stateFallbackPalette();
   try {
     const previous = themeCssKeys.get(wc.id);
@@ -5387,6 +5409,19 @@ function currentState() {
       startHidden: cfg.startHidden,
       autoUpdate: cfg.autoUpdate !== false,
       promptMetadata: cfg.promptMetadata === true,
+      // The app-icon choice: the auto value or a bucket id, normalised so a
+      // hand-edited value reads as auto rather than stranding the picker on an
+      // option it does not offer. The buckets themselves are below.
+      appIcon: appIcons.normalizeChoice(cfg.appIcon),
+    },
+    // The list the icon choice is picked from, handed over because the page
+    // cannot import core/app-icons.js (it is a file:// document with no fetch).
+    // core/app-icons.js owns the buckets and their names, written out to
+    // core/spec/app-icons.json; this is that list, not a second copy of it, so a
+    // bucket added upstream is offered with no change to the page.
+    iconChoices: {
+      auto: appIcons.AUTO,
+      buckets: appIcons.BUCKETS.map((b) => ({ id: b.id, name: b.name })),
     },
     // Why the automatic-updates toggle is unavailable, where it is. A build
     // that could never install one has nothing to switch on, and saying so
@@ -5537,6 +5572,15 @@ function registerIpc() {
     applyUpdatePreference();
     installPromptMetadata(page());
     buildTray();
+    // A changed icon is the same shape: applyAppIcon redraws the window, the Dock
+    // and the tray from the new choice, and refreshThemedPages republishes the
+    // accent our own pages recolour the in-app mark from, so the Settings preview
+    // and the About page move with the picker. Both no-op when the choice did not
+    // change, and only an appIcon patch can have moved either.
+    if (Object.prototype.hasOwnProperty.call(patch || {}, 'appIcon')) {
+      applyAppIcon();
+      refreshThemedPages();
+    }
     return { ...currentState(), shortcut, login };
   });
   ipcMain.handle('app:open-settings', () => { openSettings(); });
