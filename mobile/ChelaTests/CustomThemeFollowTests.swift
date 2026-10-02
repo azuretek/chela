@@ -120,6 +120,8 @@ final class CustomThemeFollowTests: XCTestCase {
         ))
 
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 402, height: 800), configuration: configuration)
+        let waiter = CustomThemeNavigationWaiter()
+        webView.navigationDelegate = waiter
         // IN A WINDOW, because a detached web view resolves its own media queries
         // from the test process rather than from the page.
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 800))
@@ -135,6 +137,12 @@ final class CustomThemeFollowTests: XCTestCase {
             Self.page(custom: Self.customTheme(accent: Self.firstAccent, background: Self.firstBackground)),
             baseURL: nil
         )
+        // The report clock starts when the page has LOADED, not when the load was
+        // asked for. Launching the web content process is not the relay's time:
+        // on the iOS 27 simulator it has taken 11.3 s, which spent this wait's
+        // whole budget before the relay was even injected, so the page was never
+        // reported and the swap ran against a document with no style tag in it.
+        await waiter.waitForLoad()
 
         let reportedAtLoad = await waitForReports(reports, atLeast: 1)
         XCTAssertTrue(reportedAtLoad,
@@ -177,4 +185,28 @@ final class CustomThemeFollowTests: XCTestCase {
         XCTAssertNotEqual(reports.colours.last, reports.colours.first,
             "the relay reported the same background after the swap")
     }
+}
+
+/// Answers the fixture's one load, so the relay's wait starts from a page that exists.
+@MainActor
+private final class CustomThemeNavigationWaiter: NSObject, WKNavigationDelegate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var finished = false
+
+    func waitForLoad() async {
+        if finished { return }
+        await withCheckedContinuation { continuation in
+            if finished { continuation.resume() } else { self.continuation = continuation }
+        }
+    }
+
+    private func done() {
+        finished = true
+        continuation?.resume()
+        continuation = nil
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { done() }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { done() }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { done() }
 }
