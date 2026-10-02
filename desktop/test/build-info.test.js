@@ -9,13 +9,15 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import * as buildInfo from '../src/build-info.js';
 import * as cache from '../src/cache.js';
 import { collect as collectBuildInfo } from '../scripts/build-info.js';
 
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
-const CLEAN = { commit: SHA, branch: 'main', dirty: false, builtAt: '2026-09-02T08:41:07Z' };
+const CLEAN = { commit: SHA, branch: 'main', dirty: false, count: 383, builtAt: '2026-09-02T08:41:07Z' };
 
 /* ------------------------------------------------------------------ normalize */
 
@@ -41,8 +43,18 @@ test('anything that is not a 40-char hash is no commit at all', () => {
 test('a corrupt or empty file degrades instead of throwing', () => {
   for (const raw of [null, undefined, '', 0, [], 'nonsense']) {
     assert.deepEqual(buildInfo.normalize(raw), {
-      commit: null, shortCommit: null, branch: null, dirty: false, builtAt: null,
+      commit: null, shortCommit: null, branch: null, dirty: false, count: null, builtAt: null,
     });
+  }
+});
+
+test('the build number is a positive integer or nothing', () => {
+  // A string, a zero or a fraction is a truncated or hand-edited stamp, and a
+  // build number that lies about which build this is would be worse than one
+  // that is absent.
+  assert.equal(buildInfo.normalize(CLEAN).count, 383);
+  for (const count of ['383', 0, -1, 1.5, null, undefined, NaN]) {
+    assert.equal(buildInfo.normalize({ ...CLEAN, count }).count, null, `for ${String(count)}`);
   }
 });
 
@@ -53,34 +65,70 @@ test('dirty is only true when it is literally true', () => {
   assert.equal(buildInfo.normalize({ ...CLEAN, dirty: true }).dirty, true);
 });
 
-/* ------------------------------------------------------------------- describe */
+/* ----------------------------------------------------------- readableVersion */
 
-test('a packaged build on main reads as version, commit and date', () => {
-  assert.equal(
-    buildInfo.describe('1.0.0', CLEAN),
-    '1.0.0 (a1b2c3d4e5, built 2026-09-02 08:41Z)',
-  );
+test('the version a person reads drops the build and commit tail', () => {
+  // The defect this replaces: 0.0.1-dev.383.59f34d85a8 welded a version, a
+  // count and a sha into one string everywhere a person read "the version".
+  // What a person reads is the front of it; the count and the commit are rows
+  // of their own on About (identityFields below).
+  assert.equal(buildInfo.readableVersion('0.0.1-dev.383.59f34d85a8'), '0.0.1-dev');
+});
+
+test('a channel other than dev is read through the same function the check uses', () => {
+  // The first prerelease identifier is the channel (channelOf), and it STAYS in
+  // the version: it is what tells a reader, and the client-context block, that
+  // this is not a stable build.
+  assert.equal(buildInfo.readableVersion('1.2.3-beta.7.abcdef1234'), '1.2.3-beta');
+});
+
+test('a stable version is already a version', () => {
+  assert.equal(buildInfo.readableVersion('1.0.1'), '1.0.1');
+  assert.equal(buildInfo.readableVersion('  1.0.1\n'), '1.0.1');
+});
+
+test('a dirty dev build reads as the dev version, its marker going with the commit', () => {
+  assert.equal(buildInfo.readableVersion('1.0.1-dev.148.758853d656.dirty'), '1.0.1-dev');
+});
+
+test('a string that is not a version is shown unchanged, not dressed up', () => {
+  // Inventing a version for something that is not one would be worse than
+  // showing what arrived; the row above still renders.
+  for (const bad of ['latest', '', null, undefined, '1.2', 'v1.2.3']) {
+    assert.equal(buildInfo.readableVersion(bad), bad == null ? '' : String(bad), `for ${String(bad)}`);
+  }
+});
+
+/* ----------------------------------------------------------- identityFields */
+
+test('the commit and the build number are rows of their own, not welded into the version', () => {
+  assert.deepEqual(buildInfo.identityFields(CLEAN), [
+    { label: 'Commit', value: 'a1b2c3d4e5' },
+    { label: 'Build', value: '383' },
+    { label: 'Built', value: '2026-09-02 08:41Z' },
+  ]);
 });
 
 test('a branch other than main is named, because that is the surprising case', () => {
-  assert.equal(
-    buildInfo.describe('1.0.0', { ...CLEAN, branch: 'fix-clicks' }),
-    '1.0.0 (fix-clicks a1b2c3d4e5, built 2026-09-02 08:41Z)',
-  );
+  assert.deepEqual(buildInfo.identityFields({ ...CLEAN, branch: 'fix-clicks' }).at(-1),
+    { label: 'Branch', value: 'fix-clicks' });
 });
 
-test('a dirty tree says so, its hash does not describe what was built', () => {
-  assert.match(buildInfo.describe('1.0.0', { ...CLEAN, dirty: true }), /a1b2c3d4e5-dirty/);
+test('a dirty tree says so on the commit, whose hash does not describe what was built', () => {
+  assert.deepEqual(buildInfo.identityFields({ ...CLEAN, dirty: true })[0],
+    { label: 'Commit', value: 'a1b2c3d4e5-dirty' });
 });
 
-test('running from source claims no commit rather than inventing one', () => {
+test('running from source shows no identity rows rather than inventing one', () => {
   // npm start and the tests both land here; it is a normal state, not an error.
-  assert.equal(buildInfo.describe('1.0.0', buildInfo.normalize(null)), '1.0.0 (source build)');
+  assert.deepEqual(buildInfo.identityFields(buildInfo.normalize(null)), []);
 });
 
-test('a missing build date drops the clause instead of printing a broken one', () => {
-  assert.equal(buildInfo.describe('1.0.0', { ...CLEAN, builtAt: null }), '1.0.0 (a1b2c3d4e5)');
-  assert.equal(buildInfo.describe('1.0.0', { ...CLEAN, builtAt: 'whenever' }), '1.0.0 (a1b2c3d4e5)');
+test('a missing build date or count drops that row instead of printing a broken one', () => {
+  assert.deepEqual(buildInfo.identityFields({ ...CLEAN, builtAt: null, count: null }),
+    [{ label: 'Commit', value: 'a1b2c3d4e5' }]);
+  assert.deepEqual(buildInfo.identityFields({ ...CLEAN, builtAt: 'whenever' }).map((r) => r.label),
+    ['Commit', 'Build']);
 });
 
 /* -------------------------------------------------------------------- buildId */
@@ -152,6 +200,7 @@ test('the generator reads the repo it lives in', () => {
   const info = collectBuildInfo();
   assert.match(info.commit, /^[0-9a-f]{40}$/);
   assert.equal(typeof info.dirty, 'boolean');
+  assert.ok(Number.isInteger(info.count) && info.count > 0, `no build number: ${info.count}`);
   assert.match(info.builtAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
 });
 
@@ -166,26 +215,31 @@ test('CI environment variables stand in when git is unavailable', () => {
 
 /* ---------------------------------------------------------------- the About box */
 
-test('About carries the build identity, the update line and the runtime', () => {
-  const about = buildInfo.about({
-    version: '1.0.1-dev.40.00aeecf142',
-    info: CLEAN,
-    updateStatus: 'Updates: dev channel, installed automatically; last checked 5 minutes ago, up to date',
-    electron: '44.1.1',
-    chrome: '140.0.0.0',
-    platform: 'win32',
-    arch: 'x64',
-  });
-  assert.equal(about.message, 'Chela');
-  assert.match(about.detail, /1\.0\.1-dev\.40\.00aeecf142 \(a1b2c3d4e5, built 2026-09-02 08:41Z\)/);
-  assert.match(about.detail, /dev channel/);
-  assert.match(about.detail, /Electron 44\.1\.1, Chromium 140\.0\.0\.0/);
-  // process.platform is what the runtime calls it; About is read by a person.
-  assert.match(about.detail, /Windows x64/);
-  assert.doesNotMatch(about.detail, /win32/);
+// The About STATE is composed in main.js, which is Electron's entry and cannot
+// be imported here, so this reads it the way the other desktop tests that reach
+// it do (see about-reference.test.js). The values are pinned by the pure
+// functions above; what is pinned here is the WIRING, because both halves fail
+// silently: a header that stops using the readable version goes back to welding
+// a commit into "the version", and a facts list that stops spreading the
+// identity rows drops the commit and the build number from About entirely.
+const MAIN = (() => {
+  const src = fs.readFileSync(path.join(HERE, '..', 'src', 'main.js'), 'utf8');
+  // Comments stripped, so a quoted example is not read as code.
+  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+})();
+
+test('About shows the version a person reads, and the commit and build as their own rows', () => {
+  assert.match(MAIN, /buildInfo\.readableVersion\(app\.getVersion\(\)\)/,
+    'the About version is not the readable version, so it can still carry a commit');
+  assert.match(MAIN, /buildInfo\.identityFields\(buildStamp\)/,
+    'About does not carry the commit/build rows');
 });
 
-test('About degrades to the version alone when nothing else is known', () => {
-  const about = buildInfo.about({ version: '1.0.0', info: null });
-  assert.equal(about.detail, '1.0.0 (source build)');
+test('the client-context block carries the readable version, not the build version', () => {
+  // The block names this client to an agent; welding the count and the sha into
+  // that name is the reported defect.
+  const block = MAIN.match(/function promptMetadataConfig\(\)[\s\S]*?\n\}/);
+  assert.ok(block, 'promptMetadataConfig is gone');
+  assert.match(block[0], /appVersion: buildInfo\.readableVersion\(app\.getVersion\(\)\)/,
+    'the client-context block still sends the build version');
 });

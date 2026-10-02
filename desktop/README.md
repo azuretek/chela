@@ -314,28 +314,38 @@ asserts it.
 
 ## Which build am I running?
 
-The line at the bottom of Settings names the commit the app was packaged from,
-during first-run setup as well as afterwards:
+The line at the bottom of Settings names the version this build is, during
+first-run setup as well as afterwards:
 
 ```
-Chela 1.0.0 (a1b2c3d4e5, built 2026-09-02 08:41Z) · Electron 44.1.1 · …
+About Chela 0.0.1-dev
 ```
 
-| Shown | Means |
+The commit and the build number are on **About**, as rows of their own, because
+that is where someone filing a report can read and copy them:
+
+| Row on About | Means |
 |---|---|
-| `1.0.0 (a1b2c3d4e5, …)` | packaged from that commit on `main` |
-| `1.0.0 (fix-clicks a1b2c3d4e5, …)` | built from a branch, named because that is the surprising case |
-| `1.0.0 (a1b2c3d4e5-dirty, …)` | uncommitted changes; the hash does **not** describe what shipped |
-| `1.0.1-dev.148.a1b2c3d4e5 (…)` | a dev build: the 148th commit, `a1b2c3d4e5`, heading towards 1.0.1 |
-| `1.0.0 (source build)` | `npm start`, which has no single commit to claim |
+| `Version` | the version a person reads: the release and its channel, no build and no commit in it |
+| `Channel` | `dev` or `stable`, the releases this build follows |
+| `Commit` | the exact code packaged; `-dirty` means uncommitted changes, and the hash does **not** describe what shipped |
+| `Build` | the commit count, the number a dev build orders by and the number Apple takes as a bundle build number |
+| `Built` | when the bundle was assembled |
+| `Branch` | named only off `main`, because on it the name is noise and off it, it is the surprising case |
+| _(no `Commit` row)_ | `npm start`: a source run has no single commit to claim |
 
-A dev version reads `NEXT-dev.COUNT.SHA`. The count is what makes it *increase*:
-a commit hash does not order, because semver compares prerelease identifiers
+★ **The version a person reads is not the whole build version.** The build
+version still reads `NEXT-dev.COUNT.SHA`: the count is what makes it *increase*
+(a commit hash does not order, because semver compares prerelease identifiers
 ASCII-lexically, so `dev.f3a1…` and `dev.a92b…` would sort by whichever hash
-happened to be smaller. The sha names the exact code and costs nothing to
-ordering: it sits after the count, which already differs for any two distinct
-commits. The version targets the *next* patch so a dev build sorts above the
-release it follows rather than below it.
+happened to be smaller), the sha names the exact code, and the version targets
+the *next* patch so a dev build sorts above the release it follows rather than
+below it. That full string is what `artifactName` interpolates into every
+installer filename and what the update check ranks, so it stays whole; it is
+simply no longer what is shown as "the version". `0.0.1-dev.383.59f34d85a8`
+reads as `0.0.1-dev`, with `383` and `59f34d85a8` as the `Build` and
+`Commit` rows. [src/build-info.js](src/build-info.js) owns the split and
+`test/build-info.test.js` asserts it.
 
 ## Known limits
 
