@@ -1742,7 +1742,16 @@ function createGatewayView({ attempt = false } = {}) {
   // and all the progress bar gets to work with. A navigation that commits means
   // the host replied; `dom-ready` means the document parsed. Subresources are
   // deliberately not tracked: the bar would then be waiting on fonts.
-  wc.on('did-navigate', () => reachMilestone(progress.NAVIGATED));
+  // A committed navigation replaces the document, so the surface-behind
+  // stylesheet that lived in the old one is gone with it; forgetSurfaceBehind
+  // drops the stale key and re-raises the blur if a sheet is still up (the
+  // Refresh and Clear cache and reload commands reload the live document under
+  // whatever is on screen). See forgetSurfaceBehind for why the key outlives
+  // the rule it names.
+  wc.on('did-navigate', () => {
+    reachMilestone(progress.NAVIGATED);
+    forgetSurfaceBehind(wc);
+  });
   wc.on('dom-ready', () => {
     reachMilestone(progress.DOM);
     // No prompt-metadata install here. executeJavaScript at dom-ready lands
@@ -1877,6 +1886,10 @@ function destroyGatewayView(view) {
   if (!view) return;
   if (attemptView === view) attemptView = null;
   themeCssKeys.delete(view.webContents.id);
+  // The behind stylesheet died with the document too; a discarded view must not
+  // leave its id behind to be read as "already inserted" by a later view that
+  // reuses the slot.
+  behindCssKeys.delete(view.webContents.id);
   try { mainWindow?.contentView.removeChildView(view); } catch { /* window already gone */ }
   // Detaching is the part that unblocks things, so nothing after it may throw:
   // this runs on the crash path too, where the contents are already gone.
@@ -2391,6 +2404,28 @@ async function syncSurfaceBehind() {
   } catch (err) {
     console.warn('[chela-desktop] could not ' + (wanted ? 'raise' : 'drop') + ' the blur behind the sheets: ' + err.message);
   }
+}
+
+/**
+ * Forget a document's surface-behind stylesheet, and restore it if one is owed.
+ *
+ * `insertCSS` lives in the DOCUMENT it was inserted into, but `behindCssKeys`
+ * is keyed by the WebContents, and a WebContents outlives its documents. A
+ * reload -- the Refresh and Clear cache and reload commands, and any navigation
+ * the Control UI commits -- swaps in a new document that does not hold the
+ * injected rule, while the map still says the id has one. The next sheet then
+ * flips `claw-behind-on` against a stylesheet that is not there: no rule, no
+ * blur. That is the blur that is right at app start and gone after a reload,
+ * and it returns on a restart only because the map is rebuilt empty.
+ *
+ * Dropping the entry is what makes the cache per-document again. Re-running the
+ * sync is for the reload that happened UNDER a sheet, where the class died with
+ * the old document too and nothing else would raise it until the next open.
+ */
+function forgetSurfaceBehind(wc) {
+  if (!wc || wc.isDestroyed()) return;
+  behindCssKeys.delete(wc.id);
+  if (wc === page()) void syncSurfaceBehind();
 }
 
 /**
