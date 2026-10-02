@@ -121,6 +121,27 @@ if (!isLocalPage) {
     outboxReport = { ok: false, error: (err && err.message) || String(err) };
   }
   try { ipcRenderer.send('outbox:injected', outboxReport); } catch { /* nothing left to report it to */ }
+
+  /* The client-context hook (core/spec/prompt-metadata.json), at the same moment
+     and for a sharper reason than the three above. It wraps
+     WebSocket.prototype.addEventListener and onmessage, so a rewind editorText is
+     stripped on its way back to the composer, and it wraps send, so the block
+     rides a chat.send frame. A listener registered before that wrap is a
+     listener the strip never sees, and the Control UI builds its socket as its
+     own script runs: earlier than any webContents.executeJavaScript can land,
+     which is what dom-ready was. Measured 2026-10-01: rolling back to a message
+     handed the composer the client-context block. Reported the same way as the
+     others, because a silent non-installation is the failure this file has had. */
+  let metadataReport = { ok: false, error: 'no script from main' };
+  try {
+    const metadataScript = ipcRenderer.sendSync('prompt-metadata:script') || '';
+    if (!metadataScript) throw new Error('no script from main');
+    webFrame.executeJavaScript(metadataScript);
+    metadataReport = { ok: true, error: '' };
+  } catch (err) {
+    metadataReport = { ok: false, error: (err && err.message) || String(err) };
+  }
+  try { ipcRenderer.send('prompt-metadata:injected', metadataReport); } catch { /* nothing left to report it to */ }
 }
 
 if (isLocalPage) {

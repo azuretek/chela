@@ -293,6 +293,15 @@ function promptMetadataConfig() {
   };
 }
 
+/**
+ * Repoint the hook configuration on a page that is already running.
+ *
+ * The INSTALL is the preload at document start now, over the synchronous
+ * prompt-metadata:script channel below; what is left here is the settings
+ * toggle. The hook writes its configuration global on every run of the script
+ * and its body returns early once it is installed, so re-running these bytes on
+ * a live page changes enabled and the block without stacking a second hook.
+ */
 function installPromptMetadata(wc) {
   if (!wc || wc.isDestroyed() || originOf(wc.getURL()) !== activeOrigin()) return;
   wc.executeJavaScript(promptMetadata.clientScript(promptMetadataConfig()), true)
@@ -1256,6 +1265,37 @@ function frameInsets() {
  * word that they ran. Synchronous for the observer's reason: the script wraps the
  * page's WebSocket constructor, so it has to precede the page's own first script.
  */
+/**
+ * The client-context hook bytes, read by the preload at document start, and its
+ * word that they ran.
+ *
+ * Synchronous, and for the sharpest version of the reason the pair below gives.
+ * The hook wraps WebSocket.prototype.addEventListener and onmessage, so a rewind
+ * editorText is stripped on its way back to the composer, and it wraps send, so
+ * the block rides a chat.send frame. A listener registered before that wrap is a
+ * listener the strip never sees, and the Control UI builds its socket as its own
+ * script runs, which is earlier than any webContents.executeJavaScript can land.
+ * Reported 2026-10-01: rolling back to a message handed the composer the
+ * client-context block, sometimes. See the prompt-metadata section of
+ * src/preload.cjs for the half that does the injecting.
+ */
+ipcMain.on('prompt-metadata:script', (event) => {
+  event.returnValue = promptMetadata.clientScript(promptMetadataConfig());
+});
+
+/**
+ * The preload word that the hook ran, logged either way for the same reason the
+ * observer is: a silent non-installation is how this failed before, and a rewind
+ * that hands the composer the client-context block is the shape of it.
+ */
+ipcMain.on('prompt-metadata:injected', (_event, report) => {
+  if (report && report.ok) {
+    console.log('[chela-desktop] client-context hook installed (document start)');
+    return;
+  }
+  console.warn('[chela-desktop] client-context hook did not install (' + ((report && report.error) || 'no reason given') + '); a rewind will hand the composer the client-context block');
+});
+
 ipcMain.on('outbox:reconcile-script', (event) => {
   event.returnValue = outboxReconcile.reconcileScript();
 });
@@ -1674,7 +1714,12 @@ function createGatewayView({ attempt = false } = {}) {
   wc.on('did-navigate', () => reachMilestone(progress.NAVIGATED));
   wc.on('dom-ready', () => {
     reachMilestone(progress.DOM);
-    installPromptMetadata(wc);
+    // No prompt-metadata install here. executeJavaScript at dom-ready lands
+    // after the page own first script, and the Control UI builds its socket as
+    // that script runs, so a listener registered in that window is a listener
+    // the hook never wraps. The install is the preload at document start now,
+    // over the synchronous channel below. Measured 2026-10-01: rolling back to
+    // a message handed the composer the client-context block.
     installAppSettingsAffordance(wc);
     // The window's own shell has parsed, so this boot has genuinely come up
     // whether or not a gateway then connects: advance the stage and clear the

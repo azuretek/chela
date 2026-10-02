@@ -320,8 +320,19 @@ test('the settings toggle is wired from the page through main to the gateway pag
   assert.match(settings, /for \(const id of \[[^\]]*'promptMetadata'/, 'the toggle is no longer wired');
   assert.match(settings, /commitSetting\(id, box\.checked\)/, 'the toggle no longer commits its own value');
   assert.match(main, /promptMetadata\.clientScript\(promptMetadataConfig\(\)\)/);
-  assert.match(main, /dom-ready[\s\S]*?installPromptMetadata\(wc\)/);
-  assert.match(main, /app:save-settings[\s\S]*?installPromptMetadata\(page\(\)\)/);
+  // The install happens at DOCUMENT START now, from the preload, over the
+  // synchronous channel main serves. dom-ready is a tick too late: the Control
+  // UI builds its socket as its own script runs, and a listener registered
+  // before the hook is a listener the strip never sees. Reported 2026-10-01:
+  // a rewind handed the composer the device block. The preload half is
+  // asserted in prompt-metadata-preload.test.js.
+  assert.ok(main.includes("ipcMain.on('prompt-metadata:script'"), 'main must serve the hook bytes at document start');
+  // The function still names its webContents in its own signature; what must be
+  // gone is the CALL from dom-ready, the one place a page was wired late enough
+  // to lose the race against its own script.
+  const atDomReady = main.slice(main.indexOf('reachMilestone(progress.DOM)'));
+  assert.ok(!atDomReady.slice(0, 400).includes('installPromptMetadata'), 'dom-ready must no longer install the hook');
+  assert.ok(main.includes('installPromptMetadata(page())'), 'the settings toggle still repoints the live page');
 });
 
 /* ------------------------------------------------- what OS version we report */
