@@ -103,3 +103,76 @@ test('the interface behind a sheet blurs while a dimming one is up', () => {
   assert.match(functionBody(MAIN, 'function openOverlay('), /syncSurfaceBehind\(\)/, 'opening a sheet never raises the blur behind it');
   assert.match(functionBody(MAIN, 'async function closeOverlay('), /syncSurfaceBehind\(\)/, 'closing a sheet never drops the blur behind it');
 });
+/**
+ * The real syncSurfaceBehind and forgetSurfaceBehind, run against a fake page.
+ *
+ * The document is simulated rather than composited: insertCSS records which
+ * document it landed in, and a navigation starts a new one that holds nothing,
+ * which is the shape the real Electron WebContents has.
+ */
+function behindHarness() {
+  const source = [
+    'const SURFACE_BEHIND_CSS = "html::before{backdrop-filter:blur(14px)}";',
+    'const DIMMING_OVERLAYS = ["settings", "about"];',
+    'async function syncSurfaceBehind() {' + functionBody(MAIN, 'async function syncSurfaceBehind(') + '}',
+    'function forgetSurfaceBehind(wc) {' + functionBody(MAIN, 'function forgetSurfaceBehind(') + '}',
+    'return { syncSurfaceBehind, forgetSurfaceBehind };',
+  ].join('\n');
+  return new Function('page', 'overlayAlive', 'behindCssKeys', 'console', source);
+}
+
+/** A page with one document, replaced on navigation, as Electron has. */
+function fakePage() {
+  return {
+    id: 7,
+    document: 'first',
+    inserts: [],
+    isDestroyed() { return false; },
+    async insertCSS(css) {
+      const key = 'key-' + this.inserts.length;
+      this.inserts.push({ key, document: this.document, css });
+      return key;
+    },
+    async executeJavaScript() {},
+  };
+}
+
+test('a reload re-inserts the surface-behind stylesheet instead of trusting the stale key', async () => {
+  const behindCssKeys = new Map();
+  const fake = fakePage();
+  const overlays = ['settings'];
+  const { syncSurfaceBehind, forgetSurfaceBehind } = behindHarness()(
+    () => fake,
+    (name) => overlays.includes(name),
+    behindCssKeys,
+    { warn() {} },
+  );
+
+  await syncSurfaceBehind();
+  assert.equal(fake.inserts.length, 1, 'the first sheet did not insert the blur stylesheet');
+  assert.equal(behindCssKeys.get(fake.id), 'key-0', 'the first insert was not recorded');
+
+  // A reload: a new document, and the host's did-navigate forgets the old key.
+  // With the stale key left in place the next sheet flips its class against a
+  // stylesheet the new document never received -- the blur gone after a reload.
+  fake.document = 'second';
+  forgetSurfaceBehind(fake);
+  // The re-sync is fire-and-forget (the host is in an event handler), so let its
+  // insert settle before reading the map back.
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(fake.inserts.length, 2, 'the stylesheet was not re-inserted for the reloaded document');
+  assert.equal(fake.inserts[1].document, 'second', 'the second insert did not land in the new document');
+  assert.equal(behindCssKeys.get(fake.id), 'key-1', 'the map still names the old document key');
+
+  // And the stale key really is what used to skip the insert: with one planted,
+  // a sync for an open sheet adds nothing.
+  behindCssKeys.set(fake.id, 'stale');
+  await syncSurfaceBehind();
+  assert.equal(fake.inserts.length, 2, 'a stale key must still skip the insert, or this test is not about the key');
+});
+
+test('the host forgets the behind stylesheet on a committed navigation and on teardown', () => {
+  assert.match(MAIN, /did-navigate[\s\S]{0,240}forgetSurfaceBehind\(wc\)/, 'a navigation never forgets the document-scoped stylesheet');
+  assert.match(functionBody(MAIN, 'function destroyGatewayView('), /behindCssKeys\.delete\(/, 'a discarded view leaves a stale behind key behind');
+});
+
