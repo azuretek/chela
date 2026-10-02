@@ -44,10 +44,38 @@ adb shell am start -n "$PKG/.MainActivity" | tee "$PROOF/launch.txt"
 # before the capture, so the screenshot is of the page rather than of its cover.
 sleep 20
 
+# The capture waits for OUR window to be the focused one, so the proof is of the
+# app rather than of whatever happened to be on screen, and it is then RETRIED and
+# its result checked. Both halves answer the same measured failure: on the first
+# run of this workflow the shell had built, installed and launched, and the run
+# went red on an adb "error: closed", which is the exec-out stream closing under a
+# screencap on a loaded emulator and leaving a truncated file. Under set -e that
+# is one line in the log that says nothing at all about the app.
+for _ in $(seq 1 30); do
+  if adb shell dumpsys window 2>/dev/null | grep -q "mCurrentFocus.*$PKG"; then
+    break
+  fi
+  sleep 2
+done
+
 echo "== capturing"
-adb exec-out screencap -p > "$PROOF/android-boot.png"
+captured=0
+for attempt in 1 2 3 4 5; do
+  : > "$PROOF/android-boot.png"
+  adb exec-out screencap -p > "$PROOF/android-boot.png" 2>"$PROOF/capture-$attempt.err" || true
+  if [ -s "$PROOF/android-boot.png" ] && file -b "$PROOF/android-boot.png" | grep -q "^PNG image data"; then
+    captured=1
+    break
+  fi
+  echo "capture attempt $attempt produced no PNG ($(wc -c < "$PROOF/android-boot.png" | tr -d " ") bytes); trying again"
+  sleep 5
+  adb wait-for-device || true
+done
+rm -f "$PROOF"/capture-*.err
 ls -l "$PROOF"
 
-# An empty capture is a failed boot, so the size is asserted rather than assumed.
-test -s "$PROOF/android-boot.png"
+if [ "$captured" != "1" ]; then
+  echo "error: no PNG after 5 captures; the emulator returned nothing readable" >&2
+  exit 1
+fi
 echo "boot proof captured at $PROOF/android-boot.png"
