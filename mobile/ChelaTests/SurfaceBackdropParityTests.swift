@@ -12,9 +12,12 @@ import XCTest
 /// test also reads the Control UI's own drawer backdrop out of an OpenClaw checkout
 /// when one is present, which a simulator test has no business reaching for.
 ///
-/// There is no iOS arithmetic left to hold: the sheet is presented undimmed (#127),
-/// so the veil is the shared value as it is. That the band above the sheet stays the
-/// page's own colour is SheetBandUITests, on a simulator.
+/// There is no iOS arithmetic to hold: the sheet is presented undimmed (#127) and
+/// the blur under the veil is the page's own, with no tint (#128), so the veil is
+/// the shared value as it is. The blur's radius is mirrored from the desktop's, and
+/// held to it here the same way. That the composite is the shared value on screen,
+/// in both appearances, is SurfacesHandoffUITests; that the band above the sheet
+/// stays the page's own colour is SheetBandUITests, both on a simulator.
 final class SurfaceBackdropParityTests: XCTestCase {
     private func stylesheet() throws -> String {
         let url = try Fixtures.root().appendingPathComponent("core/ui/ui.css")
@@ -74,6 +77,23 @@ final class SurfaceBackdropParityTests: XCTestCase {
         let values = scrimDeclarations(try stylesheet())
         XCTAssertEqual(Set(values).count, 1,
                        "the dim is one value in both appearance blocks, and ui.css reads " + String(describing: values))
+    }
+
+    func testTheBlurIsTheDesktopsRadius() throws {
+        // The desktop's backdrop is injected from its main process as CSS text, so
+        // the radius is read out of that source the way the dim is read out of ui.css.
+        let url = try Fixtures.root().appendingPathComponent("desktop/src/main.js")
+        let source = try String(contentsOf: url, encoding: .utf8)
+        let radii = source.components(separatedBy: "backdrop-filter: blur(").dropFirst().compactMap { tail in
+            tail.split(separator: ")", maxSplits: 1).first.flatMap { value -> Double? in
+                value.hasSuffix("px") ? Double(value.dropLast(2)) : nil
+            }
+        }
+        XCTAssertFalse(radii.isEmpty, "desktop/src/main.js declares no backdrop blur, so this would assert nothing")
+        for radius in radii {
+            XCTAssertEqual(Double(SurfaceBackdrop.blurRadius), radius, accuracy: 0.0001,
+                           "the blur behind a sheet is \(SurfaceBackdrop.blurRadius)pt here and \(radius)px on the desktop")
+        }
     }
 
     func testTheDimIsDarkEnoughToReadAsADim() throws {
