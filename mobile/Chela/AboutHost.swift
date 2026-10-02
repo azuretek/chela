@@ -61,6 +61,13 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
     /// registration and not the other way round.
     weak var webView: WKWebView?
 
+    /// Take About away and land back on Settings: what the page's own way back
+    /// asks for through `closeOverlay('about')`, and what a tap outside the sheet
+    /// does while About is up, so the two are one way out (#141).
+    func close() {
+        onClose()
+    }
+
     init(
         notices: NoticeBoard,
         onClose: @escaping () -> Void,
@@ -263,7 +270,7 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
             // argument is not read: the sheet is dismissed whatever is passed,
             // matching the desktop, where `closeOverlay('about')` closes the About
             // overlay and nothing else this page could name.
-            onClose()
+            close()
 
         default:
             // The page only ever asks for a command its own host declares, so

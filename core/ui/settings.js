@@ -1740,14 +1740,10 @@ function wirePreferences() {
 if (!asPage) {
   const dismiss = () => call('closeSettings');
   $('close').addEventListener('click', dismiss);
-  // Only a click that both starts and ends on the scrim counts. Without the
-  // target check, releasing the mouse outside the card after selecting text
-  // inside it closes the dialog and throws away what you were doing.
-  $('scrim').addEventListener('mousedown', (e) => {
-    if (e.target !== e.currentTarget) return;
-    const up = (ev) => { if (ev.target === e.currentTarget) dismiss(); };
-    $('scrim').addEventListener('mouseup', up, { once: true });
-  });
+  // A click on the dim around the card closes it the way the control above and
+  // Escape do, through this same dismiss; a click on the card never does. The
+  // rule is the shared one in surface.js, so About cannot mean something else.
+  window.clawSurface?.dismissOnOutsideClick($('scrim'), dismiss);
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') dismiss();
   });

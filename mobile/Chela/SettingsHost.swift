@@ -58,6 +58,13 @@ final class SettingsHost: NSObject, ObservableObject, WKScriptMessageHandler {
     /// round.
     weak var webView: WKWebView?
 
+    /// Take the surface away: what the page's "Back to app" asks for through
+    /// `closeSettings`, and what a tap outside the sheet does, so the two are one
+    /// way out rather than two that could come to differ (#141).
+    func close() {
+        onClose()
+    }
+
     init(
         store: GatewayStore,
         connection: ConnectionState,
@@ -273,7 +280,7 @@ final class SettingsHost: NSObject, ObservableObject, WKScriptMessageHandler {
             reply(id, value: state)
 
         case "closeSettings":
-            onClose()
+            close()
             reply(id, value: NSNull())
 
         case "openControlUiSettings":

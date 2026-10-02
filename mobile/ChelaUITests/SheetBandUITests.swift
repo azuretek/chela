@@ -137,26 +137,77 @@ final class SheetBandUITests: XCTestCase {
         assertBand(try band(app, "about"), is: expected, "about")
     }
 
-    /// With the platform's dim switched off the interface behind the sheet could
-    /// take touches, which it never did. A tap on what is left of it on screen, the
-    /// sliver the sheet's rounded top corner uncovers just below the band, and a tap
-    /// on the band itself, reach nothing behind the sheet: the fixture counts every
-    /// touch it receives.
-    func testATapOutsideTheSheetReachesNothingBehindIt() throws {
+    /// A tap on the band above the sheet.
+    private func tapTheBand(_ app: XCUIApplication) {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0)).withOffset(CGVector(dx: 120, dy: 30)).tap()
+    }
+
+    /// A tap outside the sheet closes it, and a tap on the sheet does not (#141).
+    ///
+    /// ★ This test held the OPPOSITE until #141. #127 and #128 switched the
+    /// platform's dim off and made the band above the sheet inert on purpose: a tap
+    /// there did nothing, and this test was "a tap outside the sheet reaches nothing
+    /// behind it". #141 reverses that deliberately: a tap on the band now closes
+    /// the sheet and returns to the app, through the same close as the page's
+    /// "Back to app", as a click on the dim does on the desktop. The band still
+    /// DRAWS what #127 made it draw, which the tests above hold.
+    ///
+    /// What it keeps from the old test is the other half: the tap is the sheet's,
+    /// never the interface's, so the fixture behind still counts no touch.
+    ///
+    /// The sliver the sheet's rounded top corner uncovers is tapped first and only
+    /// reported: whether iOS hands that touch to the presenter or keeps it in the
+    /// sheet's own frame is the platform's call, and the band is the outside this
+    /// test holds.
+    func testATapOutsideTheSheetClosesItAndATapOnItDoesNot() throws {
         let app = launch(["-claw-open-settings"])
         let about = app.webViews.buttons.matching(aboutButton).firstMatch
         XCTAssertTrue(about.waitForExistence(timeout: 30), "the settings surface never drew over the fixture")
         XCTAssertTrue(app.webViews.staticTexts["Taps 0"].waitForExistence(timeout: 10), "the fixture is not counting")
         sleep(2)
-        let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
-        for (place, offset) in [("corner", CGVector(dx: 4, dy: 66)), ("band", CGVector(dx: 120, dy: 30))] {
-            origin.withOffset(offset).tap()
-            sleep(2)
-            print("SHEETBAND tap \(place): sheet up = \(about.exists)")
-            _ = try band(app, "tap-\(place)")
-            XCTAssertTrue(app.webViews.staticTexts["Taps 0"].exists,
-                          "a tap on the \(place) outside the sheet reached the interface behind it")
+
+        // On the sheet: its title, which is not a control.
+        let title = app.webViews.staticTexts["Settings"].firstMatch
+        XCTAssertTrue(title.exists, "the settings surface has no title to tap")
+        title.tap()
+        sleep(2)
+        _ = try band(app, "tap-sheet")
+        XCTAssertTrue(about.isHittable, "a tap on the sheet itself closed it")
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0)).withOffset(CGVector(dx: 4, dy: 66)).tap()
+        sleep(2)
+        print("SHEETBAND tap corner: sheet up = \(about.exists && about.isHittable)")
+
+        if about.exists && about.isHittable {
+            tapTheBand(app)
+            XCTAssertTrue(about.waitForNonExistence(timeout: 10), "a tap on the band above the sheet left Settings up")
         }
+        sleep(1)
+        _ = try band(app, "tap-band")
+        XCTAssertTrue(app.webViews.staticTexts["Taps 0"].exists,
+                      "a tap outside the sheet reached the interface behind it rather than closing the sheet")
+    }
+
+    /// The same with About up: a tap outside goes back ONE surface, to Settings,
+    /// which is where About's own way back lands and what a click on the dim around
+    /// About does on the desktop. A tap on About itself leaves it up.
+    func testATapOutsideAboutGoesBackToSettings() throws {
+        let app = launch(["-claw-open-about"])
+        let updates = app.webViews.staticTexts["Updates"].firstMatch
+        XCTAssertTrue(updates.waitForExistence(timeout: 30), "About never came up over Settings")
+        sleep(2)
+        updates.tap()
+        sleep(2)
+        XCTAssertTrue(updates.exists && updates.isHittable, "a tap on About itself closed it")
+
+        tapTheBand(app)
+        XCTAssertTrue(updates.waitForNonExistence(timeout: 10), "a tap on the band above About left About up")
+        let about = app.webViews.buttons.matching(aboutButton).firstMatch
+        XCTAssertTrue(about.waitForExistence(timeout: 10), "a tap outside About took Settings down with it")
+        sleep(1)
+        XCTAssertTrue(about.isHittable, "Settings did not come back after About closed")
+        _ = try band(app, "tap-band-about")
+        XCTAssertTrue(app.webViews.staticTexts["Taps 0"].exists, "a tap outside the sheet reached the interface behind it")
     }
 
     /// The theme changing under an open sheet: the band follows it rather than

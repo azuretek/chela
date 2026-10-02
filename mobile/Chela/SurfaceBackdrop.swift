@@ -81,16 +81,33 @@ enum SurfaceBackdrop {
 /// of that page sees no safe area to stop at: told to keep its top edge, it covered
 /// the band anyway (measured on the simulator, #127).
 ///
-/// `allowsHitTesting(false)` because this is a veil and not a control. With the
-/// platform's dim off, nothing outside the sheet reaches the interface either:
-/// the sliver at the sheet's rounded corners is still inside the sheet's own
-/// frame, and the band is the status bar's. `SheetBandUITests` taps both and
-/// checks the page behind received nothing.
+/// ## A tap outside the sheet closes it
+///
+/// Reported 2026-10-02 (#141): a tap on what is visible around the sheet should
+/// close it and return to the app, the way "Back to app" does, as a click on the
+/// dim does on the desktop. With the platform's dim off (#127) a touch outside the
+/// sheet comes to the presenter, which is this layer, so the layer takes it: the
+/// veil itself is not a control and takes nothing, and a clear catcher over the
+/// whole presenter, the band above the sheet included, answers `onTapOutside`.
+/// The band was deliberately inert before this (#127, #128) and now closes the
+/// sheet; it still draws exactly what it drew. The tap stops here either way, so
+/// the interface behind the sheet still never receives it. `SheetBandUITests` taps
+/// the band and the sheet and holds both halves.
 struct SurfaceBackdropView: View {
+    /// What a tap outside the sheet does: the same close the page's own way back
+    /// takes, which `ContentView` decides.
+    let onTapOutside: () -> Void
+
     var body: some View {
-        SurfaceBackdropLayer()
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
+        ZStack {
+            SurfaceBackdropLayer()
+                .allowsHitTesting(false)
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onTapOutside)
+                .accessibilityHidden(true)
+        }
+        .ignoresSafeArea()
     }
 }
 
