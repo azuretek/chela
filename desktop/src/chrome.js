@@ -67,25 +67,12 @@ export const STRIP_HEIGHT = 36;
 const FALLBACK_DARK = { mode: 'dark', surface: '#0a0a0a', symbol: '#c9c9c9' };
 const FALLBACK_LIGHT = { mode: 'light', surface: '#faf9f5', symbol: '#3d3a33' };
 
-// Width to keep clear on the right for the Windows caption buttons, asked of the
-// platform rather than guessed. `titleBarOverlay` turns on the Window Controls
-// Overlay API, which publishes the draggable strip's geometry as CSS env vars;
-// everything to the right of it is buttons. Measured on a 150% display: 137px.
-//
-// This is now used only by the title strip the app draws for itself, the page
-// no longer needs it, because the page no longer reaches that corner. The strip
-// does: it spans the full width and its right end lies beneath the buttons.
-//
-// Fallbacks make it resolve to 0px, which is why it is wrapped in `max()` at the
-// point of use: the env vars are published to the window's main frame, and this
-// stylesheet runs in a child view, where they may legitimately be absent.
-export const WIN_CONTROLS_WIDTH =
-  'calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))';
-
-// Enough to clear the three buttons at any scale factor when `env()` says
-// nothing. Overshooting costs a little unused strip; undershooting puts the
-// window title under the close button.
-export const WIN_CONTROLS_FALLBACK = 160;
+// The Windows caption buttons are the strip's own now, drawn in
+// core/ui/titlebar.html and driven by core/ui/titlebar.js, not by the OS. They
+// used to be `titleBarOverlay`'s, and Windows painted the button rectangle (and
+// its background) across the strip's right end, which cut the hairline short of
+// the corner. Our buttons sit ON the hairline instead of over it, so the strip
+// reserves no padding for a platform control area.
 
 // Where the strip's label starts on macOS, clearing the traffic lights. There is
 // no `env()` for these, the position is ours, set below, so it is derived, not
@@ -102,11 +89,11 @@ export const MAC_CONTENT_INSET = MAC_LIGHTS_X + MAC_LIGHTS_SPAN + MAC_LIGHTS_GAP
 /**
  * BrowserWindow options for the main window.
  *
- * `theme` is the last known page theme, so a window opens in roughly the right
- * colours instead of flashing the wrong ones. It is only a seed: `applyTheme`
- * corrects it as soon as the page reports.
+ * No theme is needed any more: the colours that used to seed the Windows caption
+ * overlay are the strip's own now (see stripCss and ui.css), and `applyTheme`
+ * paints the window background from the page's report as soon as it arrives.
  */
-export function windowOptions(theme = FALLBACK_DARK) {
+export function windowOptions() {
   if (process.platform === 'darwin') {
     return {
       titleBarStyle: 'hiddenInset',
@@ -116,12 +103,10 @@ export function windowOptions(theme = FALLBACK_DARK) {
   }
   if (process.platform === 'win32') {
     return {
+      // `titleBarStyle: 'hidden'` with NO `titleBarOverlay`: the overlay painted
+      // its own background over the strip's hairline, which is the fault. The
+      // strip draws our own minimise/maximise/close instead (titlebar.html).
       titleBarStyle: 'hidden',
-      // Windows keeps drawing real minimise/maximise/close buttons, so snap
-      // layouts and tooltips still work and the window can never become
-      // unclosable, it just wears the app's colours. They now land on the
-      // reserved strip rather than on the page.
-      titleBarOverlay: { color: theme.surface, symbolColor: theme.symbol, height: STRIP_HEIGHT },
     };
   }
   // Linux window managers vary too much to reliably hand back a frameless
@@ -154,17 +139,17 @@ export function contentInset(platform = process.platform) {
  * strip is never unstyled if this never arrives.
  */
 export function stripCss(platform = process.platform) {
-  // macOS puts its traffic lights at the strip's left end, Windows its caption
-  // buttons at the right. Both are the OS's own buttons drawn over the strip, so
-  // the label has to start after one and stop before the other.
+  // macOS puts its traffic lights at the strip's left end, so the label starts
+  // after them. Windows puts our own controls at the right end, laid out by the
+  // strip itself (ui.css) rather than reserved as padding.
   const start = platform === 'darwin' ? `${MAC_CONTENT_INSET}px` : '12px';
-  const end = platform === 'win32'
-    ? `max(${WIN_CONTROLS_FALLBACK}px, ${WIN_CONTROLS_WIDTH})`
-    : '12px';
+  // Our controls are drawn only where the app owns the window buttons: Windows.
+  // macOS keeps its traffic lights, which are the OS's, not ours.
+  const controls = platform === 'win32' ? 'flex' : 'none';
   return `:root {
   --strip-height: ${STRIP_HEIGHT}px;
   --strip-pad-start: ${start};
-  --strip-pad-end: ${end};
+  --strip-controls: ${controls};
 }`;
 }
 
@@ -589,24 +574,11 @@ export function applyTheme(theme, windows = []) {
   for (const win of windows) {
     if (!win || win.isDestroyed()) continue;
     win.setBackgroundColor(theme.surface);
-    // Only windows created with `titleBarOverlay` accept this, and it throws
-    // rather than no-ops on the ones that were not, including every window on
-    // macOS and Linux.
-    if (process.platform !== 'win32') continue;
-    try {
-      win.setTitleBarOverlay({
-        color: theme.surface,
-        symbolColor: theme.symbol,
-        height: STRIP_HEIGHT,
-      });
-    } catch { /* window has no overlay; its frame is already the right colour */ }
   }
 }
 
 export default {
   STRIP_HEIGHT,
-  WIN_CONTROLS_WIDTH,
-  WIN_CONTROLS_FALLBACK,
   contentInset,
   stripCss,
   MAC_LIGHTS_X,
