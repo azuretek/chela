@@ -208,8 +208,10 @@ export const iconsAsIco = (platform) => platform === 'win32';
 export const iconFile = (bucket, mode, { full = false, ico = false } = {}) => (ico
   ? `icons/${bucket.id}-${mode === 'light' ? 'light' : 'dark'}.ico`
   : `icons/${bucket.id}-${mode === 'light' ? 'light' : 'dark'}${full ? '-full' : ''}.png`);
-/** Where a bucket's tray glyph is; Electron finds the `@2x` beside it. */
-export const trayFile = (bucket) => `icons/tray-${bucket.id}.png`;
+/** Where a bucket's tray icon is in one mode; Electron finds the `@2x` beside
+ *  it. The tray shows the app icon itself, small, so it has one per mode exactly
+ *  as the app icon does, and changes with it (#114). */
+export const trayFile = (bucket, mode) => `icons/tray-${bucket.id}-${mode === 'light' ? 'light' : 'dark'}.png`;
 /** The iOS alternate icon for a bucket in one mode. Every bucket has one per
  *  mode, the primary's included, so the icon follows the Control UI's own light
  *  or dark palette rather than the home screen's appearance: an icon set that
@@ -222,7 +224,7 @@ export const alternateIconName = (bucket, mode) => `AppIcon-${bucket.id}-${mode 
 export function choose(accent, mode, { full = false, ico = false } = {}) {
   const bucket = bucketFor(accent);
   const m = mode === 'light' ? 'light' : 'dark';
-  return { bucket, mode: m, file: iconFile(bucket, m, { full, ico }), tray: trayFile(bucket) };
+  return { bucket, mode: m, file: iconFile(bucket, m, { full, ico }), tray: trayFile(bucket, m) };
 }
 
 /** What the iOS app reads, as data: the buckets, the neutral threshold, and
