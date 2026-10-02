@@ -1192,6 +1192,14 @@ select:focus { outline: none; border-color: var(--ring); }
    opens follows the palette without anything here painting it. */
 option { background: var(--input); color: var(--text); }
 
+/* The app-icon row: the mark's preview beside the picker, on one line. The
+   preview is the same .chela-mark the About page draws (there at 56px,
+   .modal__icon); here it is a swatch beside the select, which takes the rest of
+   the row. No fixed TEXT box, so the tenth rule is not in play: the mark holds no
+   text, and 28px is its whole size rather than a line-height reservation. */
+.app-icon__preview { flex: none; width: 28px; height: 28px; }
+.app-icon select { flex: 1 1 auto; min-width: 0; }
+
 button {
   background: var(--panel-hover); color: var(--text); border: 1px solid var(--border);
   border-radius: var(--radius-sm); padding: 8px 14px; font: inherit; font-weight: 550; cursor: pointer; white-space: nowrap;

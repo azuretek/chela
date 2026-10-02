@@ -250,6 +250,32 @@
           <div class="result" id="globalShortcut-result"></div>
         </div>
       </div>
+      <!-- The app icon, and why this is a row here rather than an appearance
+           control. The sixth rule in ui/CONVENTIONS.md forbids a client drawing
+           an APPEARANCE control, because the Control UI owns the palette and two
+           controls disagree the first time one of them moves. This is not that:
+           the mark is the app's own identity rather than the interface's
+           palette, the reader asked for the choice, and the theme option keeps
+           the accent-driven behaviour as the DEFAULT rather than as the one that
+           was taken away.
+
+           The list of buckets is not written here. core/app-icons.js owns the
+           buckets and their names, the host hands them over in its state, and
+           settings.js builds the options from what it is given, so a bucket
+           added upstream appears here with nothing in this file to change. The
+           preview is the same .chela-mark the About page draws: what it shows is
+           what the app's own surfaces show, because the host publishes the
+           chosen bucket as the accent the mark is recoloured from. -->
+      <div class="settings-row settings-row--stacked" data-setting="appIcon">
+        <div class="settings-row__text">
+          <label class="settings-row__title" for="appIcon">App icon</label>
+          <span class="settings-row__desc">The icon this app shows in the window, the taskbar and the tray. Theme follows the Control UI's accent; picking a specific icon stops following it.</span>
+        </div>
+        <div class="settings-row__control app-icon">
+          <span class="chela-mark app-icon__preview" id="appIcon-preview" aria-hidden="true"><span class="chela-mark__neon"></span></span>
+          <select id="appIcon"></select>
+        </div>
+      </div>
     </div>
 
   </div>
