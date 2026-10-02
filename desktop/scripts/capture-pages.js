@@ -48,6 +48,10 @@ import { forPages as bannerSpec } from '../../core/banner.js';
 // report a palette the app would never hand out, which is how a two-palette page
 // passed here on the day it was reported.
 import { themeCss, themeFromReport } from '../src/chrome.js';
+// The picker's buckets, their names and the colour that stands for each: the
+// page is a file:// document that cannot import this, so the harness seeds them
+// into the stub host exactly as main.js does (issue #132).
+import { AUTO, BUCKETS, accentFor } from '../../core/app-icons.js';
 import { capturePage } from './lib/capture.js';
 
 /**
@@ -166,7 +170,11 @@ function removeProfile() {
 }
 
 const outIndex = process.argv.indexOf('--out');
-const OUT = outIndex === -1 ? path.join(os.tmpdir(), 'claw-pages') : process.argv[outIndex + 1];
+// The shot directory: --out when named, else the CI job's own $SHOTS so these
+// captures (the icon picker's two preview modes included) land in the uploaded
+// artifact rather than in a temp dir nobody keeps. Local runs still use tmp.
+const OUT = outIndex !== -1 ? process.argv[outIndex + 1]
+  : (process.env.SHOTS || path.join(os.tmpdir(), 'claw-pages'));
 const widthIndex = process.argv.indexOf('--width');
 const WIDTH = widthIndex === -1 ? 900 : Number(process.argv[widthIndex + 1]);
 fs.mkdirSync(OUT, { recursive: true });
@@ -220,6 +228,15 @@ const SMALL_STATE = {
     autoUpdate: true,
     promptMetadata: false,
     globalShortcut: 'CommandOrControl+Shift+O',
+    // The picked icon, and the drawn list it is picked from (issue #132): the
+    // same shape main.js sends now, with a colour per bucket so the page can draw
+    // each mark without a colour or a bucket written into itself.
+    appIcon: AUTO,
+  },
+  iconChoices: {
+    auto: AUTO,
+    mode: 'dark',
+    buckets: BUCKETS.map((b) => ({ id: b.id, name: b.name, accent: accentFor(b) })),
   },
   appearance: { mode: 'system' },
   build: '1.0.0 (source)',
@@ -502,8 +519,29 @@ const PROBE = `(() => {
 // is the pin's own line about which Control UI the page targets, `clear` is the
 // About page's clear-cache control, and `cards` is the notice banner's half: one
 // page, no back control, notices instead.
+// The picker's own reading: the grid as the page DREW it, one entry per cell with
+// the appearance its mark resolved to and the colour it was recoloured from, plus
+// the centre of a mark so the composite can be read there too.
+const PICKER_PROBE = `(() => {
+  const grid = document.getElementById('appIcon-grid');
+  if (!grid) return { present: false };
+  const cells = [...grid.children];
+  const selected = cells.find((c) => c.getAttribute('aria-checked') === 'true');
+  const marks = cells.map((c) => {
+    const m = c.querySelector('.chela-mark');
+    const b = m.getBoundingClientRect();
+    return {
+      id: c.dataset.id,
+      scheme: getComputedStyle(m).colorScheme.trim(),
+      accent: getComputedStyle(m).getPropertyValue('--accent').trim(),
+      x: b.left + b.width / 2,
+      y: b.top + b.height / 2,
+    };
+  });
+  return { present: true, className: grid.className, cells: cells.length, selected: selected ? selected.dataset.id : null, marks };
+})()`;
 const PAGES = [
-  { name: 'settings', file: 'settings.html', state: SMALL_STATE, title: 'Settings', back: true },
+  { name: 'settings', file: 'settings.html', state: SMALL_STATE, title: 'Settings', back: true, iconPicker: true },
   { name: 'about', file: 'about.html', state: ABOUT_STATE, title: 'Chela', back: true, reference: true, clear: true },
   { name: 'banner', file: 'banner.html', state: BANNER_STATE, title: null, back: false, cards: true },
   // The sweep, which is a page of its own: a view sized to exactly one control. The
@@ -566,6 +604,25 @@ async function capture(page, mode, win) {
   const image = await capturePage(win.webContents, { label: `${page.name} ${mode}` });
   fs.writeFileSync(shot, image.toPNG());
 
+  // ★ Issue #132: the picker draws the set itself and previews it light or dark
+  // without moving a theme token. Bring the grid into view, read it in each
+  // preview mode, and capture both, so the proof is a picture as well as a class.
+  if (page.iconPicker) {
+    await win.webContents.executeJavaScript("document.getElementById('tab-behaviour').click(); document.getElementById('appIcon-grid').scrollIntoView({ block: 'center' }); true");
+    await new Promise((r) => setTimeout(r, 250));
+    probe.picker = {};
+    for (const previewMode of ['dark', 'light']) {
+      await win.webContents.executeJavaScript("document.getElementById('appIcon-mode-' + " + JSON.stringify(previewMode) + ").click(); true");
+      await new Promise((r) => setTimeout(r, 250));
+      const pick = await win.webContents.executeJavaScript(PICKER_PROBE);
+      const pickShot = path.join(OUT, `${page.name}-${mode}-picker-${previewMode}.png`);
+      const pickImage = await capturePage(win.webContents, { label: `${page.name} ${mode} picker ${previewMode}` });
+      fs.writeFileSync(pickShot, pickImage.toPNG());
+      console.log(`SHOT ${pickShot}`);
+      probe.picker[previewMode] = { probe: pick, image: pickImage };
+    }
+  }
+
   // What the page actually COVERED, read off the composited pixels rather than
   // off a stylesheet: the banner is a strip over someone else's page, so a pixel
   // it paints there is a pixel of that page nobody can see. Read through the
@@ -594,6 +651,15 @@ async function capture(page, mode, win) {
  * answers "is anything painted here at all" and the colour is the reading next
  * to it. Downsampled by nothing: a single pixel is the point of it.
  */
+/** The colour and alpha at one point of a captured frame, as `r,g,b,a`. */
+function pixelAt(image, x, y) {
+  const bitmap = image.toBitmap();
+  const { width, height } = image.getSize();
+  const px = Math.max(0, Math.min(width - 1, Math.round(x)));
+  const py = Math.max(0, Math.min(height - 1, Math.round(y)));
+  const i = (py * width + px) * 4;
+  return `rgb(${bitmap[i + 2]}, ${bitmap[i + 1]}, ${bitmap[i]}) a${bitmap[i + 3]}`;
+}
 function readPixels(image, probe) {
   const bitmap = image.toBitmap();
   const { width, height } = image.getSize();
@@ -807,6 +873,32 @@ app.whenReady().then(async () => {
         check(`${page.name}.html's surface token is the one the theme publishes`,
           cssColour(probe.themeCard) === expected,
           JSON.stringify({ themeCard: probe.themeCard, expected }));
+      }
+
+      if (page.iconPicker) {
+        const dark = probe.picker.dark.probe;
+        const light = probe.picker.light.probe;
+        check(`${page.name}.html draws the picker grid from the host buckets, one cell per bucket`,
+          dark.present && dark.cells === 1 + SMALL_STATE.iconChoices.buckets.length,
+          JSON.stringify({ cells: dark.cells, buckets: SMALL_STATE.iconChoices.buckets.length }));
+        check(`${page.name}.html marks the stored icon choice, and only it`,
+          dark.selected === SMALL_STATE.settings.appIcon,
+          JSON.stringify({ selected: dark.selected, stored: SMALL_STATE.settings.appIcon }));
+        check(`${page.name}.html previews the set in the mode the toggle names, whatever the page is (${mode})`,
+          dark.marks.every((m) => m.scheme === 'dark') && light.marks.every((m) => m.scheme === 'light'),
+          JSON.stringify({ dark: dark.marks.map((m) => m.scheme), light: light.marks.map((m) => m.scheme) }));
+        // The icon's identity does not move with the preview: the same buckets draw
+        // from the same colours; only the appearance they are drawn in changed.
+        check(`${page.name}.html keeps each bucket's colour across the preview modes`,
+          JSON.stringify(dark.marks.map((m) => m.id + '=' + m.accent)) === JSON.stringify(light.marks.map((m) => m.id + '=' + m.accent)),
+          JSON.stringify({ dark: dark.marks, light: light.marks }));
+        // And off the pixels: a manual cell's mark is painted, and painted
+        // DIFFERENTLY in the two modes, which a class alone would not show.
+        const one = dark.marks.find((m) => m.id !== SMALL_STATE.iconChoices.auto);
+        const darkPx = pixelAt(probe.picker.dark.image, one.x, one.y);
+        const lightPx = pixelAt(probe.picker.light.image, one.x, one.y);
+        check(`${page.name}.html draws the icon differently in the light and dark previews`,
+          darkPx !== lightPx, JSON.stringify({ dark: darkPx, light: lightPx, at: { x: one.x, y: one.y } }));
       }
     }
     check(`${page.name}.html paints a different background in each appearance`,
