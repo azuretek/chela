@@ -24,7 +24,7 @@ name: chela-android pipeline
 #   the Gradle daemon is REUSED across the job instead of refused;
 #   every wait in the boot script is BOUNDED, and an exhausted wait is a named
 #   failure rather than a silent fall-through;
-#   and the budget is 30 minutes rather than 45, so anything that does wedge again
+#   and the budget is 20 minutes rather than 45, so anything that does wedge again
 #   fails sooner and says so. A green run only ever needs about a third of it.
 
 on:
@@ -44,7 +44,7 @@ jobs:
   build-and-boot:
     name: build and boot (emulator)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: android
