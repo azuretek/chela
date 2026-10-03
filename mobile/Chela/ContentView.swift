@@ -188,6 +188,19 @@ struct ContentView: View {
         refreshLiveTokens()
     }
 
+    /// A tap outside the sheet: back one surface, through the way back the page
+    /// itself offers, so it is the same close and not a second one. With About up
+    /// that is About's own (back to Settings, as on the desktop, where a click on
+    /// the dim around About closes About and leaves Settings), and otherwise it is
+    /// Settings' "Back to app", which closes only when there is a gateway behind.
+    private func closeFromOutside() {
+        if showingAbout, let aboutHost {
+            aboutHost.close()
+        } else {
+            host?.close()
+        }
+    }
+
     /// The settings sheet's content, and About stacked over it.
     ///
     /// A named builder rather than inline in the modifier chain, because the
@@ -383,8 +396,9 @@ struct ContentView: View {
                 // because the sheet is a native presentation over a WKWebView it
                 // cannot reach, so the layer that does this work has to be native
                 // and has to be here. See SurfaceBackdrop.
+                // A tap on it, outside the sheet, closes the sheet (#141).
                 .overlay {
-                    if showingSettings { SurfaceBackdropView() }
+                    if showingSettings { SurfaceBackdropView(onTapOutside: closeFromOutside) }
                 }
                 .animation(
                     Motion.handoffAnimation(reduceMotion: reduceMotion, leaving: false),

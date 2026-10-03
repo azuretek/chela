@@ -290,12 +290,9 @@ function setResult(node, text, tone = '') {
 
 const dismiss = () => api.closeOverlay('about');
 $('close').addEventListener('click', dismiss);
-// Only a click that both starts and ends on the scrim counts, so releasing the
-// mouse outside the card after selecting text inside it does not close it.
-$('scrim').addEventListener('mousedown', (e) => {
-  if (e.target !== e.currentTarget) return;
-  $('scrim').addEventListener('mouseup', (ev) => { if (ev.target === e.currentTarget) dismiss(); }, { once: true });
-});
+// A click on the dim around the card closes it through this same dismiss; a
+// click on the card never does. The rule is the shared one in surface.js.
+window.clawSurface?.dismissOnOutsideClick($('scrim'), dismiss);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') dismiss(); });
 
 // Pushed by the main process whenever a check finishes. Without it, clicking

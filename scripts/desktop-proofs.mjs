@@ -54,6 +54,7 @@ export const PROOFS = [
   { group: 'proofs', name: 'loading-theme-light', script: 'test-loading-theme.js', args: ['--appearance', 'light'] },
   { group: 'proofs', name: 'settings-backdrop-dark', script: 'test-settings-backdrop.js', args: ['--appearance', 'dark'] },
   { group: 'proofs', name: 'settings-backdrop-light', script: 'test-settings-backdrop.js', args: ['--appearance', 'light'] },
+  { group: 'proofs', name: 'outside-click', script: 'test-outside-click.js' },
   // Against the throwaway gateway ci.yml starts on 127.0.0.1:19099.
   { group: 'gateway', name: 'gateway-identity', script: 'test-gateway-identity.js' },
   // Also against the throwaway gateway, through the login-gate proxy this harness
