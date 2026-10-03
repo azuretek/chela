@@ -1230,15 +1230,28 @@ option { background: var(--input); color: var(--text); }
 }
 .app-icon__grid--dark { color-scheme: dark; }
 .app-icon__grid--light { color-scheme: light; }
+/* A cell is a <button>, and the global button rule below sets white-space:
+   nowrap, which is right for a one-line action and wrong here: a name wider
+   than its column ("Theme (follow the accent)", issue #140) ran out of the
+   centred cell on BOTH sides, clipped at the grid's edge and over the next
+   cell's name. The name wraps inside its own cell instead, at word boundaries
+   first and inside a word only when one word alone is wider than the column
+   (a larger reading scale on a phone), so the type stays on the reading scale
+   and the column count stays what the grid gives it. min-width: 0 lets the
+   cell be exactly its track, never the width of its longest line. */
 .app-icon__cell {
   display: flex; flex-direction: column; align-items: center; gap: var(--space-1);
   padding: var(--space-2) var(--space-1); background: transparent; border: 1px solid transparent;
   border-radius: var(--radius-sm); color: var(--text); font: inherit; cursor: pointer;
+  white-space: normal; min-width: 0;
 }
 .app-icon__cell:hover:not(:disabled) { border-color: var(--border-hover); }
 .app-icon__cell.is-selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .app-icon__mark { width: 32px; height: 32px; }
-.app-icon__name { font-size: var(--control-ui-text-xs); color: var(--muted); }
+.app-icon__name {
+  font-size: var(--control-ui-text-xs); color: var(--muted);
+  max-width: 100%; text-align: center; line-height: 1.25; overflow-wrap: anywhere;
+}
 .app-icon__cell.is-selected .app-icon__name { color: var(--text-strong); }
 
 button {

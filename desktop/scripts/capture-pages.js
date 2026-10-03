@@ -36,6 +36,9 @@ import { stylesheet as tokenStylesheet } from '../src/tokens.js';
 // The banner's shared facts, handed to the stub host the way main hands them to
 // the real pages (app:banner-spec).
 import { forPages as bannerSpec } from '../../core/banner.js';
+// The narrowest the desktop window may be made, which is therefore the narrowest
+// the Settings surface is ever drawn there (issue #140's label-fit check).
+import { minWindow } from '../src/defaults.js';
 // And the live theme, injected exactly as the app injects it (applyThemeCss in
 // src/main.js): the Control UI's own tokens, read off a running page.
 //
@@ -540,6 +543,68 @@ const PICKER_PROBE = `(() => {
   });
   return { present: true, className: grid.className, cells: cells.length, selected: selected ? selected.dataset.id : null, marks };
 })()`;
+// ★ Issue #140: every name in the picker sits inside its own cell. The button
+// rule's nowrap let "Theme (follow the accent)" run out of its centred cell on
+// both sides, clipped at the grid's edge and over the next cell's name. The text
+// is measured as RENDERED, off a Range over the label's own glyphs rather than
+// the label element's box, because text can overflow the box it belongs to and
+// it is the text the reader sees. 0.5px of slack absorbs subpixel rounding.
+const PICKER_FIT_PROBE = `(() => {
+  const grid = document.getElementById('appIcon-grid');
+  if (!grid) return { present: false };
+  const slack = 0.5;
+  const cells = [...grid.children].map((c) => {
+    const box = c.getBoundingClientRect();
+    const name = c.querySelector('.app-icon__name');
+    const range = document.createRange();
+    range.selectNodeContents(name);
+    const rects = [...range.getClientRects()].filter((r) => r.width > 0);
+    const text = {
+      left: Math.min(...rects.map((r) => r.left)),
+      right: Math.max(...rects.map((r) => r.right)),
+      top: Math.min(...rects.map((r) => r.top)),
+      bottom: Math.max(...rects.map((r) => r.bottom)),
+    };
+    const inside = rects.length > 0
+      && text.left >= box.left - slack && text.right <= box.right + slack
+      && text.top >= box.top - slack && text.bottom <= box.bottom + slack;
+    return {
+      id: c.dataset.id,
+      label: name.textContent,
+      fontSize: getComputedStyle(name).fontSize,
+      lines: rects.length,
+      cell: { left: +box.left.toFixed(1), right: +box.right.toFixed(1) },
+      text: { left: +text.left.toFixed(1), right: +text.right.toFixed(1) },
+      inside,
+    };
+  });
+  return {
+    present: true,
+    viewport: window.innerWidth,
+    gridWidth: +grid.getBoundingClientRect().width.toFixed(1),
+    scale: getComputedStyle(document.documentElement).getPropertyValue('--control-ui-text-scale').trim(),
+    cells,
+  };
+})()`;
+// The widths the label must fit at: the run's own, the desktop window's minimum,
+// and a small phone's (iOS and Android load this same page in a sheet as narrow as
+// 320 points). The reading scales are the Control UI's smallest and largest
+// (1 and 1.5, see the scale grammar in src/chrome.js), so the fix is shown to
+// wrap rather than to shrink the type.
+const PICKER_FIT_WIDTHS = [...new Set([WIDTH, minWindow.width, 320])];
+const PICKER_FIT_SCALES = ['1', '1.5'];
+// A hidden window's resize reaches its page asynchronously, and a second resize
+// can be dropped while the first is settling (measured: the light preview's 480
+// and 320 passes once read the grid at its 900px width). So the page's own width is the
+// condition, re-asked until it holds, with a bound; the fit check also requires
+// it, so a width that never landed fails rather than passing at the wrong size.
+async function resizePage(win, width) {
+  const deadline = Date.now() + 5000;
+  while (await win.webContents.executeJavaScript('window.innerWidth') !== width && Date.now() < deadline) {
+    win.setContentSize(width, 720);
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
 const PAGES = [
   { name: 'settings', file: 'settings.html', state: SMALL_STATE, title: 'Settings', back: true, iconPicker: true },
   { name: 'about', file: 'about.html', state: ABOUT_STATE, title: 'Chela', back: true, reference: true, clear: true },
@@ -621,6 +686,22 @@ async function capture(page, mode, win) {
       console.log(`SHOT ${pickShot}`);
       probe.picker[previewMode] = { probe: pick, image: pickImage };
     }
+    // Then the fit, in each preview mode, at each width and reading scale.
+    probe.pickerFit = [];
+    for (const previewMode of ['dark', 'light']) {
+      await win.webContents.executeJavaScript("document.getElementById('appIcon-mode-' + " + JSON.stringify(previewMode) + ").click(); true");
+      for (const width of PICKER_FIT_WIDTHS) {
+        await resizePage(win, width);
+        for (const scale of PICKER_FIT_SCALES) {
+          await win.webContents.executeJavaScript("document.documentElement.style.setProperty('--control-ui-text-scale', " + JSON.stringify(scale) + "); true");
+          await new Promise((r) => setTimeout(r, 150));
+          const fit = await win.webContents.executeJavaScript(PICKER_FIT_PROBE);
+          probe.pickerFit.push({ previewMode, width, scale, fit });
+        }
+      }
+    }
+    await win.webContents.executeJavaScript("document.documentElement.style.removeProperty('--control-ui-text-scale'); true");
+    await resizePage(win, WIDTH);
   }
 
   // What the page actually COVERED, read off the composited pixels rather than
@@ -899,6 +980,15 @@ app.whenReady().then(async () => {
         const lightPx = pixelAt(probe.picker.light.image, one.x, one.y);
         check(`${page.name}.html draws the icon differently in the light and dark previews`,
           darkPx !== lightPx, JSON.stringify({ dark: darkPx, light: lightPx, at: { x: one.x, y: one.y } }));
+        // ★ Issue #140: no name leaves its own cell, in either preview, at the
+        // run's width, the desktop minimum or a small phone, at either end of the
+        // reading scale. Each failing cell is named with its box and its text's.
+        for (const { previewMode, width, scale, fit } of probe.pickerFit) {
+          const out = fit.present ? fit.cells.filter((c) => !c.inside) : [];
+          check(`${page.name}.html keeps every icon name inside its cell (${mode} page, ${previewMode} preview, ${width}px, scale ${scale})`,
+            fit.present && fit.viewport === width && fit.cells.length === 1 + SMALL_STATE.iconChoices.buckets.length && out.length === 0,
+            JSON.stringify({ viewport: fit.viewport, gridWidth: fit.gridWidth, scale: fit.scale, out: out.length ? out : undefined, cells: fit.cells && fit.cells.length }));
+        }
       }
     }
     check(`${page.name}.html paints a different background in each appearance`,
