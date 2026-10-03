@@ -48,7 +48,47 @@ wait_for() {
   return 1
 }
 
-focused() { adb_bounded shell dumpsys window 2>/dev/null | grep -q "mCurrentFocus.*$PKG"; }
+# Which window holds input focus right now, as the window manager states it. Each
+# poll appends it to the trace, so a wait that gives up says what held focus instead.
+focus_line() { adb_bounded shell dumpsys window 2>/dev/null | grep -m1 "mCurrentFocus" | tr -d '\r' | sed 's/^ *//'; }
+#
+# ★ Another app's "isn't responding" dialog is cleared rather than waited out. A cold
+# emulator is loaded enough that the Pixel launcher misses an input deadline now and
+# then, and its ANR dialog then holds focus over our app, which is already resumed and
+# drawn underneath: that is the whole of the "our window is the focused one never
+# happened" failure (measured 2026-10-03, 1 boot in 20, focus trace and UI dump in the
+# proof). The dialog does not go away on its own while the launcher stays stuck, and
+# BACK does not dismiss it; the system's close-dialogs broadcast does. Our OWN package
+# in that dialog is never cleared, because then the app is what is not responding.
+focused() {
+  local line
+  line="$(focus_line)"
+  echo "$(date -u +%H:%M:%S) ${line:-<no mCurrentFocus line>}" >> "$PROOF/focus-trace.txt"
+  case "$line" in
+    *"Application Not Responding: $PKG"*) return 1 ;;
+    *"Application Not Responding:"*)
+      echo "$(date -u +%H:%M:%S) another app's ANR dialog holds focus; closing system dialogs" >> "$PROOF/focus-trace.txt"
+      adb_bounded shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
+      return 1 ;;
+    *"$PKG"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# When the focus wait gives up, keep the device's own account of why: who holds
+# focus, what is resumed, whether our process is alive, and any crash or ANR.
+diagnose_focus() {
+  echo "== diagnosing: our window never took focus" >&2
+  { echo "--- window focus"; adb_bounded shell dumpsys window 2>/dev/null | grep -E "mCurrentFocus|mFocusedApp|mFocusedWindow" | tr -d '\r'
+    echo "--- resumed activities"; adb_bounded shell dumpsys activity activities 2>/dev/null | grep -E "ResumedActivity|mFocusedRootTask|topResumed" | tr -d '\r'
+    echo "--- our process"; adb_bounded shell pidof "$PKG" 2>&1 | tr -d '\r' || echo "not running"
+    echo "--- crash buffer"; adb_bounded logcat -d -b crash 2>&1 | tail -60
+    echo "--- ANR and activity log"; adb_bounded logcat -d 2>/dev/null | grep -iE "ANR in|not responding|FATAL|ActivityTaskManager|WindowManager.*focus|$PKG" | tail -120
+  } > "$PROOF/focus-diagnosis.txt" 2>&1 || true
+  timeout "$ADB_TIMEOUT" adb exec-out screencap -p > "$PROOF/focus-failure.png" 2>/dev/null || true
+  timeout "$ADB_TIMEOUT" adb exec-out uiautomator dump /dev/tty > "$PROOF/focus-failure-ui.xml" 2>/dev/null || true
+  cat "$PROOF/focus-trace.txt" "$PROOF/focus-diagnosis.txt" >&2 || true
+}
 boot_completed() { [ "$(adb_bounded shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; }
 
 mkdir -p "$PROOF"
@@ -78,7 +118,14 @@ adb_bounded shell am start -n "$PKG/.MainActivity" | tee "$PROOF/launch.txt"
 # a duration is a guess about how long a page takes to paint, and the focus flag is the
 # state itself.
 echo "== waiting for the shell to be on screen"
-wait_for 30 2 "our window is the focused one" focused
+if ! wait_for 30 2 "our window is the focused one" focused; then
+  diagnose_focus
+  exit 1
+fi
+if grep -q "closing system dialogs" "$PROOF/focus-trace.txt"; then
+  echo "   (cleared another app's ANR dialog on the way)"
+  cat "$PROOF/focus-trace.txt"
+fi
 
 echo "== capturing"
 captured=0
