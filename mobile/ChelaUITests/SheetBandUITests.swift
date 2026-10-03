@@ -217,9 +217,17 @@ final class SheetBandUITests: XCTestCase {
         XCTAssertTrue(updates.waitForNonExistence(timeout: 10), "a tap on the band above About left About up")
         let about = app.webViews.buttons.matching(aboutButton).firstMatch
         XCTAssertTrue(about.waitForExistence(timeout: 10), "a tap outside About took Settings down with it")
-        sleep(1)
+        // The settings card comes back on a real slide (`SurfacesHandoff.reveal`),
+        // so it is in the tree before it is reachable: a read one second after it
+        // existed found the title not hittable, while the screenshot taken a second
+        // later showed Settings settled with its title on screen (measured, #141).
+        // Wait, bounded, for the title to be REACHABLE, as the handoff test does.
         let title = app.webViews.staticTexts["Settings"].firstMatch
-        XCTAssertTrue(title.exists && title.isHittable, "Settings did not come back after About closed")
+        let reachable = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND isHittable == true"), object: title
+        )
+        XCTAssertEqual(XCTWaiter().wait(for: [reachable], timeout: 10), .completed,
+                       "Settings did not come back after About closed (title exists \(title.exists), at \(title.frame))")
         _ = try band(app, "tap-band-about")
         XCTAssertTrue(app.webViews.staticTexts["Taps 0"].exists, "a tap outside the sheet reached the interface behind it")
     }
