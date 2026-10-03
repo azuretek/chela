@@ -209,6 +209,46 @@
     },
 
     /**
+     * Close this surface on a click on the dim around its card, and never on a
+     * click on the card.
+     *
+     * ONE implementation for every sheet that dims the window, so Settings and
+     * About cannot come to mean different things by "outside". It answers with the
+     * page's own dismiss, the same function its "Back to app" control and Escape
+     * call, so there is no second way out that could skip what that one does.
+     *
+     * A click counts only when the press and the release both land on the scrim
+     * itself. A press on the card released on the dim (a text selection dragged
+     * out of the card) is not a click on the dim, and neither is the reverse; the
+     * browser's own `click` cannot tell those apart, because it fires on the
+     * common ancestor, which is the scrim either way.
+     *
+     * The press is remembered in a variable on purpose. The code this replaced
+     * compared the release's target with the press event's `currentTarget` from
+     * inside a later listener, and an event's currentTarget is null once its
+     * dispatch is over, so the comparison never held and the dim never closed
+     * anything (#141, measured by desktop/scripts/test-outside-click.js).
+     *
+     * Inside a native sheet it does nothing: there the scrim's padding is part of
+     * the sheet the reader sees, so a tap on it is a tap INSIDE the sheet, and the
+     * area outside belongs to the native host, which closes the sheet itself.
+     */
+    dismissOnOutsideClick: function (scrim, dismiss) {
+      if (!scrim || typeof scrim.addEventListener !== 'function' || typeof dismiss !== 'function') return;
+      var pressed = false;
+      scrim.addEventListener('mousedown', function (e) {
+        pressed = e.target === scrim && e.button === 0 && !nativeSheet();
+      });
+      // Every release inside the page bubbles here, the card's included, so a
+      // press that ends anywhere else is forgotten rather than left armed.
+      scrim.addEventListener('mouseup', function (e) {
+        var armed = pressed;
+        pressed = false;
+        if (armed && e.target === scrim && e.button === 0) dismiss();
+      });
+    },
+
+    /**
      * Bring a covered surface back.
      *
      * Synchronous, and there is nothing to wait for: taking the class off changes

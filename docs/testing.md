@@ -10,6 +10,7 @@ covers.
 | `core/` | `pnpm --filter claw-core test` | The shared rules and every parity fixture, by `node --test`. |
 | `desktop/` | `pnpm --filter chela-desktop test`, `run measure`, `run check:imports`, `run smoke`, `run check:package` | The Electron interface, the pages and the forms as RENDERED, the static import audit, a real GUI boot, and the packaged artifact. |
 | `mobile/` | `node scripts/mobile.mjs lint` (SwiftLint), and the CI legs, one per iOS version | Style, and compile and unit tests on a simulator plus the Swift parity tests. |
+| `mobile/`, on a Mac | `node scripts/mobile-surface-proof.mjs --out DIR --device UDID --quiet-gate PATH --apply` | The opt-in sheet UI tests (`SheetBandUITests`, `SurfacesHandoffUITests`) against their fixtures, in the light and the dark appearance: the band's colour, the dim, the blur, and a tap outside a sheet. Builds before it boots the simulator, and writes `DIR/all.state` only once the simulator is shut down again. |
 | `scripts/release/` | `node scripts/release/release.mjs check --version <v>` | Whether a release carries every package it must. |
 | all three | `.github/workflows/` | The same suites headless, on every push and pull request. |
 

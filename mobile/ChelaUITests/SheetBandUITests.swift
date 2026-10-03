@@ -137,26 +137,99 @@ final class SheetBandUITests: XCTestCase {
         assertBand(try band(app, "about"), is: expected, "about")
     }
 
-    /// With the platform's dim switched off the interface behind the sheet could
-    /// take touches, which it never did. A tap on what is left of it on screen, the
-    /// sliver the sheet's rounded top corner uncovers just below the band, and a tap
-    /// on the band itself, reach nothing behind the sheet: the fixture counts every
-    /// touch it receives.
-    func testATapOutsideTheSheetReachesNothingBehindIt() throws {
+    /// A tap on the band above the sheet, below the status bar.
+    ///
+    /// The status bar's strip is the system's: iOS keeps a touch there for its
+    /// scroll-to-top and delivers it to no window of the app, so a tap over the
+    /// clock proves nothing about the app (measured, #141: taps at 30 to 52pt
+    /// reached no window, and one at the status bar's bottom edge, 54pt, closed the
+    /// sheet). So the band is tapped between the status bar's bottom edge, read
+    /// from SpringBoard, and the sheet's top edge, the top of its web view, and
+    /// the test fails rather than guesses when either is missing or they leave no
+    /// band between them.
+    private func tapTheBand(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let bar = XCUIApplication(bundleIdentifier: "com.apple.springboard").statusBars.firstMatch
+        guard bar.exists else { return XCTFail("no status bar to tap below", file: file, line: line) }
+        let sheetTop = app.webViews.allElementsBoundByIndex.map(\.frame.minY).filter { $0 > 0 }.min()
+        guard let sheetTop, sheetTop > bar.frame.maxY else {
+            return XCTFail("no band between the status bar (\(bar.frame)) and the sheet (\(String(describing: sheetTop)))",
+                           file: file, line: line)
+        }
+        let y = (bar.frame.maxY + sheetTop) / 2
+        print("SHEETBAND tap band at y=\(y): status bar ends \(bar.frame.maxY), sheet starts \(sheetTop)")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0)).withOffset(CGVector(dx: app.frame.midX, dy: y)).tap()
+    }
+
+    /// A tap outside the sheet closes it, and a tap on the sheet does not (#141).
+    ///
+    /// ★ This test held the OPPOSITE until #141. #127 and #128 switched the
+    /// platform's dim off and made the band above the sheet inert on purpose: a tap
+    /// there did nothing, and this test was "a tap outside the sheet reaches nothing
+    /// behind it". #141 reverses that deliberately: a tap on the band now closes
+    /// the sheet and returns to the app, through the same close as the page's
+    /// "Back to app", as a click on the dim does on the desktop. The band still
+    /// DRAWS what #127 made it draw, which the tests above hold.
+    ///
+    /// What it keeps from the old test is the other half: the tap is the sheet's,
+    /// never the interface's, so the fixture behind still counts no touch.
+    ///
+    /// The band is tapped unconditionally, so an offscreen control cannot skip
+    /// the dismissal assertion, and below the status bar, which is the system's
+    /// (see `tapTheBand`). The visible Settings title holds the inside case.
+    func testATapOutsideTheSheetClosesItAndATapOnItDoesNot() throws {
         let app = launch(["-claw-open-settings"])
         let about = app.webViews.buttons.matching(aboutButton).firstMatch
         XCTAssertTrue(about.waitForExistence(timeout: 30), "the settings surface never drew over the fixture")
         XCTAssertTrue(app.webViews.staticTexts["Taps 0"].waitForExistence(timeout: 10), "the fixture is not counting")
         sleep(2)
-        let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
-        for (place, offset) in [("corner", CGVector(dx: 4, dy: 66)), ("band", CGVector(dx: 120, dy: 30))] {
-            origin.withOffset(offset).tap()
-            sleep(2)
-            print("SHEETBAND tap \(place): sheet up = \(about.exists)")
-            _ = try band(app, "tap-\(place)")
-            XCTAssertTrue(app.webViews.staticTexts["Taps 0"].exists,
-                          "a tap on the \(place) outside the sheet reached the interface behind it")
-        }
+
+        // On the sheet: its title, which is not a control.
+        let title = app.webViews.staticTexts["Settings"].firstMatch
+        XCTAssertTrue(title.exists, "the settings surface has no title to tap")
+        title.tap()
+        sleep(2)
+        _ = try band(app, "tap-sheet")
+        XCTAssertTrue(title.exists && title.isHittable, "a tap on the sheet itself closed it")
+
+        // Always exercise the outside tap. The About button is below the fold,
+        // so its hittability says nothing about whether Settings is on screen.
+        tapTheBand(app)
+        XCTAssertTrue(title.waitForNonExistence(timeout: 10), "a tap on the band above the sheet left Settings up")
+        sleep(1)
+        _ = try band(app, "tap-band")
+        XCTAssertTrue(app.webViews.staticTexts["Taps 0"].exists,
+                      "a tap outside the sheet reached the interface behind it rather than closing the sheet")
+    }
+
+    /// The same with About up: a tap outside goes back ONE surface, to Settings,
+    /// which is where About's own way back lands and what a click on the dim around
+    /// About does on the desktop. A tap on About itself leaves it up.
+    func testATapOutsideAboutGoesBackToSettings() throws {
+        let app = launch(["-claw-open-about"])
+        let updates = app.webViews.staticTexts["Updates"].firstMatch
+        XCTAssertTrue(updates.waitForExistence(timeout: 30), "About never came up over Settings")
+        sleep(2)
+        updates.tap()
+        sleep(2)
+        XCTAssertTrue(updates.exists && updates.isHittable, "a tap on About itself closed it")
+
+        tapTheBand(app)
+        XCTAssertTrue(updates.waitForNonExistence(timeout: 10), "a tap on the band above About left About up")
+        let about = app.webViews.buttons.matching(aboutButton).firstMatch
+        XCTAssertTrue(about.waitForExistence(timeout: 10), "a tap outside About took Settings down with it")
+        // The settings card comes back on a real slide (`SurfacesHandoff.reveal`),
+        // so it is in the tree before it is reachable: a read one second after it
+        // existed found the title not hittable, while the screenshot taken a second
+        // later showed Settings settled with its title on screen (measured, #141).
+        // Wait, bounded, for the title to be REACHABLE, as the handoff test does.
+        let title = app.webViews.staticTexts["Settings"].firstMatch
+        let reachable = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND isHittable == true"), object: title
+        )
+        XCTAssertEqual(XCTWaiter().wait(for: [reachable], timeout: 10), .completed,
+                       "Settings did not come back after About closed (title exists \(title.exists), at \(title.frame))")
+        _ = try band(app, "tap-band-about")
+        XCTAssertTrue(app.webViews.staticTexts["Taps 0"].exists, "a tap outside the sheet reached the interface behind it")
     }
 
     /// The theme changing under an open sheet: the band follows it rather than
