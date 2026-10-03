@@ -87,44 +87,62 @@ enum SurfaceBackdrop {
 /// close it and return to the app, the way "Back to app" does, as a click on the
 /// dim does on the desktop. With the platform's dim off (#127) a touch outside the
 /// sheet comes to the presenter, which is this layer, so the layer takes it: the
-/// veil itself is not a control and takes nothing, and a clear catcher over the
-/// whole presenter, the band above the sheet included, answers `onTapOutside`.
+/// veil itself is not a control and takes nothing. Its native container catches
+/// taps across the presenter, including the clear band, and answers `onTapOutside`.
 /// The band was deliberately inert before this (#127, #128) and now closes the
 /// sheet; it still draws exactly what it drew. The tap stops here either way, so
 /// the interface behind the sheet still never receives it. `SheetBandUITests` taps
 /// the band and the sheet and holds both halves.
+///
+/// ★ The status bar's own strip at the top of the band is the SYSTEM's, not this
+/// layer's. iOS keeps a touch there for its scroll-to-top and delivers it to no
+/// window of this app, so nothing drawn here can take it, and no layer of ours is
+/// in the way. Measured with a hit-test log on the simulator (#141), where the
+/// status bar ends at 54pt and the sheet starts at 62pt: taps from 30 to 52pt
+/// reached no window at all, while taps at 54 and 55pt were hit-tested to this
+/// view, fired its recognizer and closed the sheet. So what closes the sheet is
+/// the band between the status bar and the sheet's top edge, and the test taps
+/// there rather than over the clock.
 struct SurfaceBackdropView: View {
     /// What a tap outside the sheet does: the same close the page's own way back
     /// takes, which `ContentView` decides.
     let onTapOutside: () -> Void
 
     var body: some View {
-        ZStack {
-            SurfaceBackdropLayer()
-                .allowsHitTesting(false)
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture(perform: onTapOutside)
-                .accessibilityHidden(true)
-        }
-        .ignoresSafeArea()
+        SurfaceBackdropLayer(onTapOutside: onTapOutside)
+            .ignoresSafeArea()
     }
 }
 
 /// `BandClearingBackdrop`, wrapped. See `SurfaceBackdropView` for why.
 private struct SurfaceBackdropLayer: UIViewRepresentable {
-    func makeUIView(context: Context) -> BandClearingBackdrop { BandClearingBackdrop() }
-    func updateUIView(_ view: BandClearingBackdrop, context: Context) { view.setNeedsLayout() }
+    let onTapOutside: () -> Void
+
+    func makeUIView(context: Context) -> BandClearingBackdrop {
+        let view = BandClearingBackdrop()
+        view.onTapOutside = onTapOutside
+        return view
+    }
+
+    func updateUIView(_ view: BandClearingBackdrop, context: Context) {
+        view.onTapOutside = onTapOutside
+        view.setNeedsLayout()
+    }
 }
 
 /// The shared veil, laid out from the window's top safe-area inset down.
 final class BandClearingBackdrop: UIView {
     private let veil = UIView()
+    var onTapOutside: (() -> Void)?
+
+    @objc private func tappedOutside() { onTapOutside?() }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        isUserInteractionEnabled = false
+        isUserInteractionEnabled = true
+        addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tappedOutside)))
         backgroundColor = .clear
+        veil.isUserInteractionEnabled = false
         veil.backgroundColor = UIColor.black.withAlphaComponent(SurfaceBackdrop.scrimAlpha)
         addSubview(veil)
     }
