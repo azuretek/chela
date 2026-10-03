@@ -36,6 +36,7 @@ import * as pairing from './pairing.js';
 import * as profile from './profile.js';
 import * as progress from './progress.js';
 import * as promptMetadata from './prompt-metadata.js';
+import { storageDiagnosticScript, sanitizeStorageDiagnostic } from './storage-diagnostics.js';
 import * as quips from './quips.js';
 import * as tokens from './tokens.js';
 import updates from './updates.js';
@@ -1274,6 +1275,13 @@ let pairingWasUp = false;
  * page load can begin before the app's own IPC table is built, and a preload
  * that asked too early would get no reply at all.
  */
+ipcMain.on('storage:script', (event) => { event.returnValue = storageDiagnosticScript(); });
+ipcMain.on('storage:report', (event, value) => {
+  if (!pageView || event.sender !== pageView.webContents) return;
+  const entry = sanitizeStorageDiagnostic(value);
+  if (entry) console.warn('[chela-storage] ' + JSON.stringify(entry));
+});
+
 ipcMain.on('pairing:script', (event) => {
   event.returnValue = pairing.injectedSources();
 });

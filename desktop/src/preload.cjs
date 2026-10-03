@@ -73,6 +73,14 @@ contextBridge.exposeInMainWorld('__clawPairingReport', (payload) => {
    which logs it in the app's own stdout, because a silent non-installation is
    exactly how this shipped broken once. */
 if (!isLocalPage) {
+  contextBridge.exposeInMainWorld('__chelaStorageReport', (entry) => {
+    try { ipcRenderer.send('storage:report', entry); } catch { /* passive only */ }
+  });
+  try {
+    const source = ipcRenderer.sendSync('storage:script');
+    if (source) webFrame.executeJavaScript(source);
+  } catch { /* The page must still load when diagnostics are unavailable. */ }
+
   let report = { ok: false, error: 'no script from main' };
   try {
     const sources = ipcRenderer.sendSync('pairing:script') || [];
