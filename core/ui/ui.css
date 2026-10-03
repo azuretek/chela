@@ -1386,6 +1386,24 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
 }
 .settings-group > .result:last-child { padding-bottom: var(--space-4); }
 
+/* ★ The empty state of a list, and the inset it was missing. Abi, 2026-10-02
+   (#142), on Settings, Certificates: "No certificates have been pinned." sat in
+   its rounded box with the text flush against the left edge and against the top
+   and bottom borders. The empty state is a .settings-group with its sentence as
+   the group's own text, no row inside it, so it took the group's border and
+   radius and none of a row's padding: the same fault the two .result rules above
+   answer, one level further out.
+
+   So it takes exactly what a row gives the text of every other card on the
+   surface, from the same tokens: --space-3 above and below, --space-4 at the
+   sides. One rule for every empty state the page draws, because they are all
+   this one shape (settings.js: no gateways yet, no gateway matches the filter, no
+   problems noticed, no certificates pinned). Measured on the rendered page by
+   desktop/scripts/test-settings-layout.js. */
+.settings-group.empty {
+  padding: var(--space-3) var(--space-4);
+}
+
 /* --------------------------------------------------------------- gateway search */
 
 .gateway-filter {
