@@ -331,6 +331,12 @@ test('main wires the observer, the report channel and the screen together', () =
   assert.match(main, /device pairing cleared; the pairing screen is down/, 'the recovery must be logged');
   assert.match(main, /if \(pairingWasUp && !pairingNow\)/, 'and logged from the one place that sees both routes');
 
+  // ★ The assignment must come AFTER the repaint, because syncPairing reads it as the
+  // PREVIOUS state: its `!wasPairing` is the route-once-on-entry rule for a revocation,
+  // and with the order the other way round that rule could never fire. Measured
+  // 2026-10-04 by reading the single caller of syncPairing.
+  assert.match(main, /syncPairing\(\);\n\s*pairingWasUp = pairingNow;/, 'syncPairing must see the previous pairing state');
+
   // The report crosses from the remote page through the preload, which is the
   // only surface that page may use, and the injection happens there too.
   const preload = readFileSync(path.join(SRC, 'preload.cjs'), 'utf8');
