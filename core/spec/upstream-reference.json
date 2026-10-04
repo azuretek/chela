@@ -12,8 +12,8 @@
   "upstream": {
     "repo": "openclaw",
     "package": "ui",
-    "version": "2026.9.5",
-    "commit": "376d13b6c7780f170948ab6840a507ad3d032a18",
+    "version": "2026.9.8",
+    "commit": "fc23bc864e4553c2d215e479eeec47b67a0bf943",
     "identifiedBy": "The version is the `openclaw` root package.json of the checkout below, which is where the release number lives: the Control UI's own package (`openclaw-control-ui`) is private and carries no version field at all, so there is nowhere else in the checkout to read one from. The commit is the tree the classes and values in this file were read from and are verified against, read with `git rev-parse HEAD` in the checkout, and it is what tells two builds of the same version apart: the number names a release, the commit names the revision our borrowed components came out of. core/test/upstream-classes.test.js compares the checkout's own package.json against `version`, so a checkout that moves to a new release re-runs this pin rather than agreeing with it by accident.",
     "checkout": "the OpenClaw checkout, not this repo: $CLAW_OPENCLAW_UI, defaulting to ~/src/openclaw/ui, which is the fleet convention for ~/src/<repo>. Read-only, and never vendored here.",
     "readOnly": true
