@@ -1,46 +1,39 @@
 #!/bin/sh
-# pre-commit: the measured half, at the commit.
+# pre-commit: the QUICK half only, and that is the rule now.
 #
-# Where this lives now. The hook is at the REPO ROOT (core.hooksPath -> .githooks)
-# and it runs a ROOT script, not a script inside desktop/. It used to cd into
-# desktop/ and call that package's npm scripts directly, which was one more way
-# the desktop package acted as the root. The page measurement is still the
-# desktop's work (it renders core/ui in Electron), but it is reached through the
-# root, the same way the root scripts reach every platform. No platform is the
-# root.
+# Abi, 2026-10-04: "all heavy checks must live on CI, pre-commit is for quick
+# static analysis and linting and other types of rules like that."
 #
-# The split, and why this is a second hook rather than more of pre-push.
+# So the measured half is gone from here. This hook used to end with
+# `npm run measure`, the Electron page renderers, scoped by scripts/hook-scope.mjs
+# so it ran only when the pages could have moved. Scoped or not, it was a
+# multi-minute Electron launch inside every commit that touched desktop/ or core/,
+# which made committing the slow thing it should never be. CI runs the same
+# measurement on every pull request that can move a rendered page (the desktop job
+# in .github/workflows/ci.yml: `npm run measure`, the boot smoke, every proof
+# harness, the packaged audits), and the merge gate needs it. The measurement
+# MOVED to CI, it was not dropped.
 #
-# CI runs these too. The desktop job in .github/workflows/ci.yml runs
-# `npm run measure`, the boot smoke and every proof harness in Electron under a
-# virtual display on Linux, on every pull request, and the merge gate needs it.
-# This hook is the fast local copy of the same measurement, so a fault is seen at
-# the commit rather than at the pull request.
+# What remains is what a commit can answer for itself in seconds: linting of the
+# staged JS and Swift. A check that needs Electron, a browser, a package build or a
+# network belongs in CI, however fast it feels on a quiet machine.
 #
-# A page measurement is the only witness for a claim about what was DRAWN. No
-# unit test and no assertion over source can tell a rule that applies from one that
-# is overridden, a strip that paints from one the page shows through, or a control
-# that is present from one that is dead. `npm run measure` loads the real pages
-# from core/ui with a stub host and measures the rendered result.
+# The hook is at the REPO ROOT (core.hooksPath -> .githooks) and it runs ROOT
+# scripts, not a package's. No platform is the root.
 #
-# It is PER HOST rather than per platform: whoever has a checkout and a session
-# runs it, because the harnesses are Electron and Electron is the same program
-# everywhere. A host with no Electron SKIPS with a named reason rather than
-# passing quietly: a silent pass is a green line for work nobody did.
-#
-# It is ADVISORY, like the push gate: `git commit --no-verify` skips it, and a
-# fresh clone has no hook until `npm run hooks:install` points core.hooksPath here.
+# It is ADVISORY: `git commit --no-verify` skips it, and a fresh clone has no hook
+# until `npm run hooks:install` points core.hooksPath here.
 
 set -e
 
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
 
-# The lint half, first and always: it is seconds, not an Electron launch, so it is never scoped away.
-# (Abi, 2026-09-27: add linting to all our pre-commit hooks.) It lints only what this commit stages:
-# the JS under core/ and desktop/ with the root ESLint config, and the Swift under mobile/ with
-# SwiftLint, the same two linters `pnpm run lint` runs over the whole tree. A host without SwiftLint
-# gets mobile.mjs's own named skip.
+# The lint half, first and always: it is seconds, not an Electron launch.
+# It lints only what this commit stages: the JS under core/ and desktop/ with the
+# root ESLint config, and the Swift under mobile/ with SwiftLint, the same two
+# linters `pnpm run lint` runs over the whole tree. A host without SwiftLint gets
+# mobile.mjs's own named skip.
 staged_js="$(git diff --cached --name-only --diff-filter=ACMR -- 'core/*.js' 'core/*.mjs' 'core/*.ts' 'desktop/*.js' 'desktop/*.mjs' 'desktop/*.ts')"
 if [ -n "$staged_js" ] && [ ! -x node_modules/.bin/eslint ]; then
   echo "pre-commit: lint SKIPPED, and the reason is named: no ESLint in node_modules (run pnpm install at the repo root). The staged JS was NOT linted." >&2
@@ -59,63 +52,4 @@ if git diff --cached --name-only --diff-filter=ACMR -- 'mobile/*.swift' | grep -
   fi
 fi
 
-# Scope to the change, before anything heavy is even looked for. The measured
-# half renders core/ui in Electron, so it only means anything when the pages or
-# the code that builds them moved. A commit that touches only mobile/, docs/,
-# .github/ or other paths cannot change a rendered page, and paying a
-# multi-minute Electron launch for it is what made every commit slow (Abi,
-# 2026-09-18). CI measures every pull request that touches the pages whatever
-# this hook skips, so scoping here is a local decision, not a hole.
-decision="$(git diff --cached --name-only | node scripts/hook-scope.mjs)"
-if [ "$decision" = "skip" ]; then
-  cat >&2 <<'EOF'
-
-pre-commit: SKIPPED the page measurements, and the reason is named.
-
-  Nothing staged touches desktop/, core/, a root manifest or a root script, so no
-  rendered page or form can have changed: an Electron render would measure the
-  same pixels as last time.
-
-  This is a SKIP, not a pass: the pages were not measured, because nothing in
-  this commit can have moved them.
-EOF
-  exit 0
-fi
-
-# The package DIRECTORY rather than a binary name, so this reads the same on every
-# platform: a Windows checkout has node_modules/electron and electron.cmd rather
-# than a file called `electron`. A present-but-broken install is not skipped:
-# `npm run measure` then fails with Electron's own error, which is the honest
-# answer for an install that cannot start.
-if [ ! -d "desktop/node_modules/electron" ]; then
-  cat >&2 <<'EOF'
-
-pre-commit: SKIPPED, and the reason is named rather than assumed.
-
-  There is no Electron in desktop/node_modules, so no page can be rendered here
-  and the measured half cannot run. Install it with a workspace install at the
-  repo root (`pnpm install`), or run the harnesses on a host that has it.
-
-  This is a SKIP, not a pass: the pages were not measured.
-EOF
-  exit 0
-fi
-
-echo "pre-commit: the measured half (the pages and the forms, as rendered)"
-if ! npm run measure; then
-  cat >&2 <<'EOF'
-
-pre-commit: the measured harnesses failed.
-
-  These load the real pages from core/ui in Electron and measure what was DRAWN:
-  the strip's own pixels, the card's surface, and the two gateway forms' fields
-  lining up, in both appearances. Read the failing line above, and look at the
-  screenshots the harness just wrote.
-
-  A deliberate skip is `git commit --no-verify`. It should be rare: this is the
-  only check that sees the rendered page.
-EOF
-  exit 1
-fi
-
-echo "pre-commit: the measured half passed."
+echo "pre-commit: the quick half passed; the measurements and the smoke run in CI on the pull request."
