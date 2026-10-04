@@ -254,6 +254,11 @@ export const trayFile = (bucket, mode) => `icons/tray-${bucket.id}-${mode === 'l
  *  template image, which macOS draws in the menu bar's own colour, so there is
  *  no palette in it for a theme or an icon choice to change. */
 export const TRAY_TEMPLATE = 'trayTemplate.png';
+/** The menu-bar glyph for a LIGHT bar: the tile solid with the claw cut out of it,
+ *  where TRAY_TEMPLATE is the claw's own outline for a dark bar. Abi, 2026-10-04:
+ *  "Two cut shapes if possible for the tray icon". Both are template images, so
+ *  macOS paints each in the bar's own colour and the CUT is the whole difference. */
+export const TRAY_TEMPLATE_LIGHT = 'trayTemplateLight.png';
 
 /** Whether a platform's tray icon is a template image. macOS draws every
  *  menu-bar item as a one-colour glyph in the bar's own colour, light or dark,
@@ -266,8 +271,14 @@ export const trayIsTemplate = (platform) => platform === 'darwin';
  *  `tray`, the coloured file for the icon showing (choose().tray). main.js
  *  sets the image's template flag from `template`, so the file and the flag
  *  cannot disagree. */
-export function trayFor(platform, tray) {
-  return trayIsTemplate(platform) ? { file: TRAY_TEMPLATE, template: true } : { file: tray, template: false };
+/** `darkBar` is the macOS MENU BAR's appearance, not the app's theme: a template
+ *  image is painted by the bar, and this app can be pinned to the other theme. The
+ *  two cuts and their files are paired here so a caller cannot take one without the
+ *  other (see the artwork module for what each cut draws). */
+export function trayFor(platform, tray, { darkBar = true } = {}) {
+  return trayIsTemplate(platform)
+    ? { file: darkBar ? TRAY_TEMPLATE : TRAY_TEMPLATE_LIGHT, template: true }
+    : { file: tray, template: false };
 }
 
 /** The iOS alternate icon for a bucket in one mode. Every bucket has one per
