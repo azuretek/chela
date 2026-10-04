@@ -123,7 +123,7 @@ final class NoticeStackHitTests: XCTestCase {
         let text = try source("NoticeBanner.swift")
         let stack = code(try body(of: "NoticeStack", in: text))
         for argument in backgroundArguments(in: stack) {
-            XCTAssertTrue(argument.contains("Color.clear"),
+            XCTAssertTrue((argument.contains("Color.clear") || argument.contains("ClusterBoxProbe")),
                 "NoticeStack carries a background that is not the transparent box probe: " + argument + ". Its frame "
                 + "is the screen, so a surface that draws there covers every touch on the page the cards do not: only "
                 + "the cards may paint.")
@@ -239,7 +239,7 @@ final class NoticeStackHitTests: XCTestCase {
         let stack = code(try body(of: "NoticeStack", in: text))
         XCTAssertFalse(stack.contains("content.overlay"),
             "the stack is applied as an overlay again, which is the per-layer shape the notice layer replaced")
-        XCTAssertTrue(text.contains("NoticeClusterBox.self"),
+        XCTAssertTrue(text.contains("ClusterBoxProbe"),
             "the stack no longer reports the box it drew, so the notice layer would have nothing to claim")
     }
 }

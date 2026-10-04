@@ -1,26 +1,6 @@
 import SwiftUI
 import UIKit
 
-/// The box the notice cards actually occupy, in the layer's own coordinate space.
-///
-/// The notice layer claims a touch only inside this box, so the value is the whole
-/// of what makes a window above everything safe to have: see `NoticeWindow`. The
-/// probe that publishes it is attached to the cluster rather than to the stack, so
-/// the box is the cards plus their own inset and nothing else.
-struct NoticeClusterBox: PreferenceKey {
-    static let defaultValue: CGRect = .zero
-
-    /// Every sibling of the probe answers too, and one that publishes nothing
-    /// answers `.zero`. Taking the last answer let the Spacer after the cards
-    /// overwrite their box with `.zero`, so the window claimed nothing and every
-    /// tap on a card's X or on Mark all read fell through to the page (Abi,
-    /// 2026-09-23). An empty answer is skipped; real boxes are joined.
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
-        let next = nextValue()
-        guard !next.isEmpty else { return }
-        value = value.isEmpty ? next : value.union(next)
-    }
-}
 
 /// The one surface this client draws its notices on: a window of its own, above
 /// whichever layer happens to be on top.
@@ -52,7 +32,7 @@ struct NoticeClusterBox: PreferenceKey {
 /// TOUCH. A window over everything has to be invisible to everything it is not
 /// drawing, so this one claims a point only inside the cards' own box: `hitTest`
 /// answers nil anywhere else, and UIKit then delivers the touch to the app's window
-/// below. The box comes from the stack itself (`NoticeClusterBox`) rather than from
+/// below. The box comes from the stack itself (`ClusterBoxProbe`) rather than from
 /// the screen, so the claimed area is the cards and their inset and not one pixel
 /// more, and the page, the settings field and every control underneath keep working.
 @MainActor
@@ -110,8 +90,7 @@ struct NoticeLayerContent: View {
     let report: (CGRect) -> Void
 
     var body: some View {
-        NoticeStack(board: board)
-            .onPreferenceChange(NoticeClusterBox.self) { report($0) }
+        NoticeStack(board: board, report: report)
     }
 }
 
