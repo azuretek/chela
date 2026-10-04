@@ -1253,8 +1253,13 @@ const pairingState = pairing.createState({
   onChange: () => {
     const pairingNow = pairingState.isPairing();
     if (pairingWasUp && !pairingNow) console.log('[chela-desktop] device pairing cleared; the pairing screen is down');
-    pairingWasUp = pairingNow;
+    // ★ syncPairing reads pairingWasUp as "was the screen up BEFORE this move", so
+    // the assignment comes AFTER it. With the order the other way round it read the
+    // CURRENT value, so its `!wasPairing` entry rule could never fire and the
+    // revocation route to the settings surface was dead code. Measured 2026-10-04 by
+    // reading the one caller and the one function, which is all there is.
     syncPairing();
+    pairingWasUp = pairingNow;
   },
 });
 
