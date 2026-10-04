@@ -1,29 +1,30 @@
 #!/bin/sh
-# pre-push: the local copy of the desktop gate.
+# pre-push: the QUICK half of the local gate.
 #
-# Where this lives now. The hook is at the REPO ROOT (core.hooksPath -> .githooks)
-# and it runs ROOT scripts. It used to cd into desktop/ and call that package's
-# npm scripts directly, which was one more way desktop acted as the root. The GUI
-# boot smoke is still the desktop's work (it launches Electron), but the hook
-# reaches it through the root now, the same way the root reaches every platform.
+# Abi, 2026-10-04: "all heavy checks must live on CI, pre-commit is for quick
+# static analysis and linting and other types of rules like that."
 #
-# The split, and why it is a split at all.
+# This hook used to run `npm run verify`: the desktop unit suite, the import audit
+# AND the Electron boot smoke, plus the packaged-artifact audit when a build was
+# present. The smoke is the heavy one, it launches the real app. CI runs all of it on
+# every pull request in the desktop job (.github/workflows/ci.yml: the boot smoke,
+# `npm run measure`, the packaged audit, the packed smoke) with the merge gate on
+# them, so the heavy checks MOVED; they were not dropped.
 #
-# CI runs all of this on every pull request: the unit tests, the import audit,
-# the iOS legs, and in the desktop job (.github/workflows/ci.yml) the GUI boot
-# smoke, the packaged-artifact audit and the packed smoke, in Electron under a
-# virtual display on Linux. The smoke is the check that catches the fault which
-# actually shipped: a build that passed every test and still opened a fatal
-# "A JavaScript error occurred in the main process" dialog. A green unit-test run
-# is not evidence the app starts.
+# The desktop suite and the import audit are what remains: seconds, no Electron.
 #
-# This hook runs the same checks before the push, so a fault is seen here rather
-# than minutes later on the pull request.
+# ★ THE DESKTOP SUITE ONLY, not `npm run test:js`. Its sibling, `cd core && npm test`,
+# is deliberately not a CI gate and cannot pass on every machine: half of it holds our
+# markup and our copy of the card against a LIVE OpenClaw checkout, and it asserts that
+# the checkout is the revision the pin names. On a machine whose checkout is another
+# release, that suite is red for a reason that has nothing to do with the commit being
+# pushed (measured 2026-10-04: the checkout here is 2026.8.1 and the pin names 2026.9.5,
+# so sixteen card values read as drift). A push gate must not be red for that. Run it on
+# purpose, on a machine carrying the pinned checkout: cd core && npm test.
 #
-# This hook is ADVISORY, and do not mistake it for the gate. `git push --no-verify`
-# skips it, and a fresh clone has no hook until `npm run hooks:install` points
-# core.hooksPath here. The unskippable gate is the CI run on the commit you pushed.
-# Treat a green hook as the fast local signal, never as the only one.
+# It is ADVISORY, and not the gate: `git push --no-verify` skips it, and a fresh clone
+# has no hook until `npm run hooks:install` points core.hooksPath here. The unskippable
+# gate is the CI run on the commit you pushed.
 
 set -e
 
@@ -35,57 +36,47 @@ fail() {
 
 pre-push: ${1}
 
-The local gate, from the repo root:
-  npm test            every platform's tests through the root fan-out
-  npm run check:imports   static import audit over the desktop source
-  npm run smoke       boot the real Electron app and require a positive signal
-  npm run check:package   audit the packaged artifact, when one exists
+The quick local gate, from the repo root:
+  pnpm --filter chela-desktop run test   the desktop unit suite
+  npm run check:imports                  the static import audit
 
-CI runs the same checks on the pull request, and the merge gate needs them, so a
-skip here only moves the failure there. Fix the failure and push again, or
-deliberately skip the local copy with:
+Everything heavy is CI's, on the pull request:
+  npm run smoke, npm run measure, npm run check:package, npm run smoke:packed
+  (the desktop job in .github/workflows/ci.yml, with the merge gate on it)
+
+The live half of core's suite is deliberately not here: it needs the pinned OpenClaw
+checkout. Run it on purpose, on a machine that has one: cd core && npm test
+
+Fix the failure and push again, or deliberately skip the local copy with:
 
     git push --no-verify
 EOF
   exit 1
 }
 
-# Scope to the change. The local gate is the JS app's: the desktop unit suite,
-# the import audit and an Electron boot smoke. A push whose commits touch nothing
-# under desktop/, core/ or a root manifest cannot change the app, so the smoke
-# would be a multi-minute Electron launch for no signal (Abi, 2026-09-18). CI
-# still runs every check on the pull request, the smoke and the iOS legs included.
-changed="$(
-  while read -r _local_ref local_sha _remote_ref remote_sha; do
-    [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
-    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
-      base="$(git merge-base "$local_sha" refs/remotes/origin/HEAD 2>/dev/null || true)"
-      if [ -n "$base" ]; then git diff --name-only "$base..$local_sha" || true; fi
-    else
-      git diff --name-only "$remote_sha..$local_sha" || true
-    fi
-  done
-)"
-if [ "$(printf '%s\n' "$changed" | node scripts/hook-scope.mjs)" = "skip" ]; then
-  echo "pre-push: SKIPPED the local gate; nothing pushed touches desktop/, core/ or a root manifest."
-  echo "          CI runs the headless gate on this commit, so this is a skip, not a pass."
+# A checkout with no install cannot run the suite, and a silent pass is a green line
+# for work nobody did. The reason is named instead, the way the rest of this repo's
+# harnesses treat a host that cannot run them.
+if [ ! -d desktop/node_modules ]; then
+  cat >&2 <<'EOF'
+
+pre-push: SKIPPED the quick gate, and the reason is named.
+
+  There is no desktop/node_modules in this checkout, so the desktop suite and the
+  import audit cannot run here. Install at the repo root (pnpm install), or push from
+  a checkout that has one.
+
+  This is a SKIP, not a pass: nothing was checked. CI runs both on the pull request.
+EOF
   exit 0
 fi
 
-echo "pre-push: local gate (desktop unit tests, import audit, GUI boot smoke)"
-if ! npm run verify; then
-  fail "the verification suite failed."
+echo "pre-push: the quick gate (desktop unit suite, import audit)"
+if ! pnpm --filter chela-desktop run test; then
+  fail "the desktop unit suite failed."
+fi
+if ! npm run check:imports; then
+  fail "the import audit failed."
 fi
 
-# A packaged build, if one is sitting there, is worth auditing on the way out:
-# this is the check that catches a module the packer never copied, which is a
-# fault the source tree cannot show. CI packs and audits on every pull request
-# (the desktop job), so this is the local equivalent of that step.
-if [ -d desktop/dist ]; then
-  echo "pre-push: auditing the packaged build in desktop/dist/"
-  if ! npm run check:package; then
-    fail "the packaged-artifact audit failed."
-  fi
-fi
-
-echo "pre-push: local gate passed."
+echo "pre-push: the quick gate passed; the smoke, the measurements and the packaged audits run in CI."
