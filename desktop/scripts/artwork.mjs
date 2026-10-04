@@ -383,14 +383,76 @@ export function trayIcon({ mode = 'dark', palette = palettesFor(PRIMARY)[mode ==
  * Windows and Linux keep trayIcon(): their trays are not one colour, and their
  * own items carry colour (#114). core/app-icons.js trayFor() makes that split.
  */
-export function trayTemplate() {
-  const { tray: claw, trayBounds: b } = outlines();
-  const side = Math.max(b.x1 - b.x0, b.y1 - b.y0) + 2;
-  const x = (b.x0 + b.x1 - side) / 2, y = (b.y0 + b.y1 - side) / 2;
-  return HEAD('macOS menu-bar template glyph') +
-    '<svg viewBox="' + [x, y, side, side].map(r2).join(' ') + '" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-    '<path d="' + claw + '" fill="#000000"/>' +
+/**
+
+ * The macOS menu-bar glyph, in the two cuts (Abi, 2026-10-04: "Two cut shapes if
+
+ * possible for the tray icon").
+
+ *
+
+ * A menu-bar extra is a one-colour TEMPLATE image: macOS draws it in the bar's own
+
+ * colour, which is why the glyph cannot say tile with a colour. So the cut says it,
+
+ * and the bar's appearance picks which cut:
+
+ *
+
+ *   light bar   the tile solid with the claw cut OUT of it, so the tile reads as the
+
+ *               glyph and the claw as the bar showing through it.
+
+ *   dark bar    the claw alone, SOLID, with no tile. A filled claw is
+
+ *               what the bar inverts into a blob at 16px; the contour is what keeps
+
+ *               the pincer's shape there.
+
+ *
+
+ * ★ Both are the same traced claw, outlines().tray, on the SAME canvas at the SAME
+
+ * placement as the coloured trayIcon(): only the cut differs. Two renditions framed
+
+ * to their own bounds would shift the glyph every time the bar changed appearance,
+
+ * which is a fault nobody would think to look for by name.
+
+ */
+
+export function trayTemplate({ appearance = 'dark' } = {}) {
+
+  const { tray: claw } = outlines();
+
+  const place = 'translate(60 60) scale(0.78) translate(-60 -60)';
+
+  const tile = 'x="' + TILE.x + '" y="' + TILE.y + '" width="' + TILE.size + '" height="' + TILE.size + '" rx="23"';
+
+  const open = HEAD('macOS menu-bar template glyph, ' + appearance + ' cut') +
+
+    '<svg viewBox="' + viewBox(true) + '" fill="none" xmlns="http://www.w3.org/2000/svg">';
+
+  if (appearance === 'light') {
+
+    return open +
+
+      '<defs><mask id="cut"><rect ' + tile + ' fill="#ffffff"/>' +
+
+      '<path d="' + claw + '" fill="#000000" transform="' + place + '"/></mask></defs>' +
+
+      '<rect ' + tile + ' fill="#000000" mask="url(#cut)"/>' +
+
+      '</svg>\n';
+
+  }
+
+  return open +
+
+    '<path d="' + claw + '" fill="#000000" transform="' + place + '"/>' +
+
     '</svg>\n';
+
 }
 
 /** One tray icon per bucket and mode, the same set as the app icon, so the
