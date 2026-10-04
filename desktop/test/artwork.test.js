@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { generatedFiles, appIcon, paperIcon, trayIcon, trayTemplate, TILE } from '../scripts/artwork.mjs';
 import { existsSync } from 'node:fs';
 import { inflateSync } from 'node:zlib';
-import { BUCKETS, iconFile, trayFile, palettesFor, choose, trayFor, trayIsTemplate, TRAY_TEMPLATE } from '../../core/app-icons.js';
+import { BUCKETS, iconFile, trayFile, palettesFor, choose, trayFor, trayIsTemplate, TRAY_TEMPLATE, TRAY_TEMPLATE_LIGHT } from '../../core/app-icons.js';
 
 const repo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (p) => readFileSync(path.join(repo, p), 'utf8');
@@ -217,5 +217,59 @@ test('the mark masks are data: URLs, which a file:// page can use as a mask', ()
   const css = generatedFiles()['core/ui/assets/claw-mark.css'];
   for (const name of ['--chela-mark-ring', '--chela-mark-horizon']) {
     assert.match(css, new RegExp(`${name}: url\\("data:image/svg\\+xml,`), name);
+  }
+});
+
+test('the menu-bar glyph is cut twice, and the two cuts are not the same shape', () => {
+  // Abi, 2026-10-04: "Two cut shapes if possible for the tray icon". A template
+  // image is painted BY the bar, so the cut is the whole difference: on a light bar
+  // the tile is solid with the claw cut out of it, on a dark one the claw is solid
+  // with no tile at all. Measured on the DRAWN PNGs, never read back from the SVG.
+  const lightSvg = trayTemplate({ appearance: 'light' });
+  assert.match(lightSvg, /<rect/, 'the light cut has no tile for the claw to be cut out of');
+  assert.match(lightSvg, /mask=/, 'the light cut does not cut anything out');
+  assert.doesNotMatch(trayTemplate(), /<rect/, 'the dark cut grew a tile');
+  // Enclosed clear pixels: a region the bar shows through that ink surrounds. The
+  // claw cut out of the tile is one; the space round a bare claw is not, because it
+  // reaches the edge of the image. This is what tells a CUT from a shape.
+  const holes = (px, size) => {
+    const clear = (x, y) => px[(y * size + x) * 4 + 3] === 0;
+    const seen = new Uint8Array(size * size);
+    const stack = [];
+    for (let x = 0; x < size; x++) for (const y of [0, size - 1]) if (clear(x, y) && !seen[y * size + x]) { seen[y * size + x] = 1; stack.push([x, y]); }
+    for (let y = 0; y < size; y++) for (const x of [0, size - 1]) if (clear(x, y) && !seen[y * size + x]) { seen[y * size + x] = 1; stack.push([x, y]); }
+    while (stack.length) {
+      const [x, y] = stack.pop();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
+        if (seen[ny * size + nx] || !clear(nx, ny)) continue;
+        seen[ny * size + nx] = 1; stack.push([nx, ny]);
+      }
+    }
+    let n = 0;
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) if (clear(x, y) && !seen[y * size + x]) n += 1;
+    return n;
+  };
+  const at = (rel, size) => {
+    const file = path.join(repo, 'desktop', 'src', 'assets', rel);
+    assert.ok(existsSync(file), rel + ' is missing: run npm run icons');
+    const { width, height, px } = pngPixels(file);
+    assert.deepEqual([width, height], [size, size], rel);
+    for (let i = 0; i < px.length; i += 4) assert.deepEqual([px[i], px[i + 1], px[i + 2]], [0, 0, 0], rel + ' carries colour at pixel ' + (i / 4));
+    let ink = 0;
+    for (let i = 3; i < px.length; i += 4) if (px[i] === 255) ink += 1;
+    return { ink, holes: holes(px, size) };
+  };
+  for (const size of [16, 32]) {
+    const suffix = size === 16 ? '.png' : '@2x.png';
+    const dark = at(TRAY_TEMPLATE.replace(/\.png$/, suffix), size);
+    const light = at(TRAY_TEMPLATE_LIGHT.replace(/\.png$/, suffix), size);
+    // Measured when this was written (16px, then 32px): the dark cut inks 44 and 160,
+    // the light cut 176 and 660, and the claw-shaped hole is 26 and 97 pixels.
+    assert.equal(dark.holes, 0, 'the dark cut has ' + dark.holes + ' enclosed clear pixels: a bare claw has no hole');
+    assert.ok(light.holes > 0, 'the light cut has no claw-shaped hole in its tile');
+    assert.ok(light.ink > dark.ink, 'the light cut is not the fuller of the two: ' + light.ink + ' against ' + dark.ink);
+    assert.ok(dark.ink > 0, 'the dark cut has no solid pixel at ' + size + 'px');
   }
 });

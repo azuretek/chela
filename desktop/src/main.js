@@ -1,6 +1,6 @@
 import {
   app, BrowserWindow, WebContentsView, Tray, Menu, MenuItem, shell,
-  globalShortcut, nativeImage, ipcMain, screen, session, powerMonitor, net,
+  globalShortcut, nativeImage, nativeTheme, ipcMain, screen, session, powerMonitor, net,
 } from 'electron';
 import http from 'node:http';
 import { createRequire } from 'node:module';
@@ -459,6 +459,9 @@ function layoutViews() {
 // packaged icon is what the OS shows while the app is not running.
 let appliedIconFile = null;
 let appliedTrayFile = null;
+// The menu-bar cut is wired once, on macOS only: Windows and Linux trays are
+// coloured files and have no appearance to follow.
+let trayAppearanceWired = false;
 let appliedStripIconFile = null;
 function applyAppIcon() {
   // The reader's own choice, or the theme's accent-driven one, resolved in ONE
@@ -482,8 +485,17 @@ function applyAppIcon() {
     }
   }
   // On macOS the tray is the menu-bar template glyph whatever the choice (#139),
-  // so trayFor hands back the same file every time and this sets it once.
-  const trayArt = appIcons.trayFor(process.platform, choice.tray);
+  // and the BAR's appearance picks which of the two cuts it draws (Abi, 2026-10-04:
+  // "Two cut shapes if possible for the tray icon"): the claw's own outline on a
+  // dark bar, the tile with the claw cut out of it on a light one. The SYSTEM
+  // appearance is the bar's rather than this app's, which can be pinned to the other
+  // theme, so the bar would otherwise show the wrong cut.
+  const trayArt = appIcons.trayFor(process.platform, choice.tray, { darkBar: nativeTheme.shouldUseDarkColors });
+  if (process.platform === 'darwin' && !trayAppearanceWired) {
+    trayAppearanceWired = true;
+    // A bar that changes appearance while the app runs takes the other cut with it.
+    nativeTheme.on('updated', () => applyAppIcon());
+  }
   if (tray && !tray.isDestroyed() && trayArt.file !== appliedTrayFile) {
     const img = nativeImage.createFromPath(path.join(ASSETS, trayArt.file));
     if (img.isEmpty()) {

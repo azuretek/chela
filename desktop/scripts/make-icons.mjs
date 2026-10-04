@@ -55,7 +55,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { generatedFiles, bucketIcons, bucketTrays, iosIconFile, iosAltIconFile, appIcon, trayTemplate } from './artwork.mjs';
-import { iconFile, trayFile, TRAY_TEMPLATE } from '../../core/app-icons.js';
+import { iconFile, trayFile, TRAY_TEMPLATE, TRAY_TEMPLATE_LIGHT } from '../../core/app-icons.js';
 import { WINDOWS_SIZES, WINDOW_SIZES, encodeIco, decodeIco } from './ico.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));   // desktop/
@@ -104,6 +104,11 @@ const targets = [
   // well as the explicit setTemplateImage(true) in main.js.
   { file: 'desktop/src/assets/' + TRAY_TEMPLATE, size: 16, svg: Buffer.from(trayTemplate(), 'utf8'), treatment: 'canvas' },
   { file: 'desktop/src/assets/' + TRAY_TEMPLATE.replace(/\.png$/, '@2x.png'), size: 32, svg: Buffer.from(trayTemplate(), 'utf8'), treatment: 'canvas' },
+  // The other cut of the same glyph, for a LIGHT menu bar (Abi, 2026-10-04): the tile
+  // solid with the claw cut out of it. Same canvas, same placement, so switching cuts
+  // with the bar's appearance cannot move the glyph.
+  { file: 'desktop/src/assets/' + TRAY_TEMPLATE_LIGHT, size: 16, svg: Buffer.from(trayTemplate({ appearance: 'light' }), 'utf8'), treatment: 'canvas' },
+  { file: 'desktop/src/assets/' + TRAY_TEMPLATE_LIGHT.replace(/\.png$/, '@2x.png'), size: 32, svg: Buffer.from(trayTemplate({ appearance: 'light' }), 'utf8'), treatment: 'canvas' },
 
   // The iOS app icon, one 1024x1024 entry that Xcode derives every size the app
   // needs from, so there is no AppIcon60x60@2x.png to keep in step with
