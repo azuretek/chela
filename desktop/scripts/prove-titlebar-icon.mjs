@@ -163,7 +163,7 @@ function rightClick(wc, x, y) {
   });
 }
 
-async function main({ app, BrowserWindow, nativeImage }) {
+async function main({ app, BrowserWindow, nativeImage, nativeTheme }) {
 try {
   await app.whenReady();
   const { default: chrome } = await import('../src/chrome.js');
@@ -183,6 +183,12 @@ try {
     if (img.isEmpty()) { fail(mode + ': no asset at ' + file); continue; }
     const url = img.resize({ width: chrome.STRIP_ICON_PX * 2, height: chrome.STRIP_ICON_PX * 2, quality: 'best' }).toDataURL();
 
+    // The strip palette IS `prefers-color-scheme`, and nativeTheme.themeSource is what
+    // drives that for our own file:// pages (chrome.js pins it at startup for the same
+    // reason). Without this the two `light` passes measured a DARK strip: measured
+    // 2026-10-04, all four passes sampled a background of rgb(10,10,10), so half of this
+    // harness asserted nothing about light at all.
+    nativeTheme.themeSource = mode;
     for (const platform of ['win32', 'darwin']) {
       const tag = mode + '/' + platform + ': ';
       await openStrip(window, path.join(UI, 'titlebar.html'), platform, chrome);
@@ -213,6 +219,17 @@ try {
       // The two must agree with EACH OTHER and with the strip, measured from the
       // pixels rather than from the boxes: this is the check whose absence let the
       // label read high beside a centred icon.
+      // The frame must have PAINTED before anything is measured from pixels. Captured
+      // too early the window answers with the frame from before the icon and the label
+      // were drawn: the boxes are already correct, so the ink scan then reports the icon
+      // as 10px tall inside a 16px box, or (once, on light/darwin) reports nothing drawn
+      // at all and the centring is called unmeasurable. Measured 2026-10-04, same passes:
+      // icon 14..24 with label 14..26 captured early, against icon 10..26 with label
+      // 14..26 on the settled frame, which is the frame the layout is about. Two
+      // animation frames and the fonts, because the label ink is the glyphs the font
+      // draws rather than the line box that carries them.
+      await wc.executeJavaScript('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))');
+      await wc.executeJavaScript('document.fonts ? document.fonts.ready.then(() => true) : true');
       const shot = await wc.capturePage();
       const scale = shot.getSize().width / m.strip.width;
       const background = stripBackground(shot);
