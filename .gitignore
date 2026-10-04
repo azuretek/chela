@@ -1,7 +1,16 @@
+
 node_modules/
 dist/
 *.log
 .DS_Store
+
+# The CI caches. The release workflow points ELECTRON_CACHE and
+# ELECTRON_BUILDER_CACHE at ${{ github.workspace }}/.cache/... so one cache key serves all
+# three platform legs, which leaves a directory inside the tree on any
+# warm-cache run. It is not source, and scripts/build-info.js counts untracked
+# files as dirt, so without this every CI build stamped itself
+# "<commit>-dirty" in About. Measured 2026-10-04.
+/.cache/
 
 # Generated at pack time by scripts/build-info.js. A commit cannot contain its
 # own hash, so a checked-in copy would be wrong by construction; its absence is
