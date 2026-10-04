@@ -50,6 +50,70 @@ const MEASURE = `(() => {
   };
 })()`;
 
+
+/**
+ * Where the DRAWN pixels are, in one column band of a captured strip.
+ *
+ * Boxes are not the question and they are what hid the fault: `getBoundingClientRect`
+ * on the label answers its line box, which the flex row centres perfectly, while the
+ * GLYPHS inside it sit above that box centre because a font's ascent carries far more
+ * room than its descender. So the label reads high and the icon, whose artwork fills
+ * its box, reads low, with every rectangle agreeing. Abi, 2026-10-03: "the icon doesnt
+ * look too low, the text actually looks like its too high". Measured from the bitmap,
+ * the same way every other claim in this harness is: from what was drawn.
+ */
+function inkBand(image, band, background, scale) {
+  const size = image.getSize();
+  const bitmap = image.toBitmap();
+  const x0 = Math.max(0, Math.round(band.left * scale));
+  const x1 = Math.min(size.width, Math.round(band.right * scale));
+  let top = null;
+  let bottom = null;
+  // The strip's bottom edge is a 1px border and box-sizing keeps it inside the 36px,
+  // so the last rows of the capture are the HAIRLINE, drawn edge to edge: left in the
+  // scan, every band reports ink down to the strip's last row (measured 2026-10-04,
+  // both bands bottoming at 36) and the centring is being asked about the border.
+  const lastRow = Math.max(1, size.height - Math.ceil(2 * scale));
+  for (let y = 1; y < lastRow; y += 1) {
+    for (let x = x0; x < x1; x += 1) {
+      const i = (y * size.width + x) * 4;
+      const distance = Math.abs(bitmap[i] - background.b) + Math.abs(bitmap[i + 1] - background.g) + Math.abs(bitmap[i + 2] - background.r);
+      if (distance > 24) {
+        if (top === null) top = y;
+        bottom = y;
+        break;
+      }
+    }
+  }
+  if (top === null) return null;
+  return { top: top / scale, bottom: (bottom + 1) / scale, centre: (top + bottom + 1) / 2 / scale };
+}
+
+/**
+ * The strip's background, as the most common colour on its top row.
+ *
+ * NOT a corner sample: the strip's bottom edge carries a 1px border hairline, so a
+ * pixel taken near the bottom is the BORDER, and every pixel that is not the border
+ * then scores as ink. Measured 2026-10-04: that made both bands report the same
+ * bogus 24.5px centre and the assertion below passed while measuring nothing. The
+ * background is whatever the widest row of the strip is mostly made of.
+ */
+function stripBackground(image) {
+  const size = image.getSize();
+  const bitmap = image.toBitmap();
+  const counts = new Map();
+  const y = 2;
+  for (let x = 0; x < size.width; x += 1) {
+    const i = (y * size.width + x) * 4;
+    const key = bitmap[i] + ',' + bitmap[i + 1] + ',' + bitmap[i + 2];
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  let best = null;
+  let bestCount = -1;
+  for (const [key, count] of counts) if (count > bestCount) { bestCount = count; best = key; }
+  const parts = best.split(',').map(Number);
+  return { b: parts[0], g: parts[1], r: parts[2] };
+}
 const cleanup = () => {
   for (const dir of [PROFILE, SCRATCH]) { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch {} }
 };
@@ -118,6 +182,19 @@ try {
       if (/no-drag/.test(m.region)) pass(tag + 'out of the drag region (' + m.region + ')');
       else fail(tag + 'the icon is in the drag region: ' + JSON.stringify(m.region));
 
+      // The two must agree with EACH OTHER and with the strip, measured from the
+      // pixels rather than from the boxes: this is the check whose absence let the
+      // label read high beside a centred icon.
+      const shot = await wc.capturePage();
+      const scale = shot.getSize().width / m.strip.width;
+      const background = stripBackground(shot);
+      const iconInk = inkBand(shot, m.icon, background, scale);
+      const labelInk = inkBand(shot, m.label, background, scale);
+      console.log('     ' + tag + 'ink ' + JSON.stringify({ icon: iconInk, label: labelInk, stripCentre: m.strip.height / 2 }));
+      if (!iconInk || !labelInk) fail(tag + 'nothing was drawn in one of the two bands, so the centring cannot be measured');
+      else if (Math.abs(iconInk.bottom - labelInk.bottom) <= 0.5) pass(tag + 'the text and the icon share a bottom edge (icon ' + iconInk.bottom + ', text ' + labelInk.bottom + ')');
+      else fail(tag + 'the text bottom sits ' + (labelInk.bottom - iconInk.bottom).toFixed(2) + 'px off the icon bottom (icon ' + iconInk.bottom + ', text ' + labelInk.bottom + ')');
+
       // A right click on the icon is the menu; one on the label is not.
       const onIcon = await rightClick(wc, (m.icon.left + m.icon.right) / 2, (m.icon.top + m.icon.bottom) / 2);
       if (!onIcon) fail(tag + 'a right click on the icon raised no context-menu event');
@@ -178,7 +255,7 @@ app.exit(failures.length ? 1 : 0);
 // A module-level await would suspend Electron's own bootstrap, so the entry point
 // returns and the work runs behind the ready handler.
 import('electron').then((electron) => {
-  electron.app.setPath('userData', PROFILE);
+  // Destroying the harness's own window must not end the run: Electron quits when the
   electron.app.commandLine.appendSwitch('user-data-dir', PROFILE);
   return main(electron);
 }).catch((error) => { console.error(error); process.exit(1); });
