@@ -81,26 +81,33 @@ final class NoticeLayerTests: XCTestCase {
 
     func testTheStackReportsTheBoxItDrew() throws {
         let text = try source("NoticeBanner.swift")
-        XCTAssertTrue(text.contains("NoticeClusterBox.self"),
+        XCTAssertTrue(text.contains("ClusterBoxProbe"),
             "the stack no longer publishes the box it drew, which is the only area the notice layer may claim")
-        XCTAssertTrue(text.contains("proxy.frame(in: .global)"),
+        XCTAssertTrue(text.contains("convert(bounds, to: window)"),
             "the stack's box is not reported in the window's coordinates, so the claim would be "
             + "measured against a different origin from the touches it is tested against")
     }
 
-    /// The Spacer after the cards publishes nothing, which reads as `.zero`. The
-    /// box must survive it, or the window claims nothing and no control on a card
-    /// can be pressed: the bug Abi reported on 2026-09-23.
-    func testAnEmptySiblingDoesNotEraseTheCardsBox() {
-        let cards = CGRect(x: 120, y: 60, width: 250, height: 95)
-        var value = NoticeClusterBox.defaultValue
-        NoticeClusterBox.reduce(value: &value) { cards }
-        NoticeClusterBox.reduce(value: &value) { .zero }
-        XCTAssertEqual(value, cards, "a sibling with no box erased the cards' box")
-        var other = NoticeClusterBox.defaultValue
-        NoticeClusterBox.reduce(value: &other) { .zero }
-        NoticeClusterBox.reduce(value: &other) { cards }
-        XCTAssertEqual(other, cards)
+    /// The box is reported from the layout pass that places the cluster, not from a
+    /// preference read after it. This drives the probe the way UIKit does: a frame in
+    /// a window, laid out, reported in the WINDOW coordinates hitTest is given.
+    @MainActor
+    func testTheProbeReportsItsBoxFromTheLayoutPass() throws {
+        let scene = try XCTUnwrap(
+            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first,
+            "the test host has no window scene to attach to"
+        )
+        let window = UIWindow(windowScene: scene)
+        var reported: CGRect?
+        let prober = ClusterBoxProbe.Prober()
+        prober.report = { reported = $0 }
+        prober.frame = CGRect(x: 40, y: 70, width: 250, height: 95)
+        window.addSubview(prober)
+        window.layoutIfNeeded()
+        XCTAssertEqual(reported, CGRect(x: 40, y: 70, width: 250, height: 95),
+            "the probe did not report the box it was laid out in, so the notice layer would "
+            + "claim nothing and every tap on a card would fall through, which is the failure "
+            + "that ate Mark all read on the CI runners (2026-10-03)")
     }
 
     /// The window is attached the moment the anchor enters a window, with no

@@ -24,6 +24,11 @@ import SwiftUI
 struct NoticeStack: View {
     @ObservedObject var board: NoticeBoard
 
+    /// Where the cluster box goes: the notice layer claims a touch only inside it.
+    /// Defaulted, so a stack drawn outside the notice layer (ContentView overlay)
+    /// has nowhere to report and claims nothing by reporting nothing.
+    var report: (CGRect) -> Void = { _ in }
+
     @Environment(\.colorScheme) private var colorScheme
 
     /// The palette's mode: the one the Control UI page says it is in when it has
@@ -73,22 +78,13 @@ struct NoticeStack: View {
             }
             .padding(.horizontal, style.inset)
             .padding(.vertical, style.inset)
-            // The cluster publishes the box it drew in, which is the only area the
+            // The cluster reports the box it drew in, which is the only area the
             // notice layer claims for touch. On the cluster rather than on the stack,
-            // so the box is the cards plus their inset and never the screen. See
-            // \`NoticeWindow\`.
-            .background(
-                GeometryReader { proxy in
-                    Color.clear.preference(
-                        key: NoticeClusterBox.self,
-                        // In the WINDOW's coordinates, which is what hitTest is
-                        // given. A space named on the layer's root sat inside the
-                        // safe area, so the box was measured from below the status
-                        // bar while touches were measured from the window's top.
-                        value: proxy.frame(in: .global)
-                    )
-                }
-            )
+            // so the box is the cards plus their inset and never the screen, and it is
+            // reported from the LAYOUT pass, so the claim can never be a pass behind the
+            // cards it guards. A preference is read after that pass, which is the lag that
+            // dropped taps. See ClusterBoxProbe and NoticeWindow.
+            .background(ClusterBoxProbe(report: report))
             // Trailing filler rather than a fixed height, so the cluster is only as
             // tall as what it holds and the web view underneath keeps every touch
             // outside it. A view that covered the page to draw nothing on it would
@@ -507,5 +503,61 @@ extension Color {
         else { return nil }
         let alpha = parts.count == 4 ? (Double(parts[3]) ?? 1) : 1
         self = Color(.sRGB, red: red / 255, green: green / 255, blue: blue / 255, opacity: alpha)
+    }
+}
+
+/// The cluster box, reported from the layout pass that places it.
+///
+/// This is the notice layer touch rule: NoticeWindow.hitTest claims a point only
+/// inside the box reported here, so this box decides whether a tap on a card X, or
+/// on Mark all read, reaches the banner at all.
+///
+/// It used to be a PreferenceKey read by onPreferenceChange, and that read happens
+/// AFTER the pass that drew the cards: between the cards being laid out and
+/// exposed to accessibility, and the window being told where they were, a tap was
+/// tested against a stale box, hitTest answered nil, and the control moved under
+/// the finger with nothing happening. Measured in CI on 2026-10-03:
+/// NoticeBannerUITests tapped Mark all read with four cards drawn and the banner
+/// did not change, while the same suite passed on a dev machine where that gap
+/// closes first. A dropped tap was never a wait to be lengthened.
+///
+/// A view reports from layoutSubviews, which runs in the pass that positions it, so
+/// the claim is never behind the content. The WINDOW coordinates are the ones
+/// hitTest is given: a space named on the layer root sat inside the safe area, so
+/// the box would be measured from below the status bar while touches were measured
+/// from the window top.
+struct ClusterBoxProbe: UIViewRepresentable {
+    let report: (CGRect) -> Void
+
+    func makeUIView(context: Context) -> Prober {
+        let prober = Prober()
+        prober.isUserInteractionEnabled = false
+        prober.backgroundColor = .clear
+        return prober
+    }
+
+    func updateUIView(_ prober: Prober, context: Context) {
+        prober.report = report
+    }
+
+    /// The transparent view that measures the cluster. It draws nothing and takes
+    /// no touch: it exists to say where it was laid out.
+    final class Prober: UIView {
+        var report: ((CGRect) -> Void)?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            reportBox()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            reportBox()
+        }
+
+        private func reportBox() {
+            guard let window else { return }
+            report?(convert(bounds, to: window))
+        }
     }
 }
