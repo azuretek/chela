@@ -118,13 +118,35 @@ const cleanup = () => {
   for (const dir of [PROFILE, SCRATCH]) { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch {} }
 };
 
-async function strip(BrowserWindow, file, platform, chrome) {
-  const window = new BrowserWindow({
-    width: 720, height: chrome.STRIP_HEIGHT, show: true, useContentSize: true, frame: false,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
-  });
+/**
+ * Load one pass into THE window and hand it back.
+ *
+ * One window for the whole run, because a window per pass does not work here: the pass
+ * destroyed its window, and the NEXT pass then failed to load anything at all with
+ * `ERR_FAILED (-2)`. Measured 2026-10-04 on two hosts, four runs, with the same shape
+ * every time: dark/win32 completes end to end, and the next load dies. Nothing Electron
+ * offers for a missing load fired (no did-fail-load, no render-process-gone), which is
+ * what pointed at the app tearing down between windows rather than at the file.
+ *
+ * The CSS from the previous pass is removed by key, not left in place: the platform
+ * padding differs (traffic lights against the edge), so a leftover stylesheet would be
+ * measuring the pass before it.
+ */
+let insertedCss = null;
+async function openStrip(window, file, platform, chrome) {
+  if (insertedCss) {
+    try { await window.webContents.removeInsertedCSS(insertedCss); } catch { /* the document is being replaced anyway */ }
+    insertedCss = null;
+  }  // Diagnostics for the second-pass failure: the load rejects with ERR_FAILED and
+  // nothing else says why, so every signal Electron offers for a load that did not
+  // happen is printed with the pass it happened on.
+  const tag = platform + '/' + file.split('/').slice(-2).join('/');
+  window.webContents.on('did-fail-load', (_e, code, desc, url) => console.log('     did-fail-load ' + code + ' ' + desc + ' ' + url));
+  window.webContents.on('render-process-gone', (_e, details) => console.log('     render-process-gone ' + JSON.stringify(details)));
+  window.on('closed', () => console.log('     window closed: ' + tag));
+  console.log('     loading: ' + tag);
   await window.loadFile(file);
-  await window.webContents.insertCSS(chrome.stripCss(platform));
+  insertedCss = await window.webContents.insertCSS(chrome.stripCss(platform));
   await window.webContents.executeJavaScript(`document.getElementById('label').textContent = ${JSON.stringify(LABEL)}; true`);
   return window;
 }
@@ -148,6 +170,12 @@ try {
   const appIcons = await import('../../core/app-icons.js');
 
   // The file main.js would pick for the default theme, in both modes.
+  // ONE window, created before any pass and destroyed once at the end.
+  const window = new BrowserWindow({
+    width: 720, height: chrome.STRIP_HEIGHT, show: true, useContentSize: true, frame: false,
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+
   for (const mode of ['dark', 'light']) {
     const choice = appIcons.choose(undefined, mode, {});
     const file = appIcons.iconFile(choice.bucket, choice.mode, { full: true });
@@ -157,7 +185,7 @@ try {
 
     for (const platform of ['win32', 'darwin']) {
       const tag = mode + '/' + platform + ': ';
-      const window = await strip(BrowserWindow, path.join(UI, 'titlebar.html'), platform, chrome);
+      await openStrip(window, path.join(UI, 'titlebar.html'), platform, chrome);
       const wc = window.webContents;
       const before = await wc.executeJavaScript(MEASURE);
       if (before.hidden && before.icon.width === 0) pass(tag + 'the icon is hidden until the image arrives (no broken-image box)');
@@ -223,24 +251,34 @@ try {
         fs.writeFileSync(out, shot.toPNG());
         console.log('     shot: ' + out);
       }
-      window.destroy();
     }
   }
 
   // The policy is load-bearing: the strip's previous CSP, with no img-src, draws no icon.
-  const html = fs.readFileSync(path.join(UI, 'titlebar.html'), 'utf8').replace(" img-src data:;", '');
-  if (html.includes('img-src')) throw new Error('could not reconstruct the previous CSP');
+  // The directive is removed by PATTERN rather than by one literal spelling: the literal
+  // depended on the meta tag's own spacing, which is not the rule, and it turned this
+  // control into a throw instead of a test. Measured 2026-10-04, the first time all four
+  // passes ran and this step was reached at all: "could not reconstruct the previous CSP".
+  // Scoped to the META TAG, not the file: `img-src` appears twice, the policy and a
+  // comment explaining the data URL, and a whole-file test threw on the comment the
+  // first time this step ever ran (2026-10-04). The rule is about the policy.
+  const original = fs.readFileSync(path.join(UI, 'titlebar.html'), 'utf8');
+  const policy = (s) => ((s.match(/content="([^"]*default-src[^"]*)"/) || [])[1] || '');
+  const before = policy(original);
+  if (!/img-src/.test(before)) throw new Error('the strip CSP carries no img-src, so this control proves nothing');
+  const html = original.replace(before, before.replace(/\s*img-src[^;]*;?/i, ''));
+  if (html === original || /img-src/.test(policy(html))) throw new Error('could not reconstruct the previous CSP');
   fs.writeFileSync(path.join(SCRATCH, 'titlebar.html'), html);
   for (const f of ['ui.css', 'titlebar.js']) fs.copyFileSync(path.join(UI, f), path.join(SCRATCH, f));
   const choice = appIcons.choose(undefined, 'dark', {});
   const url = nativeImage.createFromPath(path.join(ASSETS, appIcons.iconFile(choice.bucket, 'dark', { full: true }))).resize({ width: 32, height: 32 }).toDataURL();
-  const old = await strip(BrowserWindow, path.join(SCRATCH, 'titlebar.html'), 'win32', chrome);
-  await old.webContents.executeJavaScript(chrome.stripIconScript(url));
-  await old.webContents.executeJavaScript('new Promise((r) => { const i = document.getElementById("icon"); i.complete ? r() : i.onload = i.onerror = r; })');
-  const blocked = await old.webContents.executeJavaScript(MEASURE);
+  await openStrip(window, path.join(SCRATCH, 'titlebar.html'), 'win32', chrome);
+  await window.webContents.executeJavaScript(chrome.stripIconScript(url));
+  await window.webContents.executeJavaScript('new Promise((r) => { const i = document.getElementById("icon"); i.complete ? r() : i.onload = i.onerror = r; })');
+  const blocked = await window.webContents.executeJavaScript(MEASURE);
   if (!blocked.loaded) pass('control: under the previous CSP the same data URL is refused (naturalWidth ' + blocked.natural + ')');
   else fail('control: the previous CSP drew the icon too, so the policy change is not what makes it show');
-  old.destroy();
+  window.destroy();
 } catch (error) {
   console.error(error);
   failures.push('the harness threw: ' + (error && error.message));
