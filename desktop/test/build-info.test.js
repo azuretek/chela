@@ -1,9 +1,11 @@
+
 // Plain `node --test`, no Electron. src/build-info.js keeps its parsing and
 // formatting free of Electron for exactly this reason; only `read` touches the
 // disk, and it takes a path so it can be pointed at a fixture.
 //
 // Run with: npm test
 
+import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -13,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 import * as buildInfo from '../src/build-info.js';
 import * as cache from '../src/cache.js';
-import { collect as collectBuildInfo } from '../scripts/build-info.js';
+import { collect as collectBuildInfo, countFromVersion } from '../scripts/build-info.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
@@ -242,4 +244,41 @@ test('the client-context block carries the readable version, not the build versi
   assert.ok(block, 'promptMetadataConfig is gone');
   assert.match(block[0], /appVersion: buildInfo\.readableVersion\(app\.getVersion\(\)\)/,
     'the client-context block still sends the build version');
+});
+
+/* ---------------------------------------------------- the count CI hands over */
+
+test('the commit count is read out of the version CI hands over', () => {
+  assert.deepEqual(countFromVersion('0.0.1-dev.401.869926a290'), { count: 401, sha: '869926a290' });
+});
+
+test('anything that is not a dev version with a count and a sha yields nothing', () => {
+  // The shape belongs to devVersion in scripts/version.js, so a caller that
+  // guessed at it would be a second owner of it.
+  for (const bad of ['1.0.1', '0.0.1-dev', '0.0.1-dev.401', '0.0.1-dev.0.869926a290', '0.0.1-dev.401.zzzzzzzzzz', 'latest', '', null]) {
+    assert.equal(countFromVersion(bad), null, 'for ' + String(bad));
+  }
+});
+
+test('the handed count is used when it names this commit, and git answers otherwise', () => {
+  // CI's packaging job checks out depth 1, so git says 1 while the version job,
+  // which has the full history, says 401. The version is the owner.
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: path.join(HERE, '..', '..'), encoding: 'utf8' }).trim();
+  assert.equal(collectBuildInfo({ CLAW_BUILD_VERSION: '0.0.1-dev.999.' + head.slice(0, 10) }).count, 999);
+  const other = collectBuildInfo({ CLAW_BUILD_VERSION: '0.0.1-dev.999.0000000000' });
+  assert.notEqual(other.count, 999);
+});
+
+test('the workspace cache the release workflow creates is ignored, not dirt', () => {
+  // The stamp counts untracked files as dirt, and the workflow puts the
+  // Electron caches under the workspace. A warm cache therefore made every CI
+  // build stamp itself dirty, which About drew as a commit describing nothing.
+  // Measured 2026-10-04: one file under .cache flipped collect() to dirty: true.
+  const root = path.join(HERE, '..', '..');
+  const workflow = fs.readFileSync(path.join(root, '.github/workflows/release.yml'), 'utf8');
+  assert.ok(workflow.includes('github.workspace }}/.cache/'),
+    'the release workflow no longer creates a .cache inside the workspace');
+  const ignore = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
+  assert.ok(ignore.split('\n').includes('/.cache/'),
+    'the workspace .cache is not ignored, so a warm-cache build reads as dirty');
 });

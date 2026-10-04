@@ -1,3 +1,4 @@
+
 // Stamp the commit a build was made from into the app bundle.
 //
 // The version in package.json is hand-maintained and in practice does not move,
@@ -20,6 +21,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { parse } from './version.js';
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
 export const OUT = path.join(ROOT, 'src', 'build-info.json');
@@ -32,6 +35,24 @@ function git(...args) {
   } catch {
     return null;
   }
+}
+
+/**
+ * The commit count a CI build carries, and the commit it names.
+ *
+ * "0.0.1-dev.401.869926a290" -> { count: 401, sha: "869926a290" }. Anything
+ * else is null: the shape belongs to devVersion in scripts/version.js, and a
+ * second reading of it here would be a second owner of it.
+ */
+export function countFromVersion(version) {
+  const parsed = parse(version);
+  if (!parsed || !parsed.prerelease) return null;
+  const parts = String(parsed.prerelease).split('.');
+  if (parts[0] !== 'dev' || parts.length < 3) return null;
+  const count = Number(parts[1]);
+  if (!Number.isInteger(count) || count <= 0) return null;
+  if (!/^[0-9a-f]{7,40}$/i.test(parts[2])) return null;
+  return { count, sha: parts[2].toLowerCase() };
 }
 
 /**
@@ -62,11 +83,18 @@ export function collect(env = process.env) {
   // The build number: reachable commits, the same count the dev version leads
   // with and the number build-version.js publishes to CI because Apple accepts
   // it as a bundle build number. Stamped here too so About can show it in a
-  // field of its own rather than the version string carrying it. Null when git
-  // cannot say (a shallow checkout, or a tarball with no .git), which the
-  // reader reports rather than inventing a number for.
+  // field of its own rather than the version string carrying it.
+  //
+  // ★ The version CI hands over wins when it names this commit. The packaging
+  // job checks out at depth 1 on purpose, so rev-list --count answers 1 there,
+  // and About then read "Build 1" for a build whose own version said 401: one
+  // question with two answers, the wrong one inside the app. The version job
+  // has the full history and is the owner of the number, and the sha inside it
+  // says the number belongs to this commit.
+  const handed = countFromVersion(env.CLAW_BUILD_VERSION);
   const counted = Number(git('rev-list', '--count', 'HEAD'));
-  const count = Number.isInteger(counted) && counted > 0 ? counted : null;
+  const fromGit = Number.isInteger(counted) && counted > 0 ? counted : null;
+  const count = handed && commit && commit.startsWith(handed.sha) ? handed.count : fromGit;
 
   return {
     commit,
