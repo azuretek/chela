@@ -60,7 +60,7 @@ test('the window, the Dock and the tray resolve the choice through ONE call', ()
   assert.match(fn, /choice: appIcons\.normalizeChoice\(config\.get\(\)\.appIcon\)/,
     'the drawn icon does not read the stored choice');
   assert.match(fn, /choice\.file/);
-  assert.match(fn, /choice\.tray/);
+  assert.match(fn, /appIcons\.trayFor\(process\.platform, stripIcon/, 'the tray does not draw the icon the choice resolved');
 });
 
 test('an icon choice leaves every theme token untouched, in both appearances', () => {
