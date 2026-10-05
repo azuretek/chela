@@ -23,6 +23,14 @@ does not depend on: the problem, the change, and the test with its output.
 `.github/pull_request_template.md` is the shape, and a commit body that
 carries the same three things is a good commit body.
 
+**The pull request title is the changelog line.** release-please groups each
+release from commit subjects and we squash merge, so a title becomes the subject
+the changelog is built from and it has to read as a sentence, not a label:
+`type(scope): a sentence`, where `type` is one of `feat`, `fix`, `perf`,
+`refactor`, `docs`, `chore`, `test`, `build`, `ci` or `revert`. CI refuses a
+label-shaped title (`fix: bug`) on every pull request. See
+[release.md](release.md#release-notes-and-the-version-bump).
+
 ## What "the test" means
 
 - **A command and its output, pasted.** Not "tests pass".

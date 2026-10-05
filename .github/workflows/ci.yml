@@ -378,6 +378,25 @@ jobs:
       purpose: merge
       window: 90
 
+  # ★ The pull request title is the changelog line (issue #167). Entries are
+  # commit subjects and we squash merge, so a title becomes the subject the
+  # release changelog is grouped from. A one-word label reads as a label, not a
+  # change a person can understand a release from, so this refuses one. It runs
+  # on every pull request, whatever it touched, and the merge gate needs it.
+  title:
+    name: PR title reads as a sentence
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check the pull request title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/check-pr-title.mjs "$PR_TITLE"
+
   # ★ THE GATE. Always runs, always reports, so branch protection has one check to
   # require on every PR whatever it touched. It passes only when every job that
   # WAS needed passed: a job that was skipped because its tree did not change is
@@ -388,7 +407,7 @@ jobs:
     # so it reads as a sentence; the job id is a plain identifier because ids may
     # not contain spaces.
     name: merge gate
-    needs: [changes, js, ios, desktop, mobile]
+    needs: [changes, js, ios, desktop, mobile, title]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -398,6 +417,7 @@ jobs:
           IOS: ${{ needs.ios.result }}
           DESKTOP: ${{ needs.desktop.result }}
           MOBILE: ${{ needs.mobile.result }}
+          TITLE: ${{ needs.title.result }}
           JS_NEEDED: ${{ needs.changes.outputs.js }}
           IOS_NEEDED: ${{ needs.changes.outputs.ios }}
           # The desktop job runs whenever the js half does. The iOS suites are
@@ -405,6 +425,9 @@ jobs:
           # mobile-pipeline.yml runs on every one and a PR must not merge while
           # any of its checks is running or red.
           MOBILE_NEEDED: ${{ github.event_name == 'pull_request' }}
+          # A title is only checkable on a pull request; on a push the job is
+          # skipped and that is fine.
+          TITLE_NEEDED: ${{ github.event_name == 'pull_request' }}
         run: |
           set -eo pipefail
           fail=0
@@ -429,6 +452,7 @@ jobs:
           check "ios" "$IOS_NEEDED" "$IOS"
           check "desktop (Linux, xvfb)" "$JS_NEEDED" "$DESKTOP"
           check "iOS suites (chela-mobile pipeline)" "$MOBILE_NEEDED" "$MOBILE"
+          check "PR title reads as a sentence" "$TITLE_NEEDED" "$TITLE"
           if [ "$fail" -ne 0 ]; then
             echo "::error::refusing the merge: a needed job is not green (see above)."
             exit 1
