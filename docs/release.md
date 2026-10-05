@@ -16,7 +16,10 @@ Every build, local or CI, is named for what it actually is:
 
 The dev form carries the commit count, and that count is also the number Apple
 accepts as a bundle build number, so a version name and a build number are one
-number rather than two that can drift. The leading three integers are the
+number rather than two that can drift. **This dev name is the one part of
+versioning we keep rather than hand to release-please**: the commit count doubles
+as the Apple bundle build number, which is a platform constraint rather than a
+standard we could adopt. The leading three integers are the
 marketing version (`CFBundleShortVersionString`, and the name a tag has to
 match); the full string is what a client reports internally and what the update
 check compares.
@@ -67,15 +70,25 @@ carry the asset list, so a client cannot see what a release holds. Publishing on
 complete releases is what makes "a newer release exists" a truthful sentence for
 every interface, and it is why no client-side platform filter is needed.
 
-## Release notes
+## Release notes and the version bump
 
-GitHub's own grouping of merged pull requests, asked for by the release step
-rather than written by us. It is the one part of a release that depends on
-changes landing as pull requests, which they do: the notes name the change
-someone reviewed instead of the commits it arrived as. The generator starts its
-range at the previous release and dev builds are releases, so a stable release
-would cover only the last dev build; nothing builds a stable release yet, and a
-start tag is the fix when one does.
+Both are **release-please**'s, from `release-please-config.json` and
+`.release-please-manifest.json`. release-please watches `main` and keeps ONE
+pull request open that carries the next version bump and its `CHANGELOG.md`
+entry together. Merging that pull request tags `vX.Y.Z`; the desktop release
+workflow then builds every platform and attaches the packages to the draft
+release-please opened, and publishes only once the whole set is present. Nothing
+of ours writes release notes any more, and no version is decided by hand.
+
+The **pull request title is the changelog line**. Entries are commit subjects and
+we squash merge, so a title has to read as a sentence, `type(scope): a sentence`,
+and CI refuses a label-shaped one on every pull request. Grouping follows what
+kind of change it was (Features, Fixes, Performance, Documentation, Internal)
+rather than a label, from `changelog-sections`.
+
+The manifest bootstraps at `0.0.0` with `bootstrap-sha` at the commit adoption
+landed on, so the first release covers only what lands after adoption and the 400
+dev pre-release tags below it are never read as releases.
 
 ## How each interface distributes
 
