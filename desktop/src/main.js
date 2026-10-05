@@ -490,7 +490,11 @@ function applyAppIcon() {
   // dark bar, the tile with the claw cut out of it on a light one. The SYSTEM
   // appearance is the bar's rather than this app's, which can be pinned to the other
   // theme, so the bar would otherwise show the wrong cut.
-  const trayArt = appIcons.trayFor(process.platform, choice.tray, { darkBar: nativeTheme.shouldUseDarkColors });
+  // The tray on Windows and Linux draws the app's own icon, the same edge-to-edge
+  // file the strip draws, rather than a second small rendition (#155). macOS keeps
+  // its one-colour template cuts, picked by the BAR's appearance.
+  const stripIcon = appIcons.iconFile(choice.bucket, choice.mode, { full: true });
+  const trayArt = appIcons.trayFor(process.platform, stripIcon, { darkBar: nativeTheme.shouldUseDarkColors });
   if (process.platform === 'darwin' && !trayAppearanceWired) {
     trayAppearanceWired = true;
     // A bar that changes appearance while the app runs takes the other cut with it.
@@ -510,7 +514,7 @@ function applyAppIcon() {
   // title is always the one in the Dock or taskbar. Always the edge-to-edge
   // rendition: the strip draws it at a glyph's size, where the Dock's margin
   // would only make it smaller than the label beside it.
-  applyStripIcon(appIcons.iconFile(choice.bucket, choice.mode, { full: true }));
+  applyStripIcon(stripIcon);
 }
 
 /**
@@ -544,7 +548,7 @@ function trayImage() {
   // (#114), which is not a template because a silhouette of a tile is a
   // featureless square; applyAppIcon then swaps it for the live icon's.
   // core/app-icons.js trayFor owns the split, the file and the flag together.
-  const art = appIcons.trayFor(process.platform, 'tray.png');
+  const art = appIcons.trayFor(process.platform, 'icon-full.png');
   const img = nativeImage.createFromPath(path.join(ASSETS, art.file));
   img.setTemplateImage(art.template);
   return img;

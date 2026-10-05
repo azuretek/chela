@@ -320,151 +320,46 @@ export function bucketIcons({ square = false, full = false } = {}) {
 }
 
 /**
- * The tray and menu-bar icon: the app icon, small (#114). The same tile in the
- * same palette, neon or paper by mode, framed edge to edge, so what sits in the
- * tray is recognisably the icon in the Dock or the taskbar and changes with it.
- *
- * What is left out is what cannot survive 16 pixels, the way a platform's own
- * small icon renditions simplify: the title-bar dots and rule, the synthwave
- * floor and the hairline are each under a pixel there and only muddy the tile.
- * The claw is the tray placement (larger, forearm cut off below the joint) and
- * FILLED rather than drawn as the icon's 2.2-unit neon line, which at 16 px
- * would be a third of a pixel wide and vanish. Neon fills it with the line's
- * own sunset gradient; paper is the white sheet over its deep sheet, as on the
- * icon.
- */
-export function trayIcon({ mode = 'dark', palette = palettesFor(PRIMARY)[mode === 'light' ? 'light' : 'dark'] } = {}) {
-  const P = palette, rx = 23, claw = outlines().tray;
-  // The tray placement fills the 120-unit canvas; brought inside the tile with
-  // a little room round it.
-  const place = 'translate(60 60) scale(0.78) translate(-60 -60)';
-  const tile = (fill) => '<rect x="' + TILE.x + '" y="' + TILE.y + '" width="' + TILE.size + '" height="' + TILE.size + '" rx="' + rx + '" fill="' + fill + '"/>';
-  const open = HEAD((mode === 'light' ? 'paper' : 'neon') + ' tray and menu-bar icon') +
-    '<svg viewBox="' + viewBox(true) + '" fill="none" xmlns="http://www.w3.org/2000/svg">';
-  if (mode === 'light') {
-    return open +
-      '<defs><linearGradient id="sky" x1="0" y1="0" x2="0.6" y2="1"><stop offset="0" stop-color="' + P.skyTop + '"/>' +
-      PAPER_FADE.map(([o, w]) => '<stop offset="' + o + '" stop-color="' + mix(P.skyBottom, w, P.skyTop) + '"/>').join('') + '</linearGradient></defs>' +
-      tile('url(#sky)') +
-      '<g transform="' + place + '">' +
-      '<path d="' + claw + '" fill="' + P.deep + '" transform="translate(6 6)"/>' +
-      '<path d="' + claw + '" fill="#ffffff"/>' +
-      '</g></svg>\n';
-  }
-  return open +
-    '<defs>' +
-    '<linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + P.tileTop + '"/><stop offset="1" stop-color="' + P.tileBottom + '"/></linearGradient>' +
-    '<linearGradient id="sunset" gradientUnits="userSpaceOnUse" x1="0" y1="4" x2="0" y2="116"><stop offset="0" stop-color="' + P.sunrise + '"/><stop offset="0.5" stop-color="' + P.coral + '"/><stop offset="1" stop-color="' + P.violet + '"/></linearGradient>' +
-    '</defs>' +
-    tile('url(#tile)') +
-    '<path d="' + claw + '" fill="url(#sunset)" transform="' + place + '"/>' +
-    '</svg>\n';
-}
-
-/**
- * The macOS menu-bar glyph (#139): the tray placement's claw, filled, in one
- * colour on transparent, as a template image.
- *
- * macOS draws a template image itself, from its alpha alone, in the menu bar's
- * own colour: dark on a light bar, light on a dark one, dimmed when the bar is
- * inactive and inverted under a highlight. Every other menu-bar item is drawn
- * that way, and a coloured tile among them is the one item that does not follow
- * the bar. So this carries no colour at all, only coverage: the claw is filled
- * opaque black and everything else is transparent, and the colour channels are
- * never read.
- *
- * It is the bare claw, not the tile trayIcon() draws. A silhouette of a tile is
- * a featureless square, which is why the coloured tray is not a template; here
- * the claw IS the silhouette, so it fills the frame. The viewBox is the claw's
- * own bounds, squared and centred, with a unit of room so the antialiased edge
- * is not clipped, because a menu-bar glyph is measured by what it draws and the
- * tile's margin would only make the claw smaller than its neighbours.
- *
- * Windows and Linux keep trayIcon(): their trays are not one colour, and their
- * own items carry colour (#114). core/app-icons.js trayFor() makes that split.
- */
-/**
-
  * The macOS menu-bar glyph, in the two cuts (Abi, 2026-10-04: "Two cut shapes if
-
  * possible for the tray icon").
-
  *
-
  * A menu-bar extra is a one-colour TEMPLATE image: macOS draws it in the bar's own
-
  * colour, which is why the glyph cannot say tile with a colour. So the cut says it,
-
  * and the bar's appearance picks which cut:
-
  *
-
  *   light bar   the tile solid with the claw cut OUT of it, so the tile reads as the
-
  *               glyph and the claw as the bar showing through it.
-
- *   dark bar    the claw alone, SOLID, with no tile. A filled claw is
-
- *               what the bar inverts into a blob at 16px; the contour is what keeps
-
- *               the pincer's shape there.
-
+ *   dark bar    the tile solid with the claw drawn as an OUTLINE cut out of it, so
+ *               the pincer reads as a groove through the tile rather than a hole.
+ *               TRAY_OUTLINE is the width Abi picked over 6 and 8: a narrow line is
+ *               what keeps the pincer legible at menu-bar size (Abi, 2026-10-04:
+ *               "dark mode weight 4 is the winner").
  *
-
- * ★ Both are the same traced claw, outlines().tray, on the SAME canvas at the SAME
-
- * placement as the coloured trayIcon(): only the cut differs. Two renditions framed
-
- * to their own bounds would shift the glyph every time the bar changed appearance,
-
- * which is a fault nobody would think to look for by name.
-
+ * Both are the same traced claw, outlines().tray, on the SAME canvas and at the SAME
+ * placement: only the cut differs. Two renditions framed to their own bounds would
+ * shift the glyph every time the bar changed appearance, which is a fault nobody
+ * would think to look for by name.
  */
+const TRAY_OUTLINE = 4;   // artwork units; the dark cut's stroke width (Abi's pick)
 
 export function trayTemplate({ appearance = 'dark' } = {}) {
-
   const { tray: claw } = outlines();
-
   const place = 'translate(60 60) scale(0.78) translate(-60 -60)';
-
   const tile = 'x="' + TILE.x + '" y="' + TILE.y + '" width="' + TILE.size + '" height="' + TILE.size + '" rx="23"';
-
   const open = HEAD('macOS menu-bar template glyph, ' + appearance + ' cut') +
-
     '<svg viewBox="' + viewBox(true) + '" fill="none" xmlns="http://www.w3.org/2000/svg">';
-
   if (appearance === 'light') {
-
     return open +
-
       '<defs><mask id="cut"><rect ' + tile + ' fill="#ffffff"/>' +
-
       '<path d="' + claw + '" fill="#000000" transform="' + place + '"/></mask></defs>' +
-
       '<rect ' + tile + ' fill="#000000" mask="url(#cut)"/>' +
-
       '</svg>\n';
-
   }
-
   return open +
-
-    '<path d="' + claw + '" fill="#000000" transform="' + place + '"/>' +
-
+    '<defs><mask id="cut"><rect ' + tile + ' fill="#ffffff"/>' +
+    '<path d="' + claw + '" fill="none" stroke="#000000" stroke-width="' + TRAY_OUTLINE + '" stroke-linejoin="round" transform="' + place + '"/></mask></defs>' +
+    '<rect ' + tile + ' fill="#000000" mask="url(#cut)"/>' +
     '</svg>\n';
-
-}
-
-/** One tray icon per bucket and mode, the same set as the app icon, so the
- *  tray changes whenever the app icon does. */
-export function bucketTrays() {
-  return BUCKETS.flatMap((bucket) => {
-    const p = palettesFor(bucket);
-    return [
-      { bucket, mode: 'dark', svg: trayIcon({ mode: 'dark', palette: p.dark }) },
-      { bucket, mode: 'light', svg: trayIcon({ mode: 'light', palette: p.light }) },
-    ];
-  });
 }
 
 // The in-app mark's masks. White on transparent, framed to the tile alone
@@ -563,7 +458,6 @@ function iosContents(bucket) {
 export function generatedFiles() {
   const files = {
     'core/ui/assets/claw.svg': appIcon(),
-    'core/ui/assets/claw-tray.svg': trayIcon(),
     'core/ui/assets/claw-mark.css': markCss(),
     // The iOS app cannot import core/app-icons.js, so the buckets it chooses
     // between are written out for it, with samples its tests check against.
