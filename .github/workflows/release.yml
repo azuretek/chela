@@ -674,6 +674,66 @@ jobs:
             echo "$TAG has no release yet; the draft below creates one"
           fi
 
+      # ★ The dev channel's release body (issue #170).
+      #
+      # The stable path's body is release-please's changelog, and this job leaves
+      # it untouched. A dev build has no release-please draft, so after #167 it
+      # had no body at all: the action below was given none, so the only line a
+      # dev release carried was the iOS marker. This step supplies the two inputs
+      # the action needs to build a real one, and the stable path keeps
+      # release-please's.
+      #
+      # previous_tag, with generate_release_notes, is the standard machinery the
+      # old note said the action lacked: the action calls GitHub's
+      # releases/generate-notes with previous_tag_name set to this tag, so the
+      # range is the previous DEV release rather than the previous release of any
+      # kind. Dev builds ARE releases, so without it each body would summarize
+      # only the commit since the last dev build. The sections come from
+      # .github/release.yml, keyed on the type: label the title check applies.
+      #
+      # The body line is PREPENDED to the generated notes by the action, so a dev
+      # release opens with build <count> (<sha>), then the sections, the compare
+      # link, and the iOS marker the last step appends. Both values are read back
+      # out of the tag this run publishes, which the version job already formed.
+      # Nothing is recomputed: a second derivation is a second thing that can
+      # disagree with the tag.
+      - name: The dev release's own identity and range
+        id: dev
+        if: needs.version.outputs.tagged != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: v${{ needs.version.outputs.version }}
+        run: |
+          set -eo pipefail
+
+          # build <count> (<short sha>) from v0.0.1-dev.<count>.<sha>: the count
+          # is the Apple bundle build number and the sha is the first ten hex of
+          # the commit. Both are read back out of the tag, never recomputed. A
+          # shallow checkout with no count is left off rather than guessed.
+          bare="${TAG#v}"        # 0.0.1-dev.408.90d4823620
+          pre="${bare##*-}"       # dev.408.90d4823620
+          pre="${pre#dev.}"       # 408.90d4823620
+          line=""
+          if [[ "$pre" == *.* ]]; then
+            count="${pre%%.*}"
+            sha="${pre#*.}"
+            line="build ${count} (${sha:0:7})"
+          fi
+          printf 'body=%s\n' "$line" >> "$GITHUB_OUTPUT"
+
+          # The previous DEV release, newest first, this one excluded. Dev
+          # releases are pruned to the newest ten and their count only grows, so
+          # creation order is version order.
+          previous="$(gh release list --repo "$REPO" --limit 100 \
+            --json tagName,isPrerelease,createdAt \
+            --jq '[.[] | select(.isPrerelease and (.tagName | test("-dev\\.")))] | sort_by(.createdAt) | reverse | .[].tagName' \
+            | grep -vxF "$TAG" | head -n 1 || true)"
+          printf 'previous=%s\n' "$previous" >> "$GITHUB_OUTPUT"
+
+          echo "dev body line: ${line:-(none)}"
+          echo "previous dev release: ${previous:-(none, the whole history is the range)}"
+
       - name: Create the release as a draft
         uses: softprops/action-gh-release@v2
         with:
@@ -695,15 +755,20 @@ jobs:
           # GitHub never marks a prerelease as "Latest", so the front page keeps
           # pointing at the newest stable release on its own.
           prerelease: ${{ needs.version.outputs.tagged != 'true' }}
-          # ★ No notes are generated here (issue #167). The body is
-          # release-please's changelog, written onto the draft by the
-          # release-please workflow before this run starts, and this action
-          # leaves an existing body alone when it is given none. GitHub's own
-          # grouping is gone with it: it grouped by label rather than by what
-          # kind of change it was, and its range started at the previous
-          # release, so a stable release would have summarized only the last dev
-          # build.
+          # ★ How a release gets its body (issues #167 and #170). The stable
+          # path is release-please's changelog, written onto its draft before this
+          # run starts, and this action leaves an existing body alone when it is
+          # given none. The dev path has no release-please draft, so it builds a
+          # real body here from GitHub's own generated notes over the previous DEV
+          # tag, grouped by .github/release.yml.
           #
+          # generate_release_notes and previous_tag are false and empty on the
+          # stable path, so release-please's body survives untouched there. body
+          # is the dev build's identity line, which the action PREPENDS to the
+          # generated notes; the marker step below appends the iOS line last.
+          generate_release_notes: ${{ needs.version.outputs.tagged != 'true' }}
+          previous_tag: ${{ steps.dev.outputs.previous }}
+          body: ${{ steps.dev.outputs.body }}
           # A dev build has no release-please draft, so its body is just the iOS
           # marker the last step appends.
           # Draft, and the whole set goes on here, because this uploader is the
