@@ -343,6 +343,15 @@ html:not(.surface--native-sheet) body:not(.as-page):has(.scrim) { background: tr
    darken the sheet around the card. The page-as-window case keeps its own rule. */
 html.surface--native-sheet body:not(.as-page) .scrim { background: transparent; }
 
+/* ★ Inside the phone's native sheet the card IS the sheet's own surface: it starts
+   at the top of the page and keeps its height, so its top edge does not move when a
+   shorter tab is chosen or when About takes over from Settings (#172). Centred and
+   sized to its content, the card's top edge tracked its height: the About card sat
+   well below the Settings card, and selecting the shorter Behaviour tab pulled the
+   top down with it. align-items: stretch fills the scrim's content box, and the
+   card's own max-height: 100% keeps it inside the safe-area insets. */
+html.surface--native-sheet .scrim { align-items: stretch; }
+
 .modal {
   position: relative;
   z-index: 1;
