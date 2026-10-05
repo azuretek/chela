@@ -1800,6 +1800,17 @@ body:not(.frameless) .scrim { padding-top: 24px; }
   /* Text selection inside a drag region is a dead end anyway, and dragging a
      window by its title should not start a selection. */
   user-select: none;
+  /* ★ The text shares the ICON'S BOTTOM EDGE, and sits a shade below the strip's own
+     middle. Abi, 2026-10-04: "Maybe the bottom of the icon should align with the bottom
+     of our text, the text seems a little high too instead of centered". Boxes cannot
+     express this and that is why it went unnoticed: with both BOXES centred the text's
+     INK still reads high, because a font's ascent carries far more room than its
+     descender, so the glyphs ride above their line box's middle while the icon's
+     artwork fills its own. The rule is measured from DRAWN pixels by
+     desktop/scripts/prove-titlebar-icon.mjs: the two ink boxes must share a bottom
+     edge. A transform rather than padding, because padding would grow the box the flex
+     row centres and move the glyphs by half of what it adds. */
+  transform: translateY(2px);
 }
 
 /* The window controls (Windows only). Whether they exist at all is not decided
