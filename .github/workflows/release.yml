@@ -653,29 +653,25 @@ jobs:
       # published. So a client cannot resolve this version while its payload is
       # still arriving.
       #
-      # `getReleaseByTag` not seeing drafts is also why a leftover draft has to
-      # be cleared first: after a hard kill (runner death, or a cancellation
-      # that lands between these steps) the draft survives, and the action would
-      # look the tag up, miss it, and fail creating a second release for a tag
-      # that already has one. Only OUR draft for THIS tag is cleared, and a
-      # published release is left alone, which is what makes a rerun repair an
-      # existing release in place instead of starting over.
-      - name: Clear an abandoned draft for this tag
+      # ★ A draft for this tag is NOT cleared any more (issue #167). On the
+      # stable path it is release-please's own draft, and it carries the
+      # changelog that is this release's body, so deleting it would throw the
+      # tool's notes away. It is kept and this run attaches to it: the action
+      # below adds what it can see, and the verify step after it completes the
+      # set either way. The tag ref already exists on this path
+      # (release-please creates it with force-tag-creation), so a release for the
+      # tag resolving is the ordinary case rather than the miss the old clear
+      # guarded against.
+      - name: Keep any existing release for this tag
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: v${{ needs.version.outputs.version }}
         run: |
           set -uo pipefail
-          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "$TAG has no release yet"
-            exit 0
-          fi
-          draft="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')"
-          if [ "$draft" = 'true' ]; then
-            echo "clearing the abandoned draft for $TAG"
-            gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "$TAG already has a release; this run attaches to it and keeps its body"
           else
-            echo "$TAG already has a published release, and this run attaches to it"
+            echo "$TAG has no release yet; the draft below creates one"
           fi
 
       - name: Create the release as a draft
@@ -699,23 +695,17 @@ jobs:
           # GitHub never marks a prerelease as "Latest", so the front page keeps
           # pointing at the newest stable release on its own.
           prerelease: ${{ needs.version.outputs.tagged != 'true' }}
-          # The body is GitHub's own grouping of MERGED PULL REQUESTS, which is
-          # what it was meant to be all along. It had been switched to
-          # commit-derived notes, git-cliff over the conventional subjects,
-          # because this repo committed straight to main: there were no pull
-          # requests to group, and every body came out as the compare link and
-          # nothing else. Changes land as pull requests now, so the grouping has
-          # something to work on again, and the notes name the change someone
-          # reviewed rather than the commits it happened to arrive as.
+          # ★ No notes are generated here (issue #167). The body is
+          # release-please's changelog, written onto the draft by the
+          # release-please workflow before this run starts, and this action
+          # leaves an existing body alone when it is given none. GitHub's own
+          # grouping is gone with it: it grouped by label rather than by what
+          # kind of change it was, and its range started at the previous
+          # release, so a stable release would have summarized only the last dev
+          # build.
           #
-          # A deliberate gap, named rather than left to be found: GitHub starts
-          # the range at the previous release, and dev builds ARE releases, so a
-          # future STABLE release would get notes covering the last dev build
-          # rather than the whole cycle. Nothing builds a stable release yet,
-          # and the fix when one does is a start tag, `gh release create
-          # --notes-start-tag`, which this action has no input for: the stable
-          # path needs its own notes step the day it is real.
-          generate_release_notes: true
+          # A dev build has no release-please draft, so its body is just the iOS
+          # marker the last step appends.
           # Draft, and the whole set goes on here, because this uploader is the
           # one that reliably moves large files off a runner: it runs the 16
           # uploads concurrently and takes about 25 seconds over ~600 MB. It is

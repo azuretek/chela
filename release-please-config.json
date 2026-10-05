@@ -1,0 +1,31 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "node",
+  "include-v-in-tag": true,
+  "include-component-in-tag": false,
+  "bootstrap-sha": "54a6e3fb2beb0ef6290b29b2699fac40c55242e8",
+  "initial-version": "0.0.1",
+  "draft": true,
+  "force-tag-creation": true,
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "docs", "section": "Documentation" },
+    { "type": "refactor", "section": "Internal" },
+    { "type": "chore", "section": "Internal" },
+    { "type": "build", "section": "Internal" },
+    { "type": "ci", "section": "Internal", "hidden": true },
+    { "type": "test", "section": "Internal", "hidden": true }
+  ],
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true,
+      "extra-files": [
+        { "type": "json", "path": "desktop/package.json", "jsonpath": "$.version" }
+      ]
+    }
+  }
+}

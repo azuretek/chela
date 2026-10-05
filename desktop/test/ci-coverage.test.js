@@ -80,7 +80,18 @@ test('the desktop job runs the smoke, measure, the packed audit and every group'
 });
 
 test('the merge gate needs the desktop job and the iOS suites, read at the head commit', () => {
-  assert.match(ci, /\n {4}needs: \[changes, js, ios, desktop, mobile\]\n/, 'the merge gate does not need every job');
+  // ★ The gate must need EVERY job. Issue #167 added a title job to the gate and
+  // a list pinned here went stale without it, so derive the job ids from ci.yml
+  // instead of repeating them: a job that joins the workflow cannot be forgotten
+  // by the gate without failing this. The gate is the one job it cannot need.
+  const jobsSection = ci.slice(ci.indexOf('\njobs:\n'));
+  const jobIds = [...jobsSection.matchAll(/\n {2}([a-z][a-z0-9-]*):\n/g)]
+    .map((m) => m[1])
+    .filter((id) => id !== 'gate');
+  const needsMatch = ci.match(/\n {4}needs: \[([^\]]+)\]\n/);
+  assert.ok(needsMatch, 'the merge gate lists no needs');
+  const needs = needsMatch[1].split(',').map((s) => s.trim());
+  assert.deepEqual(needs.slice().sort(), jobIds.slice().sort(), 'the merge gate does not need every job');
   const mobile = ci.slice(ci.indexOf('\n  mobile:\n'), ci.indexOf('\n  gate:\n'));
   assert.match(mobile, /uses: \.\/\.github\/workflows\/platforms-gate\.yml/);
   assert.match(mobile, /platform: chela-mobile pipeline/);
