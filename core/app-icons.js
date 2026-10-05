@@ -245,19 +245,17 @@ export const iconsAsIco = (platform) => platform === 'win32';
 export const iconFile = (bucket, mode, { full = false, ico = false } = {}) => (ico
   ? `icons/${bucket.id}-${mode === 'light' ? 'light' : 'dark'}.ico`
   : `icons/${bucket.id}-${mode === 'light' ? 'light' : 'dark'}${full ? '-full' : ''}.png`);
-/** Where a bucket's tray icon is in one mode; Electron finds the `@2x` beside
- *  it. The tray shows the app icon itself, small, so it has one per mode exactly
- *  as the app icon does, and changes with it (#114). */
-export const trayFile = (bucket, mode) => `icons/tray-${bucket.id}-${mode === 'light' ? 'light' : 'dark'}.png`;
 /** The macOS menu-bar glyph (#139), relative to the desktop's assets directory,
- *  with its `@2x` beside it. One file for every bucket and mode: it is a
+ *  with its @2x beside it. One file for every bucket and mode: it is a
  *  template image, which macOS draws in the menu bar's own colour, so there is
- *  no palette in it for a theme or an icon choice to change. */
+ *  no palette in it for a theme or an icon choice to change. It is the DARK
+ *  bar's cut; TRAY_TEMPLATE_LIGHT is the light one. */
 export const TRAY_TEMPLATE = 'trayTemplate.png';
 /** The menu-bar glyph for a LIGHT bar: the tile solid with the claw cut out of it,
- *  where TRAY_TEMPLATE is the claw's own outline for a dark bar. Abi, 2026-10-04:
- *  "Two cut shapes if possible for the tray icon". Both are template images, so
- *  macOS paints each in the bar's own colour and the CUT is the whole difference. */
+ *  where TRAY_TEMPLATE is the tile with the claw drawn as an outline cut out of
+ *  it. Abi, 2026-10-04: "Two cut shapes if possible for the tray icon". Both are
+ *  template images, so macOS paints each in the bar's own colour and the CUT is
+ *  the whole difference. */
 export const TRAY_TEMPLATE_LIGHT = 'trayTemplateLight.png';
 
 /** Whether a platform's tray icon is a template image. macOS draws every
@@ -267,18 +265,16 @@ export const TRAY_TEMPLATE_LIGHT = 'trayTemplateLight.png';
  *  the app icon itself, small, in its own colours (#114). */
 export const trayIsTemplate = (platform) => platform === 'darwin';
 
-/** What the tray draws on a platform: the template glyph on macOS, otherwise
- *  `tray`, the coloured file for the icon showing (choose().tray). main.js
- *  sets the image's template flag from `template`, so the file and the flag
+/** What the tray draws on a platform. macOS draws the one-colour template cut
+ *  the bar's appearance picks. Windows and Linux draw the app's own icon, the
+ *  same edge-to-edge file the title strip draws, rather than a second small
+ *  rendition of the tile (#155): the 'appIcon' argument is that file, and main.js
+ *  sets the image's template flag from 'template', so the file and the flag
  *  cannot disagree. */
-/** `darkBar` is the macOS MENU BAR's appearance, not the app's theme: a template
- *  image is painted by the bar, and this app can be pinned to the other theme. The
- *  two cuts and their files are paired here so a caller cannot take one without the
- *  other (see the artwork module for what each cut draws). */
-export function trayFor(platform, tray, { darkBar = true } = {}) {
+export function trayFor(platform, appIcon, { darkBar = true } = {}) {
   return trayIsTemplate(platform)
     ? { file: darkBar ? TRAY_TEMPLATE : TRAY_TEMPLATE_LIGHT, template: true }
-    : { file: tray, template: false };
+    : { file: appIcon, template: false };
 }
 
 /** The iOS alternate icon for a bucket in one mode. Every bucket has one per
@@ -293,7 +289,7 @@ export const alternateIconName = (bucket, mode) => `AppIcon-${bucket.id}-${mode 
 export function choose(accent, mode, { full = false, ico = false, choice = AUTO } = {}) {
   const bucket = bucketForChoice(choice, accent);
   const m = mode === 'light' ? 'light' : 'dark';
-  return { bucket, mode: m, file: iconFile(bucket, m, { full, ico }), tray: trayFile(bucket, m) };
+  return { bucket, mode: m, file: iconFile(bucket, m, { full, ico }) };
 }
 
 /** What the iOS app reads, as data: the buckets, the neutral threshold, and

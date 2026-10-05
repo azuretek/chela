@@ -106,8 +106,10 @@ test('the tray and the strip icon open ONE menu', () => {
 test('the strip shows the icon chosen for the window, from the same choice', () => {
   const apply = fnBody(main, 'applyAppIcon');
   assert.match(apply, /const choice = appIcons\.choose\(/);
-  assert.match(apply, /applyStripIcon\(appIcons\.iconFile\(choice\.bucket, choice\.mode, \{ full: true \}\)\)/,
-    'the strip\'s file comes from the window\'s own choice, so the two cannot differ');
+  assert.match(apply, /const stripIcon = appIcons\.iconFile\(choice\.bucket, choice\.mode, \{ full: true \}\);/,
+    "the strip's file is not derived from the window's own choice");
+  assert.match(apply, /applyStripIcon\(stripIcon\)/,
+    'the strip is not handed the file the choice resolved, so the two could differ');
   const create = fnBody(main, 'createStrip');
   assert.match(create, /appliedStripIconFile = null;\s*applyAppIcon\(\);/,
     'a freshly loaded strip is given the icon, whatever the last document had');

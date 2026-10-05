@@ -2,7 +2,7 @@
 //
 // One mark, one generator, every platform. This file is the repo's icon
 // pipeline rather than the desktop's: the artwork is generated ONCE here, by
-// scripts/artwork.mjs, written out as core/ui/assets/claw.svg, claw-tray.svg and
+// scripts/artwork.mjs, written out as core/ui/assets/claw.svg and
 // claw-mark.css, and rasterised into the desktop's PNGs and into the iOS app
 // icon, so none of them can drift. Copying a bitmap from one platform to another would be a second
 // owner of the artwork, and the two copies disagree the first time only one of
@@ -11,14 +11,11 @@
 // workflow already runs that one from this directory.
 //
 // Two sources, not one. core/ui/assets/claw.svg is the application icon, a tile with
-// a window and a title bar in it. core/ui/assets/claw-tray.svg is the same icon
-// drawn for 16 physical pixels: the same tile and palette, with the title bar,
-// the floor and the hairline left out and the claw filled rather than lined,
-// because at that size those are under a pixel and turn to mush (#114).
-// Rendering one file at both sizes is what forces artwork to be timid at large
-// sizes and illegible at small ones. The macOS menu-bar glyph (#139) is a third
-// drawing, artwork.mjs trayTemplate(): the same tray claw with no tile and no
-// colour, rasterised straight from the generator like the edge-to-edge icons.
+// a window and a title bar in it, and it is what Windows and Linux draw in the tray
+// too, edge to edge, rather than a second small drawing (#155). The macOS menu-bar
+// glyph is two more drawings, artwork.mjs trayTemplate(): the tile with the claw cut
+// out for a light bar, and the tile with the claw as an outline cut out for a dark
+// one, rasterised straight from the generator like the edge-to-edge icons.
 //
 // The outputs are COMMITTED to the repo on purpose: sharp is the only heavy
 // native dependency here, and baking the PNGs in keeps `npm start` and the
@@ -54,8 +51,8 @@ import sharp from 'sharp';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { generatedFiles, bucketIcons, bucketTrays, iosIconFile, iosAltIconFile, appIcon, trayTemplate } from './artwork.mjs';
-import { iconFile, trayFile, TRAY_TEMPLATE, TRAY_TEMPLATE_LIGHT } from '../../core/app-icons.js';
+import { generatedFiles, bucketIcons, iosIconFile, iosAltIconFile, appIcon, trayTemplate } from './artwork.mjs';
+import { iconFile, TRAY_TEMPLATE, TRAY_TEMPLATE_LIGHT } from '../../core/app-icons.js';
 import { WINDOWS_SIZES, WINDOW_SIZES, encodeIco, decodeIco } from './ico.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));   // desktop/
@@ -78,7 +75,6 @@ for (const [file, text] of Object.entries(generated)) {
 // A Buffer rather than a string: sharp reads a string as a filename.
 const artwork = {
   app: Buffer.from(generated['core/ui/assets/claw.svg'], 'utf8'),
-  tray: Buffer.from(generated['core/ui/assets/claw-tray.svg'], 'utf8'),
 };
 
 // One entry per file that ships. `file` is relative to the repo root rather
@@ -96,8 +92,6 @@ const targets = [
   { file: 'desktop/src/assets/icon.png', size: 512, svg: artwork.app, treatment: 'canvas' },
   // The Linux window icon main.js sets before the themed one arrives.
   { file: 'desktop/src/assets/icon-full.png', size: 512, svg: Buffer.from(appIcon({ full: true }), 'utf8'), treatment: 'canvas' },
-  { file: 'desktop/src/assets/tray.png', size: 16, svg: artwork.tray, treatment: 'canvas' },
-  { file: 'desktop/src/assets/tray@2x.png', size: 32, svg: artwork.tray, treatment: 'canvas' },
   // The macOS menu-bar glyph (#139), a template image: the claw alone, black on
   // transparent, which macOS recolours to the bar. 16 pt with its @2x, the size
   // a menu-bar extra is drawn at. The `Template` suffix is Electron's own cue as
@@ -128,11 +122,6 @@ for (const { bucket, mode, svg } of bucketIcons()) {
 // Linux (core/app-icons.js fillsSquare). The macOS Dock keeps the pair above.
 for (const { bucket, mode, svg } of bucketIcons({ full: true })) {
   targets.push({ file: 'desktop/src/assets/' + iconFile(bucket, mode, { full: true }), size: 512, svg: Buffer.from(svg, 'utf8'), treatment: 'canvas' });
-}
-for (const { bucket, mode, svg } of bucketTrays()) {
-  const file = 'desktop/src/assets/' + trayFile(bucket, mode);
-  targets.push({ file, size: 16, svg: Buffer.from(svg, 'utf8'), treatment: 'canvas' });
-  targets.push({ file: file.replace(/\.png$/, '@2x.png'), size: 32, svg: Buffer.from(svg, 'utf8'), treatment: 'canvas' });
 }
 for (const { bucket, mode, svg } of bucketIcons({ square: true })) {
   if (bucket.primary) targets.push({ file: 'mobile/Chela/Assets.xcassets/' + iosIconFile(bucket, mode), size: 1024, svg: Buffer.from(svg, 'utf8'), treatment: 'square' });
