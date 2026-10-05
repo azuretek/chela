@@ -1,0 +1,24 @@
+# How GitHub groups a dev release's generated notes, by kind of change (issue #170).
+#
+# scripts/check-pr-title.mjs applies the pull request's `type: <type>` label from
+# its title, and these categories read that label, so the kind of change is
+# decided in one place. The last category is GitHub's documented catch-all, so a
+# change that carries no type label (an older pull request, or a new type) still
+# appears rather than being dropped from the notes.
+changelog:
+  categories:
+    - title: Features
+      labels:
+        - 'type: feat'
+    - title: Fixes
+      labels:
+        - 'type: fix'
+    - title: Performance
+      labels:
+        - 'type: perf'
+    - title: Documentation
+      labels:
+        - 'type: docs'
+    - title: Internal
+      labels:
+        - '*'

@@ -383,18 +383,32 @@ jobs:
   # release changelog is grouped from. A one-word label reads as a label, not a
   # change a person can understand a release from, so this refuses one. It runs
   # on every pull request, whatever it touched, and the merge gate needs it.
+  #
+  # ★ Since issue #170 it also applies the `type: <type>` label from the SAME
+  # parse, which is what groups a dev release's generated notes by kind of change
+  # (.github/release.yml). One place decides the kind of change, and a title the
+  # check refuses gets no label because the label step never runs for it.
   title:
     name: PR title reads as a sentence
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    # The token writes the type label, so it needs issues and pull-requests
+    # write; contents: read is for the checkout. A refused title still fails the
+    # step before any label is applied.
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Check the pull request title
+      - name: Check the pull request title and apply its type label
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/check-pr-title.mjs "$PR_TITLE"
 
   # ★ THE GATE. Always runs, always reports, so branch protection has one check to
