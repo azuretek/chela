@@ -15,6 +15,16 @@
 # timeout of its own and the emulator never answered. Under `set -e` an unbounded wait
 # is a step that says nothing at all about the app, which is the worst shape a CI
 # failure can take.
+#
+# ★ The instrumented tests that run after this judge the screen by its pixels, so the
+# screen this script hands them must be OURS. The wait for our window to take focus and
+# the close-dialogs broadcast below are this repo's own answer to a launcher ANR dialog
+# holding the screen (issue #149), and the sibling app borrowed the shape. Issue #174
+# adds the two settings the run depends on, each READ BACK rather than trusted: system
+# error (crash and ANR) dialogs are hidden so one cannot cover the tests, and the three
+# animation scales are asserted zero so a settle capture is never racing a transition.
+# A setting that silently did not take fails here, in one line, rather than in a pixel
+# test far from its cause.
 
 set -euo pipefail
 
@@ -105,6 +115,29 @@ if ! timeout 300 adb wait-for-device; then
   exit 1
 fi
 wait_for 60 2 "the emulator finished booting" boot_completed
+
+# The screen the instrumented tests judge must be ours, so the run depends on the system
+# not raising an error dialog and on the animations being off. Both are applied here,
+# before any capture, and read back: a setting that silently did not take fails here, in
+# one line, rather than in a pixel test far from its cause. The emulator action sets the
+# animation scales too (disable-animations in the workflow); asserting them makes the
+# dependency explicit, so turning it off cannot pass unnoticed.
+echo "== preparing the device's surface"
+adb_bounded shell settings put global hide_error_dialogs 1
+hide="$(adb_bounded shell settings get global hide_error_dialogs 2>/dev/null | tr -d '\r')"
+if [ "$hide" != "1" ]; then
+  echo "error: hide_error_dialogs is '$hide', not 1; a system dialog could cover the tests" >&2
+  exit 1
+fi
+for scale in window_animation_scale transition_animation_scale animator_duration_scale; do
+  value="$(adb_bounded shell settings get global "$scale" 2>/dev/null | tr -d '\r')"
+  case "$value" in
+    0|0.0|0.00) ;;
+    *)
+      echo "error: $scale is '$value', not 0; a settle capture could race an animation" >&2
+      exit 1 ;;
+  esac
+done
 
 echo "== installing a fresh copy"
 adb_bounded uninstall "$PKG" >/dev/null 2>&1 || true
