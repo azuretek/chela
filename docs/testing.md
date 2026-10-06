@@ -70,3 +70,29 @@ Which is the whole reason the smoke exists, and worth repeating here: no exit
 code, no "success" line and no passing suite says an Electron app boots, a window
 appears, or a page renders. Those are separate checks, and `desktop/test/`
 plus `desktop/scripts/dump-overlays.js` are where they live.
+
+## A pixel test names the surface it judged
+
+**★ A capture is judged only after the screen is shown to be the app's** (issue #174).
+A screenshot cannot say whether the frame it holds is the app or a system surface drawn
+over it, and both pixel lanes have been bitten by the difference: a cold Android
+emulator's launcher ANR dialog holds focus over the app and fails every pixel test that
+blames the page, and on iOS a system surface winning the foreground arrives as
+"Failed to get screenshot: Timed out while requesting screenshot". So the lane asks
+first.
+
+- Android: `android/scripts/boot-proof.sh` hides system error dialogs
+  (`settings put global hide_error_dialogs 1`), reads the setting back so a silent no-op
+  fails there, asserts the three animation scales are zero, waits bounded for our window
+  to hold input focus, and clears another app's ANR dialog with the system's close-dialogs
+  broadcast.
+- iOS: `mobile/ChelaUITests/SystemSurface.swift` requires the app to be frontmost and no
+  SpringBoard alert to be up before `SheetBandUITests` and `SurfacesHandoffUITests` read
+  a pixel; a covered screen fails naming the surface, and the same suffix is appended to a
+  capture comparison failure.
+
+Why: the failure mode is not a broken test, it is an environment fault accusing the app,
+and every occurrence costs a re-run to clear. Held by `desktop/test/surface-guard.test.js`
+"the android boot script prepares the device surface and reads it back" and "a system
+surface is named before a pixel is judged on the iOS lane", which fail if a rewrite drops
+either half.
