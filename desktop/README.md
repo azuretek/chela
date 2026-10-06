@@ -510,7 +510,7 @@ verify something the dev run cannot show, such as code signing or the updater.
 **Verifying a hosted widget preview.** Widget previews render in a sandboxed
 iframe served from a separate origin than the Control UI. Over a Tailscale
 tunnel that origin must be routed explicitly, or the preview fails with "Widget
-sandbox host is unavailable". See [docs/sandbox-origin.md](docs/sandbox-origin.md)
+sandbox host is unavailable". See [docs/SANDBOX-ORIGIN.md](docs/SANDBOX-ORIGIN.md)
 for the setup this machine uses.
 
 **Building for Windows** takes roughly half an hour on a recent laptop, and must
@@ -523,13 +523,13 @@ built installer silently with `/S`.
 ## The local gate
 
 What the gate is, what it covers and what CI cannot check is shared:
-[../docs/testing.md](../docs/testing.md). Locally it runs `npm run verify`
+[../docs/TESTING.md](../docs/TESTING.md). Locally it runs `npm run verify`
 in `desktop/`, and it is advisory: `git push --no-verify` skips it, and
 a fresh clone has no hook until `core.hooksPath` points at it.
 ## Builds and releases
 
 The version scheme, the triggers, what a release must carry and how it is
-distributed are shared: [../docs/release.md](../docs/release.md). What is specific
+distributed are shared: [../docs/RELEASE.md](../docs/RELEASE.md). What is specific
 to this interface:
 
 - CI passes its decision down as `CLAW_BUILD_VERSION`, which
@@ -587,4 +587,4 @@ pull requests are welcome; slow replies are likely.
 **Not affiliated with the OpenClaw project.** This is an independent client for
 its Control UI.
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](../LICENSE).
