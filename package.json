@@ -1,6 +1,6 @@
 {
   "name": "chela",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "First-class monorepo root for the Chela clients: core (shared rules), desktop (Electron), mobile (iOS). No platform is the root; each is a peer.",
   "private": true,
   "author": "Abi Renhart",
