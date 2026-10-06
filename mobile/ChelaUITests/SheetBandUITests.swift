@@ -64,6 +64,9 @@ final class SheetBandUITests: XCTestCase {
     }
 
     private func band(_ app: XCUIApplication, _ shot: String) throws -> RGB {
+        // The screen must be the app's before a pixel is read (issue #174), so a system
+        // surface is named here instead of arriving as a colour that does not match.
+        SystemSurface.requireOurs(app)
         let image = app.screenshot()
         let name = "band-\(appearance)-\(shot)"
         let attachment = XCTAttachment(screenshot: image)
@@ -102,15 +105,17 @@ final class SheetBandUITests: XCTestCase {
         XCTAssertLessThanOrEqual(
             colour.distance(to: palette), tolerance,
             "\(appearance), no sheet: the strip above the page is \(colour), and the palette's --bg is \(palette)"
+            + SystemSurface.failureSuffix(app)
         )
         return colour
     }
 
-    private func assertBand(_ seen: RGB, is expected: RGB, _ what: String,
+    private func assertBand(_ app: XCUIApplication, _ seen: RGB, is expected: RGB, _ what: String,
                             file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertLessThanOrEqual(
             seen.distance(to: expected), tolerance,
-            "\(what), \(appearance): the band above the sheet is \(seen), and the strip around the page is \(expected)",
+            "\(what), \(appearance): the band above the sheet is \(seen), and the strip around the page is \(expected)"
+            + SystemSurface.failureSuffix(app),
             file: file, line: line
         )
     }
@@ -125,7 +130,7 @@ final class SheetBandUITests: XCTestCase {
         XCTAssertTrue(app.webViews.buttons.matching(aboutButton).firstMatch.waitForExistence(timeout: 30),
                       "the settings surface never drew over the fixture")
         sleep(2)
-        assertBand(try band(app, "settings"), is: expected, "settings")
+        assertBand(app, try band(app, "settings"), is: expected, "settings")
     }
 
     func testTheBandAboveAboutIsThePageBackground() throws {
@@ -134,7 +139,7 @@ final class SheetBandUITests: XCTestCase {
         XCTAssertTrue(app.webViews.staticTexts["Updates"].waitForExistence(timeout: 30),
                       "About never came up over Settings")
         sleep(2)
-        assertBand(try band(app, "about"), is: expected, "about")
+        assertBand(app, try band(app, "about"), is: expected, "about")
     }
 
     /// A tap on the band above the sheet, below the status bar.
@@ -244,7 +249,7 @@ final class SheetBandUITests: XCTestCase {
         XCTAssertTrue(app.webViews.buttons.matching(aboutButton).firstMatch.waitForExistence(timeout: 30),
                       "the settings surface never drew over the fixture")
         sleep(2)
-        assertBand(try band(app, "follow-before"), is: first, "settings, before the theme changed")
+        assertBand(app, try band(app, "follow-before"), is: first, "settings, before the theme changed")
         // The flip lands 14 seconds after the page loaded: read until the band has
         // moved, bounded, so a band that never follows fails rather than hangs.
         var last = first
@@ -253,7 +258,7 @@ final class SheetBandUITests: XCTestCase {
             if last.distance(to: second) <= tolerance { break }
             sleep(1)
         }
-        assertBand(last, is: second, "settings, after the theme changed")
+        assertBand(app, last, is: second, "settings, after the theme changed")
     }
 }
 

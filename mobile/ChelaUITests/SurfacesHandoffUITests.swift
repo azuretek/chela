@@ -64,10 +64,14 @@ final class SurfacesHandoffUITests: XCTestCase {
     }
 
     private func screen(_ app: XCUIApplication, _ name: String) -> CGImage {
+        // The screen must be the app's before a pixel is read (issue #174), so a system
+        // surface is named here instead of arriving as a screenshot timeout or a bitmap
+        // that does not match the fixture.
+        SystemSurface.requireOurs(app)
         let image = app.screenshot().image
         if let shots { try? image.pngData()?.write(to: shots.appendingPathComponent(name + ".png")) }
         guard let cg = image.cgImage else {
-            XCTFail("the screenshot has no bitmap to read")
+            XCTFail("the screenshot has no bitmap to read" + SystemSurface.failureSuffix(app))
             return CGRect(x: 0, y: 0, width: 1, height: 1).toImage()!
         }
         return cg
@@ -170,7 +174,7 @@ final class SurfacesHandoffUITests: XCTestCase {
         // under the veil this read 0.488 in light and 0.684 in dark (#128).
         // Named as an activity so the reading is in the run's log when it passes too.
         XCTContext.runActivity(named: message) { _ in
-            XCTAssertEqual(composite, sharedDim, accuracy: 0.06, message)
+            XCTAssertEqual(composite, sharedDim, accuracy: 0.06, message + SystemSurface.failureSuffix(sheeted))
         }
     }
 
@@ -209,7 +213,8 @@ final class SurfacesHandoffUITests: XCTestCase {
         let dimOnly = 255 * (1 - sharedDim)
         XCTAssertLessThan(best, dimOnly * 0.8,
                           "the stripes behind the sheet keep their contrast (\(best) of \(dimOnly)), "
-                          + "so what is over the interface is a dim and not a blur")
+                          + "so what is over the interface is a dim and not a blur"
+                          + SystemSurface.failureSuffix(sheeted))
     }
 
     // MARK: - The handoff
