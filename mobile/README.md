@@ -223,7 +223,7 @@ really holds an icon of that name.
 ## Testing and releasing
 
 The triggers, the version table, the signing story and the iOS install path are
-shared: [../docs/release.md](../docs/release.md). What is specific to this
+shared: [../docs/RELEASE.md](../docs/RELEASE.md). What is specific to this
 interface:
 
 - The whole pipeline is `.github/workflows/mobile-pipeline.yml`, one file:

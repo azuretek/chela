@@ -6,9 +6,9 @@ one interface is written once here.
 
 | Document | Answers |
 |---|---|
-| [layout.md](layout.md) | How the trees are arranged, what belongs in `core/` and what belongs to an interface, and where shared tooling lives. |
-| [release.md](release.md) | What a release is, what it must carry, how a build is versioned, and how each interface distributes it. |
-| [testing.md](testing.md) | What runs where: the unit suites, the parity fixtures, the local push gate, and what CI cannot check. |
+| [DESIGN.md](DESIGN.md) | How the trees are arranged, what belongs in `core/` and what belongs to an interface, and where shared tooling lives. |
+| [RELEASE.md](RELEASE.md) | What a release is, what it must carry, how a build is versioned, and how each interface distributes it. |
+| [TESTING.md](TESTING.md) | What runs where: the unit suites, the parity fixtures, the local push gate, and what CI cannot check. |
 
 Interface-specific documentation stays with its interface:
 `core/README.md` for the shared rules themselves, `desktop/README.md`
