@@ -337,18 +337,23 @@ jobs:
       # rebuilding them, and the restore-key below turns a commit that does change
       # them into an incremental build rather than a clean one.
       #
-      # ★ The source hash deliberately names only what this app compiles: `Chela`
-      # and `ChelaTests` are its own tree, and `core/spec` plus `core/ui` are the
-      # shared files project.yml bundles into it. `mobile/**` itself is NOT the
-      # pattern, because the generated project is restored into `mobile/`
-      # Chela.xcodeproj by the step below and would then hash differently on every
-      # run, which is how a cache key becomes one that never hits.
+      # ★ The source hash must name every tree this pipeline compiles: `Chela`,
+      # `ChelaTests` and `ChelaUITests` are the project's own trees, and `core/spec`
+      # plus `core/ui` are the shared files project.yml bundles into the app.
+      # `ChelaUITests` was missing here, and the pipeline compiles that target in the
+      # same build, so a new file under it left the key unchanged, a cache hit skipped
+      # xcodegen, and the restored project had no such file: the compile failed with a
+      # cannot-find-in-scope error for a file that was right there in the checkout
+      # (issue #176). `mobile/**` itself is still NOT the pattern, because the
+      # generated project is restored into `mobile/` Chela.xcodeproj by the step
+      # below and would then hash differently on every run, which is how a cache key
+      # becomes one that never hits.
       - name: Cache the generated Xcode project
         id: xcodeproj
         uses: actions/cache@v4
         with:
           path: mobile/Chela.xcodeproj
-          key: xcodeproj-${{ hashFiles('mobile/project.yml') }}-${{ hashFiles('mobile/Chela/**', 'mobile/ChelaTests/**') }}
+          key: xcodeproj-${{ hashFiles('mobile/project.yml') }}-${{ hashFiles('mobile/Chela/**', 'mobile/ChelaTests/**', 'mobile/ChelaUITests/**') }}
 
       # The compile products. `build-for-testing` below makes the app and the test
       # bundle together and the test step runs exactly those products with
@@ -362,7 +367,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/DerivedData
-          key: deriveddata-${{ matrix.ios }}-${{ hashFiles('pnpm-lock.yaml', 'mobile/project.yml') }}-${{ hashFiles('mobile/Chela/**', 'mobile/ChelaTests/**', 'core/spec/**', 'core/ui/**') }}
+          key: deriveddata-${{ matrix.ios }}-${{ hashFiles('pnpm-lock.yaml', 'mobile/project.yml') }}-${{ hashFiles('mobile/Chela/**', 'mobile/ChelaTests/**', 'mobile/ChelaUITests/**', 'core/spec/**', 'core/ui/**') }}
           restore-keys: |
             deriveddata-${{ matrix.ios }}-${{ hashFiles('pnpm-lock.yaml', 'mobile/project.yml') }}-
             deriveddata-${{ matrix.ios }}-
