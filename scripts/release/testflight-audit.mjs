@@ -13,7 +13,7 @@
 // line the repository is publishing. A live build on any other line is stranded, and
 // this script reports it rather than acting on it, because expiring a build is
 // one-way and Apple offers no deletion at all. The choice is a person's; see
-// docs/release.md, "TestFlight builds past the current line".
+// docs/RELEASE.md, "TestFlight builds past the current line".
 //
 // ★ The line is NOT the newest version TestFlight holds, and not the highest one
 // either. A line can move DOWN, which is what happened on 2026-10-01 when the

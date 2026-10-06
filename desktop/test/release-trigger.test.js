@@ -132,7 +132,7 @@ test('the non-release list covers what the rule names, and nothing else does', (
     'README.md',
     'mobile/README.md',
     '.github/workflows/release.yml',
-    '.github/pull_request_template.md',
+    '.github/PULL_REQUEST_TEMPLATE.md',
     '.githooks/pre-commit',
     'scripts/mobile.mjs',
     'scripts/release/changes.mjs',

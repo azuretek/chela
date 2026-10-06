@@ -2,8 +2,8 @@
 
 Chela is one project with a shared core and one interface per form
 factor, so a change usually belongs in one place and is consumed everywhere else.
-Where things belong is [layout.md](layout.md); what to run before you push is
-[testing.md](testing.md).
+Where things belong is [DESIGN.md](DESIGN.md); what to run before you push is
+[TESTING.md](TESTING.md).
 
 ## How a change lands
 
@@ -20,7 +20,7 @@ tests are not negotiable.
 
 A pull request body carries three sections, which is what the reason for them
 does not depend on: the problem, the change, and the test with its output.
-`.github/pull_request_template.md` is the shape, and a commit body that
+`.github/PULL_REQUEST_TEMPLATE.md` is the shape, and a commit body that
 carries the same three things is a good commit body.
 
 **The pull request title is the changelog line.** release-please groups each
@@ -29,7 +29,7 @@ the changelog is built from and it has to read as a sentence, not a label:
 `type(scope): a sentence`, where `type` is one of `feat`, `fix`, `perf`,
 `refactor`, `docs`, `chore`, `test`, `build`, `ci` or `revert`. CI refuses a
 label-shaped title (`fix: bug`) on every pull request. See
-[release.md](release.md#release-notes-and-the-version-bump).
+[RELEASE.md](RELEASE.md#release-notes-and-the-version-bump).
 
 ## What "the test" means
 

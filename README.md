@@ -38,9 +38,9 @@ rendered pages, a push runs the desktop suite and boots the app. Install them wi
 - **Using or building the desktop app:** [`desktop/README.md`](desktop/README.md).
 - **Building the iOS client:** [`mobile/README.md`](mobile/README.md).
 - **How the shared rules work and how to change one:** [`core/README.md`](core/README.md).
-- **How a build becomes a release:** [`docs/release.md`](docs/release.md).
-- **What to run before pushing:** [`docs/testing.md`](docs/testing.md).
-- **Where something belongs:** [`docs/layout.md`](docs/layout.md).
+- **How a build becomes a release:** [`docs/RELEASE.md`](docs/RELEASE.md).
+- **What to run before pushing:** [`docs/TESTING.md`](docs/TESTING.md).
+- **Where something belongs:** [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ## Why a shared core
 
