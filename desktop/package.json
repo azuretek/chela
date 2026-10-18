@@ -1,7 +1,7 @@
 {
   "name": "chela-desktop",
   "productName": "Chela",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Chela - a desktop shell for the OpenClaw Control UI",
   "type": "module",
   "main": "src/main.js",
