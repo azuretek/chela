@@ -3,37 +3,40 @@ import WebKit
 
 @testable import Chela
 
-/// The safe-area inset the app supplies to the Control UI, so the page insets its
-/// content while its \`100dvh\` surfaces fill the whole screen.
+/// The standalone sizing the app supplies to the Control UI, so the page's
+/// `100dvh` surfaces fill the whole screen while the page insets its own content.
 ///
 /// WHY THIS EXISTS. The web view covers the whole screen (see
-/// \`ContentView.controlUiPage\`), which is what lets the Control UI's slide-open
+/// `ContentView.controlUiPage`), which is what lets the Control UI's slide-open
 /// navigation drawer reach the top: reported 2026-09-19, "when the menu bar slides
 /// open it doesn't follow all the way up the screen", because the page had been
-/// laid out inside the safe area, so \`100dvh\` was the safe height and the drawer
-/// stopped at the status bar. Covering the whole screen fixes the drawer but would
-/// draw the page's content under the status bar, which is the fault the previous
-/// arrangement was there to avoid, so \`WebView.safeAreaScript\` sets the standalone
-/// body inset the Control UI ships for itself, applied because a WKWebView cannot
-/// report the \`display-mode: standalone\` that would apply it.
+/// laid out inside the safe area, so `100dvh` was the safe height and the drawer
+/// stopped at the status bar.
+///
+/// The safe-area INSET is not this client's to apply. The page insets its own
+/// content once, on `openclaw-app`, whose `padding` reads its own
+/// `--safe-area-*` tokens (upstream #160388, "one safe-area owner for every
+/// in-flow route"). The client adding a body padding of the same tokens counted
+/// the inset twice and pushed the Control UI's header a second status bar down the
+/// screen (reported 2026-10-18: about 123pt of empty band on an iPhone whose inset
+/// is 62pt). So the rule installed here carries sizing and nothing that insets.
 ///
 /// Two claims, both measured on a rendered page rather than asserted in prose:
 ///
-///   - the script sets the page's OWN \`:root\` safe-area tokens as body padding, so
-///     content insets by the real device insets and this couples to no class of the
-///     Control UI's;
-///   - it sizes \`html, body\` to \`100dvh\`, so the shell fills the screen the drawer
-///     slides up, rather than the safe height.
+///   - the script installs no padding at all, so the page's own `openclaw-app`
+///     inset cannot be counted twice;
+///   - it sizes `html, body` to `100dvh` and pins the body, so the shell fills the
+///     screen the drawer slides up, rather than the safe height.
 ///
-/// The device insets are simulated by giving the page concrete \`--safe-area-*\`
+/// The device insets are simulated by giving the page concrete `--safe-area-*`
 /// values (a test host has no real safe area), which is exactly the substitution
-/// WebKit performs from a real inset: the tokens are \`env(safe-area-inset-*, 0px)\`
-/// at \`:root\`, so a page with real insets resolves them to the same place this
+/// WebKit performs from a real inset: the tokens are `env(safe-area-inset-*, 0px)`
+/// at `:root`, so a page with real insets resolves them to the same place this
 /// test reads.
 final class WebViewSafeAreaTests: XCTestCase {
     // MARK: - The rule the script sets
 
-    func testTheScriptSetsTheStandaloneBodyInsetFromThePagesOwnTokens() {
+    func testTheScriptSizesAndPinsTheShellWithoutInsettingTheBody() {
         // Assert on the CSS the injector installs, not the injector's JS: the
         // "names no Control UI class" invariant is a property of the CSS selectors,
         // and a blanket "no dot" check on the JS would trip over its own DOM calls
@@ -43,21 +46,22 @@ final class WebViewSafeAreaTests: XCTestCase {
         XCTAssertTrue(WebView.safeAreaScript.contains(css),
             "the injector does not install the safe-area CSS verbatim")
 
-        // The four edges, each from the page's own --safe-area token, marked
-        // !important so it wins over the browser-mode default the page draws with.
-        for edge in ["top", "right", "bottom", "left"] {
-            XCTAssertTrue(
-                css.contains("padding-" + edge + ":var(--safe-area-" + edge + ","),
-                "the body inset does not read the page's own --safe-area-" + edge + " token"
-            )
-        }
-        XCTAssertTrue(css.contains("!important"),
-            "the body inset is not marked important, so the page's browser-mode default wins")
         // The shell fills the viewport, which is what the drawer slides up.
         XCTAssertTrue(css.contains("height:100dvh"),
             "the CSS does not size the shell to the viewport, so 100dvh surfaces would not fill the screen")
         XCTAssertTrue(css.contains("position:fixed"),
             "the body is not pinned, which is part of the standalone rule the Control UI ships")
+        XCTAssertTrue(css.contains("inset:0"),
+            "the pinned body does not cover the screen")
+
+        // No padding on any edge, and no safe-area token read: the page's
+        // `openclaw-app` rule is the one safe-area owner, and a body padding here
+        // counts the same inset a second time.
+        XCTAssertFalse(css.contains("padding"),
+            "the CSS pads an edge, so the page's own openclaw-app inset is counted twice")
+        XCTAssertFalse(css.contains("--safe-area"),
+            "the CSS reads a safe-area token, which is the page's to apply")
+
         // It couples to no Control UI class: the CSS touches html and body only, so
         // it carries no class selector (and, being pure CSS, no dot at all).
         XCTAssertFalse(css.contains("."),
@@ -66,9 +70,10 @@ final class WebViewSafeAreaTests: XCTestCase {
 
     // MARK: - The rule actually applies
 
-    /// A minimal page carrying the Control UI's own \`:root\` safe-area tokens set to
-    /// concrete values, plus a \`100dvh\`-sized inner shell like the one the drawer
-    /// lives in, rendered in a real web view with \`safeAreaScript\` installed.
+    /// A minimal page carrying the Control UI's own `:root` safe-area tokens set
+    /// to concrete values, an `openclaw-app` rule that pads by them the way the
+    /// page does, and a `100dvh` shell inside it like the one the drawer lives in,
+    /// rendered in a real web view with `safeAreaScript` installed.
     @MainActor
     private func render(topInset: Int, bottomInset: Int) async throws -> [String: String] {
         // The page's own tokens, the way its :root defines them, given concrete
@@ -84,12 +89,23 @@ final class WebViewSafeAreaTests: XCTestCase {
             --safe-area-bottom: \(bottomInset)px;
             --safe-area-left: 0px;
           }
+          /* The page's own rule, the ONE safe-area owner: the app element is
+             padded by the tokens and the content inside it is not. */
+          openclaw-app {
+            display: block;
+            height: 100dvh;
+            padding: var(--safe-area-top) var(--safe-area-right)
+              var(--safe-area-bottom) var(--safe-area-left);
+          }
+          /* The page's own reset: its body rule sets margin: 0, so the app element
+             starts at the display edge. */
+          body { margin: 0; }
           /* The shell the drawer slides up inside, sized the way the Control UI
              sizes its own: 100dvh. If the script sizes html/body to the viewport,
              this fills the screen; if it were confined to a safe box it would not. */
           #shell { height: 100dvh; margin: 0; }
         </style>
-        </head><body><div id="shell"></div></body></html>
+        </head><body><openclaw-app><div id="shell"></div></openclaw-app></body></html>
         """
 
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 402, height: 800))
@@ -120,13 +136,14 @@ final class WebViewSafeAreaTests: XCTestCase {
         let probe = """
         (function () {
           var body = getComputedStyle(document.body);
-          var htmlEl = getComputedStyle(document.documentElement);
+          var app = document.querySelector('openclaw-app').getBoundingClientRect();
           var shell = document.getElementById('shell').getBoundingClientRect();
           return JSON.stringify({
             padTop: body.paddingTop,
             padBottom: body.paddingBottom,
             bodyPosition: body.position,
-            htmlHeight: htmlEl.height,
+            appTop: String(Math.round(app.top)),
+            shellTop: String(Math.round(shell.top)),
             shellHeight: String(Math.round(shell.height)),
             viewportHeight: String(window.innerHeight)
           });
@@ -144,19 +161,26 @@ final class WebViewSafeAreaTests: XCTestCase {
     }
 
     @MainActor
-    func testTheBodyInsetsByThePagesSafeAreaAndTheShellFillsTheViewport() async throws {
+    func testThePageInsetsOnceAndTheShellFillsTheViewport() async throws {
         let insetTop = 47
         let insetBottom = 34
         let measured = try await render(topInset: insetTop, bottomInset: insetBottom)
 
-        // The content is inset by the device's safe area, top and bottom, so it
-        // does not draw under the status bar or the home indicator.
-        XCTAssertEqual(measured["padTop"], "\(insetTop)px",
-            "the body did not inset its content by the top safe area (\(measured["padTop"] ?? "nil"))")
-        XCTAssertEqual(measured["padBottom"], "\(insetBottom)px",
-            "the body did not inset its content by the bottom safe area (\(measured["padBottom"] ?? "nil"))")
+        // The client installs no padding of its own, so the page's app element
+        // starts at the display edge and the page's own padding is the only inset.
+        XCTAssertEqual(measured["padTop"], "0px",
+            "the client padded the body by the top safe area (\(measured["padTop"] ?? "nil"))")
+        XCTAssertEqual(measured["padBottom"], "0px",
+            "the client padded the body by the bottom safe area (\(measured["padBottom"] ?? "nil"))")
         XCTAssertEqual(measured["bodyPosition"], "fixed",
             "the body is not pinned, so the standalone rule did not take")
+        XCTAssertEqual(measured["appTop"], "0",
+            "the app element does not start at the display edge (\(measured["appTop"] ?? "nil"))")
+
+        // The page's openclaw-app padding is the only inset, so the content starts
+        // exactly one safe area down rather than two.
+        XCTAssertEqual(measured["shellTop"], "\(insetTop)",
+            "the content is inset \(measured["shellTop"] ?? "nil") instead of \(insetTop): the safe area is counted twice")
 
         // And the 100dvh shell fills the whole viewport rather than a safe box,
         // which is what lets a full-height surface the page slides open reach the
