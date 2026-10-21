@@ -86,7 +86,6 @@ function read() {
       ...raw,
       window: { ...base.window, ...(raw.window || {}) },
       trustedCerts: { ...(raw.trustedCerts || {}) },
-      swVersions: { ...(raw.swVersions || {}) },
       // Per gateway, like the other maps: a config written before this key
       // existed boots with an empty one and falls back to `themeMode`, rather
       // than losing the appearance it had.

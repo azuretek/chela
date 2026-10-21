@@ -5,7 +5,7 @@
 // Three reports about the About surface, all of them measured rather than read:
 //
 //   1. the space below the LAST thing in a section, which Abi reported as visibly
-//      short at the foot of "Cached Control UI code". A section is a settings-group
+//      short at the foot of an action section. A section is a settings-group
 //      and its bottom padding is the last row's, so this reads the gap between the
 //      control and the group's own bottom edge and compares it with the same gap at
 //      the section's top;
@@ -166,7 +166,6 @@ contextBridge.exposeInMainWorld('clawDesktop', {
   openReleases: () => {},
   closeOverlay: () => {},
   onAboutChanged: () => {},
-  clearCacheAndReload: async () => ({ cleared: [], failed: [], origins: [], gateway: null }),
   notices: async () => [],
   onNoticesChanged: () => {},
   bannerHeight: () => {},
@@ -193,7 +192,7 @@ const PROBE = `(() => {
   const root = getComputedStyle(document.documentElement);
   const box = (el) => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height }; };
   const scrim = document.querySelector('.scrim');
-  const group = document.getElementById('clear-cache-group');
+  const group = document.querySelector('.settings-group');
   const rows = group ? [...group.querySelectorAll('.settings-row')] : [];
   const lastRow = rows.length ? rows[rows.length - 1] : null;
   const button = group ? group.querySelector('button') : null;

@@ -540,46 +540,6 @@ struct ContentView: View {
         .onChange(of: notices.unread) { _, _ in host?.emit("notices") }
     }
 
-    /// Clear cache and refresh, as a fresh start of the app. The phone's half of the
-    /// desktop's `restartAfterClear`, in the same order, which is the first rule
-    /// in ui/CONVENTIONS.md:
-    ///
-    /// 1. The cached code is cleared (never the paired identity; see
-    ///    `GatewayPage.clearCachedCode`).
-    /// 2. The launch loading cover goes up UNDER the sheets and is held there, and
-    ///    the page reloads from the server behind it.
-    /// 3. The press's own "Clearing…" is held the minimum-visible floor, then About
-    ///    and Settings slide away together, onto the cover rather than onto the
-    ///    Control UI being replaced.
-    /// 4. The cover stays at least the floor once the sheets have gone, and comes
-    ///    down once the page has painted. A reload that fails takes the failure path
-    ///    a launch takes: the cover stays in its failed state with Try again.
-    private func restartAfterClear() async -> (ok: Bool, detail: String) {
-        let pressedAt = Date()
-        guard gatewayPage.hasPage else {
-            return (false, "There is no Control UI to reload: the app is not connected to a gateway.")
-        }
-        let cleared = await gatewayPage.clearCachedCode()
-        NSLog("[claw] cleared cached Control UI code%@; restarting the Control UI", cleared)
-        cover.holdFloor()
-        cover.hold()
-        gatewayPage.reloadFromServer()
-        let owed = Motion.remainingVisibleMs(shownAt: pressedAt)
-        if owed > 0 { try? await Task.sleep(for: .milliseconds(owed)) }
-        // Settings and About are ONE presentation, so both facts are cleared in the
-        // same transaction and the reader sees ONE slide off the screen; two steps
-        // played About down onto Settings and then Settings down onto the cover.
-        // About's state goes first, so a surface presented again later starts on
-        // Settings rather than on a handoff that was interrupted.
-        showingAbout = false
-        showingSettings = false
-        // The sheet takes the platform's own time to go; the floor starts once the
-        // cover is what the reader sees.
-        try? await Task.sleep(for: .milliseconds(Motion.sheetLeaveMs))
-        cover.releaseFloor(after: Motion.minVisibleMs)
-        return (true, "Cleared cached code\(cleared) and restarted the Control UI from the server.")
-    }
-
     private func prepare() {
         if host == nil {
             host = SettingsHost(
@@ -633,13 +593,7 @@ struct ContentView: View {
                 onClose: { showingAbout = false },
                 // The same seeded-or-real check the launch uses, so a screenshot
                 // run's press answers about the same feed its banner is under.
-                makeCheck: { Self.updateCheck(board: notices) },
-                // Clear this app's cached Control UI code and restart the Control
-                // UI the way a fresh launch does. Wired here rather than inside the
-                // About host because what moves is the session's: the gateway page,
-                // the loading cover over it and both sheets, and a host that reached
-                // across would be a second owner of them.
-                clearCacheAndReload: { await restartAfterClear() }
+                makeCheck: { Self.updateCheck(board: notices) }
             )
         }
         // The notice model carries a command NAME rather than a callback, so this

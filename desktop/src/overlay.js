@@ -13,8 +13,7 @@
 // permanently. This module is the watchdog that guarantees the difference.
 //
 // It lives outside main.js, and takes its collaborators as arguments, so the
-// decision can be tested against a stub emitter with no Electron in the room,
-// the same shape as `cache.clear`.
+// decision can be tested against a stub emitter with no Electron in the room.
 
 // How long the overlay may be a blank sheet over the window before it is
 // assumed wedged. It is a local `file://` page with one stylesheet, so it loads

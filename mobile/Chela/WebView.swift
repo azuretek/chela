@@ -271,11 +271,10 @@ struct WebView: UIViewRepresentable {
             Task { @MainActor in
                 notices.connectionFailed(
                     label: gatewayName,
-                    description: "The page stopped responding and will be reloaded."
+                    description: "The page stopped responding. Try connecting again."
                 )
                 connection.failed(gatewayId)
                 cover.lift("page-terminated")
-                webView.reload()
             }
         }
 
