@@ -564,7 +564,7 @@ final class PairingState: ObservableObject {
     /// direction, and `PairingParityTests` is what turns that build red.
     /// Reload the gateway page now, through the same leg the retry beat uses, so
     /// the token handoff and the device seed are reinstalled on the fresh load.
-    /// The wake rule's reconnect: see `WakeMonitor`.
+    /// Explicit retry only; ordinary resume uses the existing GatewayPage.
     func reconnectNow() {
         retryTick += 1
     }

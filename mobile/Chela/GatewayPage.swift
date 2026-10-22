@@ -3,7 +3,8 @@ import WebKit
 
 /// The handle this client keeps on the gateway page, so a surface that needs the
 /// page to DO something can ask it rather than growing a web view of its own.
-/// There is one such ask today. The settings page's "Go to the Control UI" takes
+/// It also asks the existing transport to recover on resume. The settings
+/// page's "Go to the Control UI" takes
 /// the reader to the Control UI's OWN settings, which is a different place from
 /// this app's settings and is not ours to navigate: the Control UI owns that
 /// route, and its own footer control is the shortest path to it. So the client
@@ -21,6 +22,17 @@ import WebKit
 final class GatewayPage: ObservableObject {
     /// Set by `WebView.makeUIView`, which is the only thing that creates one.
     weak var webView: WKWebView?
+
+    /// Recheck the page-owned transport without replacing its document. The
+    /// Control UI coalesces this signal with visibility and checks socket health;
+    /// healthy connections and terminal authentication failures remain untouched.
+    func resumeConnection(completion: @escaping () -> Void) {
+        guard let webView else { completion(); return }
+        webView.evaluateJavaScript("window.dispatchEvent(new Event('online'))") { _, error in
+            if let error { NSLog("[claw] transport resume failed: %@", String(describing: error)) }
+            completion()
+        }
+    }
 
     /// Ask the Control UI for its live design tokens.
     ///

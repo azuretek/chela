@@ -16,15 +16,15 @@ test('every state answers every event with a known state and action', () => {
   }
 });
 
-test('sleep then wake: close on sleep, reconnect under the cover on wake, uncover once rendered', () => {
+test('sleep then wake preserves the document and requests one transport check', () => {
   assert.deepStrictEqual(run(['sleep', 'wake', 'rendered']), {
-    state: 'awake', actions: ['close', 'reconnect', 'uncover'],
+    state: 'awake', actions: ['none', 'reconnect', 'uncover'],
   });
 });
 
-test('wake with no network: cover and wait, then reconnect when the network returns', () => {
+test('wake with no network preserves the document until the network returns', () => {
   assert.deepStrictEqual(run(['sleep', 'offline', 'wake', 'online', 'rendered']), {
-    state: 'awake', actions: ['close', 'none', 'cover', 'reconnect', 'uncover'],
+    state: 'awake', actions: ['none', 'none', 'none', 'reconnect', 'uncover'],
   });
 });
 
@@ -34,9 +34,9 @@ test('heartbeat missed while open: reconnect fresh, once', () => {
   });
 });
 
-test('network drop while open: cover, then reconnect on restore', () => {
+test('network drop preserves the document and checks transport on restore', () => {
   assert.deepStrictEqual(run(['offline', 'online', 'rendered']), {
-    state: 'awake', actions: ['cover', 'reconnect', 'uncover'],
+    state: 'awake', actions: ['none', 'reconnect', 'uncover'],
   });
 });
 
@@ -44,14 +44,14 @@ test('unlock without a sleep still reconnects', () => {
   assert.deepStrictEqual(run(['wake', 'rendered']).actions, ['reconnect', 'uncover']);
 });
 
-test('lock then suspend closes once, and the double wake reconnects once', () => {
+test('lock then suspend preserves the document and double wake coalesces', () => {
   assert.deepStrictEqual(run(['sleep', 'sleep', 'wake', 'wake', 'rendered']).actions,
-    ['close', 'none', 'reconnect', 'none', 'uncover']);
+    ['none', 'none', 'reconnect', 'none', 'uncover']);
 });
 
-test('sleep during a reconnect closes rather than leaving the load half-open', () => {
+test('sleep during recovery preserves the document and allows another wake', () => {
   assert.deepStrictEqual(run(['heartbeatMissed', 'sleep', 'wake', 'rendered']).actions,
-    ['reconnect', 'close', 'reconnect', 'uncover']);
+    ['reconnect', 'none', 'reconnect', 'uncover']);
 });
 
 test('a render before the wake does not uncover a sleeping client', () => {

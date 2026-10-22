@@ -491,9 +491,8 @@ struct ContentView: View {
         // See `UpdateSchedule.becameActive`.
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { updateSchedule?.becameActive() }
-            // Sleep and wake, reported into the shared rule. A backgrounded page
-            // comes back holding a socket iOS killed and an outbox that never saw
-            // the delivery, which only a fresh load clears. See core/wake.js.
+            // Suspension preserves the document. On return the page owns stale
+            // socket detection, history resync and durable outbox reconciliation.
             switch phase {
             case .background: wake.report("scenePhase:background")
             case .active: wake.report("scenePhase:active")
@@ -501,7 +500,9 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            wake.reconnect = { [pairing] in pairing.reconnectNow() }
+            wake.reconnect = { [gatewayPage, weak wake] in
+                gatewayPage.resumeConnection { wake?.report("page:rendered") }
+            }
             wake.start()
         }
         // The gateway row follows the pairing state, and this is where the two are

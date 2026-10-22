@@ -126,19 +126,14 @@ test('a failed attempt ends the hold, and the failure surface takes the screen',
   assert.match(crash, /payloadGateway = null;/, 'a dead renderer leaves the previous gateway on screen');
 });
 
-test('a socket the gateway closed ends the hold too', () => {
-  // The other way a connection ends, and the one nothing on this side could see
-  // before: the page holds the socket, so the observer reports the close and the
-  // app ends the hold on it. Measured 2026-09-16: nine seconds of a dropped gateway
-  // with its Control UI still on screen and no notice either.
-  assert.match(main, /function handleSocketDropped\(\) \{/, 'nothing reacts to the page\'s socket closing');
-  const drop = main.slice(main.indexOf('function handleSocketDropped()'), main.indexOf('function handlePairingReport('));
-  assert.match(drop, /payloadGateway = null;/, 'a dropped socket leaves the gateway\'s document presentable');
-  assert.match(drop, /showConnectionFailure\(/, 'a dropped socket is not reported at all');
-  // Guarded, both ways: an attempt in flight and this app's own reload each close
-  // the socket they replace, and neither is the connection ending.
-  assert.match(drop, /connection\.phase !== connectionState\.CONNECTED/, 'a socket close during a connect attempt would be read as a drop');
-  assert.match(drop, /if \(pageReloading\) return;/, 'this app\'s own reload would be read as a drop');
+test('a dropped transport retains the document while the page reconnects', () => {
+  const start = main.indexOf("if (report.kind === 'dropped')");
+  assert.ok(start > 0, 'socket reports are still classified');
+  const drop = main.slice(start, main.indexOf("if (report.kind === 'open')", start));
+  assert.doesNotMatch(drop, /payloadGateway = null|showConnectionFailure|loadActiveGateway/);
+  assert.doesNotMatch(main, /function handleSocketDropped/);
+  // Load/authentication failures and a dead renderer remain separate boundaries.
+  assert.match(main, /showConnectionFailure\(\{ errorCode, errorDescription, url: validatedURL \}\)/);
 });
 
 test('the harness that proves this still measures frames, and all three cases', () => {

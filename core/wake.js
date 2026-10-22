@@ -1,18 +1,6 @@
-// The wake and reconnect rule: what a client does when the machine sleeps,
-// wakes, locks, loses or changes its network, or the page's socket misses its
-// heartbeat.
-//
-// A queued message that hangs after idle or backgrounding is cleared by a client
-// restart, and a restart is a fresh page load. So on every transition that can
-// leave the page holding a dead socket and a stale outbox, the client shows the
-// loading cover, loads the page fresh, and keeps the cover up until the page has
-// rendered. On sleep it closes cleanly instead, so nothing is left half-open for
-// the wake to inherit.
-//
-// One rule, one owner. The table lives in spec/wake.json and each platform only
-// REPORTS its events into it: desktop from powerMonitor and the network, iOS from
-// scenePhase and NWPathMonitor, both from the page's socket reports. The Swift
-// client bundles the same file and walks the same table, so there is no port.
+// Native lifecycle signals preserve a surviving document. The Control UI owns
+// transport health, reconnect, history resync and outbox reconciliation.
+// Sleep and offline transitions never discard or cover the conversation.
 
 import spec from './spec/wake.json' with { type: 'json' };
 

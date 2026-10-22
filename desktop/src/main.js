@@ -214,16 +214,6 @@ let payloadGateway = null;
 let pageReloading = false;
 
 /**
- * Set while the app is showing its own failure surface because the page's socket
- * went away, as opposed to because a load failed.
- *
- * The two want different recoveries: a failed load is recovered by a retry, while a
- * dropped socket is already recovering on its own inside the page, so the socket
- * opening again IS the gateway being back.
- */
-let socketDropped = false;
-
-/**
  * The load attempt in flight, when it is being made beside the payload on screen.
  *
  * One at a time, and never added to the window until it has loaded: see
@@ -1293,42 +1283,24 @@ function retryPairingConnect() {
   loadActiveGateway();
 }
 
-/**
- * The page's own socket closed, and the gateway did not refuse it.
- *
- * This app holds no socket of its own: the Control UI opens one inside the page,
- * so the only signal that a working session has ended is the page's own socket
- * closing, reported by the observer (see core/spec/pairing.json's `socketClosed`).
- * Before this, nothing on this side could see it, and the app went on presenting
- * the gateway's Control UI -- authenticated, complete, and connected to nothing --
- * for as long as the reader looked at it. Measured: nine seconds of a dropped
- * gateway with the payload untouched on screen, and no notice either.
- *
- * So the hold ends and the app's own surface takes the screen, which is the same
- * outcome as a failed load and the same rule: a client with no connection does
- * not present a gateway view.
- *
- * GUARDED ON THE PHASE, and both halves of that guard are load-bearing:
- *
- *   - `connected` only. Every other phase is either an attempt in flight or a
- *     surface of ours already up, and a close arriving there is not news.
- *   - not while this app is itself replacing the document (see `pageReloading`),
- *     because a reload tears the old document's socket down and that close is our
- *     own doing rather than the connection ending.
- */
+// Transport loss is owned by the page. Failed navigation and renderer loss
+// remain native failure boundaries with explicit retry.
 /* ------------------------------------------------------------ wake/reconnect */
 
-// Sleep, wake, lock, unlock, a network drop and a missed heartbeat all feed one
-// rule, core/wake.js, and this only reports them and carries out its actions. A
-// queued message that hung after idle was cleared by a restart, and a restart is
-// a fresh page load under the cover: that is what reconnect does here.
+// Native lifecycle signals ask the existing page to recheck its transport.
+// Only initial load, pairing and explicit retry own navigation.
 const wake = createWake({
   log: (line) => console.log(line),
-  close: () => { payloadGateway = null; },
-  cover: () => { payloadGateway = null; showLoadingCover(); },
   reconnect: () => {
-    payloadGateway = null;
-    if (config.activeGateway()) loadActiveGateway();
+    const wc = page();
+    if (!wc || wc.isDestroyed() || !payloadGateway || pageReloading) {
+      wake.report('rendered');
+      return;
+    }
+    // The page owns transport recovery; a surviving document never navigates.
+    void wc.executeJavaScript("window.dispatchEvent(new Event('online'))")
+      .catch((error) => console.warn('[chela-desktop] transport resume failed:', error))
+      .finally(() => wake.report('rendered'));
   },
 });
 
@@ -1349,17 +1321,6 @@ function watchWake() {
   onlinePoll.unref?.();
 }
 
-function handleSocketDropped() {
-  if (connection.phase !== connectionState.CONNECTED) return;
-  if (pageReloading) return;
-  console.warn('[chela-desktop] the gateway closed the connection; showing the failure surface');
-  payloadGateway = null;
-  // Recorded so the OTHER half of this can happen: a socket that opens again on
-  // its own means the gateway is back, and this app has no business sitting on its
-  // failure screen while the page behind it is connected again.
-  socketDropped = true;
-  showConnectionFailure({ errorCode: null, errorDescription: 'The gateway closed the connection.' });
-}
 
 /**
  * A report from the page's observer, or nothing.
@@ -1381,28 +1342,13 @@ function handlePairingReport(event, payload) {
   }
 
   if (report.kind === 'dropped') {
-    const wasConnected = connection.phase === connectionState.CONNECTED && !pageReloading;
-    handleSocketDropped();
-    // A connection that was up and fell is the missed heartbeat: reconnect fresh
-    // rather than trust the page to resume a socket and an outbox that went stale.
-    if (wasConnected) wake.reportRaw('page:socket-dropped');
+    // A dropped transport is not a failed document. The page keeps its existing
+    // conversation, reports reconnecting, and reconciles delivery in place.
     return;
   }
 
   if (report.kind === 'open') {
     pairingState.opened();
-    // The recovery leg of a drop: the page's socket is open again, so the gateway
-    // is reachable and the failure surface is no longer true. Reconnected through
-    // the app's own connect path rather than by uncovering the document that was
-    // already there, and that is deliberate: only a load that FINISHED proves the
-    // document on screen is the gateway's -- Chromium commits an error document for
-    // the same URL -- and the page may have been replaced or reloaded while the
-    // cover was up. A load that fails leaves the failure surface exactly as it was.
-    if (socketDropped) {
-      socketDropped = false;
-      console.log('[chela-desktop] the gateway socket is open again; reconnecting');
-      loadActiveGateway();
-    }
   } else {
     // The gateway answered a Connect pressed on its login gate by refusing the
     // device: the pairing screen is that answer, drawn over the page as on any
@@ -1662,7 +1608,6 @@ function createGatewayView({ attempt = false } = {}) {
     pageReloading = false;
     // A load that finished means this app is looking at the gateway's document
     // again, which is the other end of a drop whatever put it there.
-    socketDropped = false;
     wc.setZoomLevel(config.get().zoomLevel || 0);
     // Our own pages (settings as the window's content) want the Control UI's
     // design tokens. The gateway's page gets nothing injected at all.

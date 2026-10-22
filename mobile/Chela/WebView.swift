@@ -206,8 +206,8 @@ struct WebView: UIViewRepresentable {
 
         /// The page loaded. Whatever a previous failure said about this gateway is
         /// no longer true, so the notice the banner is showing comes down.
-        /// A load started, the first one, a Try again, a wake's reconnect or a
-        /// pairing retry alike: cover the page until the new one has painted.
+        /// Initial load, explicit retry and pairing navigation cover the page
+        /// until it paints. Ordinary background/foreground does not navigate.
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             Task { @MainActor in cover.hold() }
         }
