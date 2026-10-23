@@ -7,7 +7,7 @@
 // cannot see a view that stayed up for six seconds and then went away, and it
 // cannot see one that stayed up and never went away either.
 //
-//   npx electron scripts/test-held-gateway-view.js --case switch|drop|normal [--shots DIR]
+//   npx electron scripts/test-held-gateway-view.js --case switch|drop|normal|crash [--shots DIR]
 //
 // The four cases are the four ways a reader meets this:
 //
@@ -41,8 +41,8 @@ function arg(name, fallback = null) {
 }
 
 const CASE = (arg('case', 'switch') || '').toLowerCase();
-if (!['switch', 'drop', 'normal'].includes(CASE)) {
-  console.error(`--case must be switch, drop or normal, not ${CASE}`);
+if (!['switch', 'drop', 'normal', 'crash', 'idle'].includes(CASE)) {
+  console.error(`--case must be switch, drop, normal or crash, not ${CASE}`);
   process.exit(2);
 }
 const SHOTS = arg('shots');
@@ -54,7 +54,7 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const NOWHERE = 'http://127.0.0.1:18862/';
 const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), `claw-held-${CASE}-`));
 
-const { app, BrowserWindow, Menu, desktopCapturer, webContents } = await import('electron');
+const { app, BrowserWindow, Menu, desktopCapturer, webContents, powerMonitor } = await import('electron');
 app.setPath('userData', PROFILE);
 app.commandLine.appendSwitch('user-data-dir', PROFILE);
 
@@ -88,6 +88,8 @@ const document = (mark) => `<!doctype html>
 </style></head>
 <body><div id="mark">MARKER ${mark}</div>
 <script>
+  window.documentIdentity = crypto.randomUUID();
+  window.restoredDraft = localStorage.getItem('fixture-draft');
   // The Control UI's own behaviour, reduced to the one part that matters here: a
   // session socket, kept open, reconnected after it goes away.
   (function () {
@@ -506,6 +508,62 @@ app.whenReady().then(async () => {
       `the view on top is ${state.top} (${JSON.stringify(state)})`);
     server.close();
     await delay(200);
+    fs.rmSync(PROFILE, { recursive: true, force: true });
+    app.exit(failed ? 1 : 0);
+    return;
+  }
+
+  if (CASE === 'idle') {
+    const wc = pageWc();
+    const before = await wc.executeJavaScript("document.querySelector('#mark').textContent+'|'+window.documentIdentity");
+    let navigations = 0;
+    wc.on('did-finish-load', () => navigations++);
+    await wc.executeJavaScript("window.activationChecks=0;addEventListener('online',()=>window.activationChecks++)");
+    powerMonitor.emit('suspend');
+    powerMonitor.emit('resume');
+    const deadline = Date.now() + 10000;
+    let activations = 0;
+    while (!activations && Date.now() < deadline) {
+      activations = await wc.executeJavaScript('window.activationChecks');
+      if (!activations) await delay(50);
+    }
+    const after = await wc.executeJavaScript("document.querySelector('#mark').textContent+'|'+window.documentIdentity");
+    check('emitted native suspend/resume retains the same live document', before === after && navigations === 0,
+      JSON.stringify({ before, after, navigations }));
+    check('native resume reaches the page activation transport hook', activations === 1, String(activations));
+    console.log('IDLE_EVENT_RESULT ' + JSON.stringify({ before, after, navigations, activations, actualOsSleep: false }));
+    await dropGateway();
+    fs.rmSync(PROFILE, { recursive: true, force: true });
+    app.exit(failed ? 1 : 0);
+    return;
+  }
+
+  if (CASE === 'crash') {
+    const wc = pageWc();
+    const win = BrowserWindow.getAllWindows()[0];
+    win.show();
+    win.focus();
+    const before = await wc.executeJavaScript("localStorage.setItem('fixture-draft','durable-unsent');window.documentIdentity");
+    let navigations = 0;
+    wc.on('did-finish-load', () => navigations++);
+    wc.forcefullyCrashRenderer();
+    let after = null;
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline && !after) {
+      try {
+        const current = await Promise.race([
+          wc.executeJavaScript("[window.documentIdentity,window.restoredDraft,window.sessionSocketOpen]"),
+          delay(500).then(() => null),
+        ]);
+        if (current?.[0] && current[0] !== before && current[2]) after = current;
+      } catch { /* a dead renderer cannot answer until its replacement is ready */ }
+      if (!after) await delay(50);
+    }
+    check('a genuine renderer death creates one replacement document', Boolean(after) && navigations === 1,
+      JSON.stringify({ before, after, navigations }));
+    check('page-owned durable storage rehydrates after death', after?.[1] === 'durable-unsent', JSON.stringify(after));
+    console.log('CRASH_RESULT ' + JSON.stringify({ before, after, navigations }));
+    await dropGateway();
     fs.rmSync(PROFILE, { recursive: true, force: true });
     app.exit(failed ? 1 : 0);
     return;

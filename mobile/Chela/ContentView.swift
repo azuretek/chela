@@ -490,7 +490,10 @@ struct ContentView: View {
         // elapsed, so returning to the app repeatedly is not a burst of requests.
         // See `UpdateSchedule.becameActive`.
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { updateSchedule?.becameActive() }
+            if phase == .active {
+                updateSchedule?.becameActive()
+                gatewayPage.resumeTerminatedRenderer()
+            }
             // Suspension preserves the document. On return the page owns stale
             // socket detection, history resync and durable outbox reconciliation.
             switch phase {

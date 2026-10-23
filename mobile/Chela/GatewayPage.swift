@@ -22,6 +22,7 @@ import WebKit
 final class GatewayPage: ObservableObject {
     /// Set by `WebView.makeUIView`, which is the only thing that creates one.
     weak var webView: WKWebView?
+    var resumeTerminatedRenderer: () -> Void = {}
 
     /// Recheck the page-owned transport without replacing its document. The
     /// Control UI coalesces this signal with visibility and checks socket health;

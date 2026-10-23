@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 import WebKit
 @testable import Chela
 
@@ -63,6 +64,49 @@ final class WakeRuleTests: XCTestCase {
         web.stopLoading()
     }
 
+    func testTerminatedRendererReplacesOnceAndRejectsStalePage() async {
+        let web = RecoveryCountingWebView()
+        let page = GatewayPage()
+        page.webView = web
+        let pairing = PairingState()
+        pairing.opened()
+        let coordinator = WebView.Coordinator(
+            themeColour: .constant(.black), themeReports: .constant(0),
+            notices: NoticeBoard(), connection: ConnectionState(), pairing: pairing,
+            gatewayName: "Fixture", gatewayId: "fixture", cover: PageCover(), onOpenAppSettings: {}
+        )
+        coordinator.recoveryGatewayId = "fixture"
+        coordinator.pageControl = page
+        coordinator.recoveryWebView = web
+        let replaced = expectation(description: "one replacement")
+        web.onReload = { replaced.fulfill() }
+        coordinator.webViewWebContentProcessDidTerminate(web)
+        await fulfillment(of: [replaced], timeout: 5)
+        XCTAssertEqual(web.reloads, 1)
+        pairing.opened()
+        coordinator.resumeTerminatedRenderer()
+        coordinator.webViewWebContentProcessDidTerminate(web)
+        await Task.yield()
+        XCTAssertEqual(web.reloads, 1, "a second loss must not create a crash loop")
+        coordinator.rendererRecoveryUsed = false
+        coordinator.rendererRecoveryPending = true
+        let replacement = WKWebView()
+        page.webView = replacement
+        coordinator.resumeTerminatedRenderer()
+        XCTAssertTrue(page.webView === replacement)
+        XCTAssertEqual(web.reloads, 1, "a detached gateway must not replace the selected page")
+    }
+}
+
+@MainActor
+private final class RecoveryCountingWebView: WKWebView {
+    var reloads = 0
+    var onReload: () -> Void = {}
+    override func reload() -> WKNavigation? {
+        reloads += 1
+        onReload()
+        return nil
+    }
 }
 
 @MainActor

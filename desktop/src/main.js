@@ -796,7 +796,12 @@ function mayPresentPayload(gw) {
   }) && pageView && !pageView.webContents.isDestroyed());
 }
 
-function loadActiveGateway() {
+function loadActiveGateway({ rendererLoss = null } = {}) {
+  if (!rendererLoss) {
+    rendererRecoveryEpoch++;
+    pendingRendererLoss = null;
+    if (page()) rendererRecoveryUsed.delete(page());
+  }
   const gw = config.activeGateway();  if (!gw) {
     // Nothing to lay a modal over, so settings *is* the window's content. Also
     // the only thing that makes the window paintable at all on a first run:
@@ -834,7 +839,8 @@ function loadActiveGateway() {
       console.log(`[chela-desktop] the active gateway changed while ${gw.url} was being identified; not connecting`);
       return;
     }
-    beginGatewayConnect(gw);
+    if (rendererLoss && !isCurrentRendererLoss(rendererLoss)) return;
+    beginGatewayConnect(gw, rendererLoss?.route);
   });
   return gw;
 }
@@ -845,7 +851,7 @@ function loadActiveGateway() {
  * Split from `loadActiveGateway` only so the identification can happen first and
  * asynchronously; everything below is the attempt it always was.
  */
-function beginGatewayConnect(gw) {
+function beginGatewayConnect(gw, restoredRoute = null) {
   // A load of our own supersedes a Connect pressed on the Control UI's login
   // gate: this attempt raises its own cover and has its own ending.
   connectPress.cancel();
@@ -908,7 +914,7 @@ function beginGatewayConnect(gw) {
   const supplied = [creds.token && 'token', creds.password && 'password', creds.headers.length && `${creds.headers.length} header(s)`]
     .filter(Boolean).join(', ');
   console.log(`[chela-desktop] connecting to ${gw.label || gw.url} <${gw.url}>${supplied ? ` (supplying ${supplied})` : ''}`);
-  const url = withTokenHandoff(gw.url, creds.token);
+  const url = withTokenHandoff(restoredRoute || gw.url, creds.token);
   // A payload on screen is never navigated away from just to find out whether a
   // fresh one exists: see createGatewayView for what a failed navigation does to
   // the frame. So the attempt happens off to the side and is swapped in only if it
@@ -1283,8 +1289,42 @@ function retryPairingConnect() {
   loadActiveGateway();
 }
 
-// Transport loss is owned by the page. Failed navigation and renderer loss
-// remain native failure boundaries with explicit retry.
+// A renderer replacement can restore only state already persisted by the page.
+const rendererRecoveryUsed = new WeakSet();
+let pendingRendererLoss = null;
+let rendererRecoveryEpoch = 0;
+
+function isCurrentRendererLoss(loss) {
+  const gw = config.activeGateway();
+  return Boolean(loss.epoch === rendererRecoveryEpoch && gw && gw.id === loss.gatewayId && gw.url === loss.gatewayUrl &&
+    page() === loss.wc && !loss.wc.isDestroyed() && !settingsIsPage &&
+    mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && mainWindow.isFocused());
+}
+
+function queueRendererRecovery(wc) {
+  const gw = config.activeGateway();
+  if (!gw || page() !== wc || payloadGateway !== gw.id ||
+      connection.phase !== connectionState.CONNECTED || rendererRecoveryUsed.has(wc)) return;
+  const route = wc.getURL();
+  try { if (new URL(route).origin !== new URL(gw.url).origin) return; } catch { return; }
+  rendererRecoveryUsed.add(wc);
+  pendingRendererLoss = { wc, route, gatewayId: gw.id, gatewayUrl: gw.url, epoch: rendererRecoveryEpoch };
+  setImmediate(resumeLostRenderer);
+}
+
+function resumeLostRenderer() {
+  const loss = pendingRendererLoss;
+  if (!loss) return;
+  const gw = config.activeGateway();
+  if (loss.epoch !== rendererRecoveryEpoch || !gw || gw.id !== loss.gatewayId || gw.url !== loss.gatewayUrl ||
+      page() !== loss.wc || settingsIsPage || loss.wc.isDestroyed()) {
+    pendingRendererLoss = null;
+    return;
+  }
+  if (!isCurrentRendererLoss(loss)) return;
+  pendingRendererLoss = null;
+  loadActiveGateway({ rendererLoss: loss });
+}
 /* ------------------------------------------------------------ wake/reconnect */
 
 // Native lifecycle signals ask the existing page to recheck its transport.
@@ -1683,6 +1723,8 @@ function createGatewayView({ attempt = false } = {}) {
   });
 
   wc.on('render-process-gone', (_e, details) => {
+    if (!attempt && page() !== wc) return;
+    if (!attempt) queueRendererRecovery(wc);
     payloadGateway = null;
     if (attempt) destroyGatewayView(view);
     showConnectionFailure({
@@ -1774,6 +1816,7 @@ function createMainWindow() {
   // is a page that does not fill the window rather than a cosmetic slip.
   mainWindow.on('resize', () => { layoutViews(); schedulePersist(); });
   mainWindow.on('move', schedulePersist);
+  mainWindow.on('focus', resumeLostRenderer);
   mainWindow.on('maximize', () => { layoutViews(); schedulePersist(); syncStripMaximized(true); });
   mainWindow.on('unmaximize', () => { layoutViews(); schedulePersist(); syncStripMaximized(false); });
   mainWindow.on('enter-full-screen', layoutViews);
