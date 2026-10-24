@@ -20,8 +20,8 @@
 // It needs a REAL gateway, because the gate is the real Control UI's: the page is
 // served through a proxy of this script's own, in front of the gateway named by
 // --upstream (default 127.0.0.1:18995), which can refuse or delay the page's
-// socket while it still serves the document. That is how the gate is reached: a
-// reconnect of ours loads the page, the page's socket is refused, and the page
+// socket while it still serves the document. That is how the gate is reached: an
+// explicit retry loads the page, the page's socket is refused, and the page
 // draws its gate. The proxy is this app's alone, so nothing else on the host is
 // rerouted. The gateway's Control UI must allow the proxy's origin
 // (http://127.0.0.1:18996) in gateway.controlUi.allowedOrigins, unless the client
@@ -152,10 +152,15 @@ app.whenReady().then(async () => {
   const first = await until((s) => s.gate === false && s.text > 0 && s.cover === null, 30000);
   check('the Control UI rendered from the gateway', Boolean(first), 'no rendered page in 30s');
 
-  // Reach the gate: the page's socket is refused, our reconnect loads the page,
-  // and the page draws its own "Gateway unreachable".
+  // A surviving page owns transport recovery: a dropped socket keeps its shell
+  // mounted rather than drawing a login gate. Reach the gate through the native
+  // explicit retry instead, using the same local-page bridge as Try again. This
+  // replaces the document only because the harness explicitly asks it to.
   proxy.set({ socket: 'refuse' });
   proxy.cut();
+  const local = live().find((wc) => wc.getURL().startsWith('file:'));
+  check('an app-owned surface can request explicit retry', Boolean(local), 'no local bridge');
+  if (local) await evaluate(local, "window.clawDesktop.reconnect()", { label: 'explicit native retry' });
   // The gate is the page's OWN connection screen, and the app must never show it.
   // So this waits for the gate in the DOCUMENT rather than for it on screen: the
   // reader's surface for it is the loading cover, which is asserted below.

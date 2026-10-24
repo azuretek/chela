@@ -34,6 +34,30 @@ test('native resume paths delegate transport recovery without navigating', () =>
   assert.doesNotMatch(mobile, /wake.reconnect = .*pairing.reconnectNow/);
 });
 
+test('a dropped page transport cannot navigate or cover its surviving document', () => {
+  const main = fs.readFileSync(new URL('../../desktop/src/main.js', import.meta.url), 'utf8');
+  const start = main.indexOf('function handlePairingReport(event, payload) {');
+  const end = main.indexOf('\n}\n', start) + 2;
+  assert.ok(start >= 0 && end > start, 'the real native handler is present');
+  let navigations = 0;
+  let covers = 0;
+  const wc = {};
+  const context = vm.createContext({
+    page: () => wc,
+    pairing: { parseReport: () => ({ kind: 'dropped' }) },
+    connection: { phase: 'connected' },
+    connectionState: { CONNECTED: 'connected' },
+    pageReloading: false,
+    handleSocketDropped: () => { covers++; },
+    wake: { reportRaw: () => { navigations++; } },
+    loadActiveGateway: () => { navigations++; },
+  });
+  vm.runInContext(main.slice(start, end) + ';globalThis.report = handlePairingReport', context);
+  context.report({ sender: wc }, { kind: 'dropped' });
+  assert.equal(covers, 0);
+  assert.equal(navigations, 0);
+});
+
 // Execute the actual native callback, rather than merely examining its spelling.
 // Electron transport is mocked; this is not a Chromium/sleep integration proof.
 test('desktop callback avoids navigation and permits repeated healthy wakes', async () => {
