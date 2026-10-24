@@ -1,7 +1,7 @@
 // Reading the stamp that scripts/build-info.js leaves behind.
 //
 // Everything here is pure except `read`, so the formatting can be tested
-// without Electron and without a packaged app, same split as src/cache.js.
+// without Electron and without a packaged app, the same testable split.
 //
 // The file is absent in a source run (`npm start`, `node --test`), and that is
 // a normal state rather than an error: an app running from the working tree has
@@ -145,17 +145,4 @@ export function identityFields(info) {
     ...(built ? [{ label: 'Built', value: built }] : []),
     ...(stamp.branch && stamp.branch !== 'main' ? [{ label: 'Branch', value: stamp.branch }] : []),
   ];
-}
-
-/**
- * A value identifying this build for the cache-clearing check, or null.
- *
- * Null for a dirty tree on purpose. Two different dirty builds of the same
- * commit share a hash, so trusting it there would stop detecting upgrades
- * during exactly the work most likely to need them; the caller falls back to
- * the bundle's size and mtime, which do move. See cache.buildFingerprint.
- */
-export function buildId(info) {
-  const stamp = normalize(info);
-  return stamp.commit && !stamp.dirty ? stamp.commit : null;
 }

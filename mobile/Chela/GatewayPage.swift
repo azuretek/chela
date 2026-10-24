@@ -3,7 +3,8 @@ import WebKit
 
 /// The handle this client keeps on the gateway page, so a surface that needs the
 /// page to DO something can ask it rather than growing a web view of its own.
-/// There is one such ask today. The settings page's "Go to the Control UI" takes
+/// It also asks the existing transport to recover on resume. The settings
+/// page's "Go to the Control UI" takes
 /// the reader to the Control UI's OWN settings, which is a different place from
 /// this app's settings and is not ours to navigate: the Control UI owns that
 /// route, and its own footer control is the shortest path to it. So the client
@@ -21,67 +22,16 @@ import WebKit
 final class GatewayPage: ObservableObject {
     /// Set by `WebView.makeUIView`, which is the only thing that creates one.
     weak var webView: WKWebView?
+    var resumeTerminatedRenderer: () -> Void = {}
 
-    /// Whether there is a gateway page to restart at all.
-    var hasPage: Bool { webView != nil }
-
-    /// Clear this app's cached Control UI code: the first half of the phone's Clear
-    /// cache and refresh, and the restart that follows is `ContentView`'s, because
-    /// it moves the sheets and the loading cover as well as this page.
-    ///
-    /// The phone's half of the desktop's Clear cache and refresh, and it keeps the
-    /// same boundary for the same reason. What is dropped is CACHE and nothing
-    /// else: the device keypair the gateway recognises a paired client by lives in
-    /// localStorage and IndexedDB, which `WKWebsiteDataStore` also holds, so a
-    /// clear that named every type would sign the reader out and raise a fresh
-    /// login alert on the gateway. That would be a far worse fault than the
-    /// staleness this button exists to fix. See `CACHE_DATA_TYPES` below and
-    /// `desktop/src/cache.js` for the other client's half of the same rule.
-    ///
-    /// Returns which sites' records were dropped, for the log.
-    @MainActor
-    func clearCachedCode() async -> String {
-        await Self.clearCachedCode()
-    }
-
-    /// Reload the gateway page from the server, as a launch loads it.
-    ///
-    /// `reloadFromOrigin` rather than `reload`, so the document is revalidated
-    /// end to end rather than served from whatever the cache still holds. Nothing
-    /// is awaited here: the navigation delegate raises the loading cover on the
-    /// load's start and lifts it once the page has painted (`PageCover`), and a
-    /// load that fails takes the same failure path a launch does, so the reader is
-    /// told either way.
-    @discardableResult
-    func reloadFromServer() -> Bool {
-        guard let webView else { return false }
-        webView.reloadFromOrigin()
-        return true
-    }
-
-    /// The cache types a clear drops, and the ONLY ones it drops.
-    ///
-    /// localStorage and IndexedDB are deliberately absent: they hold this device's
-    /// paired identity, so a clear that included them would make the gateway see a
-    /// brand-new client.
-    private static let CACHE_DATA_TYPES: Set<String> = [
-        WKWebsiteDataTypeDiskCache,
-        WKWebsiteDataTypeMemoryCache,
-        WKWebsiteDataTypeFetchCache,
-        WKWebsiteDataTypeOfflineWebApplicationCache,
-        WKWebsiteDataTypeServiceWorkerRegistrations,
-    ]
-
-    /// Drop the cache data types above, and say what was askable in the report.
-    private static func clearCachedCode() async -> String {
-        await withCheckedContinuation { continuation in
-            let store = WKWebsiteDataStore.default()
-            store.fetchDataRecords(ofTypes: CACHE_DATA_TYPES) { records in
-                let names = records.map(\.displayName).filter { !$0.isEmpty }
-                store.removeData(ofTypes: CACHE_DATA_TYPES, modifiedSince: .distantPast) {
-                    continuation.resume(returning: names.isEmpty ? "" : " for \(names.joined(separator: ", "))")
-                }
-            }
+    /// Recheck the page-owned transport without replacing its document. The
+    /// Control UI coalesces this signal with visibility and checks socket health;
+    /// healthy connections and terminal authentication failures remain untouched.
+    func resumeConnection(completion: @escaping () -> Void) {
+        guard let webView else { completion(); return }
+        webView.evaluateJavaScript("window.dispatchEvent(new Event('online'))") { _, error in
+            if let error { NSLog("[claw] transport resume failed: %@", String(describing: error)) }
+            completion()
         }
     }
 

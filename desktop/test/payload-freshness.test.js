@@ -3,8 +3,7 @@
 // Chela wraps someone else's product, and that product is served by the gateway.
 // The app must not PAINT a pre-loaded or previously-cached Control UI: a launch
 // after the gateway moved to a new build has to render what the gateway is serving
-// now, with no user action, and the manual Clear cache and reload has to reach the
-// same place. Both halves are measured with markers in
+// now, with no user action. This is measured with markers in
 // scripts/test-payload-freshness.js, which serves two distinguishable payloads and
 // reads what the app drew; this file is the cheap half, keeping the mechanism that
 // does it from being dropped in an edit no run would catch.
@@ -12,10 +11,8 @@
 // The mechanism is exactly one line: the gateway page is loaded with revalidation
 // forced, so the document cannot come from a cache. That is sufficient because the
 // document decides which asset urls the page wants and upstream's assets are
-// content-hashed, so a fresh document cannot pull a stale bundle. What it does NOT
-// cover is the service worker's own cache of an asset at a FIXED url, which only a
-// cache clear moves; upstream hashes its asset names, and the app also drops the
-// worker's caches when the gateway's build id moves.
+// content-hashed, so a fresh document selects the matching bundle. Worker cache
+// policy belongs to the page rather than to this client.
 //
 // `src/main.js` is Electron's entry and cannot be imported here, so this reads it
 // the way the other desktop tests that reach it do (see dialogs.test.js).
@@ -77,17 +74,6 @@ test('the gateway page is loaded with revalidation forced', () => {
   assert.equal(definitions.length, 1, `FRESH_DOCUMENT is defined ${definitions.length} times`);
 });
 
-test('Reload keeps the browser meaning and the menu keeps the escape hatch', () => {
-  // Stated so the boundary is a decision rather than an omission. Reload is the
-  // browser's own command and is left as it is; the two ways the payload is brought
-  // current are the build-id refresh on load and the menu item below, and the
-  // harness presses the real item rather than calling anything behind it.
-  assert.match(main, /reload:\s*\{[^}]*page\(\)\?\.reload\(\)/,
-    'Reload no longer reloads the page the browser way, which is a behaviour change this work did not ask for');
-  assert.match(main, /clearCache:\s*\{[^}]*clearCacheAndReload\(\)/,
-    'the Clear cache and reload command is gone, so there is no way to drop the worker caches by hand');
-});
-
 test('the marker harness that proves this still asserts a first paint', () => {
   // The pointer, the way desktop/test/tokens.test.js points at the class guard: the
   // real evidence is a run rather than an assertion, so this fails loudly if the
@@ -97,7 +83,6 @@ test('the marker harness that proves this still asserts a first paint', () => {
   const source = fs.readFileSync(harness, 'utf8');
   assert.match(source, /EXPECT_FIRST/, 'the harness no longer has a first-paint expectation, so a stale first paint would pass it');
   assert.match(source, /did-start-navigation/, 'the harness no longer records the navigations a launch made');
-  assert.match(source, /Clear cache and reload/, 'the harness no longer reaches the manual cache clear');
   assert.match(source, /AFTER-RECONNECT/, 'the harness no longer checks what survives a failed reconnect');
   assert.match(source, /AFTER-RESTORE/, 'the harness no longer checks that a fresh payload replaces the kept one');
 });
@@ -141,19 +126,14 @@ test('a failed attempt ends the hold, and the failure surface takes the screen',
   assert.match(crash, /payloadGateway = null;/, 'a dead renderer leaves the previous gateway on screen');
 });
 
-test('a socket the gateway closed ends the hold too', () => {
-  // The other way a connection ends, and the one nothing on this side could see
-  // before: the page holds the socket, so the observer reports the close and the
-  // app ends the hold on it. Measured 2026-09-16: nine seconds of a dropped gateway
-  // with its Control UI still on screen and no notice either.
-  assert.match(main, /function handleSocketDropped\(\) \{/, 'nothing reacts to the page\'s socket closing');
-  const drop = main.slice(main.indexOf('function handleSocketDropped()'), main.indexOf('function handlePairingReport('));
-  assert.match(drop, /payloadGateway = null;/, 'a dropped socket leaves the gateway\'s document presentable');
-  assert.match(drop, /showConnectionFailure\(/, 'a dropped socket is not reported at all');
-  // Guarded, both ways: an attempt in flight and this app's own reload each close
-  // the socket they replace, and neither is the connection ending.
-  assert.match(drop, /connection\.phase !== connectionState\.CONNECTED/, 'a socket close during a connect attempt would be read as a drop');
-  assert.match(drop, /if \(pageReloading\) return;/, 'this app\'s own reload would be read as a drop');
+test('a dropped transport retains the document while the page reconnects', () => {
+  const start = main.indexOf("if (report.kind === 'dropped')");
+  assert.ok(start > 0, 'socket reports are still classified');
+  const drop = main.slice(start, main.indexOf("if (report.kind === 'open')", start));
+  assert.doesNotMatch(drop, /payloadGateway = null|showConnectionFailure|loadActiveGateway/);
+  assert.doesNotMatch(main, /function handleSocketDropped/);
+  // Load/authentication failures and a dead renderer remain separate boundaries.
+  assert.match(main, /showConnectionFailure\(\{ errorCode, errorDescription, url: validatedURL \}\)/);
 });
 
 test('the harness that proves this still measures frames, and all three cases', () => {

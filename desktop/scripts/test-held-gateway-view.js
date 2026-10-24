@@ -7,7 +7,7 @@
 // cannot see a view that stayed up for six seconds and then went away, and it
 // cannot see one that stayed up and never went away either.
 //
-//   npx electron scripts/test-held-gateway-view.js --case switch|drop|normal [--shots DIR]
+//   npx electron scripts/test-held-gateway-view.js --case switch|drop|normal|crash [--shots DIR]
 //
 // The four cases are the four ways a reader meets this:
 //
@@ -41,8 +41,8 @@ function arg(name, fallback = null) {
 }
 
 const CASE = (arg('case', 'switch') || '').toLowerCase();
-if (!['switch', 'drop', 'normal'].includes(CASE)) {
-  console.error(`--case must be switch, drop or normal, not ${CASE}`);
+if (!['switch', 'drop', 'normal', 'crash', 'idle'].includes(CASE)) {
+  console.error(`--case must be switch, drop, normal or crash, not ${CASE}`);
   process.exit(2);
 }
 const SHOTS = arg('shots');
@@ -54,7 +54,7 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const NOWHERE = 'http://127.0.0.1:18862/';
 const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), `claw-held-${CASE}-`));
 
-const { app, BrowserWindow, Menu, desktopCapturer, webContents } = await import('electron');
+const { app, BrowserWindow, Menu, desktopCapturer, webContents, powerMonitor } = await import('electron');
 app.setPath('userData', PROFILE);
 app.commandLine.appendSwitch('user-data-dir', PROFILE);
 
@@ -88,13 +88,16 @@ const document = (mark) => `<!doctype html>
 </style></head>
 <body><div id="mark">MARKER ${mark}</div>
 <script>
+  window.documentIdentity = crypto.randomUUID();
+  window.restoredDraft = localStorage.getItem('fixture-draft');
   // The Control UI's own behaviour, reduced to the one part that matters here: a
   // session socket, kept open, reconnected after it goes away.
   (function () {
     function open() {
       var socket;
       try { socket = new WebSocket('ws://' + location.host + '/gateway'); } catch (e) { setTimeout(open, 400); return; }
-      socket.addEventListener('close', function () { setTimeout(open, 400); });
+      socket.addEventListener('open', function () { window.sessionSocketOpen = true; });
+      socket.addEventListener('close', function () { window.sessionSocketOpen = false; setTimeout(open, 400); });
     }
     open();
   })();
@@ -209,9 +212,11 @@ async function readViews() {
     try { coverTitle = await cover.executeJavaScript("document.getElementById('title').textContent", true); } catch { coverTitle = null; }
   }
   let mark = null;
+  let socketOpen = false;
   let pageUrl = null;
   if (page) {
     try { pageUrl = page.getURL(); } catch { pageUrl = null; }
+    try { socketOpen = await page.executeJavaScript("window.sessionSocketOpen === true"); } catch { socketOpen = false; }
     try { mark = await page.executeJavaScript("(document.getElementById('mark')||{}).textContent || null", true); } catch { mark = null; }
   }
 
@@ -222,7 +227,7 @@ async function readViews() {
   if (overlays.length) top = 'ours';
   else if (cover) top = 'cover';
   else if (mark) top = 'gateway';
-  return { top, cover: coverTitle, mark, overlays, pageUrl };
+  return { top, cover: coverTitle, mark, overlays, pageUrl, socketOpen };
 }
 
 /**
@@ -289,12 +294,6 @@ const live = () => webContents.getAllWebContents().filter((wc) => !wc.isDestroye
 const pageWc = () => live().find((wc) => wc.getURL().startsWith(BASE.replace(/\/$/, ''))) || null;
 const overlayWc = (file) => live().find((wc) => wc.getURL().includes(`/${file}`)) || null;
 const coverWc = () => overlayWc('loading.html');
-
-/** The cover's own words, so a frame can say which of its two states it was in. */
-/** The cover's own words, so a frame can say which of its two states it was in. */
-async function coverTitle() {
-  return (await readViews()).cover;
-}
 
 /** The app's view stack, as the older checks below expect to read it. */
 async function viewState() {
@@ -514,6 +513,62 @@ app.whenReady().then(async () => {
     return;
   }
 
+  if (CASE === 'idle') {
+    const wc = pageWc();
+    const before = await wc.executeJavaScript("document.querySelector('#mark').textContent+'|'+window.documentIdentity");
+    let navigations = 0;
+    wc.on('did-finish-load', () => navigations++);
+    await wc.executeJavaScript("window.activationChecks=0;addEventListener('online',()=>window.activationChecks++)");
+    powerMonitor.emit('suspend');
+    powerMonitor.emit('resume');
+    const deadline = Date.now() + 10000;
+    let activations = 0;
+    while (!activations && Date.now() < deadline) {
+      activations = await wc.executeJavaScript('window.activationChecks');
+      if (!activations) await delay(50);
+    }
+    const after = await wc.executeJavaScript("document.querySelector('#mark').textContent+'|'+window.documentIdentity");
+    check('emitted native suspend/resume retains the same live document', before === after && navigations === 0,
+      JSON.stringify({ before, after, navigations }));
+    check('native resume reaches the page activation transport hook', activations === 1, String(activations));
+    console.log('IDLE_EVENT_RESULT ' + JSON.stringify({ before, after, navigations, activations, actualOsSleep: false }));
+    await dropGateway();
+    fs.rmSync(PROFILE, { recursive: true, force: true });
+    app.exit(failed ? 1 : 0);
+    return;
+  }
+
+  if (CASE === 'crash') {
+    const wc = pageWc();
+    const win = BrowserWindow.getAllWindows()[0];
+    win.show();
+    win.focus();
+    const before = await wc.executeJavaScript("localStorage.setItem('fixture-draft','durable-unsent');window.documentIdentity");
+    let navigations = 0;
+    wc.on('did-finish-load', () => navigations++);
+    wc.forcefullyCrashRenderer();
+    let after = null;
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline && !after) {
+      try {
+        const current = await Promise.race([
+          wc.executeJavaScript("[window.documentIdentity,window.restoredDraft,window.sessionSocketOpen]"),
+          delay(500).then(() => null),
+        ]);
+        if (current?.[0] && current[0] !== before && current[2]) after = current;
+      } catch { /* a dead renderer cannot answer until its replacement is ready */ }
+      if (!after) await delay(50);
+    }
+    check('a genuine renderer death creates one replacement document', Boolean(after) && navigations === 1,
+      JSON.stringify({ before, after, navigations }));
+    check('page-owned durable storage rehydrates after death', after?.[1] === 'durable-unsent', JSON.stringify(after));
+    console.log('CRASH_RESULT ' + JSON.stringify({ before, after, navigations }));
+    await dropGateway();
+    fs.rmSync(PROFILE, { recursive: true, force: true });
+    app.exit(failed ? 1 : 0);
+    return;
+  }
+
   /* ------------------------------------------------- case: drop and normal */
 
   await framed(`before-${CASE}`);
@@ -532,14 +587,11 @@ app.whenReady().then(async () => {
   };
 
   const frames = await burst({
-    // The drop case stops as soon as the app's own surface is up, because that is
-    // the claim; the normal case runs its full length so the LANDING is captured.
+    // Run the full observation window, including while the transport is down.
     ms: CASE === 'drop' ? 9000 : 3000,
     actAt: ACT_AT,
     act,
-    until: CASE === 'drop'
-      ? async () => (await coverTitle()) === 'Not connected'
-      : null,
+    until: null,
   });
   await delay(300);
   await framed(`settled-${CASE}`);
@@ -554,22 +606,10 @@ app.whenReady().then(async () => {
     `only ${frames.frames.filter((f) => f.view).length} view samples were taken`);
 
   if (CASE === 'drop') {
-    // The gateway is gone, so from the moment it went away the reader must not be
-    // looking at its document. Bounded rather than "eventually": the app learns
-    // from the page's own socket closing, which is a round trip through the
-    // preload and the main process, and the number printed is where that lands.
-    const BOUND_MS = 1200;
-    const after = line.filter((e) => (e.until ?? e.at) > ACT_AT);
-    const held = after.filter((e) => e.label === 'MARKER A');
-    const lastHeld = held.length ? Math.max(...held.map((e) => e.until ?? e.at)) : null;
-    console.log(`note the gateway's document was last on top ${lastHeld}ms into the burst, `
-      + `${lastHeld === null ? 'which is not at all' : `${lastHeld - ACT_AT}ms after the gateway went away`}`);
-    check('the gateway view is off screen within a bound of the drop',
-      lastHeld === null || lastHeld - ACT_AT <= BOUND_MS,
-      `the gateway view was still on top at ${lastHeld}ms, i.e. ${lastHeld - ACT_AT}ms after the gateway went away`);
-    check('the app\'s own surface replaces it',
-      state.top === 'cover' && state.cover === 'Not connected',
-      `the view on top is ${state.top} saying ${state.cover}`);
+    // Transport interruption is not document failure. The existing page stays.
+    check('the same document remains visible during transport interruption',
+      state.top === 'gateway' && state.mark === 'MARKER A',
+      `the view on top is ${state.top} saying ${state.mark}`);
 
     // And the recovery half: the gateway comes back, and the app must not need a
     // person to press anything for the reader to be back on it.
@@ -581,13 +621,11 @@ app.whenReady().then(async () => {
     while (Date.now() < backDeadline) {
       await delay(200);
       const view = await readViews();
-      // The reader is on the gateway again only when the gateway's document is the
-      // thing ON TOP. The old document stays loaded behind our cover -- measured
-      // above, `mark` still reads MARKER A while the cover is up -- so reading the
-      // mark alone would call a covered window a recovery.
-      if (view.top === 'gateway' && view.mark) { recovered = view.mark; break; }
+      // Require both the retained visible document and a live session socket.
+      // A marker alone cannot prove transport recovery.
+      if (view.top === 'gateway' && view.mark && view.socketOpen) { recovered = view.mark; break; }
     }
-    check('and comes back on its own when the gateway does', recovered === 'MARKER B',
+    check('the socket recovers without replacing the retained document', recovered === 'MARKER A',
       `the window was showing ${recovered} rather than the gateway, with no press`);
     if (recovered) await framed('recovered');
   } else {

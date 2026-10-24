@@ -81,6 +81,6 @@ test('the gate fails the cover in the page\'s own words, or says the gateway is 
 });
 
 test('a load of our own, or a failure, ends a press rather than leaving its deadline armed', () => {
-  assert.match(body('function beginGatewayConnect(gw) {', '\n}\n'), /connectPress\.cancel\(\)/);
+  assert.match(body('function beginGatewayConnect(gw, restoredRoute = null) {', '\n}\n'), /connectPress\.cancel\(\)/);
   assert.match(body('function showConnectionFailure(detail) {', '\n}\n'), /connectPress\.cancel\(\)/);
 });

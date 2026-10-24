@@ -125,8 +125,7 @@ enum SettingsSpec {
 
     /// A button on one of our shared pages to press, from `-claw-press
     /// <settings|about>:<element id>`, for a screenshot run: a simulator cannot be
-    /// tapped, and a pressed state ("Opening…", "Clearing…") or what a press
-    /// starts (the cache-clear restart) exists only after a press. The press is
+    /// tapped, and a pressed state ("Opening…") exists only after a press. The press is
     /// the page's own button's click, so it runs the page's real handler and the
     /// real host command behind it. Compiled out of a release build, and inert
     /// without the argument.

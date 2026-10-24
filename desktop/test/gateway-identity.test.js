@@ -39,14 +39,14 @@ test('the desktop identifies an address before the web view is pointed at it', (
   assert.match(main, /async function identifyBeforeConnect\(/, 'there is no identification step before a connect');
   // The ORDER is the requirement, not the presence of both calls: the gate has to
   // run inside loadActiveGateway and only reach the connect once it answers yes.
-  const loadBlock = main.match(/function loadActiveGateway\(\)[\s\S]*?\n\}/);
+  const loadBlock = main.match(/function loadActiveGateway\([^\n]*\)[\s\S]*?\n\}/);
   assert.ok(loadBlock, 'loadActiveGateway is gone');
   assert.match(loadBlock[0], /identifyBeforeConnect\(gw\)/,
     'the connect path does not identify the address first');
-  assert.match(loadBlock[0], /beginGatewayConnect\(gw\)/,
+  assert.match(loadBlock[0], /beginGatewayConnect\(gw(?:, rendererLoss\?\.route)?\)/,
     'the connect no longer goes through the identified path');
   const gate = loadBlock[0].indexOf('identifyBeforeConnect(gw)');
-  const connect = loadBlock[0].indexOf('beginGatewayConnect(gw)');
+  const connect = loadBlock[0].indexOf('beginGatewayConnect(gw');
   assert.ok(gate >= 0 && connect > gate, 'the connect is reachable without the identification');
 });
 

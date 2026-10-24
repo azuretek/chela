@@ -19,8 +19,6 @@
   ],
   "actions": [
     "none",
-    "close",
-    "cover",
     "reconnect",
     "uncover"
   ],
@@ -79,7 +77,7 @@
     "awake": {
       "sleep": [
         "asleep",
-        "close"
+        "none"
       ],
       "wake": [
         "reconnecting",
@@ -87,7 +85,7 @@
       ],
       "offline": [
         "offline",
-        "cover"
+        "none"
       ],
       "online": [
         "reconnecting",
@@ -143,7 +141,7 @@
       ],
       "wake": [
         "offline",
-        "cover"
+        "none"
       ],
       "offline": [
         "asleepOffline",
@@ -169,7 +167,7 @@
     "offline": {
       "sleep": [
         "asleepOffline",
-        "close"
+        "none"
       ],
       "wake": [
         "offline",
@@ -199,7 +197,7 @@
     "reconnecting": {
       "sleep": [
         "asleep",
-        "close"
+        "none"
       ],
       "wake": [
         "reconnecting",
@@ -207,7 +205,7 @@
       ],
       "offline": [
         "offline",
-        "cover"
+        "none"
       ],
       "online": [
         "reconnecting",

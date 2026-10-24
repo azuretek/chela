@@ -14,7 +14,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import * as buildInfo from '../src/build-info.js';
-import * as cache from '../src/cache.js';
 import { collect as collectBuildInfo, countFromVersion } from '../scripts/build-info.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -133,19 +132,6 @@ test('a missing build date or count drops that row instead of printing a broken 
     ['Commit', 'Build']);
 });
 
-/* -------------------------------------------------------------------- buildId */
-
-test('a clean packaged build identifies itself by commit', () => {
-  assert.equal(buildInfo.buildId(CLEAN), SHA);
-});
-
-test('a dirty build has no usable id', () => {
-  // Every build from a dirty tree shares one hash, so trusting it would stop
-  // detecting upgrades during precisely the work that rebuilds most often.
-  assert.equal(buildInfo.buildId({ ...CLEAN, dirty: true }), null);
-  assert.equal(buildInfo.buildId(buildInfo.normalize(null)), null);
-});
-
 /* ----------------------------------------------------------------------- read */
 
 test('a missing build-info.json is the source-build shape, not a crash', () => {
@@ -166,31 +152,6 @@ test('malformed JSON on disk falls back rather than taking startup down', () => 
   fs.writeFileSync(file, '{"commit": "a1b2c3');
   assert.equal(buildInfo.read(file).commit, null);
   fs.rmSync(path.dirname(file), { recursive: true, force: true });
-});
-
-/* ------------------------------------------- the fingerprint it feeds into */
-
-test('the commit is the fingerprint when there is one', () => {
-  assert.equal(
-    cache.buildFingerprint({ version: '1.0.0', commit: SHA }),
-    `1.0.0:${SHA}`,
-  );
-});
-
-test('two builds of one version differ by commit alone', () => {
-  // The bug this replaces: both builds are 1.0.0, and before the stamp existed
-  // the only thing separating them was the app bundle's mtime.
-  assert.notEqual(
-    cache.buildFingerprint({ version: '1.0.0', commit: SHA }),
-    cache.buildFingerprint({ version: '1.0.0', commit: SHA.replace(/^a/, 'b') }),
-  );
-});
-
-test('with no commit it still falls back to size and mtime', () => {
-  assert.equal(
-    cache.buildFingerprint({ version: '1.0.0', size: 171204, mtimeMs: 1788390000000, commit: null }),
-    '1.0.0:171204:1788390000000',
-  );
 });
 
 /* --------------------------------------------------- the generator, offline */

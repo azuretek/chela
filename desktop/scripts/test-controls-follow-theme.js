@@ -211,7 +211,6 @@ fs.writeFileSync(PRELOAD, [
   "contextBridge.exposeInMainWorld('clawSettings', { asPage: false, invoke: async () => state, on: none });",
   "contextBridge.exposeInMainWorld('clawDesktop', {",
   '  about: async () => state, checkUpdates: async () => {}, openReleases: none, closeOverlay: none, onAboutChanged: none,',
-  "  clearCacheAndReload: async () => ({ cleared: [], failed: [], origins: [], gateway: null }),",
   '  notices: async () => state.notices || [], bannerSpec: async () => spec, onNoticesChanged: none,',
   '  bannerHeight: none, bannerBounds: none, sweepBounds: none, dismissNotice: none, noticeAction: none, markNoticesRead: none,',
   '  pairing: async () => state, onPairingChanged: none, reconnect: none,',

@@ -72,8 +72,6 @@ export const PROOFS = [
  * so a reason that stops being true is visible as a line to delete.
  */
 export const NOT_IN_CI = {
-  'test-about-cache.js':
-    'runs against the throwaway gateway, and its claim is a DIP in the Control UI\'s cache count during a clear; on the runner the worker refilled the bucket before the dip was sampled (lowest count 5), so the reading is a race with the refill rather than a property of the app',
   'test-affordance-placement.js':
     'needs a Control UI past its first-run flow, which takes a gateway configured with a model provider and so a credential; the throwaway gateway serves the first-run page, which has no sidebar footer to place into',
   'test-surface-motion.js':

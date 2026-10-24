@@ -6,7 +6,7 @@ import WebKit
 /// The About header, measured on the page this client actually renders.
 ///
 /// Reported on 1.0.1-dev.358: the Chela mark in the header sat left of the cards'
-/// own edge while the card headings ("Updates", "Cached Control UI code") started
+/// own edge while the Updates heading started
 /// further in, and it sat 25px off its own name. Both are properties of the shared
 /// stylesheet, so they are read here off the bundled about.html in a real web view,
 /// the way the phone draws it, rather than restated from the CSS. The desktop reads
@@ -62,6 +62,7 @@ final class AboutLayoutTests: XCTestCase {
         const m = mark.getBoundingClientRect();
         const t = title.getBoundingClientRect();
         return JSON.stringify({
+          removedControls: document.querySelectorAll('#clear-cache, #clear-cache-group').length,
           markLeft: m.left,
           headingLefts: headings.map((h) => h.getBoundingClientRect().left),
           markToName: t.left + parseFloat(getComputedStyle(title).paddingLeft) - m.right,
@@ -82,8 +83,9 @@ final class AboutLayoutTests: XCTestCase {
         let measured = try await measure(width: width)
         let markLeft = measured["markLeft"] as? Double ?? .nan
         let headings = measured["headingLefts"] as? [Double] ?? []
-        XCTAssertGreaterThan(headings.count, 1,
-            "at \(Int(width))px the page has no card headings to line the mark up against: \(measured)")
+        XCTAssertEqual(measured["removedControls"] as? Int, 0)
+        XCTAssertEqual(headings.count, 1,
+            "at \(Int(width))px the page should have one Updates heading to line the mark up against: \(measured)")
         for heading in headings {
             XCTAssertEqual(markLeft, heading, accuracy: 0.5,
                 "at \(Int(width))px the header mark starts at x \(markLeft) but a card heading at x \(heading)")

@@ -102,6 +102,24 @@ The two credentials a run can need are environment variables rather than argumen
 
 Where a check needs a state none of these reaches, add an argument the same way: under `#if DEBUG`, inert without its argument, driving the real path, with a doc comment saying why it exists, and a row in this table.
 
+## Native Home/activate continuity fixture
+
+`WakeReconnectUITests/testActualHomeActivateKeepsFixtureDocument` is opt-in.
+Serve `ChelaUITests/Fixtures/wake-continuity.html` on an isolated loopback HTTP
+server and forward its full URL with
+`TEST_RUNNER_CLAW_FIXTURE_GATEWAY=http://127.0.0.1:18996/wake-continuity.html`
+when running `xcodebuild test-without-building`. Build for testing before booting
+the simulator, and use a clean, owned simulator destination. The test supplies
+only a synthetic fixture token, never a real gateway credential.
+
+The fixture exposes a fresh document UUID and an unsent textarea. The test types
+a draft, presses Home, waits for actual background state, activates the app, and
+asserts the same document UUID and exact draft remain. Initial WebKit/AX readiness
+has a bounded 90-second wait because cold simulator processes can take longer
+than 30 seconds. No document or draft assertion is relaxed. This tests the native
+lifecycle against a marker page, not a live gateway, physical-device suspension
+or host sleep. Without the fixture URL the test skips explicitly.
+
 ## The gateway the app loads
 
 No address is in this repository, and none is compiled into the app. It is this
