@@ -30,8 +30,14 @@ test('gateway loads and app upgrades cannot probe builds or clear caches', () =>
   assert.doesNotMatch(read('desktop/src/config.js'), /swVersions/);
   const webView = read('mobile/Chela/WebView.swift');
   const termination = webView.slice(webView.indexOf('func webViewWebContentProcessDidTerminate'),
-    webView.indexOf('private func report'));
+    webView.indexOf('func resumeTerminatedRenderer'));
+  assert.ok(termination.includes('resumeTerminatedRenderer()'));
   assert.doesNotMatch(termination, /webView\.reload/);
+  const recovery = webView.slice(webView.indexOf('func resumeTerminatedRenderer'),
+    webView.indexOf('private func report'));
+  assert.match(recovery, /rendererRecoveryPending, !rendererRecoveryUsed, !rendererRecoveryCancelled/);
+  assert.match(recovery, /applicationState == \.active/);
+  assert.match(recovery, /rendererRecoveryUsed = true[\s\S]*webView\.reload\(\)/);
   assert.match(webView, /appliedRetryTick != pairing\.retryTick/);
   assert.match(webView, /webView\.reload\(\)/);
 });
