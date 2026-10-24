@@ -17,23 +17,23 @@ function harness() {
   return { wake, calls };
 }
 
-test('suspend then resume: close, then one fresh reconnect, cover down on render', () => {
+test('suspend then resume retains the page and requests one transport check', () => {
   const { wake, calls } = harness();
   for (const raw of ['powerMonitor:suspend', 'powerMonitor:resume', 'page:rendered']) wake.reportRaw(raw);
-  assert.deepStrictEqual(calls, ['close', 'reconnect', 'uncover']);
+  assert.deepStrictEqual(calls, ['reconnect', 'uncover']);
   assert.strictEqual(wake.state, 'awake');
 });
 
 test('lock, suspend, resume, unlock reconnects exactly once', () => {
   const { wake, calls } = harness();
   for (const raw of ['powerMonitor:lock-screen', 'powerMonitor:suspend', 'powerMonitor:resume', 'powerMonitor:unlock-screen', 'page:rendered']) wake.reportRaw(raw);
-  assert.deepStrictEqual(calls, ['close', 'reconnect', 'uncover']);
+  assert.deepStrictEqual(calls, ['reconnect', 'uncover']);
 });
 
-test('resume with no network: cover and wait, reconnect when it returns', () => {
+test('resume offline retains the page and checks transport when online', () => {
   const { wake, calls } = harness();
   for (const raw of ['powerMonitor:suspend', 'net:offline', 'powerMonitor:resume', 'net:online', 'page:rendered']) wake.reportRaw(raw);
-  assert.deepStrictEqual(calls, ['close', 'cover', 'reconnect', 'uncover']);
+  assert.deepStrictEqual(calls, ['reconnect', 'uncover']);
 });
 
 test('heartbeat missed while open reconnects fresh', () => {
@@ -42,10 +42,10 @@ test('heartbeat missed while open reconnects fresh', () => {
   assert.deepStrictEqual(calls, ['reconnect', 'uncover']);
 });
 
-test('network drop while open: cover, reconnect on restore', () => {
+test('network drop retains the page and checks transport on restore', () => {
   const { wake, calls } = harness();
   for (const raw of ['net:offline', 'net:online', 'page:rendered']) wake.reportRaw(raw);
-  assert.deepStrictEqual(calls, ['cover', 'reconnect', 'uncover']);
+  assert.deepStrictEqual(calls, ['reconnect', 'uncover']);
 });
 
 test('an unknown platform event does nothing', () => {

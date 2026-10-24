@@ -38,16 +38,6 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
     /// `closeOverlay('about')`.
     private let onClose: () -> Void
 
-    /// Clear this client's cached Control UI code and reload it from the server.
-    ///
-    /// Injected rather than implemented here for the same reason `makeCheck` is:
-    /// the About host owns a page, not a gateway web view, and the thing that has
-    /// to reload is the session behind the sheet. The default is the honest
-    /// refusal, so a host built without this does not offer a button that appears
-    /// to work: the page hides the section when the command is absent, and this
-    /// makes the command absent rather than broken.
-    private let clearCacheAndReload: () async -> (ok: Bool, detail: String)
-
     /// How a press on the page's Check for updates button builds its check.
     ///
     /// A closure rather than a check built here, because a screenshot run has to
@@ -71,15 +61,11 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
     init(
         notices: NoticeBoard,
         onClose: @escaping () -> Void,
-        makeCheck: (() -> UpdateCheck)? = nil,
-        clearCacheAndReload: (() async -> (ok: Bool, detail: String))? = nil
+        makeCheck: (() -> UpdateCheck)? = nil
     ) {
         self.notices = notices
         self.onClose = onClose
         self.makeCheck = makeCheck ?? { UpdateCheck(board: notices) }
-        self.clearCacheAndReload = clearCacheAndReload ?? {
-            (false, "This build cannot clear its own cache.")
-        }
         super.init()
     }
 
@@ -147,7 +133,6 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
             checkUpdates: function () { post('checkUpdates', []); return Promise.resolve(); },
             openReleases: function () { post('openReleases', []); },
             closeOverlay: function (name) { post('closeOverlay', [name]); },
-            clearCacheAndReload: function () { return invoke('clearCacheAndReload', []); },
             onAboutChanged: function (fn) { changed.push(fn); }
           };
         })();
@@ -170,13 +155,6 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
     func emitChanged() {
         webView?.evaluateJavaScript("window.__clawAboutEmit && window.__clawAboutEmit()")
     }
-
-    /// The kinds of cache a clear drops, named for the reader rather than for the
-    /// API. The list is the point: it is the same boundary the desktop's
-    /// `src/cache.js` keeps, and it deliberately EXCLUDES the stores that hold this
-    /// device's paired identity. A button that signed the reader out would be a far
-    /// worse fault than the staleness it fixes.
-    static let cacheKinds = ["cached code", "service worker"]
 
     #if DEBUG
     /// Press the page's Check for updates, for a screenshot run.
@@ -227,27 +205,6 @@ final class AboutHost: NSObject, ObservableObject, WKScriptMessageHandler {
             // saying "checking".
             await makeCheck().run(trigger: .manual)
             emitChanged()
-
-        case "clearCacheAndReload":
-            // The same command the desktop's About page calls, with the same
-            // answer: the cache is cleared and the Control UI restarts the way a
-            // fresh launch does, with this sheet and Settings going away as part of
-            // it (see ContentView's wiring). The reply says whether that restart
-            // STARTED; when it did not (no gateway page to reload), this sheet is
-            // staying and the page shows the reason under the button.
-            let report = await clearCacheAndReload()
-            if let id {
-                reply(id, value: [
-                    "ok": report.ok,
-                    "started": report.ok,
-                    "detail": report.detail,
-                    "origins": ["this device's Control UI"],
-                    "cleared": report.ok ? ["this device's Control UI"] : [],
-                    "failed": report.ok ? [] : [["origin": "this device's Control UI", "error": report.detail]],
-                    "kinds": Self.cacheKinds,
-                    "gateway": NSNull(),
-                ])
-            }
 
         case "openReleases":
             // The REAL release notes, which is what the button says. It used to

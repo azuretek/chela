@@ -67,17 +67,6 @@ export function blank({ suggestedGateways = [], uuid, window = null, globalShort
     themeByGateway: {},
     // host -> "sha256/BASE64", pinned on first accept. See src/certs.js.
     trustedCerts: {},
-    // origin -> Control UI build id as of the last successful load, so an
-    // upgraded gateway has its service-worker cache dropped exactly once rather
-    // than on every connect. Learned, never configured; see src/cache.js.
-    swVersions: {},
-    // Fingerprint of the app build that last ran, version plus the app bundle's
-    // size and mtime, because the semver alone does not move between builds. An
-    // app upgrade brings a new Electron and a new preload, so its caches are
-    // cleared once on the first run after. null on a fresh profile, which is
-    // deliberately *not* an upgrade: there is nothing stale in a cache that does
-    // not exist yet.
-    appBuild: null,
   };
   if (window) base.window = { ...window };
   if (globalShortcut) base.globalShortcut = globalShortcut;

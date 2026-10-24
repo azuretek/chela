@@ -56,12 +56,7 @@ final class PageCover: ObservableObject {
     private var generation = 0
     private var finished: Set<Int> = []
 
-    /// The minimum-visible floor, for the one path that asks for it: a restart the
-    /// reader asked for (Clear cache and refresh) is a state they are meant to SEE,
-    /// and a page that paints while the sheets are still sliding away would lift the
-    /// cover before it was ever on screen. `distantFuture` while the sheets go,
-    /// then the floor from the moment the cover is revealed. Nil otherwise, so a
-    /// launch or a reconnect lifts the moment its page has painted, as before.
+    /// The minimum-visible floor for login-gate connection feedback.
     private var floorUntil: Date?
     /// A paint that arrived inside the floor, played when the floor ends unless a
     /// new hold has voided it by then.
@@ -147,12 +142,6 @@ final class PageCover: ObservableObject {
         isCovered = true
         lastLift = nil
         NSLog("[claw] the load under the cover failed (%@); holding it in its failed state", why)
-    }
-
-    /// Hold the cover up through any lift until `releaseFloor` is called. See
-    /// `floorUntil`.
-    func holdFloor() {
-        floorUntil = .distantFuture
     }
 
     /// The sheets have gone and the cover is what the reader sees: keep it at

@@ -1,7 +1,7 @@
 // Spacing, from the fourth rule in ui/CONVENTIONS.md.
 //
 // The fault this pins, reported 2026-09-17 in the phone's About sheet: the fact
-// table follows the cached-code card at no gap at all, so the table sat hard under
+// table follows the update actions at no gap at all, so the table sat hard under
 // the card's own edge while the two cards above it were spaced. The rule that
 // existed asked whether the block BELOW a card was itself a card, and the table is
 // not one, so the question never reached it.
@@ -45,10 +45,10 @@ test('the card gap cannot displace a block that asks for spacing of its own', ()
 });
 
 test('the About fact table is a block the rule reaches', () => {
-  const group = html.indexOf('id="clear-cache-group"');
+  const group = html.indexOf('id="check"');
   const facts = html.indexOf('<div id="facts"></div>');
-  assert.ok(group > 0, 'the cached-code card is gone');
-  assert.ok(facts > group, 'the fact table is not after the cached-code card');
+  assert.ok(group > 0, 'the update actions are gone');
+  assert.ok(facts > group, 'the fact table is not after the update actions');
   // Siblings inside .modal__body: nothing wraps the table between it and the card,
   // which is what makes the card + anything rule match it.
   assert.match(html.slice(group, facts), /<\/div>\s*\n\s*<!-- Filled in by about\.js/,

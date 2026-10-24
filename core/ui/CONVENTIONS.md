@@ -240,19 +240,12 @@ got. A line under a control is for a report that stays until the surface closes,
 meaning a host that refused the press.
 
 **A press whose answer is the app doing something in front of the reader writes
-nothing at all.** Two controls work this way, and both take the three rows above:
+nothing at all.** These controls work this way, and both take the three rows above:
 
 - **Go to the Control UI** says "Opening…" and ignores every press after the first,
   while the Control UI's own settings arrive behind this surface; the surface goes
   when they are on screen, held the minimum-visible floor from the press, and a
   bounded deadline gives the button back if neither happens.
-- **Clear cache and refresh** says "Clearing…", and its answer is a FRESH START of
-  the app (Abi, 2026-09-25): the launch loading screen goes up first, About and
-  Settings slide away onto it, the Control UI reloads from the server behind it, and
-  it comes down once the page has painted, held the floor so the restart is seen.
-  No green line anywhere, because the restart IS the answer, and a reload that
-  fails lands on the loading screen's own failed state with Try again, the path a
-  failed launch takes.
 - **Connect on the Control UI's own login gate** (its "Gateway unreachable" screen)
   is upstream's control rather than ours, and it gets the same answer from outside
   the page (Abi, 2026-09-25): the launch loading screen goes up on the press, stays

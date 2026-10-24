@@ -289,29 +289,6 @@ drawn there: an over-tall banner would be an invisible strip eating clicks on
 the Control UI underneath. [scripts/test-banner.js](scripts/test-banner.js)
 raises a real condition and asserts those two numbers agree.
 
-## Recovering a stale UI
-
-The Control UI is a PWA whose service worker serves `/assets/` cache-first. This
-app closes to the tray rather than quitting, so a document can sit for weeks
-without the navigation that would re-check `sw.js`, leaving the app showing an
-older Control UI than the gateway is serving. Three ways out:
-
-- **Gateway upgraded.** The app compares the build id in `sw.js` against the
-  one recorded for that gateway and, if it moved, drops the caches and reloads
-  once, automatically.
-- **App upgraded.** The first run after a new build clears them before
-  anything loads.
-- **Neither.** **File, Clear cache and reload**, also on the tray menu
-  (Windows auto-hides the menu bar behind Alt, exactly when you want this).
-  Every command is in both places, on every platform, for that reason.
-
-All three drop the service worker, its Cache Storage, and the HTTP and
-compiled-code caches, and **never** cookies, localStorage or IndexedDB. That
-boundary is load-bearing: the paired device identity lives in origin storage, so
-clearing it would make the Gateway report a login from an unrecognised device.
-[src/cache.js](src/cache.js) keeps the two apart and `test/cache.test.js`
-asserts it.
-
 ## Which build am I running?
 
 The line at the bottom of Settings names the version this build is, during
@@ -548,7 +525,6 @@ src/main.js          app lifecycle, window, tray, navigation guards
 src/menus.js         the menu bar, identical on every platform (asserted in test)
 src/chrome.js        title strip geometry + theme adopted from the page
 src/autostart.js     launch at login on Linux, which Electron does not implement
-src/cache.js         drops the Control UI's cached copy of itself, never its storage
 src/certs.js         certificate pinning; refuses, then offers the choice in Settings
 src/secrets.js       per-gateway token/password/headers, safeStorage-encrypted
 src/config.js        atomic JSON config store (no secrets)

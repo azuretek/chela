@@ -97,6 +97,12 @@ struct WebView: UIViewRepresentable {
         /// safe area, so a rotation is the only thing that moves it.
         var appliedFrameInset: String?
         var requested: URL?
+        var recoveryGatewayId: String?
+        var rendererRecoveryUsed = false
+        var rendererRecoveryPending = false
+        var rendererRecoveryCancelled = false
+        weak var recoveryWebView: WKWebView?
+        weak var pageControl: GatewayPage?
         /// The last appearance pushed down to this web view, so `updateUIView`
         /// only touches the view and the page when it actually changed.
         var appliedAppearance: AppearanceMode?
@@ -206,8 +212,8 @@ struct WebView: UIViewRepresentable {
 
         /// The page loaded. Whatever a previous failure said about this gateway is
         /// no longer true, so the notice the banner is showing comes down.
-        /// A load started, the first one, a Try again, a wake's reconnect or a
-        /// pairing retry alike: cover the page until the new one has painted.
+        /// Initial load, explicit retry and pairing navigation cover the page
+        /// until it paints. Ordinary background/foreground does not navigate.
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             Task { @MainActor in cover.hold() }
         }
@@ -268,15 +274,40 @@ struct WebView: UIViewRepresentable {
         }
 
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            let lostRequest = requested
             Task { @MainActor in
+                guard !rendererRecoveryCancelled, pageControl?.webView === webView,
+                      recoveryGatewayId == gatewayId, requested == lostRequest else { return }
+                if pairing.phase == .authenticated && !rendererRecoveryUsed {
+                    rendererRecoveryPending = true
+                }
                 notices.connectionFailed(
                     label: gatewayName,
-                    description: "The page stopped responding and will be reloaded."
+                    description: "The page stopped responding. Try connecting again."
                 )
                 connection.failed(gatewayId)
                 cover.lift("page-terminated")
-                webView.reload()
+                resumeTerminatedRenderer()
             }
+        }
+
+        @MainActor
+        func resumeTerminatedRenderer() {
+            guard rendererRecoveryPending, !rendererRecoveryUsed, !rendererRecoveryCancelled,
+                  UIApplication.shared.applicationState == .active,
+                  recoveryGatewayId == gatewayId,
+                  let webView = recoveryWebView, pageControl?.webView === webView,
+                  pairing.phase == .authenticated else { return }
+            rendererRecoveryPending = false
+            rendererRecoveryUsed = true
+            connection.connecting(gatewayId)
+            pairing.connecting()
+            if let controller = contentController {
+                WebView.installNativeAuth(controller, gatewayId: gatewayId, previous: &nativeAuthScript)
+                WebView.installDeviceIdentitySeed(controller, previous: &deviceIdentitySeedScript)
+            }
+            // Only committed page-owned storage survives this new document.
+            webView.reload()
         }
 
         private func report(_ error: Error) {
@@ -742,10 +773,17 @@ struct WebView: UIViewRepresentable {
         // settings sheet can ask for it. Weak on the other side, so this is not a
         // reference the page outlives.
         pageControl.webView = webView
+        context.coordinator.recoveryWebView = webView
+        context.coordinator.pageControl = pageControl
+        pageControl.resumeTerminatedRenderer = { [weak coordinator = context.coordinator] in
+            coordinator?.resumeTerminatedRenderer()
+        }
         return webView
     }
 
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
+        coordinator.rendererRecoveryCancelled = true
+        coordinator.rendererRecoveryPending = false
         // A user content controller keeps its message handlers strongly, so
         // without this the coordinator outlives the view it was made for.
         webView.configuration.userContentController
@@ -759,6 +797,10 @@ struct WebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
+        context.coordinator.recoveryGatewayId = gateway.id
+        if context.coordinator.requested != gateway.url {
+            context.coordinator.rendererRecoveryPending = false
+        }
         // Before the load guard below, because the appearance has to reach a page
         // that is already on screen: changing it in settings must repaint what is
         // in front of you rather than wait for the next navigation. Applied only
@@ -800,6 +842,8 @@ struct WebView: UIViewRepresentable {
         // not carry a new beat does nothing.
         if context.coordinator.appliedRetryTick != pairing.retryTick {
             context.coordinator.appliedRetryTick = pairing.retryTick
+            context.coordinator.rendererRecoveryPending = false
+            context.coordinator.rendererRecoveryUsed = false
             if context.coordinator.requested == gateway.url {
                 connection.connecting(gateway.id)
                 pairing.connecting()

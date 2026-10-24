@@ -2,7 +2,7 @@
 // serving a different Control UI payload.
 //
 // The claim under test is Abi's: the server's payload should be what renders, on
-// first load and after a cache clear, rather than a pre-loaded or previously
+// first load, rather than a pre-loaded or previously
 // cached one. Nothing here reasons about that: the gateway is a real server
 // serving a distinguishable payload, the app is the real app, and what is printed
 // is the text that ended up on screen.
@@ -53,16 +53,6 @@ if (!['a', 'b'].includes(PHASE)) {
 // The other phase's assets stay served, deliberately: a 404 would prove the app
 // fetched, but it would not show WHICH copy it drew. Both are always on offer.
 const MARK = { a: 'A', b: 'B' }[PHASE];
-/**
- * The build id embedded in the worker, which the app records per origin and
- * compares on every load.
- *
- * Separate from the payload on purpose. A gateway that is upgraded moves both, but
- * the app's own refresh keys on THIS and nothing else, so a run that changes the
- * payload and holds the build id still is the case where nothing auto-clears, and
- * the only way out is the menu's Clear cache and reload. That is what part two of
- * the requirement is about, and it has to be reachable to be measured.
- */
 const SW_BUILD = (arg('sw-build', PHASE) || PHASE).toUpperCase();
 if (!['A', 'B'].includes(SW_BUILD)) {
   console.error(`--sw-build must be a or b, not ${SW_BUILD}`);
@@ -86,19 +76,6 @@ const EXPECT_FIRST = (arg('expect-first', EXPECT) || EXPECT).toUpperCase();
  */
 const GATEWAY_DOWN = process.argv.includes('--gateway-down');
 
-/** Set to click the menu's Clear cache and reload and check the payload after it. */
-const THEN_CLEAR = process.argv.includes('--then-clear-cache');
-/**
- * Allow the settled reading to hold a stale FIXED-url asset until the clear.
- *
- * This is the one staleness the document cannot fix and the worker owns: upstream
- * hashes its asset names, so a real Control UI never serves one from the same url
- * across builds, and the app's refresh drops the worker's caches when the build id
- * moves. A run that changes the payload while holding the build id still is the
- * case where nothing auto-clears, and it is the case the menu item exists for, so
- * that run asserts the stale value BEFORE the clear and the fresh one after it.
- */
-const ALLOW_STALE_STATIC = process.argv.includes('--allow-stale-static-before-clear');
 /**
  * Drop the gateway after the first successful load, and press the reconnect item.
  *
@@ -488,22 +465,6 @@ app.whenReady().then(async () => {
     }
   }
 
-  // Part two of the requirement, measured through the path a person uses: the
-  // menu's Clear cache and reload, which drops the worker's caches and the HTTP
-  // cache and loads again. Runs only when asked, because with a moved build id the
-  // app has usually cleared by itself already and the interesting run is the one
-  // where it has not.
-  let afterClear = null;
-  if (THEN_CLEAR) {
-    const item = menuItem('Clear cache and reload');
-    if (!item) { console.error('FAIL no Clear cache and reload in the application menu'); app.exit(1); return; }
-    console.log('MENU    clicking Clear cache and reload');
-    item.click();
-    await sleep(SETTLE_MS);
-    afterClear = await look(pageWc());
-    console.log(`AFTER-CLEAR ${JSON.stringify(afterClear)}`);
-  }
-
   clearInterval(sampler);
   console.log(`VERDICT phase=${MARK} sw=${SW_BUILD} first=${first.doc} `
     + `settled=${settled ? settled.doc : 'gone'} `
@@ -516,6 +477,9 @@ app.whenReady().then(async () => {
   // observation: with it left at its default, the first paint must already be the
   // server's payload.
   const fails = [];
+  if (navigations !== 1 && !THEN_DROP_GATEWAY) {
+    fails.push(`a launch navigated ${navigations} times instead of once`);
+  }
   const want = (seen, field) => `${field} ${EXPECT}`;
   if (first.doc !== `doc ${EXPECT_FIRST}`) {
     fails.push(`the first paint was ${first.doc}, not doc ${EXPECT_FIRST}`);
@@ -529,28 +493,13 @@ app.whenReady().then(async () => {
   }
   if (!settled) fails.push('the page was gone after the settle window');
   else {
-    for (const field of ['doc', 'hashed', 'static']) {
-      if (ALLOW_STALE_STATIC && field === 'static') continue;
+    // The fixture's fixed-URL asset remains the service worker's responsibility.
+    for (const field of ['doc', 'hashed']) {
       if (settled[field] !== want(settled, field)) {
         fails.push(`after the launch ${field} is ${settled[field]}, not ${want(settled, field)}`);
       }
     }
-    if (ALLOW_STALE_STATIC) {
-      console.log(`NOTE    static is ${settled.static} before the clear, which is the worker's `
-        + 'cache-first copy of an asset at a fixed url, and only a clear can move it');
-    }
   }
-  if (THEN_CLEAR) {
-    if (!afterClear) fails.push('the page was gone after the cache clear');
-    else {
-      for (const field of ['doc', 'hashed', 'static']) {
-        if (afterClear[field] !== want(afterClear, field)) {
-          fails.push(`after the cache clear ${field} is ${afterClear[field]}, not ${want(afterClear, field)}`);
-        }
-      }
-    }
-  }
-
   if (THEN_RECONNECT) {
     // The claim Abi asked for, asserted on the DOM rather than described: no fresh
     // payload was available, so the stale one is what a person is left looking at.
@@ -589,7 +538,7 @@ app.whenReady().then(async () => {
     return;
   }
   console.log(`OK      phase=${MARK} sw=${SW_BUILD} painted=${sequence.map((s) => s.doc).join('->')} `
-    + `settled=${settled.doc}${afterClear ? ` after-clear=${afterClear.doc}` : ''}`);
+    + `settled=${settled.doc}`);
   app.exit(0);
 });
 

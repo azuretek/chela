@@ -501,7 +501,7 @@ body.as-page .modal { border-color: transparent; box-shadow: none; }
   gap: calc(var(--space-3) - 9px);
   padding-top: 4px;
   /* The mark's left edge on the same line as the card headings below it
-     ("Updates", "Cached Control UI code"). A heading starts at the body's inline
+     ("Updates"). A heading starts at the body's inline
      padding, plus the card's 1px border, plus the row's --space-4; the header
      already pads 12px (upstream's .settings-sidebar__header), so the headline adds
      the rest. Before this the mark sat at the header's 12px, left of the cards'
@@ -882,7 +882,7 @@ a  { color: var(--accent); }
 }
 /* ★ A centred action cluster, for a row whose buttons are the section's own
    subject rather than a trailing action on a form. Abi, 2026-09-20: the About
-   page's "Check for updates / Release notes" and "Clear cache and refresh" should
+   page's "Check for updates / Release notes" actions should
    be centred, not hung on the right edge, because those cards are ABOUT their
    buttons. A form's trailing Test/Add cluster stays right-aligned (the default),
    so this is a per-row opt-in rather than a change to every action row. */

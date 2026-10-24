@@ -41,15 +41,13 @@ const PRELOAD = path.join(PROFILE,'stub.cjs');
 fs.writeFileSync(PRELOAD, `
 const { contextBridge } = require('electron');
 const state = JSON.parse(process.env.CLAW_ABOUT_STATE || '{}');
-contextBridge.exposeInMainWorld('clawDesktop',{ about:async()=>state, checkUpdates:async()=>{}, openReleases:()=>{}, closeOverlay:()=>{}, onAboutChanged:()=>{}, clearCacheAndReload:async()=>({cleared:['https://minizilla.tail8a6fef.ts.net'],failed:[],origins:['https://minizilla.tail8a6fef.ts.net'],gateway:{label:'Zilla'}}), onCacheCleared:()=>{}, notices:async()=>[], onNoticesChanged:()=>{}, bannerHeight:()=>{}, sweepBounds:()=>{}, dismissNotice:()=>{}, noticeAction:()=>{}, markNoticesRead:()=>{} });
+contextBridge.exposeInMainWorld('clawDesktop',{ about:async()=>state, checkUpdates:async()=>{}, openReleases:()=>{}, closeOverlay:()=>{}, onAboutChanged:()=>{}, notices:async()=>[], onNoticesChanged:()=>{}, bannerHeight:()=>{}, sweepBounds:()=>{}, dismissNotice:()=>{}, noticeAction:()=>{}, markNoticesRead:()=>{} });
 `);
 
 const PROBE = `(() => {
   const de = document.documentElement;
   const body = document.body;
   const modalBody = document.querySelector('.modal__body');
-  // Press clear-cache so the .result line carries a real message, then measure it.
-  const btn = document.getElementById('clear-cache');
   return new Promise((resolve) => {
     const measure = () => {
       const result = document.querySelector('.result');
@@ -70,7 +68,7 @@ const PROBE = `(() => {
         result: result ? { text: result.textContent.slice(0,40), clientH: result.clientHeight, scrollH: result.scrollHeight, clipped: result.scrollHeight > result.clientHeight + 1 } : null,
       });
     };
-    if (btn) { btn.click(); setTimeout(measure, 250); } else { measure(); }
+    measure();
   });
 })()`;
 

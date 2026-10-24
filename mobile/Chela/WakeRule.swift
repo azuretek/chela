@@ -47,7 +47,7 @@ final class WakeMonitor: ObservableObject {
     private var lastSatisfied: Bool?
     private var lastInterfaces: [NWInterface.InterfaceType] = []
 
-    /// What a `reconnect` does: a fresh load of the gateway page. Set by the view.
+    /// Ask the surviving page to recheck transport health, without navigation.
     var reconnect: () -> Void = {}
 
     /// Report a raw platform event. Returns the action taken, for the tests.
@@ -60,9 +60,8 @@ final class WakeMonitor: ObservableObject {
         }
         state = next.state
         if next.action == "reconnect" { reconnect() }
-        // close and cover need nothing of their own here: iOS suspends the process
-        // on background, and the page's own connecting phase is what the cover
-        // follows. uncover is the connection reaching connected.
+        // Backgrounding never clears the document. iOS may suspend execution;
+        // process termination remains a distinct navigation-delegate failure.
         return next.action
     }
 

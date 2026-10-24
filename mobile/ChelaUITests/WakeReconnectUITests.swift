@@ -58,6 +58,39 @@ final class WakeReconnectUITests: XCTestCase {
         return composer.exists
     }
 
+    /// Actual Home/activate against a disposable page; stock UI acceptance is separate.
+    func testActualHomeActivateKeepsFixtureDocument() throws {
+        guard let url = ProcessInfo.processInfo.environment["CLAW_FIXTURE_GATEWAY"] else {
+            throw XCTSkip("needs disposable lifecycle fixture")
+        }
+        // WebKit AX descendants live in another process and cannot be filtered remotely.
+        UserDefaults.standard.set(true, forKey: "XCTDisableRemoteQueryEvaluation")
+        defer { UserDefaults.standard.removeObject(forKey: "XCTDisableRemoteQueryEvaluation") }
+        let app = XCUIApplication()
+        app.launchArguments = ["-claw-gateway-url", url]
+        // Synthetic credential only for the loopback marker fixture; never accepted by a real gateway.
+        app.launchEnvironment["OPENCLAW_SEED_TOKEN"] = "fixture-only-not-a-credential"
+        app.launch()
+        continueAfterFailure = false
+        // Use the typed WebKit query: the generic Any firstMatch query can omit remote AX descendants.
+        let composer = app.textViews.firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 90), "the marker fixture input is not accessible")
+        let identity = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "DOCUMENT:")).firstMatch
+        XCTAssertTrue(identity.waitForExistence(timeout: 15))
+        let before = identity.label
+        composer.tap()
+        let tip = app.buttons["Continue"]
+        if tip.exists && tip.isHittable { tip.tap(); composer.tap() }
+        composer.typeText("native-unsent-draft")
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 15))
+        app.activate()
+        XCTAssertTrue(identity.waitForExistence(timeout: 20))
+        XCTAssertEqual(identity.label, before, "Home/activate replaced the document")
+        XCTAssertEqual(composer.value as? String, "native-unsent-draft")
+        shot(app, "native-home-activate-retained")
+    }
+
     func testSendBackgroundForegroundSend() throws {
         let env = ProcessInfo.processInfo.environment
         guard let gateway = env["CLAW_WAKE_GATEWAY"], let token = env["OPENCLAW_SEED_TOKEN"], !token.isEmpty else {

@@ -5,7 +5,7 @@
 // Three reports about the About surface, all of them measured rather than read:
 //
 //   1. the space below the LAST thing in a section, which Abi reported as visibly
-//      short at the foot of "Cached Control UI code". A section is a settings-group
+//      short at the foot of an action section. A section is a settings-group
 //      and its bottom padding is the last row's, so this reads the gap between the
 //      control and the group's own bottom edge and compares it with the same gap at
 //      the section's top;
@@ -53,6 +53,14 @@ if (!['seeded', 'none'].includes(PALETTE)) throw new Error(`unknown palette ${PA
 const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-about-surface-'));
 app.setPath('userData', PROFILE);
 app.commandLine.appendSwitch('user-data-dir', PROFILE);
+
+// The 1px tolerance is the card border around the row's own bottom padding.
+function rowFeetUsePadding(sections) {
+  return Array.isArray(sections) && sections.length === 1 && sections[0].title === 'Updates'
+    && sections.every((s) => Number.isFinite(s.contentBottomGap)
+      && Number.isFinite(parseFloat(s.rowBottomPad))
+      && Math.abs(s.contentBottomGap - parseFloat(s.rowBottomPad)) <= 1);
+}
 
 const REPO = path.join(import.meta.dirname, '..', '..');
 const UI = path.join(REPO, 'core', 'ui');
@@ -166,7 +174,6 @@ contextBridge.exposeInMainWorld('clawDesktop', {
   openReleases: () => {},
   closeOverlay: () => {},
   onAboutChanged: () => {},
-  clearCacheAndReload: async () => ({ cleared: [], failed: [], origins: [], gateway: null }),
   notices: async () => [],
   onNoticesChanged: () => {},
   bannerHeight: () => {},
@@ -193,7 +200,7 @@ const PROBE = `(() => {
   const root = getComputedStyle(document.documentElement);
   const box = (el) => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height }; };
   const scrim = document.querySelector('.scrim');
-  const group = document.getElementById('clear-cache-group');
+  const group = document.querySelector('.settings-group');
   const rows = group ? [...group.querySelectorAll('.settings-row')] : [];
   const lastRow = rows.length ? rows[rows.length - 1] : null;
   const button = group ? group.querySelector('button') : null;
@@ -374,7 +381,8 @@ app.whenReady().then(async () => {
       // gap to the name is --space-3, at every width the page is drawn at.
       const h = measured.headline;
       check(page.name + ": the header mark starts on the card headings' line",
-        Boolean(h) && h.headingLefts.length > 1 && h.headingLefts.every((x) => Math.abs(x - h.markLeft) < 0.5),
+        Boolean(h) && h.headingLefts.length === 1 && measured.fit.groups === 1
+          && h.headingLefts.every((x) => Math.abs(x - h.markLeft) < 0.5),
         JSON.stringify(h));
       check(page.name + ': the mark sits --space-3 from its name',
         Boolean(h) && Number.isFinite(h.space3) && Math.abs(h.markToName - h.space3) < 0.5,
@@ -390,8 +398,8 @@ app.whenReady().then(async () => {
         Boolean(measured.tokens.bg) && Boolean(measured.tokens.card) && measured.tokens.bg !== measured.tokens.card,
         JSON.stringify(measured.tokens));
       const feet = (measured.sections || []).map((s) => s.contentBottomGap).filter((v) => typeof v === 'number');
-      check(`${page.name}: and its two feet still agree, on the page's own palette`,
-        feet.length > 1 && feet.every((v) => Math.abs(v - feet[0]) <= 1), JSON.stringify(feet));
+      check(`${page.name}: the Updates card's foot is its row padding, on the page's own palette`,
+        rowFeetUsePadding(measured.sections), JSON.stringify(feet));
       check(`${page.name}: and that foot still clears the corner radius`,
         Number.isFinite(measured.section.bottomGap)
           && parseFloat(measured.section.radius || '0') <= measured.section.bottomGap,
@@ -426,13 +434,13 @@ app.whenReady().then(async () => {
       check(`${page.name}: the last section's bottom gap is not smaller than its top`,
         Number.isFinite(section.bottomGap) && Number.isFinite(section.topGap) && section.bottomGap >= section.topGap,
         `top ${section.topGap} vs bottom ${section.bottomGap}`);
-      // The feet AGREE, which is what the report was about: one page, two feet,
-      // 13px against 46px before this change.
+      // Cache controls are gone, so Updates is the only card. Compare its foot
+      // to its OWN row padding: comparing two cards would either require the
+      // deleted controls or pass vacuously without measuring the remaining foot.
       const feet = (measured.sections || []).map((s) => s.contentBottomGap).filter((v) => typeof v === 'number');
-      const feetEqual = feet.length > 1 && feet.every((v) => Math.abs(v - feet[0]) <= 1);
       console.log(`     ${page.name}: section feet ${JSON.stringify(feet)}, action row foot padding ${section.actionRowPadBottom}, radius ${section.radius}`);
       check(`${page.name}: every section's foot is the row's own padding, not a wrapped empty reply line`,
-        feetEqual, `the feet are ${JSON.stringify(feet)}`);
+        rowFeetUsePadding(measured.sections), `the feet are ${JSON.stringify(feet)}`);
       check(`${page.name}: and that foot clears the card's own corner radius`,
         Number.isFinite(section.bottomGap) && parseFloat(section.radius || '0') <= section.bottomGap,
         `foot ${section.bottomGap} vs radius ${section.radius}`);

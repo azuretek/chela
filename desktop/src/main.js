@@ -24,7 +24,6 @@ import { fileURLToPath } from 'node:url';
 import * as autostart from './autostart.js';
 import config from './config.js';
 import * as buildInfo from './build-info.js';
-import * as cache from './cache.js';
 import * as certs from './certs.js';
 import chrome from './chrome.js';
 import * as connectionState from './connection.js';
@@ -210,20 +209,9 @@ let payloadGateway = null;
  * that from a gateway going away: both are a close with no pairing reason. So this
  * is what separates them, and it is set only where WE cause the navigation. The
  * connect path does not need it (its phase is already `connecting`, which the drop
- * handler refuses), but the menu's Reload keeps the connection's phase and needs
- * exactly this.
+ * handler refuses). Navigation still needs this guard while replacing a document.
  */
 let pageReloading = false;
-
-/**
- * Set while the app is showing its own failure surface because the page's socket
- * went away, as opposed to because a load failed.
- *
- * The two want different recoveries: a failed load is recovered by a retry, while a
- * dropped socket is already recovering on its own inside the page, so the socket
- * opening again IS the gateway being back.
- */
-let socketDropped = false;
 
 /**
  * The load attempt in flight, when it is being made beside the payload on screen.
@@ -808,7 +796,12 @@ function mayPresentPayload(gw) {
   }) && pageView && !pageView.webContents.isDestroyed());
 }
 
-function loadActiveGateway() {
+function loadActiveGateway({ rendererLoss = null } = {}) {
+  if (!rendererLoss) {
+    rendererRecoveryEpoch++;
+    pendingRendererLoss = null;
+    if (page()) rendererRecoveryUsed.delete(page());
+  }
   const gw = config.activeGateway();  if (!gw) {
     // Nothing to lay a modal over, so settings *is* the window's content. Also
     // the only thing that makes the window paintable at all on a first run:
@@ -846,7 +839,8 @@ function loadActiveGateway() {
       console.log(`[chela-desktop] the active gateway changed while ${gw.url} was being identified; not connecting`);
       return;
     }
-    beginGatewayConnect(gw);
+    if (rendererLoss && !isCurrentRendererLoss(rendererLoss)) return;
+    beginGatewayConnect(gw, rendererLoss?.route);
   });
   return gw;
 }
@@ -857,7 +851,7 @@ function loadActiveGateway() {
  * Split from `loadActiveGateway` only so the identification can happen first and
  * asynchronously; everything below is the attempt it always was.
  */
-function beginGatewayConnect(gw) {
+function beginGatewayConnect(gw, restoredRoute = null) {
   // A load of our own supersedes a Connect pressed on the Control UI's login
   // gate: this attempt raises its own cover and has its own ending.
   connectPress.cancel();
@@ -920,7 +914,7 @@ function beginGatewayConnect(gw) {
   const supplied = [creds.token && 'token', creds.password && 'password', creds.headers.length && `${creds.headers.length} header(s)`]
     .filter(Boolean).join(', ');
   console.log(`[chela-desktop] connecting to ${gw.label || gw.url} <${gw.url}>${supplied ? ` (supplying ${supplied})` : ''}`);
-  const url = withTokenHandoff(gw.url, creds.token);
+  const url = withTokenHandoff(restoredRoute || gw.url, creds.token);
   // A payload on screen is never navigated away from just to find out whether a
   // fresh one exists: see createGatewayView for what a failed navigation does to
   // the frame. So the attempt happens off to the side and is swapped in only if it
@@ -935,216 +929,8 @@ function beginGatewayConnect(gw) {
   page()?.loadURL(url, FRESH_DOCUMENT);
 }
 
-// The server's payload rather than a cached copy of it, on the one load the app
-// cannot know the answer to.
-//
-// A launch is when the profile may hold a service worker and an HTTP cache from
-// a build the gateway has since replaced, and the Control UI's own worker is
-// cache-first under `/assets/` by design. What must not happen is this app
-// PAINTING an old Control UI on the way in, and a cached DOCUMENT is exactly
-// that: it renders the previous payload, references the previous asset URLs, and
-// looks perfectly correct while being yesterday's product.
-//
-// Measured 2026-09-16, against a marker gateway serving two distinguishable
-// payloads and read off the DOM (see scripts/test-payload-freshness.js). With the
-// document served `Cache-Control: no-cache`, which is what OpenClaw's gateway
-// sends (src/gateway/control-ui.ts), a launch after an upgrade painted the NEW
-// payload and never the old one. With the document cacheable, the SAME launch
-// painted the old payload first and the new one 76ms later, once the build-id
-// refresh below had dropped the worker's caches and reloaded. That first paint is
-// the defect: it is the pre-loaded Control UI Abi ruled out, and how long it lasts
-// is the gateway's caching policy rather than ours.
-//
-// So the document request revalidates. That is the whole fix: the document decides
-// which asset URLs the page wants, and upstream's asset names are content-hashed,
-// so a fresh document cannot pull a stale bundle with it. The worker's caches are
-// still dropped by maybeRefreshForNewBuild when the gateway's build id moved,
-// which a document request cannot see, and an asset served from a FIXED url is
-// still the worker's to hold until that clear, which upstream does not do.
+// Initial loads and explicit connection attempts revalidate the document.
 const FRESH_DOCUMENT = { extraHeaders: 'Cache-Control: no-cache\nPragma: no-cache' };
-
-/* --------------------------------------------------------------- stale cache */
-
-// The Control UI is a PWA whose service worker serves /assets/ cache-first. A
-// browser re-checks sw.js on navigation, which is normally often enough, but
-// this app closes to tray rather than quitting, so its document can sit there
-// for weeks without one, still controlled by the worker an old gateway
-// installed. What that looks like is an app that keeps showing yesterday's
-// Control UI after the gateway has been upgraded under it.
-//
-// Three ways out, in order of how little the user has to notice:
-//   - the gateway's build id changed since the last load   -> clearAndReload
-//   - this app was upgraded since the last run             -> clearOnAppUpgrade
-//   - neither, but it still looks wrong                    -> the menu/tray item
-//
-// All three route through cache.clear(), which drops caches and *only* caches;
-// see src/cache.js for why that boundary is load-bearing.
-
-function gatewayOrigins() {
-  return config.get().gateways.map((g) => originOf(g.url)).filter(Boolean);
-}
-
-function forgetBuildIds(origins) {
-  const next = { ...config.get().swVersions };
-  for (const origin of origins) delete next[origin];
-  config.update({ swVersions: next });
-}
-
-// Set while a reload we triggered ourselves is in flight, so the probe on that
-// load is skipped. Not a loop guard, the new build id is recorded *before* the
-// reload, so a second pass would decide `unchanged` anyway, just a way to
-// avoid re-probing a page we already know the answer for.
-let selfReloading = false;
-
-/**
- * Read the gateway's Control UI build id and, if it moved, drop the caches and
- * reload. Called after every successful load of a gateway page.
- */
-async function maybeRefreshForNewBuild(wc) {
-  if (selfReloading) { selfReloading = false; return; }
-  const origin = activeOrigin();
-  if (!origin || !wc.getURL().startsWith(origin)) return;
-
-  let source = null;
-  try {
-    source = await wc.executeJavaScript(cache.SW_SOURCE_PROBE, true);
-  } catch {
-    // A page that refuses the probe (navigated away mid-flight, no service
-    // worker, not a Control UI at all) is not an error worth surfacing: the
-    // manual command still covers it.
-    return;
-  }
-
-  const version = cache.parseServiceWorkerVersion(source);
-  const seen = config.get().swVersions[origin] || null;
-  const decision = cache.decideRefresh(seen, version);
-  if (decision.action === 'none') return;
-
-  // Record first, unconditionally. If clearing or reloading then fails, the
-  // worst case is that this upgrade is not auto-cleared; recording afterwards
-  // would instead retry the clear on every single load.
-  config.update({ swVersions: { ...config.get().swVersions, [origin]: version } });
-  if (decision.action === 'record') return;
-
-  console.log(`[chela-desktop] control ui build changed at ${origin} (${seen} -> ${version}); clearing cache`);
-  selfReloading = true;
-  await cache.clear(session.defaultSession, [origin]);
-  loadActiveGateway();
-}
-
-/**
- * Manual escape hatch, on the File menu, the tray and the About page. Clears the
- * active gateway's caches, or every gateway's, if none is active, which is the
- * case on the error page where this is most likely to be reached for, and then
- * restarts the Control UI the way a fresh launch starts it.
- *
- * Returns once the clear has been done and the restart has been STARTED, with
- * what was actually cleared per origin: the restart itself is the reader's
- * answer, played in front of them, so nothing waits on it here.
- */
-async function clearCacheAndReload() {
-  const pressedAt = Date.now();
-  const gw = config.activeGateway();
-  const active = activeOrigin();
-  const origins = active ? [active] : gatewayOrigins();
-  console.log(`[chela-desktop] clearing cache for ${origins.join(', ') || '(no gateway)'}`);
-  const results = await cache.clear(session.defaultSession, origins);
-  // Drop the recorded ids too, so the load that follows records what it finds
-  // instead of comparing against a build whose cache no longer exists.
-  forgetBuildIds(origins);
-
-  const failed = results.filter((r) => !r.ok);
-  for (const f of failed) console.warn(`[chela-desktop] ${f.origin} refused the cache clear: ${f.error}`);
-  const report = {
-    ok: failed.length === 0,
-    origins,
-    // What was actually cleared, per origin, so the effect is on record rather
-    // than the intention: a step that refused is reported as refused.
-    cleared: results.filter((r) => r.ok).map((r) => r.origin),
-    failed: failed.map((r) => ({ origin: r.origin, error: r.error })),
-    // The kinds of cache this drops, named for the reader rather than for the API.
-    kinds: [...cache.CACHE_STORAGES],
-    gateway: gw ? { label: gw.label || gw.url, url: gw.url } : null,
-    // Whether the app is restarting the Control UI. Not when there is no gateway:
-    // there is no Control UI to restart, and the page that asked stays up.
-    started: Boolean(gw),
-  };
-  if (!gw) {
-    report.detail = 'Cached code was cleared. No gateway is configured, so there is no Control UI to reload.';
-    return report;
-  }
-  void restartAfterClear(pressedAt);
-  return report;
-}
-
-/**
- * Restart the Control UI after a cache clear, as a fresh launch would.
- *
- * The ORDER is the whole of it, and it is the first rule in ui/CONVENTIONS.md:
- *
- *   1. The launch loading screen goes up first, UNDER Settings and About, and on
- *      the window before anything moves, so the sheets slide down onto it rather
- *      than onto the Control UI that is about to be replaced.
- *   2. The fresh load starts behind it, in place rather than beside the old
- *      document: nothing on screen may present a gateway view now, which is what
- *      makes `loadActiveGateway` load the way a launch does.
- *   3. The press's own "Clearing…" is held the minimum-visible floor, then About
- *      and Settings slide away together.
- *   4. The loading screen stays at least the floor once it is revealed, so the
- *      restart is seen as one, and it comes down once the page has painted (the
- *      render-ready cover gate). A load that fails lands on the cover's own failed
- *      state with Try again, through the same failure path a launch takes.
- */
-async function restartAfterClear(pressedAt) {
-  payloadGateway = null;
-  floorCover(Infinity);
-  showLoadingCover();
-  await coverOnWindow();
-  loadActiveGateway();
-  await new Promise((resolve) => { setTimeout(resolve, remainingVisibleMs(pressedAt)); });
-  await Promise.all([closeOverlay('about'), closeOverlay('settings')]);
-  floorCover(Date.now() + MIN_VISIBLE_MS);
-}
-
-/**
- * Identify the installed build.
- *
- * Prefers the commit stamped in at pack time, which is what a build actually
- * is. Failing that, a source run, or a build made from a dirty tree, it stats
- * the app bundle (`app.asar` when packaged, the project directory in
- * development), because the semver alone does not move between builds. See
- * cache.buildFingerprint. A stat that fails degrades to the version, which
- * simply means this particular upgrade is not detected; it must never throw and
- * take startup with it.
- */
-function appBuildId() {
-  const version = app.getVersion();
-  const commit = buildInfo.buildId(buildStamp);
-  if (commit) return cache.buildFingerprint({ version, commit });
-  try {
-    const stat = fs.statSync(app.getAppPath());
-    return cache.buildFingerprint({ version, size: stat.size, mtimeMs: stat.mtimeMs });
-  } catch {
-    return version;
-  }
-}
-
-/**
- * Clear once on the first run after an app upgrade, before anything loads.
- *
- * A new build brings a new Electron and a new preload; leaving a worker from
- * the previous one in place is the same staleness by a different route. A
- * profile with no recorded build is a fresh install, not an upgrade.
- */
-async function clearOnAppUpgrade() {
-  const previous = config.get().appBuild;
-  const current = appBuildId();
-  if (previous === current) return;
-  config.update({ appBuild: current, swVersions: {} });
-  if (!previous) return;
-  console.log(`[chela-desktop] app build changed (${previous} -> ${current}); clearing web cache`);
-  await cache.clear(session.defaultSession, gatewayOrigins());
-}
 
 /* --------------------------------------------------------------- login gate */
 
@@ -1503,42 +1289,58 @@ function retryPairingConnect() {
   loadActiveGateway();
 }
 
-/**
- * The page's own socket closed, and the gateway did not refuse it.
- *
- * This app holds no socket of its own: the Control UI opens one inside the page,
- * so the only signal that a working session has ended is the page's own socket
- * closing, reported by the observer (see core/spec/pairing.json's `socketClosed`).
- * Before this, nothing on this side could see it, and the app went on presenting
- * the gateway's Control UI -- authenticated, complete, and connected to nothing --
- * for as long as the reader looked at it. Measured: nine seconds of a dropped
- * gateway with the payload untouched on screen, and no notice either.
- *
- * So the hold ends and the app's own surface takes the screen, which is the same
- * outcome as a failed load and the same rule: a client with no connection does
- * not present a gateway view.
- *
- * GUARDED ON THE PHASE, and both halves of that guard are load-bearing:
- *
- *   - `connected` only. Every other phase is either an attempt in flight or a
- *     surface of ours already up, and a close arriving there is not news.
- *   - not while this app is itself replacing the document (see `pageReloading`),
- *     because a reload tears the old document's socket down and that close is our
- *     own doing rather than the connection ending.
- */
+// A renderer replacement can restore only state already persisted by the page.
+const rendererRecoveryUsed = new WeakSet();
+let pendingRendererLoss = null;
+let rendererRecoveryEpoch = 0;
+
+function isCurrentRendererLoss(loss) {
+  const gw = config.activeGateway();
+  return Boolean(loss.epoch === rendererRecoveryEpoch && gw && gw.id === loss.gatewayId && gw.url === loss.gatewayUrl &&
+    page() === loss.wc && !loss.wc.isDestroyed() && !settingsIsPage &&
+    mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && mainWindow.isFocused());
+}
+
+function queueRendererRecovery(wc) {
+  const gw = config.activeGateway();
+  if (!gw || page() !== wc || payloadGateway !== gw.id ||
+      connection.phase !== connectionState.CONNECTED || rendererRecoveryUsed.has(wc)) return;
+  const route = wc.getURL();
+  try { if (new URL(route).origin !== new URL(gw.url).origin) return; } catch { return; }
+  rendererRecoveryUsed.add(wc);
+  pendingRendererLoss = { wc, route, gatewayId: gw.id, gatewayUrl: gw.url, epoch: rendererRecoveryEpoch };
+  setImmediate(resumeLostRenderer);
+}
+
+function resumeLostRenderer() {
+  const loss = pendingRendererLoss;
+  if (!loss) return;
+  const gw = config.activeGateway();
+  if (loss.epoch !== rendererRecoveryEpoch || !gw || gw.id !== loss.gatewayId || gw.url !== loss.gatewayUrl ||
+      page() !== loss.wc || settingsIsPage || loss.wc.isDestroyed()) {
+    pendingRendererLoss = null;
+    return;
+  }
+  if (!isCurrentRendererLoss(loss)) return;
+  pendingRendererLoss = null;
+  loadActiveGateway({ rendererLoss: loss });
+}
 /* ------------------------------------------------------------ wake/reconnect */
 
-// Sleep, wake, lock, unlock, a network drop and a missed heartbeat all feed one
-// rule, core/wake.js, and this only reports them and carries out its actions. A
-// queued message that hung after idle was cleared by a restart, and a restart is
-// a fresh page load under the cover: that is what reconnect does here.
+// Native lifecycle signals ask the existing page to recheck its transport.
+// Only initial load, pairing and explicit retry own navigation.
 const wake = createWake({
   log: (line) => console.log(line),
-  close: () => { payloadGateway = null; },
-  cover: () => { payloadGateway = null; showLoadingCover(); },
   reconnect: () => {
-    payloadGateway = null;
-    if (config.activeGateway()) loadActiveGateway();
+    const wc = page();
+    if (!wc || wc.isDestroyed() || !payloadGateway || pageReloading) {
+      wake.report('rendered');
+      return;
+    }
+    // The page owns transport recovery; a surviving document never navigates.
+    void wc.executeJavaScript("window.dispatchEvent(new Event('online'))")
+      .catch((error) => console.warn('[chela-desktop] transport resume failed:', error))
+      .finally(() => wake.report('rendered'));
   },
 });
 
@@ -1559,17 +1361,6 @@ function watchWake() {
   onlinePoll.unref?.();
 }
 
-function handleSocketDropped() {
-  if (connection.phase !== connectionState.CONNECTED) return;
-  if (pageReloading) return;
-  console.warn('[chela-desktop] the gateway closed the connection; showing the failure surface');
-  payloadGateway = null;
-  // Recorded so the OTHER half of this can happen: a socket that opens again on
-  // its own means the gateway is back, and this app has no business sitting on its
-  // failure screen while the page behind it is connected again.
-  socketDropped = true;
-  showConnectionFailure({ errorCode: null, errorDescription: 'The gateway closed the connection.' });
-}
 
 /**
  * A report from the page's observer, or nothing.
@@ -1591,28 +1382,13 @@ function handlePairingReport(event, payload) {
   }
 
   if (report.kind === 'dropped') {
-    const wasConnected = connection.phase === connectionState.CONNECTED && !pageReloading;
-    handleSocketDropped();
-    // A connection that was up and fell is the missed heartbeat: reconnect fresh
-    // rather than trust the page to resume a socket and an outbox that went stale.
-    if (wasConnected) wake.reportRaw('page:socket-dropped');
+    // A dropped transport is not a failed document. The page keeps its existing
+    // conversation, reports reconnecting, and reconciles delivery in place.
     return;
   }
 
   if (report.kind === 'open') {
     pairingState.opened();
-    // The recovery leg of a drop: the page's socket is open again, so the gateway
-    // is reachable and the failure surface is no longer true. Reconnected through
-    // the app's own connect path rather than by uncovering the document that was
-    // already there, and that is deliberate: only a load that FINISHED proves the
-    // document on screen is the gateway's -- Chromium commits an error document for
-    // the same URL -- and the page may have been replaced or reloaded while the
-    // cover was up. A load that fails leaves the failure surface exactly as it was.
-    if (socketDropped) {
-      socketDropped = false;
-      console.log('[chela-desktop] the gateway socket is open again; reconnecting');
-      loadActiveGateway();
-    }
   } else {
     // The gateway answered a Connect pressed on its login gate by refusing the
     // device: the pairing screen is that answer, drawn over the page as on any
@@ -1843,8 +1619,7 @@ function createGatewayView({ attempt = false } = {}) {
   // A committed navigation replaces the document, so the surface-behind
   // stylesheet that lived in the old one is gone with it; forgetSurfaceBehind
   // drops the stale key and re-raises the blur if a sheet is still up (the
-  // Refresh and Clear cache and reload commands reload the live document under
-  // whatever is on screen). See forgetSurfaceBehind for why the key outlives
+  // Control UI can navigate under whatever is on screen). See forgetSurfaceBehind for why the key outlives
   // the rule it names.
   wc.on('did-navigate', () => {
     reachMilestone(progress.NAVIGATED);
@@ -1873,7 +1648,6 @@ function createGatewayView({ attempt = false } = {}) {
     pageReloading = false;
     // A load that finished means this app is looking at the gateway's document
     // again, which is the other end of a drop whatever put it there.
-    socketDropped = false;
     wc.setZoomLevel(config.get().zoomLevel || 0);
     // Our own pages (settings as the window's content) want the Control UI's
     // design tokens. The gateway's page gets nothing injected at all.
@@ -1928,7 +1702,6 @@ function createGatewayView({ attempt = false } = {}) {
       coverGate.loaded(wc);
     }
     maybeAutofill(wc);
-    void maybeRefreshForNewBuild(wc);
   });
 
   wc.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL, isMainFrame) => {
@@ -1950,6 +1723,8 @@ function createGatewayView({ attempt = false } = {}) {
   });
 
   wc.on('render-process-gone', (_e, details) => {
+    if (!attempt && page() !== wc) return;
+    if (!attempt) queueRendererRecovery(wc);
     payloadGateway = null;
     if (attempt) destroyGatewayView(view);
     showConnectionFailure({
@@ -2041,6 +1816,7 @@ function createMainWindow() {
   // is a page that does not fill the window rather than a cosmetic slip.
   mainWindow.on('resize', () => { layoutViews(); schedulePersist(); });
   mainWindow.on('move', schedulePersist);
+  mainWindow.on('focus', resumeLostRenderer);
   mainWindow.on('maximize', () => { layoutViews(); schedulePersist(); syncStripMaximized(true); });
   mainWindow.on('unmaximize', () => { layoutViews(); schedulePersist(); syncStripMaximized(false); });
   mainWindow.on('enter-full-screen', layoutViews);
@@ -2509,8 +2285,7 @@ async function syncSurfaceBehind() {
  *
  * `insertCSS` lives in the DOCUMENT it was inserted into, but `behindCssKeys`
  * is keyed by the WebContents, and a WebContents outlives its documents. A
- * reload -- the Refresh and Clear cache and reload commands, and any navigation
- * the Control UI commits -- swaps in a new document that does not hold the
+ * navigation the Control UI commits swaps in a new document that does not hold the
  * injected rule, while the map still says the id has one. The next sheet then
  * flips `claw-behind-on` against a stylesheet that is not there: no rule, no
  * blur. That is the blur that is right at app start and gone after a reload,
@@ -3055,17 +2830,7 @@ const connectPress = createLoginGateCover({
   },
 });
 
-/**
- * The loading cover's minimum-visible floor, for the one path that asks for it.
- *
- * A fresh start from Clear cache and refresh is a transient state the reader is
- * meant to SEE (the eighth rule in ui/CONVENTIONS.md): the app is restarting in
- * front of them, and a page that paints in the time About and Settings take to
- * slide away would lift the cover before it had ever been on screen. So the lift
- * waits, first for the sheets to go (`until` is Infinity while they do) and then
- * for the floor from the moment the cover is revealed. Nothing else sets it, so a
- * launch or a reconnect lifts the moment its page has painted, as before.
- */
+/** The loading cover's minimum-visible floor for login-gate connection feedback. */
 const coverFloor = { until: 0, pending: null, timer: 0 };
 
 function floorCover(until) {
@@ -3084,29 +2849,6 @@ function scheduleFlooredLift() {
     if (!why || !loadingView || connection.phase === connectionState.FAILED) return;
     liftCover(why);
   }, Math.max(0, coverFloor.until - Date.now()));
-}
-
-/**
- * Resolve once the loading cover is on the window, or at a short bound.
- *
- * The cover is loaded off the window and attached once its page is styled (see
- * styleLoadingCover), so "shown" is a moment after the call. A caller about to
- * take a surface away from in front of it waits for this first, so what the
- * departure reveals is the cover. Bounded, because a cover that never styles is
- * still a departure that has to happen.
- */
-function coverOnWindow(timeoutMs = 1500) {
-  const started = Date.now();
-  return new Promise((resolve) => {
-    const check = () => {
-      if (!loadingView || attachedViews.has(loadingView) || Date.now() - started >= timeoutMs) {
-        resolve();
-        return;
-      }
-      setTimeout(check, 16);
-    };
-    check();
-  });
 }
 
 /** Take the cover down now that the page under it is on screen. */
@@ -4993,24 +4735,7 @@ function menuCommands() {
     checkUpdates: { label: 'Check for updates…', click: () => { void checkForUpdates('manual'); } },
     releaseNotes: { label: 'Release notes', click: () => { void shell.openExternal(RELEASES_URL); } },
     settings: { label: 'Settings…', click: () => openSettings() },
-    reload: {
-      label: 'Reload',
-      click: () => {
-        // Marked before the reload so the socket the outgoing document closes is
-        // read as this app's own doing rather than as the gateway going away; see
-        // `pageReloading` and the drop handler.
-        pageReloading = true;
-        if (settingsIsPage) loadActiveGateway();
-        else page()?.reload();
-      },
-    },
-    // Browsers pass `ignoreCache` here and this deliberately does not, because the
-    // payload is not what Reload is for. Reload is the browser's own command and
-    // keeps its meaning; the two ways the Control UI is brought current are the
-    // freshness the load above forces and the clear below, which is the one the
-    // menu documents as the escape hatch when the interface looks wrong anyway.
     reconnect: { label: 'Reconnect to gateway', click: () => loadActiveGateway() },
-    clearCache: { label: 'Clear cache and reload', click: () => { void clearCacheAndReload(); } },
     quit: { label: `Quit ${chrome.APP_NAME}`, click: () => { quitting = true; app.quit(); } },
     zoomIn: { label: 'Zoom In', click: () => setZoom(0.5) },
     zoomOut: { label: 'Zoom Out', click: () => setZoom(-0.5) },
@@ -5066,7 +4791,6 @@ function trayMenuTemplate() {
     // The tray copies bring the window forward first. Reloading something
     // nobody can see is not what anyone means by clicking these from a tray.
     { ...cmd.reconnect, click: () => { showMainWindow(); loadActiveGateway(); } },
-    { ...cmd.clearCache, click: () => { showMainWindow(); void clearCacheAndReload(); } },
     { type: 'separator' },
     {
       label: 'Gateway',
@@ -5622,12 +5346,6 @@ function registerIpc() {
 
   ipcMain.handle('app:state', () => currentState());
   ipcMain.handle('app:test-gateway', (_e, url) => testGateway(url));
-  // The same clear-and-reload the File menu and the tray offer, reached from the
-  // About box rather than a second implementation of it: one path, so the two
-  // cannot come to mean different things. It returns what it cleared, because the
-  // reader pressed a button about their caches and is owed the effect rather than
-  // a spinner.
-  ipcMain.handle('app:clear-cache-and-reload', () => clearCacheAndReload());
   // The entry that was created, handed back so the page can store the credential
   // typed into the SAME form against the id this app just assigned. Without it
   // there is nothing to write a token to until the gateway has been reloaded
@@ -5960,11 +5678,6 @@ if (!app.requestSingleInstanceLock()) {
     initUpdates();
 
     if (process.argv.includes('--hidden')) config.update({ startHidden: true });
-
-    // Before the first load, not after: clearing a service worker out from
-    // under a page it is already controlling leaves that page on the old
-    // bundle until something reloads it.
-    await clearOnAppUpgrade().catch((err) => console.warn(`[chela-desktop] cache clear failed: ${err.message}`));
 
     reachBootStage('window-create');
     createMainWindow();
