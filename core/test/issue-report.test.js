@@ -23,7 +23,7 @@ import {
 // takes and the shape the scrubber has to catch.
 const TOKEN = 'gk_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0'.repeat(2);
 const GATEWAY_URL = 'https://my-gateway.example.ts.net:18789/';
-const HOME_PATH = '/Users/abi/Library/Application Support/Chela/credentials.json';
+const HOME_PATH = '/Users/example-user/Library/Application Support/Chela/credentials.json';
 
 test('a report built while the config holds a gateway token and URL carries NEITHER', () => {
   // The facts an over-eager caller might hand in: a stack and an error message
@@ -58,12 +58,12 @@ test('a report built while the config holds a gateway token and URL carries NEIT
 test('no /Users/<name> or home-directory path appears', () => {
   const report = buildReport({
     kind: 'bootFailure',
-    stack: `at readCredentials (${HOME_PATH}:12:3)\n at C:\\Users\\abi\\AppData\\claw.log:1:1`,
+    stack: `at readCredentials (${HOME_PATH}:12:3)\n at C:\\Users\\example-user\\AppData\\claw.log:1:1`,
   });
   const blob = JSON.stringify(report);
-  assert.ok(!blob.includes('/Users/abi'), 'a macOS home path reached the wire');
+  assert.ok(!blob.includes('/Users/example-user'), 'a macOS home path reached the wire');
   assert.ok(!blob.includes('/home/'), 'a linux home path reached the wire');
-  assert.ok(!/Users\\abi/.test(blob), 'a windows user path reached the wire');
+  assert.ok(!/Users\\example-user/.test(blob), 'a windows user path reached the wire');
   assert.match(report.stack, /<path>/, 'the path was not replaced with a placeholder');
 });
 
@@ -77,7 +77,7 @@ test('a token-shaped string inside an error message is redacted', () => {
     TOKEN,
     'Bearer ' + TOKEN,
     'sk-' + 'abcdefgh12345678',
-    'op://Zilla-Automation/Gateway/token',
+    'op://Example-Vault/Gateway/token',
     fakeJwt,
     fakeSlack,
   ]) {

@@ -29,7 +29,7 @@ const REPO = path.join(import.meta.dirname, '..', '..');
 const UI = path.join(REPO, 'core', 'ui');
 
 // One error notice, the "Cannot connect" shape from the screenshots.
-const NOTICES = [{ id:'conn', tone:'error', message:'Cannot connect to Zilla', detail:'The connection was refused. The gateway may not be running. (ERR_CONNECTION_REFUSED)', dismissible:true, action:{ label:'Open Settings', command:'open-settings' } }];
+const NOTICES = [{ id:'conn', tone:'error', message:'Cannot connect to Atlas', detail:'The connection was refused. The gateway may not be running. (ERR_CONNECTION_REFUSED)', dismissible:true, action:{ label:'Open Settings', command:'open-settings' } }];
 const PRELOAD = path.join(PROFILE,'stub.cjs');
 fs.writeFileSync(PRELOAD, `
 const { contextBridge, ipcRenderer } = require('electron');
