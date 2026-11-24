@@ -2,7 +2,7 @@ import XCTest
 
 @testable import Chela
 
-/// Where the notice banner is drawn, which is what the owner reported on 2026-09-21: the
+/// Where the notice banner is drawn, which is what was reported on 2026-09-21: the
 /// same up-to-date notice appeared on the Settings surface and on the About
 /// surface, and it should "only show up once for the whole app and be pinned over
 /// everything not to one specific page".
@@ -44,7 +44,7 @@ final class NoticeLayerTests: XCTestCase {
         XCTAssertFalse(text.contains(".noticeBanner("),
             "a per-layer application of the notice stack is back. A sheet is presented above the view that raises "
             + "it, so a copy per layer was how a banner reached whichever layer was in front; that is exactly the "
-            + "per-page banner the owner reported, and the notice layer replaces it")
+            + "reported per-page banner, and the notice layer replaces it")
         XCTAssertFalse(text.contains("notices: NoticeBoard"),
             "a sheet is taking the notice board again, which is what let it draw its own copy")
     }

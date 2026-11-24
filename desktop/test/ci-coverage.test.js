@@ -1,6 +1,6 @@
 // Every desktop proof harness reaches CI, or says why it cannot.
 //
-// 2026-09-25: "we should see if we can validate everything in CI, CI should
+// Requested 2026-09-25: "we should see if we can validate everything in CI, CI should
 // help us catch regressions and issues with our changes". Until then the boot
 // smoke, the page measurements and every proof harness under desktop/scripts ran
 // only in the local git hooks, which are advisory and skippable, and the merge

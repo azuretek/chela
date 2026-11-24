@@ -1,6 +1,6 @@
 // The release gate, held to its sources.
 //
-// the owner's rule, 2026-09-16: no release before everything is working for all
+// The rule, 2026-09-16: no release before everything is working for all
 // platforms. Two halves of that live in the workflow and one lives in a script,
 // and this test is the third thing that keeps them agreeing:
 //

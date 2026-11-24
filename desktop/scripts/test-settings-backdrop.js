@@ -13,7 +13,7 @@
 // page colour, and never showed through again while the sheet was up.
 //
 // The dim is a value of ours now. It began as the Control UI own mobile nav drawer
-// backdrop, black at 44%, and it is black at 60% since 2026-10-01, when the owner asked
+// backdrop, black at 44%, and it is black at 60% since 2026-10-01, when it was asked
 // for it darker and blurred (core/ui/ui.css, --scrim; the stylesheet guard is
 // core/test/backdrop.test.js). The BLUR is deliberately not measured here: it is a
 // layer the desktop host injects into the Control UI view, and this harness loads

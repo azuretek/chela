@@ -1,7 +1,7 @@
 #!/bin/sh
 # pre-commit: the QUICK half only, and that is the rule now.
 #
-# 2026-10-04: "all heavy checks must live on CI, pre-commit is for quick
+# Requested 2026-10-04: "all heavy checks must live on CI, pre-commit is for quick
 # static analysis and linting and other types of rules like that."
 #
 # So the measured half is gone from here. This hook used to end with

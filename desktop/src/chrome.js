@@ -542,7 +542,7 @@ export function fallbackTheme(mode) {
 export function applyTheme(theme, windows = []) {
   // ★ Leave the device to drive `prefers-color-scheme` whenever a real palette
   // exists, so the Control UI's own "System" appearance tracks the OS the way it
-  // does on the phone. This is the convergence the owner asked for on 2026-09-20: the
+  // does on the phone. This is the convergence asked for on 2026-09-20: the
   // iOS client never pins its WebView trait (WebView.swift sets
   // overrideUserInterfaceStyle = .unspecified, which is `system`), and the page
   // reads the device and resolves its own theme; the client only paints the

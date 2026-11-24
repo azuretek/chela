@@ -464,7 +464,7 @@ test('the About page shows the version a person reads, never the release-only fo
 /* ---------------------------------------------- the download that sat at 0% */
 
 /*
- * 2026-09-17: "Downloading Chela <version>. Starting the download."
+ * Reported 2026-09-17: "Downloading Chela <version>. Starting the download."
  * with the bar at 0% and no way to clear it.
  *
  * Three things had to be true for that card to be unkillable, and each one is
@@ -624,7 +624,7 @@ test('★ clearing the card gives up the transfer where the library allows it, a
  * ---------------------------------------------------------------------------
  * The card that came back after a relaunch.
  *
- * 2026-09-17: the 0% card was "just hung here on my mac even after a
+ * Reported 2026-09-17: the 0% card was "just hung here on my mac even after a
  * restart". A clear that lived only in memory could not survive that, because the
  * card is raised by a check that runs on EVERY launch, and nothing about the
  * attempt was ever written down. So the rules below are all about what survives a
@@ -717,7 +717,7 @@ test('★ a download that completes is reported even for an attempt the reader c
  * ---------------------------------------------------------------------------
  * The two cards a background check has to keep apart.
  *
- * 2026-09-17: on the phone, "I've only ever seen the banner when I click to
+ * Reported 2026-09-17: on the phone, "I've only ever seen the banner when I click to
  * check". The same shape was here. A background check that found a release went
  * straight into a quiet transfer and told the reader nothing, so the app only ever
  * mentioned an update to somebody who asked. That is the trap the quiet rule walks

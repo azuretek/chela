@@ -253,7 +253,7 @@ export const iconFile = (bucket, mode, { full = false, ico = false } = {}) => (i
 export const TRAY_TEMPLATE = 'trayTemplate.png';
 /** The menu-bar glyph for a LIGHT bar: the tile solid with the claw cut out of it,
  *  where TRAY_TEMPLATE is the tile with the claw drawn as an outline cut out of
- *  it. 2026-10-04: "Two cut shapes if possible for the tray icon". Both are
+ *  it. Requested 2026-10-04: "Two cut shapes if possible for the tray icon". Both are
  *  template images, so macOS paints each in the bar's own colour and the CUT is
  *  the whole difference. */
 export const TRAY_TEMPLATE_LIGHT = 'trayTemplateLight.png';

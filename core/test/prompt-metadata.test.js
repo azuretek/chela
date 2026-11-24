@@ -401,7 +401,7 @@ test('the strip is idempotent, so a replayed or repeated answer cannot be mangle
 
 /*
  * The desktop client-context block a Windows machine sends, stored and handed
- * back on a rewind with CRLF line endings. This is the exact block the owner hit on
+ * back on a rewind with CRLF line endings. This is the exact block that was hit on
  * 2026-09-18: it bled the whole context into the composer because the header
  * match keyed on a line ENDING with the marker, and a CRLF-encoded header line
  * ends with a carriage return, not the marker. The lines are joined with an

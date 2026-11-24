@@ -320,7 +320,7 @@ export function bucketIcons({ square = false, full = false } = {}) {
 }
 
 /**
- * The macOS menu-bar glyph, in the two cuts (2026-10-04: "Two cut shapes if
+ * The macOS menu-bar glyph, in the two cuts (requested 2026-10-04: "Two cut shapes if
  * possible for the tray icon").
  *
  * A menu-bar extra is a one-colour TEMPLATE image: macOS draws it in the bar's own
@@ -331,7 +331,7 @@ export function bucketIcons({ square = false, full = false } = {}) {
  *               glyph and the claw as the bar showing through it.
  *   dark bar    the tile solid with the claw drawn as an OUTLINE cut out of it, so
  *               the pincer reads as a groove through the tile rather than a hole.
- *               TRAY_OUTLINE is the width the owner picked over 6 and 8: a narrow line is
+ *               TRAY_OUTLINE is the width picked over 6 and 8: a narrow line is
  *               what keeps the pincer legible at menu-bar size (2026-10-04:
  *               "dark mode weight 4 is the winner").
  *
@@ -340,7 +340,7 @@ export function bucketIcons({ square = false, full = false } = {}) {
  * shift the glyph every time the bar changed appearance, which is a fault nobody
  * would think to look for by name.
  */
-const TRAY_OUTLINE = 4;   // artwork units; the dark cut's stroke width (the owner's pick)
+const TRAY_OUTLINE = 4;   // artwork units; the dark cut's stroke width (the chosen weight)
 
 export function trayTemplate({ appearance = 'dark' } = {}) {
   const { tray: claw } = outlines();

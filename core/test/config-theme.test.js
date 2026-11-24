@@ -8,7 +8,7 @@
 // nothing about what broke. Imported as a namespace and asserted for its shape
 // first, the same run fails on exactly the claim that is missing.
 //
-// The rules being held here, all of them the owner's:
+// The rules being held here:
 //
 //   the theme PERSISTS: it is never re-derived, reset or clobbered by a launch,
 //   a reconnect, or one of our surfaces adopting an appearance;

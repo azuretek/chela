@@ -1,6 +1,6 @@
 // Does a notice appearing, changing, or going away move the reader's focus?
 //
-// THE CLAIM, and the one the owner reported on 2026-09-17: "when they pop up what I'm
+// THE CLAIM, and the one reported on 2026-09-17: "when they pop up what I'm
 // typing gets stopped. nothing should take focus unless its by rule". The notice
 // bar is drawn over the Control UI in a view of its own, and the reader's caret
 // lives in a control inside the page underneath it, so anything the bar does to
@@ -294,7 +294,7 @@ app.whenReady().then(async () => {
   check('clearing the last notice took the bar down', cleared.banner === null,
     `the bar is still up with ${cleared.banner && cleared.banner.cards} card(s)`);
 
-  // 2. The bar arrives, which is the moment the owner reported: the window creates the
+  // 2. The bar arrives, which is the reported moment: the window creates the
   //    bar's view and loads its page while the reader is mid-sentence.
   const bannerBefore = banner();
   note('saveSettings (a refused shortcut)', await save('[{"globalShortcut":"Frobnicate+Aa"}]'));

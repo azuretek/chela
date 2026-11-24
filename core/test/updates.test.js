@@ -202,7 +202,7 @@ test('the outcome names come from the spec, like the action names', () => {
 /*
  * ★ The download that sat at 0% with no way out.
  *
- * 2026-09-17: a banner reading "Downloading Chela <version>.
+ * Reported 2026-09-17: a banner reading "Downloading Chela <version>.
  * Starting the download." with the bar at zero and no control that would take it
  * away. Two faults, and both are covered here or in the desktop's own tests: a
  * surface reporting progress that was not happening, and a card with no way out.

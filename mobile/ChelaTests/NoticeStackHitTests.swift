@@ -4,7 +4,7 @@ import XCTest
 /// What the phone's notice banner claims, and why it is a source rule here
 /// rather than a click test.
 ///
-/// This is the other client's half of the fault the owner reported on 2026-09-17, and
+/// This is the other client's half of the fault reported on 2026-09-17, and
 /// the two halves are NOT the same rule, because the clients are not the same
 /// machinery.
 ///
@@ -99,7 +99,7 @@ final class NoticeStackHitTests: XCTestCase {
     }
 
     func testTheStackPaintsNoBandOfItsOwn() throws {
-        // ★ Floating cards, not a bar. 2026-09-19: "floating cards no full
+        // ★ Floating cards, not a bar. Requested 2026-09-19: "floating cards no full
         // width bar that's pointless". The stack must paint NO surface of its own,
         // because a band is a full-width strip and this stack's frame is the whole
         // screen: a background that draws on it would cover (and, being a drawn
@@ -234,7 +234,7 @@ final class NoticeStackHitTests: XCTestCase {
         // is the page" true in the first place. Since 2026-09-21 that floating
         // surface is the notice layer (a window above the app's own) rather than an
         // overlay applied per layer, which is what drew a copy on every screen and
-        // is what the owner reported. See NoticeLayerTests.
+        // is what was reported. See NoticeLayerTests.
         let text = try source("NoticeBanner.swift")
         let stack = code(try body(of: "NoticeStack", in: text))
         XCTAssertFalse(stack.contains("content.overlay"),

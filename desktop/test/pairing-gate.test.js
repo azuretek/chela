@@ -17,7 +17,7 @@ import { createState } from '../src/pairing.js';
 // fault lived, because the two can each be right and still compose into a client
 // that can never notice the approval it is waiting for.
 //
-// the owner, 2026-09-21, on 1.0.1-dev.297.f2d997ec5c: "after approval the try again does
+// Reported 2026-09-21, on 1.0.1-dev.297.f2d997ec5c: "after approval the try again does
 // not work, I can see the theme change as it works but it never directs to the OPA",
 // with the gateway reporting the device paired, `pending: []`, `connected: true`
 // and `lastSeenReason device-token-auth`. So the device WAS approved and WAS

@@ -456,7 +456,7 @@ test('the fallback anchor is pressed when the first selector finds nothing', () 
 
 test('a Control UI with no control to press goes to its OWN route instead of doing nothing', () => {
   // This changed on 2026-09-16, and the reason is the bug the whole area keeps
-  // producing. The Control UI build serving the owner's clients has no settings control
+  // producing. The Control UI build serving these clients has no settings control
   // in the sidebar at all (upstream added one after that release), so the old
   // contract, answer false and log, was a button that appeared to work and did
   // nothing. The Control UI publishes the route its own settings entry opens, so

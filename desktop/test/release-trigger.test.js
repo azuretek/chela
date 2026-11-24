@@ -1,6 +1,6 @@
 // The release trigger set, held to its one owner.
 //
-// the owner's rule, 2026-09-18: a release happens only when something that SHIPS
+// The rule, 2026-09-18: a release happens only when something that SHIPS
 // changed, and the paths that decide that live in ONE place. Two halves of that
 // live in the workflows and the answer lives in a script, and this test is the
 // third thing that keeps them agreeing:
@@ -261,7 +261,7 @@ test('running the script the way the workflow does writes the release output', (
 });
 
 test('the shared gate requires every job the other pipeline lists', () => {
-  // ★ the owner's rule, 2026-09-21: "require all jobs to finish successfully before we
+  // ★ The rule, 2026-09-21: "require all jobs to finish successfully before we
   // publish, so that we can never have something claiming to be deployed and not."
   //
   // The class this closes: the gate used to require a VERDICT, a hand-written

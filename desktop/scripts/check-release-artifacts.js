@@ -3,7 +3,7 @@
 // The release job cannot run when a build leg fails: its `needs` covers the build
 // job, so a red leg skips publishing, which is exactly what happened on
 // 2026-09-16 while the Windows leg was failing. That is only half of the claim
-// the owner asked for ("no release before everything is working for all platforms"),
+// that was asked for ("no release before everything is working for all platforms"),
 // because a leg can also SUCCEED without producing the file it exists for: an
 // installer the packager silently skipped, an upload path that stopped matching,
 // a platform dropped from one side of the comparison. `fail_on_unmatched_files`

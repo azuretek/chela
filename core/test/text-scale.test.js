@@ -19,7 +19,7 @@
 //    calc(px * var(--control-ui-text-scale)) of its own. A literal px size is the
 //    fault this guards: it is a component that does not follow the setting, which
 //    is exactly the state the pin's notBorrowed note used to record as the reason
-//    the scale was left alone. the owner reversed that on 2026-09-19: take the scale and
+//    the scale was left alone. That was reversed on 2026-09-19: take the scale and
 //    convert every literal, so a literal reappearing is a regression.
 //
 // Run with: cd core && npm test

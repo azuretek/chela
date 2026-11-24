@@ -1,5 +1,5 @@
 // The one appearance decision, shared by every client so none of them invents its
-// own answer. 2026-09-20: "as long as we are abstracting so the logic is
+// own answer. Requested 2026-09-20: "as long as we are abstracting so the logic is
 // exactly the same we are good" and "make electron/windows use the same code, we
 // should not diverge for the same features ever".
 //

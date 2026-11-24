@@ -312,7 +312,7 @@ test('a progress tick does not re-unread a read notice, a changed message does',
 });
 
 test('a user-initiated check re-raises the update card, a passive check does not', () => {
-  // 2026-09-18: "if I click check for updates it should bring up the banner."
+  // Requested 2026-09-18: "if I click check for updates it should bring up the banner."
   // The asker is owed the answer on screen; a background check that finds the same
   // release again says nothing new and leaves a read card read.
   const n = notices.create();

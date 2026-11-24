@@ -4,7 +4,7 @@ import WebKit
 /// The shared loading screen, in a web view: `core/ui/loading.html`, the page the
 /// desktop's loading cover draws, bundled rather than rebuilt.
 ///
-/// 2026-09-25: the phone's loading screen is the desktop's, built once so a
+/// Requested 2026-09-25: the phone's loading screen is the desktop's, built once so a
 /// change to it reaches every platform. So this client draws the same mark, ring,
 /// progress bar, quip and, when a load fails, the same failed state with its Try
 /// again, and `LoadingHost` answers the same `window.clawDesktop` calls the

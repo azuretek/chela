@@ -205,7 +205,7 @@ final class PageCover: ObservableObject {
     /// Whether the page is sitting on its OWN login gate. That gate is the Control
     /// UI's answer to "this client is not connected", and a page showing it is never
     /// revealed: the reader's surface for it is this cover in its FAILED state, with
-    /// Try again (core/ui/CONVENTIONS.md, the second rule; the owner, 2026-09-25).
+    /// Try again (core/ui/CONVENTIONS.md, the second rule; 2026-09-25).
     private var pageOnGate = false
     /// The bounded hold over a page that is on its gate.
     private var gateTask: Task<Void, Never>?

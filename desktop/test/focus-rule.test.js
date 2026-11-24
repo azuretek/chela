@@ -1,6 +1,6 @@
 // The focus rule: nothing takes focus unless by rule.
 //
-// Why this is a source guard rather than a click test. The fault the owner reported on
+// Why this is a source guard rather than a click test. The fault reported on
 // 2026-09-17 ("when they pop up what I'm typing gets stopped") had NO focus call
 // in it. Measured on Electron 44 that day, a WebContentsView added to the window
 // and THEN loaded hands the window's keyboard to its own page the moment its
@@ -131,7 +131,7 @@ test('no page of ours takes focus on its own', () => {
     'banner.js calls focus() or select() on something: the bar may not take the keyboard, however it is worded');
 });
 
-test('★ the rule is written down, in the owner\'s words and with its audit', () => {
+test('★ the rule is written down, in its original words and with its audit', () => {
   // The third fault in this one area, so the rule has to outlive the fix: a source
   // guard stops the wiring drifting, and this stops the REASON being lost, which is
   // what happened to the first two.

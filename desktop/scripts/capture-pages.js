@@ -431,7 +431,7 @@ const PROBE = `(() => {
     // whose column rule had been retired from the stylesheet this page used to
     // share with the settings surface, so the body fell back to a plain block and
     // its spans laid out inline, which the reader sees as two sentences interleaved
-    // (2026-09-18: "the banner has improper spacing between words"). No source
+    // (reported 2026-09-18: "the banner has improper spacing between words"). No source
     // assertion can see that, so the reading is geometric: the detail starts BELOW
     // the headline, and the progress bar below that.
     noticeBody: (function () {
@@ -831,7 +831,7 @@ app.whenReady().then(async () => {
         // ★ The reversal, recorded here. This once required the STACK to paint its
         // whole rectangle, because the view spanned the window and a view claims
         // every click in its rectangle whatever it draws: painting the band at
-        // least made the dead zone visible. 2026-09-19: "floating cards no full
+        // least made the dead zone visible. Requested 2026-09-19: "floating cards no full
         // width bar that's pointless". The view is now sized to the card cluster
         // (report() in banner.js, layoutViews in main.js), so the honest thing is
         // the reverse: the ROOT, the BODY and the STACK all paint NOTHING, so the

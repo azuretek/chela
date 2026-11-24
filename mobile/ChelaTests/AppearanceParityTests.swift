@@ -6,7 +6,7 @@ import XCTest
 /// golden pairs the JS side asserts in `core/test/fixtures.test.js` from
 /// `core/fixtures/appearance.json`.
 ///
-/// 2026-09-20: "as long as we are abstracting so the logic is exactly the
+/// Requested 2026-09-20: "as long as we are abstracting so the logic is exactly the
 /// same we are good", and "we should not diverge for the same features ever". The
 /// appearance decision is one rule, and this is what holds the two clients to it:
 /// the decision lives in core, both clients reproduce the same fixtures, and a
