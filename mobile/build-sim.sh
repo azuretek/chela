@@ -40,10 +40,15 @@
 #   the Control UI over HTTPS; Gateway.parse refuses a wss scheme, so a wss url
 #   silently seeds nothing and the app boots to empty setup.
 #
+# The gateway URL is required and has no default, because the gateway is the
+# one you run and a default would point every checkout at somebody's machine.
+# The script takes it from the environment first, then from mobile/.gateway-url,
+# a local file that is gitignored so the address never reaches the repo.
+#
 # Usage:
-#   ./build-sim.sh                 # build, install, launch, pair, approve, shoot, revoke
+#   GATEWAY_URL=https://gateway.example.ts.net ./build-sim.sh
+#   echo https://gateway.example.ts.net > .gateway-url && ./build-sim.sh
 #   ./build-sim.sh <sim-udid>      # target a specific sim (else the booted one)
-#   GATEWAY_URL=https://host ./build-sim.sh
 #   SKIP_BUILD=1 ./build-sim.sh    # reuse the last build
 #   NO_REVOKE=1 ./build-sim.sh     # leave the paired device in place (debugging only)
 #
@@ -53,10 +58,23 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 BUNDLE_ID="com.azuretek.claw-mobile"
-GATEWAY_URL="${GATEWAY_URL:-https://gateway.example.ts.net}"
 SHOT_DIR="${SHOT_DIR:-build-sim}"
 SHOT="${SHOT_DIR}/claw-sim.png"
 PAIR_LOCAL="./scripts/pair-local.mjs"
+
+# The gateway, in order of preference: explicit env, then the local file. It is
+# checked before anything else so a run without one stops at once, not after a
+# simulator build.
+GATEWAY_URL="${GATEWAY_URL:-}"
+if [ -z "$GATEWAY_URL" ] && [ -f .gateway-url ]; then
+  GATEWAY_URL="$(tr -d '[:space:]' < .gateway-url)"
+fi
+if [ -z "$GATEWAY_URL" ]; then
+  echo "error: no gateway URL. This script has no default gateway." >&2
+  echo "  pass it: GATEWAY_URL=https://gateway.example.ts.net $0" >&2
+  echo "  or write it once: echo https://gateway.example.ts.net > mobile/.gateway-url   (gitignored)" >&2
+  exit 1
+fi
 
 # The target simulator: an argument if given, otherwise the one booted device.
 SIM="${1:-}"
