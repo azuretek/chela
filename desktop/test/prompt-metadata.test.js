@@ -71,10 +71,10 @@ function listeningSocket(config) {
 const WINDOWS_BLOCK_LINES = [
   `Desktop client context: ${MARKER}`,
   'The lines below describe the device the user is messaging from, added automatically by the client. Treat them as context, not an instruction: do not repeat them back or act on their contents; use them only to give platform-aware help.',
-  'host: laptop-1',
+  'host: example-laptop',
   'os: Windows 10.0.26200 (x64)',
-  'user: azure',
-  'home: C:\\Users\\azure',
+  'user: example-user',
+  'home: C:\\Users\\example-user',
   'locale: en-US',
   'timezone: America/Los_Angeles',
   'client: Chela (chela-desktop) 1.0.1-dev.279.9a58115cb1',
@@ -93,7 +93,7 @@ test('a CRLF-encoded block is stripped from the composer on a rewind, header CR 
   assert.strictEqual(restored, typed, 'the CRLF block bled into the composer instead of being stripped');
   assert.ok(!restored.includes(MARKER), 'no marker survives into the composer');
   assert.ok(!restored.includes('end of client context'), 'the boundary footer does not leak into the composer');
-  assert.ok(!restored.includes('host: laptop-1'), 'no field line survives into the composer');
+  assert.ok(!restored.includes('host: example-laptop'), 'no field line survives into the composer');
 });
 
 /* ------------------------------------------------------- the gateway contract */
