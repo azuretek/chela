@@ -6,7 +6,7 @@
 // gateway, and that starting up does not rewrite them. A test of the model alone
 // would pass while the desktop wrote the wrong key, or wrote on every launch.
 //
-// The property the owner asked to be proven is here as a test rather than asserted in
+// The property that was asked to be proven is here as a test rather than asserted in
 // prose: after a launch-like sequence, the config file is byte for byte and
 // timestamp for timestamp what it was. That is what "our surfaces only read the
 // theme" means at the level it can be measured: an app that re-derives a theme

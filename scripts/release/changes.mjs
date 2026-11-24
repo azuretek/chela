@@ -7,7 +7,7 @@
 // a second copy, and a test (desktop/test/release-trigger.test.js) fails if one
 // is ever added back.
 //
-// The rule this implements is the owner's, 2026-09-18:
+// The rule this implements, 2026-09-18:
 //
 //   "we only need a release if something actually changed, so docs and other
 //    things like that definitely do not need a release at all, feel free to skip

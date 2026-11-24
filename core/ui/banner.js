@@ -59,7 +59,7 @@ function el(tag, props = {}, children = []) {
 
 function report() {
   // ★ The card cluster's own BOUNDING BOX, width and height, not just a height.
-  // The bar is gone (2026-09-19: "floating cards no full width bar"): each
+  // The bar is gone (requested 2026-09-19: "floating cards no full width bar"): each
   // notice is a card sized to itself, and the view is sized to the cards rather
   // than to the window, so only the cards' pixels claim a click and everything
   // beside them passes through to the Control UI. That is the same shape the

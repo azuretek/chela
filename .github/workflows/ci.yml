@@ -18,7 +18,7 @@ name: CI
 # touches, and reports ONE status branch protection can require. This is that
 # workflow.
 #
-# What it runs, and what it deliberately does not (2026-09-19: "ensure these
+# What it runs, and what it deliberately does not (requested 2026-09-19: "ensure these
 # run on PRs, just not our full build unless it's needed for tests"):
 #
 #   js       lint, the core+desktop unit tests and the import audit. None of

@@ -1,7 +1,7 @@
 // Measure what the app renders on a FRESH LAUNCH, after the gateway has started
 // serving a different Control UI payload.
 //
-// The claim under test is the owner's: the server's payload should be what renders, on
+// The claim under test: the server's payload should be what renders, on
 // first load, rather than a pre-loaded or previously
 // cached one. Nothing here reasons about that: the gateway is a real server
 // serving a distinguishable payload, the app is the real app, and what is printed
@@ -501,7 +501,7 @@ app.whenReady().then(async () => {
     }
   }
   if (THEN_RECONNECT) {
-    // The claim the owner asked for, asserted on the DOM rather than described: no fresh
+    // The requested claim, asserted on the DOM rather than described: no fresh
     // payload was available, so the stale one is what a person is left looking at.
     if (!afterReconnect) {
       fails.push('the payload on screen was GONE after a failed reconnect, so there was nothing stale to fall back to');

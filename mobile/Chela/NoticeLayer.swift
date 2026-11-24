@@ -5,7 +5,7 @@ import UIKit
 /// The one surface this client draws its notices on: a window of its own, above
 /// whichever layer happens to be on top.
 ///
-/// WHAT THIS REPLACES, AND WHY IT WAS WRONG. the owner, 2026-09-21, sent a composite of
+/// WHAT THIS REPLACES, AND WHY IT WAS WRONG. A report on 2026-09-21 sent a composite of
 /// the Settings surface and the About surface, each carrying the same up-to-date
 /// notice: "Banner shows up on settings and about us page, should only show up once
 /// for the whole app and be pinned over everything not to one specific page". The
@@ -15,7 +15,7 @@ import UIKit
 /// commit 4d83749, "draw the banner above every layer") because a sheet is presented
 /// ABOVE the view that raises it: an overlay on that view cannot be above the sheet,
 /// so a copy per layer was the only way to have a banner on whichever layer was in
-/// front. Its cost is what the owner photographed: every screen draws its own copy inside
+/// front. Its cost is what the screenshot showed: every screen draws its own copy inside
 /// its own frame, so the notice reads as belonging to the page rather than to the
 /// app, sits wherever that page's frame starts, and travels with the sheet it was
 /// drawn on.

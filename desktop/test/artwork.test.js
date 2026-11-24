@@ -177,7 +177,7 @@ test('the menu-bar glyphs are one-colour templates at 16 pt with their @2x', () 
 });
 
 test('the menu-bar glyph is cut twice, and the two cuts are not the same shape', () => {
-  // 2026-10-04: "Two cut shapes if possible for the tray icon", then, on the
+  // Requested 2026-10-04: "Two cut shapes if possible for the tray icon", then, on the
   // candidates, "light mode perfect, dark mode weight 4 is the winner". A template
   // image is painted BY the bar, so the cut is the whole difference: the light cut
   // removes the claw from the tile whole, the dark one cuts it as a weight-4
@@ -188,7 +188,7 @@ test('the menu-bar glyph is cut twice, and the two cuts are not the same shape',
   const dark = trayTemplate();
   assert.match(dark, /<rect/, 'the dark cut grew no tile');
   assert.match(dark, /mask=/, 'the dark cut does not cut anything out');
-  assert.match(dark, /stroke-width="4"/, 'the dark cut is not the weight the owner picked');
+  assert.match(dark, /stroke-width="4"/, 'the dark cut is not the chosen weight');
   // Enclosed clear pixels: a region the bar shows through that ink surrounds. The
   // claw cut out of the tile is one; the space round a bare claw is not, because it
   // reaches the edge of the image. This is what tells a CUT from a shape.

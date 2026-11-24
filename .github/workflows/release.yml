@@ -172,9 +172,9 @@ jobs:
       # job included. That job is where the TestFlight upload and the wait for the
       # build to reach VALID live, so requiring it means the GitHub Release (the
       # feed both clients read) is not published until the phone build is actually
-      # installable. That is the gap the owner named 2026-09-18: "CI should ensure all
+      # installable. That is the gap named 2026-09-18: "CI should ensure all
       # builds and the testflight release is ready before publishing." And it is
-      # the owner's rule of 2026-09-21: "require all jobs to finish successfully before
+      # the rule of 2026-09-21: "require all jobs to finish successfully before
       # we publish, so that we can never have something claiming to be deployed
       # and not." A list of job names could only ever promise a subset of that;
       # the gate reads the whole job list instead.
@@ -554,7 +554,7 @@ jobs:
     # Everything that built gets published; `prerelease` is what separates a dev
     # build from a release, not whether it is published at all.
     #
-    # This `needs` and `if` are the gate the owner asked for on 2026-09-16: nothing is
+    # This `needs` and `if` are the gate asked for on 2026-09-16: nothing is
     # published unless every build leg passes (`build`), every platform's installers
     # are in the release (the artifact gate below), and the OTHER pipeline's whole
     # matrix is green on this commit (`platforms`, `platforms-gate.yml`). The last
@@ -569,7 +569,7 @@ jobs:
     # success requirement outright and publish a partial release.
     #
     # ★ `changes` is the other half of the gate, and it is new: it is what makes
-    # a commit that ships NOTHING publish nothing at all. the owner's rule, 2026-09-18:
+    # a commit that ships NOTHING publish nothing at all. The rule, 2026-09-18:
     # "we only need a release if something actually changed, so docs and other
     # things like that definitely do not need a release at all". A release for a
     # .github-only commit was not only unnecessary, it was the phantom update the

@@ -20,7 +20,7 @@ struct SettingsSurface: UIViewRepresentable {
     /// The Control UI's live design tokens, read out of the gateway page when this
     /// surface is presented (see `ThemeTokens`, `GatewayPage.liveTokens`).
     ///
-    /// This is the leg that was missing on iOS, and the whole reason the owner's report
+    /// This is the leg that was missing on iOS, and the whole reason the report
     /// exists: the desktop hands these same values to this same page, so its
     /// settings surface wears the interface's Instrument Sans and its `#0e1015`
     /// slate, while the phone's wore ui.css's fallback palette and the system

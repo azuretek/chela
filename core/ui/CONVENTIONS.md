@@ -102,7 +102,7 @@ and the observer's `socketClosed` report in `core/spec/pairing.json`. Guarded by
 
 ## ★ The third rule: nothing takes focus unless by rule
 
-2026-09-17: *"can we also make these banners not change our focus? when they
+Requested 2026-09-17: *"can we also make these banners not change our focus? when they
 pop up what I'm typing gets stopped. nothing should take focus unless its by
 rule"*. This is the third fault in this one area, after click-swallowing and the
 transparent overlay, and it is a rule rather than a fix because the first two were
@@ -322,7 +322,7 @@ screen being different, it should always flow".
 
 ## ★ The eighth rule: a transient state is held long enough to read
 
-2026-09-18: *"make the speed of the state changes visually take long enough
+Requested 2026-09-18: *"make the speed of the state changes visually take long enough
 for someone to be able to understand what is happening, lets make that part of our
 design language and apply it to everything in our ui."*
 
@@ -382,7 +382,7 @@ was transient rather than a global default that freezes something live.
 
 ## ★ The ninth rule: no surface scrolls sideways
 
-2026-09-19: the About card *"made the whole settings page have to scroll sideways, I do not want that"*, and the standard *"should apply to all design surfaces"*.
+Reported 2026-09-19: the About card *"made the whole settings page have to scroll sideways, I do not want that"*, and the standard *"should apply to all design surfaces"*.
 
 **The horizontal axis is never a scroll axis on our own surfaces.** A reader scrolls a long page down; a paragraph that runs off the right edge and has to be dragged left to read is a layout that failed, not a feature. So long content WRAPS within the padding it was given, and no descendant may establish a width wider than the surface.
 
@@ -461,7 +461,7 @@ Two families, and which one a change takes depends on what it is:
 | `--duration-normal` | 180ms | The notice card arriving, the first run's own page arriving, and every arrival under reduced motion. |
 | `--duration-fast` | 100ms | The notice card leaving, the loading cover leaving, and every departure under reduced motion. |
 
-**Settings and About move like an iOS sheet, on every client** (the owner, 2026-09-25,
+**Settings and About move like an iOS sheet, on every client** (2026-09-25,
 emphatically). They slide up from the bottom edge over a fading scrim and slide back
 down on close, at the iOS sheet's own speed and on its curve. About opened from
 Settings is a second sheet over the first, and its departure is what reveals Settings
@@ -505,9 +505,9 @@ upstream-parity check the borrowed tokens face, because both clients read them:
 
 ### The dim behind a sheet
 
-**The Control UI stays on screen behind Settings and About, under a dim.** 2026-09-25: *"right now the control ui sort of flickers into the background color as the settings/about us pages slide up ... or like a dim like the slide out of the menu on mobile from the left"*. Measured on a macOS desktop, frame by frame: the sheet's page painted html and body with the page colour, so the moment its view attached the Control UI was replaced by a flat, opaque sheet of --bg, in the fallback palette for its first frames until the live theme arrived. The scrim over it was the page colour at 70% as well, so there was no interface left to dim.
+**The Control UI stays on screen behind Settings and About, under a dim.** Reported 2026-09-25: *"right now the control ui sort of flickers into the background color as the settings/about us pages slide up ... or like a dim like the slide out of the menu on mobile from the left"*. Measured on a macOS desktop, frame by frame: the sheet's page painted html and body with the page colour, so the moment its view attached the Control UI was replaced by a flat, opaque sheet of --bg, in the fallback palette for its first frames until the live theme arrived. The scrim over it was the page colour at 70% as well, so there was no interface left to dim.
 
-- **The dim is a value of ours, and it is DARKER than the Control UI own.** It started as the Control UI mobile nav drawer backdrop (`.shell-nav-backdrop`, black at 44% in every palette), restated as `--scrim` in `ui.css` so the two dims matched. 2026-10-01: *"make that a bit darker and blurred"*, so it is black at 60% now, and `core/test/backdrop.test.js` holds it darker than the drawer backdrop it came from rather than equal to it. It fades in with the slide up and out with the slide down, on the sheet duration and curve.
+- **The dim is a value of ours, and it is DARKER than the Control UI own.** It started as the Control UI mobile nav drawer backdrop (`.shell-nav-backdrop`, black at 44% in every palette), restated as `--scrim` in `ui.css` so the two dims matched. Requested 2026-10-01: *"make that a bit darker and blurred"*, so it is black at 60% now, and `core/test/backdrop.test.js` holds it darker than the drawer backdrop it came from rather than equal to it. It fades in with the slide up and out with the slide down, on the sheet duration and curve.
 - **The interface behind a sheet is BLURRED, by the client that owns that interface.** A `backdrop-filter` samples only the document it is in, and a sheet is a separate view on the desktop and a native sheet on the phone, so the blur cannot live on the sheet own scrim: there is no backdrop in that document to sample. The page BEHIND blurs itself. The desktop injects a fixed full-window pseudo-element with `backdrop-filter: blur(14px)` into the Control UI and fades it in and out on the sheet own durations, from `syncSurfaceBehind` in `desktop/src/main.js`; the phone blurs the app behind the sheet natively, with a `UIVisualEffectView` under the presentation and the extra darkening solved against the platform's own dim, so the composite is the 60% above rather than 60% painted on top of it. Measured 2026-10-01.
 - **A sheet's page paints nothing behind its scrim.** Its html and body are transparent, so what shows through the dim is the Control UI itself, from the first frame.
 - **One dim however many sheets are up.** A sheet opened over another (About from Settings) keeps its own scrim clear: the desktop host adds `?stacked=1` and `ui/surface.js` sets `surface--stacked` before first paint. If the lower sheet leaves first, the host clears the mark so the dim stays.

@@ -3,13 +3,13 @@ name: every platform
 # ★ The release gate: nothing is published until EVERY job the other pipeline
 # lists on this commit has concluded success.
 #
-# the owner's rule, 2026-09-16: "never release unless all builds complete and are
+# The rule, 2026-09-16: "never release unless all builds complete and are
 # tested, that is the gate for a release." The counterexample that made it a
 # rule: on one commit the desktop release concluded SUCCESS and published while
 # the mobile pipeline was FAILED on a parity test. Each workflow gated only
 # itself, so neither could see the other.
 #
-# ★ Extended 2026-09-21, the owner: "require all jobs to finish successfully before we
+# ★ Extended 2026-09-21: "require all jobs to finish successfully before we
 # publish, so that we can never have something claiming to be deployed and not."
 # What that removed is the verdict: a hand-written pattern of job names that the
 # gate required. A pattern is a promise that it names everything that matters, and

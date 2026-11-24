@@ -447,7 +447,7 @@ app.whenReady().then(async () => {
 
   // Arm the banner itself, so "the banner did not react" can be told apart from
   // "the click never reached the banner". Those two have different causes and
-  // only one of them is the fault the owner reported.
+  // only one of them is the reported fault.
   const armedBanner = await ask(bc, `(() => {
       window.__clawBannerClicks = 0;
       window.__clawBannerHits = [];

@@ -1,6 +1,6 @@
 // Prove the notice banner is FLOATING CARDS, not a full-width bar (#4).
 //
-// 2026-09-19: "floating cards no full width bar that's pointless". The bar's
+// Requested 2026-09-19: "floating cards no full width bar that's pointless". The bar's
 // dead-zone came from the view spanning the window: a WebContentsView claims every
 // click in its rectangle whatever it paints, so the empty strip beside the card
 // ate clicks on the Control UI. The fix sizes the view to the card cluster. This
