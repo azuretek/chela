@@ -23,8 +23,8 @@ const UI = path.join(REPO, 'core', 'ui');
 const STATE = {
   client:'desktop',
   surface: JSON.parse(fs.readFileSync(path.join(REPO,'core','spec','settings.json'),'utf8')),
-  gateways:[{ id:'zilla', label:'Zilla', url:'https://gateway.example.ts.net', credentials:{hasToken:true,hasPassword:false,headers:[{name:'CF-Access-Client-Id',hasValue:true}]}, status:{tone:'err',label:'Cannot connect',detail:'ERR_CONNECTION_REFUSED'} }],
-  activeGatewayId:'zilla', connection:{phase:'failed'},
+  gateways:[{ id:'atlas', label:'Atlas', url:'https://home-host.tailnet123.ts.net', credentials:{hasToken:true,hasPassword:false,headers:[{name:'CF-Access-Client-Id',hasValue:true}]}, status:{tone:'err',label:'Cannot connect',detail:'ERR_CONNECTION_REFUSED'} }],
+  activeGatewayId:'atlas', connection:{phase:'failed'},
   settings:{closeToTray:true,launchAtLogin:false,startHidden:false,autoUpdate:true,promptMetadata:false,globalShortcut:'CommandOrControl+Shift+O'},
   appearance:{mode:'system'}, build:'1.0.1-dev.291.810552323b (810552323b-dirty, built 2026-09-20 03:34Z)', certOffers:[], trustedCerts:{}, updates:{}, secretsError:null,
 };

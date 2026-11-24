@@ -84,7 +84,7 @@ if [ "${SKIP_BUILD:-}" != "1" ]; then
   echo "== generating the Xcode project from project.yml"
   xcodegen generate
   # A simulator build is unsigned (CODE_SIGNING_ALLOWED=NO), so no team id is
-  # needed. Niced because the gateway host also serves Plex/Ollama/the gateway.
+  # needed. Niced because the macOS host also serves the gateway and other workloads.
   echo "== building for the simulator (the slow part)"
   nice -n 19 xcodebuild -project Chela.xcodeproj -scheme Chela \
     -sdk iphonesimulator -configuration Debug \

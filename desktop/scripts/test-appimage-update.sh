@@ -26,7 +26,7 @@
 #
 # Leaves nothing behind but the work directory, which it prints. Put that
 # somewhere with room: two AppImages plus a browser profile is ~400 MB, so on
-# our server it belongs under /the storage pool, never a root disk.
+# a server it belongs on a data volume, never a root disk.
 
 set -euo pipefail
 
