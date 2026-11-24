@@ -260,6 +260,101 @@ test('running the script the way the workflow does writes the release output', (
   assert.match(written, /^release=true$/m, 'the script must write release=true for a shipping change; empty output means the entry guard never fired');
 });
 
+// The environment without git's own variables. A git hook runs this suite with
+// GIT_DIR and GIT_INDEX_FILE set for the repository being pushed, and git in a
+// scratch directory would then write into that repository instead.
+const cleanEnv = (extra = {}) => ({
+  ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_'))),
+  ...extra,
+});
+
+/** A scratch repository of two commits: the second touches only docs/, so it ships nothing. */
+function scratchRepo(prefix) {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const env = {
+    ...cleanEnv(),
+    GIT_AUTHOR_NAME: 'Test',
+    GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test',
+    GIT_COMMITTER_EMAIL: 'test@example.com',
+  };
+  const git = (...args) => execFileSync('git', args, { cwd: repo, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  git('init', '-q');
+  fs.mkdirSync(path.join(repo, 'docs'));
+  fs.writeFileSync(path.join(repo, 'docs', 'guide.md'), 'one\n');
+  git('add', '.');
+  git('commit', '-q', '-m', 'one');
+  const first = git('rev-parse', 'HEAD');
+  fs.writeFileSync(path.join(repo, 'docs', 'guide.md'), 'two\n');
+  git('commit', '-q', '-am', 'two');
+  return { repo, first };
+}
+
+// A commit id that no repository here holds: what github.event.before names
+// after a history rewrite removed the previous tip.
+const GONE = 'b'.repeat(40);
+
+test('a push whose previous commit is gone ships instead of failing the job', () => {
+  // Measured 2026-11-24: after a history rewrite, github.event.before named a
+  // commit the remote no longer had, git diff died with 'fatal: bad object', and
+  // the "does this commit ship anything" job failed in both pipelines. A missing
+  // base is read as shipping, and the script exits 0. The scratch repository has
+  // no remote, so the one fetch attempt fails at once, as it does for a commit
+  // the remote dropped.
+  const script = path.join(ROOT, 'scripts', 'release', 'changes.mjs');
+  const { repo, first } = scratchRepo('claw-rewrite-');
+  const verdict = (before) => {
+    const out = path.join(repo, '.git', 'out-' + before.slice(0, 4));
+    fs.writeFileSync(out, '');
+    execFileSync(process.execPath, [script, '--event', 'push', '--before', before, '--sha', 'HEAD'], {
+      cwd: repo,
+      env: cleanEnv({ GITHUB_OUTPUT: out, GITHUB_REF_TYPE: 'branch', GITHUB_EVENT_NAME: 'push' }),
+      stdio: 'ignore',
+    });
+    return fs.readFileSync(out, 'utf8');
+  };
+  assert.match(verdict(GONE), /^release=true$/m, 'a missing base must be read as shipping');
+  assert.match(verdict(GONE), /rewritten or force-pushed history/);
+  assert.match(verdict('0'.repeat(40)), /^release=true$/m, 'an all-zeros base must be read as shipping');
+  // And a base that IS here still narrows: the docs-only push ships nothing.
+  assert.match(verdict(first), /^release=false$/m, 'a present base must still be diffed');
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
+test('the CI change filter runs every tree when the push base is gone', { skip: process.platform === 'win32' && 'the filter runs on ubuntu only' }, () => {
+  // The same rewrite took ci.yml's "Which trees changed" step red: its comment
+  // said it failed open, but set -eo pipefail ended the step on the bad diff
+  // before the fallback ran. This runs that step's own shell in a scratch
+  // repository with a base that no longer exists.
+  const lines = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8').replace(/\r\n?/g, '\n').split('\n');
+  const start = lines.findIndex((line) => line.trim() === '- name: Which trees changed');
+  assert.ok(start >= 0, 'ci.yml has no "Which trees changed" step');
+  const runAt = lines.findIndex((line, i) => i > start && line.trim() === 'run: |');
+  const indent = lines[runAt].length - lines[runAt].trimStart().length;
+  const body = [];
+  for (let j = runAt + 1; j < lines.length; j += 1) {
+    if (lines[j].trim() && lines[j].length - lines[j].trimStart().length <= indent) break;
+    body.push(lines[j].slice(indent + 2));
+  }
+  const { repo, first } = scratchRepo('claw-ci-filter-');
+  const script = path.join(repo, '.git', 'filter.sh');
+  fs.writeFileSync(script, body.join('\n') + '\n');
+  const filter = (before) => {
+    const out = path.join(repo, '.git', 'out-' + before.slice(0, 4));
+    fs.writeFileSync(out, '');
+    execFileSync('bash', ['-e', script], {
+      cwd: repo,
+      env: cleanEnv({ EVENT: 'push', BASE_REF: '', BEFORE: before, GITHUB_OUTPUT: out }),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return fs.readFileSync(out, 'utf8');
+  };
+  assert.equal(filter(GONE), 'js=true\nios=true\n', 'a missing base must run every tree, not fail the step');
+  assert.equal(filter('0'.repeat(40)), 'js=false\nios=false\n', 'all zeros falls back to the parent, a docs-only change');
+  assert.equal(filter(first), 'js=false\nios=false\n', 'a present base must still be diffed');
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
 test('the shared gate requires every job the other pipeline lists', () => {
   // ★ The rule, 2026-09-21: "require all jobs to finish successfully before we
   // publish, so that we can never have something claiming to be deployed and not."

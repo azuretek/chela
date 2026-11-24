@@ -107,11 +107,49 @@ export function classify(files) {
   return { release: shipped.length > 0, shipped, ignored, byReason };
 }
 
-/** `git diff --name-only <base> <sha>`, or null when there is no base to compare against. */
+/** True when this clone holds `sha` as a commit. */
+function haveCommit(sha) {
+  try {
+    execFileSync('git', ['cat-file', '-e', sha + '^{commit}'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether the diff base can be used. A history rewrite or a force-push leaves
+ * github.event.before naming a commit the remote no longer has, and git diff
+ * then dies with 'fatal: bad object' (measured 2026-11-24: every main push after
+ * the rewrite failed here). The base is fetched once in case only this clone
+ * lacks it; a base that is still missing is answered by the caller as shipping.
+ */
+export function baseAvailable(base) {
+  if (haveCommit(base)) return true;
+  try {
+    execFileSync('git', ['fetch', '--no-tags', '--quiet', 'origin', base], { stdio: 'ignore', timeout: 60_000 });
+  } catch {
+    // Unreachable or gone: the check below answers it.
+  }
+  return haveCommit(base);
+}
+
+/**
+ * `git diff --name-only <base> <sha>`, or null when there is no usable base to
+ * compare against: none given, missing from the clone and the remote, or a diff
+ * that fails. Null is read as shipping, never as "nothing changed".
+ */
 function changedFiles({ base, sha }) {
-  if (!base) return null;
-  const out = execFileSync('git', ['diff', '--name-only', base, sha], { encoding: 'utf8' });
-  return out.split('\n').filter(Boolean);
+  if (!base || !baseAvailable(base)) return null;
+  try {
+    const out = execFileSync('git', ['diff', '--name-only', base, sha], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return out.split('\n').filter(Boolean);
+  } catch {
+    return null;
+  }
 }
 
 /** The release before this commit: the range a tag or a dispatch would ship. */
@@ -147,19 +185,23 @@ export function decide({ eventName, refType = 'branch', before = '', sha = 'HEAD
     // A pull request ships nothing on any ref, so this answer only reports.
     rangeBase = base;
     files = changedFiles({ base: rangeBase, sha });
-    reason = 'the pull request own changes, ' + rangeBase.slice(0, 9) + '..' + sha.slice(0, 9);
+    reason = files === null
+      ? 'the pull request base ' + (rangeBase.slice(0, 9) || '(none)') + ' cannot be diffed, so this is treated as shipping'
+      : 'the pull request own changes, ' + rangeBase.slice(0, 9) + '..' + sha.slice(0, 9);
   } else if (explicit) {
     // What this release would ship: everything since the last release, rather
     // than only the tip commit. A tag on a merge commit releases the whole range.
     rangeBase = previousReleaseTag(sha);
     files = changedFiles({ base: rangeBase, sha });
-    reason = rangeBase
-      ? 'everything since ' + rangeBase + ', which is what this release would ship'
-      : 'no previous release tag to compare against, so the whole history is treated as shipping';
+    if (!rangeBase) reason = 'no previous release tag to compare against, so the whole history is treated as shipping';
+    else if (files === null) reason = 'the range since ' + rangeBase + ' cannot be diffed, so this is treated as shipping';
+    else reason = 'everything since ' + rangeBase + ', which is what this release would ship';
   } else if (before && !ZERO.test(before)) {
     rangeBase = before;
     files = changedFiles({ base: rangeBase, sha });
-    reason = 'the push itself, ' + rangeBase.slice(0, 9) + '..' + sha.slice(0, 9);
+    reason = files === null
+      ? 'the previous commit ' + rangeBase.slice(0, 9) + ' is in neither this clone nor the remote (a rewritten or force-pushed history), so this is treated as shipping'
+      : 'the push itself, ' + rangeBase.slice(0, 9) + '..' + sha.slice(0, 9);
   } else {
     // A ref with no previous commit to compare against: a new branch, or the
     // first push of main. There is no honest range, and guessing "nothing

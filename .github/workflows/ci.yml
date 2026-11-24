@@ -91,21 +91,40 @@ jobs:
           BEFORE: ${{ github.event.before }}
         run: |
           set -eo pipefail
+          # ★ Fail OPEN: if the diff cannot be computed, run everything. A merge
+          # gate that skipped a platform because it misread the diff would pass a
+          # PR it never tested, which is the fault this whole file exists to stop.
+          # Every step that can fail below is guarded, so set -e never ends the
+          # step before the fallback is reached.
           if [ "$EVENT" = 'pull_request' ]; then
             git fetch --no-tags --depth=100 origin "$BASE_REF" >/dev/null 2>&1 || true
-            base="$(git merge-base "origin/$BASE_REF" HEAD)"
+            base="$(git merge-base "origin/$BASE_REF" HEAD 2>/dev/null || true)"
           else
             base="$BEFORE"
             # A first push or a force-push can leave BEFORE at all-zeros; fall
             # back to the parent so the diff is never empty-by-accident.
-            case "$base" in ''|0000000000000000000000000000000000000000) base="$(git rev-parse HEAD~1 2>/dev/null || echo HEAD)";; esac
+            case "$base" in ''|0000000000000000000000000000000000000000) base="$(git rev-parse --verify --quiet 'HEAD~1' || true)";; esac
           fi
-          changed="$(git diff --name-only "$base" HEAD)"
-          echo "changed against $base:"; printf '%s\n' "$changed" | sed 's/^/  /'
-          # ★ Fail OPEN: if the diff cannot be computed, run everything. A merge
-          # gate that skipped a platform because it misread the diff would pass a
-          # PR it never tested, which is the fault this whole file exists to stop.
-          matches () { printf '%s\n' "$changed" | grep -Eq "$1"; }
+          # A history rewrite leaves BEFORE naming a commit that no longer exists
+          # anywhere, and git diff then dies with 'fatal: bad object' (measured
+          # 2026-11-24, every main push after the rewrite went red here). Fetch it
+          # once in case only this clone lacks it, and if it is still missing,
+          # treat every tree as changed.
+          if [ -n "$base" ] && ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            git fetch --no-tags --quiet origin "$base" >/dev/null 2>&1 || true
+          fi
+          changed=''
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "no usable diff base (${base:-none}), so every tree is treated as changed"
+          elif ! changed="$(git diff --name-only "$base" HEAD)"; then
+            echo "git diff against $base failed, so every tree is treated as changed"
+            changed=''
+          fi
+          echo "changed against ${base:-nothing}:"; printf '%s\n' "$changed" | sed 's/^/  /'
+          # A here-string, not printf piped into grep -q: under pipefail, grep -q
+          # exiting on its first match can kill printf with SIGPIPE and turn a
+          # match into a miss on a long change list.
+          matches () { grep -Eq "$1" <<<"$changed"; }
           js=false; ios=false
           if [ -z "$changed" ]; then js=true; ios=true; fi
           if matches '^(core/|desktop/|scripts/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|eslint\.config\.mjs|\.github/workflows/(ci|platforms-gate)\.yml)'; then js=true; fi
