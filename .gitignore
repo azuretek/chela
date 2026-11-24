@@ -32,6 +32,11 @@ xcuserdata/
 # project.yml means there is no committed copy to drift from the account.
 mobile/.team
 
+# The gateway mobile/build-sim.sh pairs the simulator with. It names a real
+# machine, so it stays local and reaches the script as GATEWAY_URL or as this
+# file; the script has no default.
+mobile/.gateway-url
+
 # Device build output from mobile/build-device.sh. Regenerated on every run, so
 # a committed copy would be pure drift, and it is large.
 mobile/build-device/
