@@ -162,7 +162,7 @@ const SMALL_STATE = {
     {
       id: 'alpha',
       label: 'Alpha gateway',
-      url: 'https://zilla-gateway.tail1a2b3c.ts.net:18789/',
+      url: 'https://atlas-gateway.tail1a2b3c.ts.net:18789/',
       credentials: { hasToken: true, hasPassword: false, headers: [] },
       status: { tone: 'ok', label: 'Connected', detail: null },
     },

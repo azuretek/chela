@@ -48,7 +48,7 @@ const UI = path.join(REPO, 'core', 'ui');
 // status line with no detail, which is the hard case because a long message would
 // push the card wide on its own.
 const NOTICES = [
-  { id:'connection', tone:'warn', message:'Cannot connect to Zilla', detail:'The gateway closed the connection', dismissible:true, action:{ label:'Open settings', command:'openSettings' } },
+  { id:'connection', tone:'warn', message:'Cannot connect to Atlas', detail:'The gateway closed the connection', dismissible:true, action:{ label:'Open settings', command:'openSettings' } },
   { id:'gateway', tone:'error', message:'The gateway closed the connection', detail:'Retrying every few seconds.', dismissible:true },
 ];
 

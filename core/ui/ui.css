@@ -847,7 +847,7 @@ a  { color: var(--accent); }
    gap. That is only SEEN where the address reaches that far: a long address
    truncates to its column's edge and the pill sits on top of it with no gap,
    while a short one leaves the empty tail of its column lying under the pill and
-   looks fine. Reported as the Zilla row running into the CONNECTED pill while the
+   looks fine. Reported as the gateway row running into the CONNECTED pill while the
    row below kept its gap (issue #109). So the gateway control takes the width its
    content needs and the text column gives up the rest, where the address
    truncates by the deliberate one-line exception above; the row's own `gap`
