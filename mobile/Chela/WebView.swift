@@ -317,7 +317,7 @@ struct WebView: UIViewRepresentable {
             Task { @MainActor in
                 // The cover stays, in the shared loading page's failed state with
                 // Try again, rather than coming down onto a page that did not load
-                // (Abi, 2026-09-25). The notice still says why.
+                // (2026-09-25). The notice still says why.
                 cover.fail("load-failed")
                 notices.connectionFailed(label: gatewayName, description: description)
                 connection.failed(gatewayId)

@@ -58,8 +58,8 @@ final class PageCoverTests: XCTestCase {
     }
 
     /// A failed load keeps the cover up in its failed state, the shared loading
-    /// page's "Not connected" with Try again, as the desktop does (Abi,
-    /// 2026-09-25), and a paint still on its way cannot take it down.
+    /// page's "Not connected" with Try again, as the desktop does
+    /// (2026-09-25), and a paint still on its way cannot take it down.
     func testAFailedLoadHoldsTheCoverInItsFailedState() async {
         let cover = PageCover(backstop: .seconds(60))
         cover.hold()

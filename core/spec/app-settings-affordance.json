@@ -52,7 +52,7 @@
       "    <div class=\"sidebar-shell__footer\">",
       "      <div class=\"sidebar-footer-bar sidebar-footer-bar--one-action\">",
       "        <button type=\"button\" class=\"sidebar-identity-card\" aria-haspopup=\"menu\" aria-expanded=\"false\" aria-label=\"Account\">",
-      "          <span class=\"sidebar-identity-card__text\"><span class=\"sidebar-identity-card__name\">Abi</span></span>",
+      "          <span class=\"sidebar-identity-card__text\"><span class=\"sidebar-identity-card__name\">Sam</span></span>",
       "        </button>",
       "        <span class=\"sidebar-footer-actions\">",
       "          <button type=\"button\" class=\"sidebar-brand__icon sidebar-footer-bar__home\" aria-label=\"Home panel\"></button>",

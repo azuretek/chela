@@ -41,7 +41,7 @@ final class PageCover: ObservableObject {
     @Published private(set) var isCovered = false
     /// Whether the load under the cover failed. The cover then STAYS, in the shared
     /// loading page's failed state with its Try again, which is what the desktop
-    /// does (Abi, 2026-09-25): a failure is shown where the reader is looking,
+    /// does (2026-09-25): a failure is shown where the reader is looking,
     /// never by taking the cover down onto a page that did not load.
     @Published private(set) var failed = false
     /// The furthest load milestone reached, and when, for the shared progress curve
@@ -205,7 +205,7 @@ final class PageCover: ObservableObject {
     /// Whether the page is sitting on its OWN login gate. That gate is the Control
     /// UI's answer to "this client is not connected", and a page showing it is never
     /// revealed: the reader's surface for it is this cover in its FAILED state, with
-    /// Try again (core/ui/CONVENTIONS.md, the second rule; Abi, 2026-09-25).
+    /// Try again (core/ui/CONVENTIONS.md, the second rule; 2026-09-25).
     private var pageOnGate = false
     /// The bounded hold over a page that is on its gate.
     private var gateTask: Task<Void, Never>?

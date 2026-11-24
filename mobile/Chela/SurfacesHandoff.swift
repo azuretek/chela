@@ -29,7 +29,7 @@ import SwiftUI
 ///
 /// ## The order, which is the report
 ///
-/// Abi, 2026-10-01: *"the settings page should slide down and then the about page
+/// Reported 2026-10-01: *"the settings page should slide down and then the about page
 /// should slide up"*. Two steps, so the settings card's departure is awaited
 /// before About is let in, and the two are never in flight at once. About's view
 /// joins the tree as the handoff starts rather than as it is revealed, so its page

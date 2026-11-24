@@ -34,7 +34,7 @@ const SURFACE_JS = fs.readFileSync(path.join(REPO, 'core', 'ui', 'surface.js'), 
 /** The drawer backdrop's colour, as upstream declares it. */
 /**
  * The dim, as the stylesheet declares it. It began as the Control UI drawer backdrop
- * and is a value of ours since 2026-10-01 (Abi: "make that a bit darker and
+ * and is a value of ours since 2026-10-01 (requested: "make that a bit darker and
  * blurred"); the test below still reads the reference, and asserts ours is darker.
  */
 const DIM = 'rgb(0 0 0 / 60%)';

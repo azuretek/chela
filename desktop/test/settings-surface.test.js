@@ -481,7 +481,7 @@ test('an empty list is inset like a card, from the same tokens, for every empty 
 });
 
 test('every text line in the header declares its own inset from the header edge', () => {
-  // The misalignment Abi reported, in the stylesheet's terms: the heading and its
+  // The reported misalignment, in the stylesheet's terms: the heading and its
   // subtitle did not share a leading edge. The title is upstream's rule and insets
   // itself 9px inside the header's own 12px padding; the subtitle is OURS (upstream
   // has no subtitle in this header) and took the header's padding alone, so it

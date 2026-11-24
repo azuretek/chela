@@ -104,7 +104,7 @@ enum AppIcons {
 /// the other mode showed no change at all (reported 2026-09-24). Each bucket now
 /// ships one alternate icon per mode, and this sets the one the theme calls for
 /// whenever it differs from the one showing. iOS confirms every change with its
-/// own alert, which is accepted as the cost (Abi, 2026-09-24).
+/// own alert, which is accepted as the cost (2026-09-24).
 @MainActor
 enum AppIconFollower {
     /// The alternate icon the live tokens call for, or nil when there is nothing

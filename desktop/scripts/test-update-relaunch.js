@@ -1,6 +1,6 @@
 // Prove the update download card does NOT come back after a RELAUNCH.
 //
-// Abi, 2026-09-17, after the stall window and the clear control landed: "I don't
+// Reported 2026-09-17, after the stall window and the clear control landed: "I don't
 // think the 0% thing is what you said it's just hung here on my mac even after a
 // restart". The two facts in that sentence are what this harness exists for.
 //

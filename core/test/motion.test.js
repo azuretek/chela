@@ -248,7 +248,7 @@ test('no view change writes its own duration: every one is a token', () => {
 });
 
 test('the reduced-motion form is a fade, and moves nothing', () => {
-  // Abi, 2026-09-25: reduced motion falls back to a plain fade everywhere. So the
+  // The rule, 2026-09-25: reduced motion falls back to a plain fade everywhere. So the
   // keyframes it swaps in may touch opacity and nothing else.
   for (const name of ['surface-fade-in', 'surface-fade-out']) {
     const frames = blocks(CLEAN[0][1], `@keyframes ${name}`)[0];

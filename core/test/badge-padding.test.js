@@ -1,5 +1,5 @@
 // The connection-state pill's own box: the green CONNECTED mark on a gateway row,
-// and its warn/err/muted siblings. Reported 2026-09-18 (Abi) as "the padding on
+// and its warn/err/muted siblings. Reported 2026-09-18 as "the padding on
 // the green connected-status text", a pill whose caps floated in a line box
 // inherited from the body's 1.55 leading while its 2px vertical padding could not
 // balance it and its 8px flanks read tight against a full-radius end.
