@@ -2,7 +2,7 @@ import XCTest
 
 /// The notice banner's controls, pressed the way a person presses them.
 ///
-/// Abi, 2026-09-23: "banners on iOS still cant be interacted with, X doesnt work
+/// Reported 2026-09-23: "banners on iOS still cant be interacted with, X doesnt work
 /// and neither does the read all button". The banner lives in a window above the
 /// app that claims a touch only inside the box its cards reported, so a box
 /// reported in the wrong coordinate space makes a control that draws and cannot

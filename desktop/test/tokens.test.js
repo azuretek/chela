@@ -191,7 +191,7 @@ test('the card geometry names tokens rather than repeating their values', () => 
   // The shape half of the file is emitted from spec/tokens.json, so the sheet
   // resolves it to a var() rather than to a second copy of a number.
   //
-  // The card is the Control UI's toast (components.css .app-toast, Abi,
+  // The card is the Control UI's toast (components.css .app-toast,
   // 2026-09-23): an opaque --popover surface with --shadow-md and its own 12px
   // radius, and no blur, since an opaque card has nothing to blur through.
   const sheet = stylesheet();
@@ -232,7 +232,7 @@ function loadingSection() {
 }
 
 test('the loading cover hardcodes no colour of its own', () => {
-  // This is the colour flip Abi reported: the cover is the FIRST thing painted,
+  // This is the reported colour flip: the cover is the FIRST thing painted,
   // so a literal here is not a slow repaint somewhere, it is the app starting
   // in one appearance and arriving in another. Every colour it draws with has
   // to be a token the shared layer owns, which is what lets the host resolve the

@@ -248,7 +248,7 @@ test('marking all read empties the banner in one go', () => {
 });
 
 test('the sweep leaves NOTHING on the bar for the run, a dismissClears card included', () => {
-  // The report (Abi, 2026-09-18): mark everything read, and one card is still
+  // The report (2026-09-18): mark everything read, and one card is still
   // there. It was the download, which the sweep skipped because its X ENDS its
   // condition rather than reading it. Quieting is not clearing, so the sweep must
   // read that card too and leave the transfer behind it alone.
@@ -312,7 +312,7 @@ test('a progress tick does not re-unread a read notice, a changed message does',
 });
 
 test('a user-initiated check re-raises the update card, a passive check does not', () => {
-  // Abi, 2026-09-18: "if I click check for updates it should bring up the banner."
+  // Requested 2026-09-18: "if I click check for updates it should bring up the banner."
   // The asker is owed the answer on screen; a background check that finds the same
   // release again says nothing new and leaves a read card read.
   const n = notices.create();

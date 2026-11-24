@@ -1,7 +1,7 @@
 // * Prove the notice banner does not COLLAPSE, and that the loop which sizes it
 // has a FIXED POINT rather than a ratchet.
 //
-// Abi, 2026-09-20, on Windows, from 1.0.1-dev.295.a84fa1c: "the banners still
+// Reported 2026-09-20, on Windows, from 1.0.1-dev.295.a84fa1c: "the banners still
 // collapse to the right", with the two notices rendered as one-character columns
 // in a ~40px sliver down the trailing edge.
 //
@@ -44,7 +44,7 @@ function cleanup(){ try{ fs.rmSync(PROFILE,{recursive:true,force:true,maxRetries
 const REPO = path.join(import.meta.dirname, '..', '..');
 const UI = path.join(REPO, 'core', 'ui');
 
-// The two notices from Abi's screenshot, and the shape that collapsed: a short
+// The two notices from the reported screenshot, and the shape that collapsed: a short
 // status line with no detail, which is the hard case because a long message would
 // push the card wide on its own.
 const NOTICES = [

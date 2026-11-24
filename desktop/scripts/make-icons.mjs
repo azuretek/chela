@@ -98,7 +98,7 @@ const targets = [
   // well as the explicit setTemplateImage(true) in main.js.
   { file: 'desktop/src/assets/' + TRAY_TEMPLATE, size: 16, svg: Buffer.from(trayTemplate(), 'utf8'), treatment: 'canvas' },
   { file: 'desktop/src/assets/' + TRAY_TEMPLATE.replace(/\.png$/, '@2x.png'), size: 32, svg: Buffer.from(trayTemplate(), 'utf8'), treatment: 'canvas' },
-  // The other cut of the same glyph, for a LIGHT menu bar (Abi, 2026-10-04): the tile
+  // The other cut of the same glyph, for a LIGHT menu bar (2026-10-04): the tile
   // solid with the claw cut out of it. Same canvas, same placement, so switching cuts
   // with the bar's appearance cannot move the glyph.
   { file: 'desktop/src/assets/' + TRAY_TEMPLATE_LIGHT, size: 16, svg: Buffer.from(trayTemplate({ appearance: 'light' }), 'utf8'), treatment: 'canvas' },

@@ -41,7 +41,7 @@ struct NoticeStack: View {
     var body: some View {
         let style = NoticeCardStyle.forMode(mode, live: board.themeTokens)
         VStack(alignment: .trailing, spacing: 0) {
-            // ★ FLOATING CARDS, NOT A BAR. Abi, 2026-09-19: "floating cards no
+            // ★ FLOATING CARDS, NOT A BAR. Requested 2026-09-19: "floating cards no
             // full width bar that's pointless". This VStack hugs its cards rather
             // than stretching across the screen: no `maxWidth: .infinity` and no
             // band `.background` of its own, so it is only as wide as its widest

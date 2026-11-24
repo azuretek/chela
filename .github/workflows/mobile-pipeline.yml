@@ -39,7 +39,7 @@ name: chela-mobile pipeline
 #                      the build available to external testing as well.
 #   workflow_dispatch  a dev build of any ref, on demand.
 #
-# TestFlight is the channel for BOTH kinds of build, which is Abi's decision, and
+# TestFlight is the channel for BOTH kinds of build, which is a deliberate decision, and
 # the reason a dev build here is a real distribution build rather than an ad-hoc
 # or development-signed one: the only difference between the two kinds of run is
 # the version they carry and whether the resulting build may leave internal
@@ -664,7 +664,7 @@ jobs:
   release:
     needs: [version, changes, lint, test, platforms]
     # ★ `changes` is new here, and it is what makes a commit that ships nothing
-    # produce no TestFlight build at all. Abi's rule, 2026-09-18: "we only need a
+    # produce no TestFlight build at all. The rule, 2026-09-18: "we only need a
     # release if something actually changed, so docs and other things like that
     # definitely do not need a release at all". A .github-only change used to
     # build and upload a TestFlight build nobody asked for, and the release the

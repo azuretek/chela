@@ -247,7 +247,7 @@ struct ContentView: View {
     /// own login prompt. Read from the Keychain on every pass, so a credential
     /// entered in our settings page reaches the Control UI without a relaunch.
     ///
-    /// Abi's rule, 2026-09-18: our page first. A gateway this client cannot
+    /// The rule, 2026-09-18: our page first. A gateway this client cannot
     /// authenticate against shows OUR settings surface, where the login is
     /// configured, rather than the Control UI's own token prompt, which is a page we
     /// do not own asking for a value we own the store for.
@@ -441,7 +441,7 @@ struct ContentView: View {
         // sixth rule in core/ui/CONVENTIONS.md.
         .preferredColorScheme(AppearanceMode.system.colorScheme)
         // ★ ONE notice surface for the whole app, installed at the root rather than
-        // on a page. Abi, 2026-09-21: the same up-to-date notice appeared on the
+        // on a page. Reported 2026-09-21: the same up-to-date notice appeared on the
         // Settings surface and on the About surface, and it should "only show up
         // once for the whole app and be pinned over everything not to one specific
         // page". A sheet is presented above the view that raises it, so the copies

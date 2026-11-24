@@ -177,7 +177,7 @@ const PROBE = `(() => {
  * Read off the rendered page because the fault it is for is one a stylesheet
  * assertion cannot see: the line is a child of the card but not a row, so it took
  * no row padding and its text sat against the card's own leading edge, out of line
- * with every row above it (Abi, 2026-09-18). The reading is the INSET of the first
+ * with every row above it (reported 2026-09-18). The reading is the INSET of the first
  * row's box and of the answer's box, measured from the same card edge, so the two
  * are compared as the reader sees them rather than as they are declared.
  */

@@ -10,8 +10,8 @@
 // ★ THIS PAGE DRAWS NOTICES AND NOTHING ELSE. The sweep (Mark all read) is not
 // here and must not be: anything drawn on this page is inside the bar's own
 // rectangle, which its view claims whole, so a control on a line of its own makes
-// the rest of that line a strip that eats clicks over the Control UI. Abi caught
-// that twice, on 2026-09-17 and again on 2026-09-18. The sweep is a view of its
+// the rest of that line a strip that eats clicks over the Control UI. This was
+// caught twice, on 2026-09-17 and again on 2026-09-18. The sweep is a view of its
 // own, sized to the button, in core/ui/sweep.html; the guard below is that the
 // stack has no non-card child and that nothing on this page offers the sweep. The
 // stack still paints the whole rectangle its cards sit in (asserted against the
@@ -165,7 +165,7 @@ const failure = { id: 'connection', tone: 'error', message: 'Cannot connect', de
 // The real download card used to be this, and is not any more: it refused the X
 // because a progress bar that reappeared on the next whole percent would be worse
 // than one with no control at all. That reasoning was right about the reappearing
-// and wrong about the remedy, and the card Abi could not clear on 2026-09-17 was
+// and wrong about the remedy, and the card that could not be cleared on 2026-09-17 was
 // the result. The reappearing is fixed where it belongs now (main drops the raise
 // for an attempt the reader cleared), so the control is back.
 const pinned = { id: 'update-available', tone: 'info', message: 'Downloading', progress: 0.4, dismissible: false };
@@ -205,9 +205,9 @@ test('★ the bar draws notices and nothing else: the sweep is a view of its own
   // click on its empty leading half reached neither the control nor the page. The
   // next fix moved the row inside the last card, which read wrong. The one after
   // painted the BAR so the row was visually safe, but the view still ate the click
-  // across the row's full width, which is the regression Abi reported on
+  // across the row's full width, which is the regression reported on
   // 2026-09-18; the one after that hung the button on the last card's line, and
-  // Abi asked for it below the card instead. It is now a view of its own, sized to
+  // it was asked for below the card instead. It is now a view of its own, sized to
   // the button (refreshSweep in src/main.js, core/ui/sweep.html), so this page
   // draws no sweep at all and its rectangle is its cards plus the bar's padding.
   const b = mount();
@@ -249,8 +249,8 @@ test('a notice that cannot be dismissed is drawn without an X', async () => {
 });
 
 test('★ a download in flight can be cleared, which is the card that could not be', async () => {
-  // The regression. This card used to be drawn with no X at all, so the bar Abi
-  // was looking at had no control on it, and "Mark all read" skipped it too (see
+  // The regression. This card used to be drawn with no X at all, so the bar being
+  // looked at had no control on it, and "Mark all read" skipped it too (see
   // background() below and core/notices.js). Nothing could take it away.
   const b = mount();
   b.set([downloading]);

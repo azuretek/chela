@@ -193,7 +193,7 @@ export function create() {
    * may be left behind: a card the sweep skipped is the card that keeps coming
    * back, which is the fault this rule exists for. It used to skip the ones that
    * refuse to be dismissed and the ones whose X clears, and a single card left
-   * standing on an otherwise empty bar is exactly what Abi hit on 2026-09-18.
+   * standing on an otherwise empty bar is exactly what was hit on 2026-09-18.
    *
    * ★ And QUIETING IS NOT CLEARING, which is the half that has not changed. What
    * the sweep does is read: the notice stays in the store, stays under Settings,

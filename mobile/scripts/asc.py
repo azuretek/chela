@@ -465,7 +465,7 @@ def wait():
     output("processing-state", build["state"] or "")
 
     # The gate is VALID, not merely arrival. A release is published only when
-    # every build on it is installable (Abi's rule): the desktop binaries are
+    # every build on it is installable (the rule): the desktop binaries are
     # downloadable the moment they attach, and TestFlight is the one artifact
     # that is uploaded-but-not-yet-installable, so the release must wait here for
     # Apple to finish processing. Publishing on arrival is what let the in-app

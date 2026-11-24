@@ -51,7 +51,7 @@ test('a change re-raises a read notice as unread', () => {
 });
 
 test('the sweep quiets EVERY notice on the bar, including one whose X clears', () => {
-  // The fault this rule was written for (Abi, 2026-09-18): the sweep skipped the
+  // The fault this rule was written for (2026-09-18): the sweep skipped the
   // notices that refuse to be dismissed and the ones whose own X clears, so a bar
   // swept to nothing could still be left carrying exactly one card. A card that
   // comes back after being read is the report, and this was the likeliest one.

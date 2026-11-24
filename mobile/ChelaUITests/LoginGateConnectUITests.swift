@@ -1,7 +1,7 @@
 import XCTest
 
 /// The Control UI's OWN connection screen must never be the surface in Chela
-/// (Abi, 2026-09-25: "if we never show the control UIs own connection screen that
+/// (2026-09-25: "if we never show the control UIs own connection screen that
 /// would be ideal, control the whole auth flow").
 ///
 /// The phone's half of the proof. The desktop's is

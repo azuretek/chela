@@ -399,7 +399,7 @@ function layoutViews() {
   // ★ Exactly the card cluster, and no bigger, hugging the top-trailing corner:
   // the view eats every click inside its bounds regardless of what is drawn there,
   // so a view any wider or taller than the cards is a dead strip over the Control
-  // UI. The bar is gone (Abi, 2026-09-19); the cards float, and everything beside
+  // UI. The bar is gone (2026-09-19); the cards float, and everything beside
   // and below them passes through. Right-aligned to match the sweep chip and the
   // phone's trailing stack, with the same 12px side inset the sweep uses.
   // Where the sweep hangs from: the cards' foot, or the strip top when the bar is
@@ -473,7 +473,7 @@ function applyAppIcon() {
     }
   }
   // On macOS the tray is the menu-bar template glyph whatever the choice (#139),
-  // and the BAR's appearance picks which of the two cuts it draws (Abi, 2026-10-04:
+  // and the BAR's appearance picks which of the two cuts it draws (requested 2026-10-04:
   // "Two cut shapes if possible for the tray icon"): the claw's own outline on a
   // dark bar, the tile with the claw cut out of it on a light one. The SYSTEM
   // appearance is the bar's rather than this app's, which can be pinned to the other
@@ -827,7 +827,7 @@ function loadActiveGateway({ rendererLoss = null } = {}) {
   // its own background colour. Raising the cover only in beginGatewayConnect left
   // the whole probe as a black window, and when the probe REFUSED, no cover was
   // raised at all -- so the app sat there black, with nothing on screen to act on
-  // and nothing saying it was trying. Abi, 2026-09-20: "I'm also seeing black
+  // and nothing saying it was trying. Reported 2026-09-20: "I'm also seeing black
   // pages". Whether a cover may go up at all is not restated here: it is the same
   // rule beginGatewayConnect uses, so a reconnect beside a document already on
   // screen still does not blink it.
@@ -2769,7 +2769,7 @@ function liftWhenAllowed(why) {
   // A page sitting on its OWN login gate is not a page to reveal: that gate is the
   // Control UI's answer to "this client is not connected", and the reader's surface
   // for it is the loading screen's failed state with Try again, never the page's own
-  // screen (core/ui/CONVENTIONS.md, the second rule; Abi, 2026-09-25). The gate
+  // screen (core/ui/CONVENTIONS.md, the second rule; 2026-09-25). The gate
   // module owns whether the page is on it, and this is the ONE gate the cover comes
   // down through, so a paint on the gate is answered the way a refused connect is.
   if (connectPress.onGate) { showConnectionFailure({ errorCode: null, errorDescription: GATE_UNREACHABLE }); return; }
@@ -2786,7 +2786,7 @@ function liftWhenAllowed(why) {
  *
  * The page's 'Gateway unreachable' screen is upstream's, and pressing its Connect
  * pins that gate on screen while the page connects, so the reader watched an
- * unchanged screen for as long as the attempt took (Abi, 2026-09-25: 'it just
+ * unchanged screen for as long as the attempt took (reported 2026-09-25: 'it just
  * hangs there for a while, we should do the load page there until the UI
  * renders'). The watcher injected beside the pairing observer reports the press,
  * and this answers it the way a launch is answered: the loading screen goes up at
@@ -2922,7 +2922,7 @@ let bannerView = null;
 // The card cluster's own box, in CSS pixels, reported by ui/banner.js. The view
 // is resized to exactly this: a view swallows every mouse event inside its bounds
 // no matter what the page draws there, so a view any bigger than the cards is an
-// invisible strip that eats clicks on the UI underneath. The bar is gone (Abi,
+// invisible strip that eats clicks on the UI underneath. The bar is gone (requested
 // 2026-09-19: "floating cards no full width bar"), so this is a WIDTH as well as a
 // height: the cards float at the top-trailing corner and everything beside them
 // passes through. { width: 0, height: 0 } means gone.
@@ -2935,7 +2935,7 @@ let bannerSize = { width: 0, height: 0 };
 // mouse event inside its own rectangle whatever the page draws there, so a
 // control sharing the bar's view shares the bar's rectangle: a band of the bar
 // carrying one right-aligned button left the rest of that band a dead zone over
-// the Control UI, which is the regression Abi reported on 2026-09-18 and the
+// the Control UI, which is the regression reported on 2026-09-18 and the
 // second time this one area has produced it. Sized to the button alone and hung
 // below the bar, the sweep claims the pixels it draws and gives every other pixel
 // back to the Control UI. The page is core/ui/sweep.html, and the rule it follows
@@ -2953,7 +2953,7 @@ let sweepSize = { width: 0, height: 0 };
  * it can act on, because the sweep reads EVERY notice on the bar: it used to
  * exclude the cards that refuse to be dismissed, back when the sweep skipped them
  * too, and a card left standing on an otherwise empty bar is exactly what that
- * exclusion cost (Abi, 2026-09-18). Reading is not clearing, so there is nothing
+ * exclusion cost (2026-09-18). Reading is not clearing, so there is nothing
  * left for this to exclude.
  */
 function sweepWanted() {
@@ -3067,7 +3067,7 @@ function refreshBanner() {
     // rather than spanning the window.
     //
     // * THE PROVISIONAL WIDTH IS THE WINDOW'S, AND THE VIEW IS LAID OUT BEFORE ITS
-    // PAGE IS LOADED. Both halves are the fix for the collapse Abi reported on
+    // PAGE IS LOADED. Both halves are the fix for the collapse reported on
     // Windows (2026-09-20: "the banners still collapse to the right"). A fresh
     // WebContentsView has NO bounds, and this one is loaded while it is off the
     // window, so the page's first report() was measured in a 0x0 viewport. The
@@ -3096,7 +3096,7 @@ function refreshBanner() {
     // loaded takes the window's keyboard the moment its document commits,
     // whether or not anything asks for it: measured 2026-09-17 on Electron 44,
     // the keyboard moved to the bar within 150ms of the load and stayed there for
-    // the life of the view, which is Abi's report exactly -- a card arriving
+    // the life of the view, which is the report exactly -- a card arriving
     // mid-sentence stopped the reader typing, and nothing in this file calls
     // focus() on the bar, so the ORDER is the only place the rule can live. See
     // attachReadyView for the measurement and for the half that fails.
@@ -4222,7 +4222,7 @@ async function downloadOfferedUpdate() {
  * refuse the X, on the reasoning that the ready notice replaces it within seconds
  * so a bar that reappeared on the next whole percent would be worse than one with
  * no control at all. That reasoning was right about the reappearing and wrong
- * about the remedy, and the remedy is what Abi hit on 2026-09-17: a download that
+ * about the remedy, and the remedy is what was hit on 2026-09-17: a download that
  * dies or never moves during a background check leaves this card on screen at 0%
  * with no X, excluded from "Mark all read" as well, and there is then NOTHING on
  * the bar that can take it away. A card with no way out is the one people learn to
@@ -4562,7 +4562,7 @@ function onUpdateDownloaded(info) {
   // is a progress card for a transfer the reader stopped watching -- the phase they
   // actually dismissed.
   clearedAttempt = -1;
-  // Dismissible, by Abi's call on 2026-09-15. It used to refuse the X, on the
+  // Dismissible, by decision on 2026-09-15. It used to refuse the X, on the
   // reasoning that it was the only route to a restart that had already been
   // paid for. It is not the only route: the tray and the menu bar both carry
   // the same offer for as long as updateReady is set, and reading a notice has
@@ -5167,7 +5167,7 @@ async function identifyBeforeConnect(gw) {
   // rather than about the address: a gateway that is restarting answers nothing,
   // and one mid-upgrade answers the wrong thing. Remembering it made every later
   // attempt short-circuit at knownIdentity and return false WITHOUT a probe, so
-  // pressing Try again did nothing at all until the process restarted -- Abi,
+  // pressing Try again did nothing at all until the process restarted -- reported
   // 2026-09-20: "the loading and try again pages seem to never work or I need to
   // restart the app before things will recover". The retry IS the moment to ask
   // again, so only the acceptance is kept, and a refusal clears any earlier one.
@@ -5497,7 +5497,7 @@ function registerIpc() {
     // the cluster clamped by a view that has not been laid out yet, and adopting it
     // is what made the collapse one-way: the view became 0 wide, the page could
     // never report anything else out of it, and only a restart recovered the banner
-    // (Abi, 2026-09-20: "I need to restart the app before things will recover"). So
+    // (reported 2026-09-20: "I need to restart the app before things will recover"). So
     // the previous size stands until a measurement taken in a real viewport arrives.
     if (width === 0 && height > 0) return;
     if (width === bannerSize.width && height === bannerSize.height) return;

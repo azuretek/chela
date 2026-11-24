@@ -10,7 +10,7 @@
 // THE FAULT THIS ANSWERS. A state that changes faster than a reader can read it is
 // a flash: it appears and is gone before the eye settles on it, which is worse than
 // not showing it, because the reader knows something happened and never learned
-// what. It was reported on the "Check for updates" button (Abi, 2026-09-18): a
+// what. It was reported on the "Check for updates" button (2026-09-18): a
 // second press "just flashes and returns quickly" because the answer settles in the
 // time a cached network reply takes, which is no time at all. The answer is not to
 // slow the WORK down; it is to floor how long the state it produces STAYS on

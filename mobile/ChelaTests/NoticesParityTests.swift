@@ -19,7 +19,7 @@ import XCTest
 /// well as the state at the end, since every one of those rules is answered by the
 /// boolean rather than by the dictionary.
 ///
-/// The read half carries the rule the sweep turns on (Abi, 2026-09-18): a read
+/// The read half carries the rule the sweep turns on (2026-09-18): a read
 /// notice stays quiet for the run unless the raise carries news or the reader
 /// ASKED, a sweep reads every card on the bar without clearing any of them, and a
 /// progress notice moving its number is not news.

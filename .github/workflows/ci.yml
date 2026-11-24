@@ -18,7 +18,7 @@ name: CI
 # touches, and reports ONE status branch protection can require. This is that
 # workflow.
 #
-# What it runs, and what it deliberately does not (Abi, 2026-09-19: "ensure these
+# What it runs, and what it deliberately does not (requested 2026-09-19: "ensure these
 # run on PRs, just not our full build unless it's needed for tests"):
 #
 #   js       lint, the core+desktop unit tests and the import audit. None of
@@ -149,7 +149,7 @@ jobs:
         run: pnpm run lint:js
       # ★ The upstream reference the class/value guards check against, fetched at
       # the pinned commit so CI runs them for real. This is the release safety
-      # (Abi, 2026-09-20): the guards break when upstream has renamed or
+      # (2026-09-20): the guards break when upstream has renamed or
       # redeclared a class our own pages borrow, so we do not ship a build that
       # renders broken against the OpenClaw version we target. It is NOT vendored
       # (core/spec/upstream-reference.json says it must not be); it is fetched

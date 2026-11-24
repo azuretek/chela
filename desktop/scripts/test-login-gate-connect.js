@@ -1,7 +1,7 @@
 // Measure what the reader sees after pressing Connect on the Control UI's OWN
 // login gate, its "Gateway unreachable" screen.
 //
-// The report (Abi, 2026-09-25): pressing Connect there "just hangs there for a
+// The report (2026-09-25): pressing Connect there "just hangs there for a
 // while, we should do the load page there until the UI renders". The claim is
 // about what is on screen DURING the connect, so it is measured by sampling the
 // app's own view stack from the press to the end, not by where it ended.

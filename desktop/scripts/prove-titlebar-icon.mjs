@@ -58,7 +58,7 @@ const MEASURE = `(() => {
  * on the label answers its line box, which the flex row centres perfectly, while the
  * GLYPHS inside it sit above that box centre because a font's ascent carries far more
  * room than its descender. So the label reads high and the icon, whose artwork fills
- * its box, reads low, with every rectangle agreeing. Abi, 2026-10-03: "the icon doesnt
+ * its box, reads low, with every rectangle agreeing. Reported 2026-10-03: "the icon doesnt
  * look too low, the text actually looks like its too high". Measured from the bitmap,
  * the same way every other claim in this harness is: from what was drawn.
  */

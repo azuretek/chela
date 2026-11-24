@@ -4,7 +4,7 @@
 // exactly as measure-text-scale.mjs does), with the reported worst-case content:
 // a long dev build line and a Windows config path. Measures, per scale:
 //   - documentElement.scrollWidth vs clientWidth: any excess is the SIDEWAYS
-//     scroll of the whole surface Abi reported (#1). Must be 0.
+//     scroll of the whole surface that was reported (#1). Must be 0.
 //   - the .result line: clientHeight vs scrollHeight, so a message in green/red
 //     is not clipped by a fixed box at a larger reading scale (#3/#6).
 //

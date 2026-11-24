@@ -193,7 +193,7 @@ targets:
         buildPhase: resources
       - path: ../core/spec/progress.json
         buildPhase: resources
-      # The loading screen is the shared page too (Abi, 2026-09-25): the
+      # The loading screen is the shared page too (2026-09-25): the
       # desktop's own core/ui/loading.html, hosted by LoadingSurface, so its mark,
       # ring, progress bar, quips and failed state with Try again are one copy on
       # every platform. The quips travel with it for the host to rotate.

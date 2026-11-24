@@ -4,7 +4,7 @@
 //
 // Three reports about the About surface, all of them measured rather than read:
 //
-//   1. the space below the LAST thing in a section, which Abi reported as visibly
+//   1. the space below the LAST thing in a section, which was reported as visibly
 //      short at the foot of an action section. A section is a settings-group
 //      and its bottom padding is the last row's, so this reads the gap between the
 //      control and the group's own bottom edge and compares it with the same gap at

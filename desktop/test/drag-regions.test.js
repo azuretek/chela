@@ -148,14 +148,14 @@ test('the app hosts a page either at the window top or below the strip', () => {
   // sized to the control rather than to the window, and it is placed below the
   // bar. A view claims every mouse event inside its rectangle whatever the page
   // draws there, so a sweep sized like the bar would put an inert strip of the
-  // Control UI under it, which is the fault Abi reported twice.
+  // Control UI under it, which is the fault reported twice.
   const sweepAt = layout[0].indexOf('if (sweepView) {');
   assert.ok(sweepAt !== -1, 'the sweep is never laid out, so nothing sizes it to the control');
   const sweepBlock = layout[0].slice(sweepAt, layout[0].indexOf('setBounds', sweepAt) + 120);
   assert.ok(sweepBlock.includes('width: w'),
     'the sweep view must be sized to the control it draws, not to the window');
   assert.ok(sweepBlock.includes('bannerFoot'),
-    'the sweep must be placed below the card cluster (bannerFoot), which is where Abi asked for it');
+    'the sweep must be placed below the card cluster (bannerFoot), which is where it was asked for');
   assert.ok(!sweepBlock.includes('width, height'),
     'the sweep view is taking the window shape, which would make it a full-width strip');
   // Every overlay is full-window, which is why a band inside one is the title
@@ -332,7 +332,7 @@ test('the overlay that is not a control gives the click up', () => {
 });
 
 test('★ the stack paints no band, so the floating-card view claims only the cards', () => {
-  // ★ Floating cards, not a bar. Abi, 2026-09-19: "floating cards no full width
+  // ★ Floating cards, not a bar. Requested 2026-09-19: "floating cards no full width
   // bar that's pointless". The old rule here was the opposite: the bar had to
   // paint its whole rectangle, because its view spanned the window and a view
   // claims every click in its rectangle whatever it draws. That was living with a
@@ -358,7 +358,7 @@ test('★ the stack paints no band, so the floating-card view claims only the ca
   assert.equal(stack.decls.get('margin-left'), 'auto',
     'the stack has no margin-left: auto, so it does not pin to the trailing edge the way the cluster should');
 
-  // ★ The card takes a FIXED width, not a fraction of the view. Abi, 2026-09-20,
+  // ★ The card takes a FIXED width, not a fraction of the view. Reported 2026-09-20,
   // on Windows: the banner collapsed to a ~30px column, one word per line, because
   // the card was `max-width: min(420px, 100%)` -- capped at 100% of the VIEW, and
   // the view is sized FROM the card (banner.js report() measures the card, main.js
@@ -383,9 +383,9 @@ test('★ the stack paints no band, so the floating-card view claims only the ca
 });
 
 test('★ the sweep is a plain button in a view of its own, so it adds no dead zone', () => {
-  // Abi, 2026-09-18: the Mark all read control had become a full-width row of the
+  // Reported 2026-09-18: the Mark all read control had become a full-width row of the
   // bar that ate clicks on the Control UI where the button itself was not, and the
-  // line it was moved onto did the same for the rest of that line; Abi then asked
+  // line it was moved onto did the same for the rest of that line; it was then asked
   // for it below the card. The bar's view claims every mouse event in its
   // rectangle whatever is painted there, so ANY control sharing that view shares
   // its rectangle, and a row carrying one right-aligned button is a dead zone
@@ -442,7 +442,7 @@ test('the pages that cover the strip are the ones that may move the window', () 
 });
 
 test('* the notice cluster is what the banner reports, and its loop cannot ratchet', () => {
-  // The collapse Abi reported on Windows on 2026-09-20 ("the banners still collapse
+  // The collapse reported on Windows on 2026-09-20 ("the banners still collapse
   // to the right"), which is a property of the LOOP between the page and its host
   // rather than a look: the host sizes the view to what the page reports, and the
   // page's cards are capped at 100% of that view, so a report taken in a viewport

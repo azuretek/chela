@@ -1,6 +1,6 @@
 'use strict';
 
-// Prove the theme rule Abi set, end to end: the appearance persists, it moves on
+// Prove the theme rule, end to end: the appearance persists, it moves on
 // exactly two events, it is keyed per gateway, and our own surfaces only read it.
 //
 // The three claims need a real client because none of them can be seen from a

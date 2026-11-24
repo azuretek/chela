@@ -14,7 +14,7 @@
  *
  * Three things about the page this styles:
  *
- * - ★ FLOATING CARDS, NOT A BAR. Abi, 2026-09-19: "floating cards no full width
+ * - ★ FLOATING CARDS, NOT A BAR. Requested 2026-09-19: "floating cards no full width
  *   bar that's pointless". The view is sized to the CARD CLUSTER (width and
  *   height, see report() in banner.js and layoutViews in src/main.js), not to the
  *   window, and a view claims every mouse event inside its own rectangle whatever
@@ -46,7 +46,7 @@
  *   was that band, which spanned the whole width while the control sat at the
  *   trailing edge, so the empty part of it ate every click that landed on it.
  *   Painting the bar behind it (2026-09-17) hid the strip but not the click: the
- *   view still claimed the mouse-down across the band's full width, which Abi
+ *   view still claimed the mouse-down across the band's full width, which was
  *   reported again on 2026-09-18. The fix now takes the sweep OUT of this view
  *   altogether: it is a view of its own, sized to the button, loaded from
  *   core/ui/sweep.html. So this page's rectangle is its cards plus the bar's own
@@ -77,7 +77,7 @@
    of the banner view's pixels outside a card read `rgb(25, 23, 36) a255` in the
    dark appearance and `rgb(250, 244, 237) a255` in the light, where alpha 0 is
    the only correct answer for a strip laid over someone else's page. That is
-   Abi's report exactly: the strip the bar drew was over the content under it
+   the report exactly: the strip the bar drew was over the content under it
    rather than masking it. It also defeated the card's own glass, since
    a `color-mix()` surface at 92% over an opaque slab has nothing to show through.
 
@@ -120,7 +120,7 @@ body.banner-body {
   pointer-events: auto;
 }
 
-/* ★ THE STACK IS NO LONGER A BAR. Abi, 2026-09-19: "floating cards no full width
+/* ★ THE STACK IS NO LONGER A BAR. Requested 2026-09-19: "floating cards no full width
    bar that's pointless". It paints NOTHING of its own now: no surface, no blur,
    no hairline, no shadow. Those were the full-width band, and a band is a
    full-width dead strip over the Control UI, because the view claims every click
@@ -154,7 +154,7 @@ body.banner-body {
 
 /* The card is the Control UI's toast, .app-toast in components.css: an opaque
    --popover surface, a full-strength hairline, 12px corners, --shadow-md, and one
-   row of icon, words, action and X. Abi, 2026-09-23: the banner should duplicate
+   row of icon, words, action and X. Requested 2026-09-23: the banner should duplicate
    the Control UI's own notification style. Every value is pinned against the
    checkout in core/spec/upstream-reference.json.
 
@@ -165,7 +165,7 @@ body.banner-body {
   align-items: center;
   gap: var(--notice-gap);
   /* ★ A floating card is 370px wide, FULL STOP, not a fraction of the view.
-     Abi, 2026-09-20, on Windows: with `max-width: min(420px, 100%)` the card was
+     Reported 2026-09-20, on Windows: with `max-width: min(420px, 100%)` the card was
      capped at 100% of the VIEW, and the view is sized FROM the card (banner.js
      report() measures the card, main.js sizes the view to it). That is a feedback
      loop: a view that is momentarily narrow clamps the card, the host sizes the
@@ -275,7 +275,7 @@ body.banner-body {
    because upstream's `settings-row__text` is the column now. This page went on
    asking for it, so the body fell back to a plain block, its three children are
    inline spans, and they laid out as ONE paragraph that wrapped through all of
-   them. Abi, 2026-09-18: "the banner has improper spacing between words", which
+   them. Reported 2026-09-18: "the banner has improper spacing between words", which
    is what a sentence interleaved with another sentence's line breaks reads as.
    Measured off the rendered page the same day: the headline and the detail shared
    a line, and the progress bar sat on the message's own line.
@@ -416,7 +416,7 @@ body.banner-body {
    of the bar carrying one right-aligned button left the rest of that band a dead
    zone: the reader saw the Control UI through it and could not click it, and
    painting the bar behind it (the 2026-09-17 fix) hid the strip without freeing
-   the click. Abi, 2026-09-18: a normal button, no full-width banner and no
+   the click. Requested 2026-09-18: a normal button, no full-width banner and no
    dead-zone. Loading it from core/ui/sweep.html into a view sized to exactly this
    button (see refreshSweep in src/main.js) is the rule at the top of this file
    applied by shrinking what the view COVERS rather than by painting behind it.

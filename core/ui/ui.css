@@ -881,7 +881,7 @@ a  { color: var(--accent); }
   flex-wrap: wrap;
 }
 /* ★ A centred action cluster, for a row whose buttons are the section's own
-   subject rather than a trailing action on a form. Abi, 2026-09-20: the About
+   subject rather than a trailing action on a form. Requested 2026-09-20: the About
    page's "Check for updates / Release notes" actions should
    be centred, not hung on the right edge, because those cards are ABOUT their
    buttons. A form's trailing Test/Add cluster stays right-aligned (the default),
@@ -915,7 +915,7 @@ a  { color: var(--accent); }
    its own shape is the drift the pin exists to catch. */
 
 /* The connection-state pill on a gateway row: the green CONNECTED mark and its
-   siblings. Reported 2026-09-18 (Abi): "the padding on the green connected-status
+   siblings. Reported 2026-09-18: "the padding on the green connected-status
    text". The pill inherited the body's 1.55 line-height, which at a 10.5px caps
    glyph is a 16.3px line box, so the text sat inside a tall box the 2px vertical
    padding could not balance: the caps floated with too much air above and below
@@ -1363,7 +1363,7 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
    row's padding and none of a row's alignment. Measured 2026-09-18 off the
    rendered page: "Gateway password removed." sat at the card's own leading edge,
    out of line with every row above it and hard against the card's bottom edge.
-   Abi's report the same day: "the green text that gives a user an update on what
+   The report the same day: "the green text that gives a user an update on what
    happened, it should have proper padding/spacing".
 
    So it takes a row's horizontal inset, and the foot's extra room when it is the
@@ -1378,7 +1378,7 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
 .editor > .result:last-child { padding-bottom: var(--space-4); }
 
 /* ★ The SAME inset for a result line that is a bare child of a settings group
-   rather than of an editor. Abi, 2026-09-20, on the new-gateway form: "Enter an
+   rather than of an editor. Reported 2026-09-20, on the new-gateway form: "Enter an
    address first." and the Test-connection answer sat hard against the card's
    leading edge, out of line with every row above them, because the form's rows
    are .settings-row (which the group insets) while the .result is a direct child
@@ -1395,7 +1395,7 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
 }
 .settings-group > .result:last-child { padding-bottom: var(--space-4); }
 
-/* ★ The empty state of a list, and the inset it was missing. Abi, 2026-10-02
+/* ★ The empty state of a list, and the inset it was missing. Reported 2026-10-02
    (#142), on Settings, Certificates: "No certificates have been pinned." sat in
    its rounded box with the text flush against the left edge and against the top
    and bottom borders. The empty state is a .settings-group with its sentence as
@@ -1581,7 +1581,7 @@ button.danger:hover:not(:disabled) { border-color: var(--destructive); color: va
      unbreakable string (a dev version with its commit and stamp), and this
      control is `inline-flex` with no width bound: measured through electron at a
      400px window, its right edge reached 511px at scale 1 and 652px at 1.5, which
-     is the sideways scroll of the whole settings surface Abi reported. The build
+     is the reported sideways scroll of the whole settings surface. The build
      line lives here, in the settings footer, not only in the About card. So the
      control is capped at the width it has and its contents wrap: `flex-wrap`
      lets the build line drop under the name, `max-width: 100%` and `min-width: 0`
@@ -1683,7 +1683,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 22px 0 0; }
    page occupies window y 36..86, and the notice banner's ✕ and Open Settings sit
    at window y 58..86 in a view drawn OVER the cover. With the band claiming a
    region, both controls were dead at their own centres; the same click a few
-   pixels lower worked. Abi's "almost unclickable other than a very narrow sliver
+   pixels lower worked. The report of "almost unclickable other than a very narrow sliver
    at the bottom" is exactly that, and the sliver is the part of the card the
    band did not reach.
 
@@ -1810,7 +1810,7 @@ body:not(.frameless) .scrim { padding-top: 24px; }
      window by its title should not start a selection. */
   user-select: none;
   /* ★ The text shares the ICON'S BOTTOM EDGE, and sits a shade below the strip's own
-     middle. Abi, 2026-10-04: "Maybe the bottom of the icon should align with the bottom
+     middle. Requested 2026-10-04: "Maybe the bottom of the icon should align with the bottom
      of our text, the text seems a little high too instead of centered". Boxes cannot
      express this and that is why it went unnoticed: with both BOXES centred the text's
      INK still reads high, because a font's ascent carries far more room than its
