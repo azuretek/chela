@@ -303,6 +303,7 @@ jobs:
       matrix:
         ios: [26, 27]
         attempt: [1, 2, 3]
+        arm: [base, probe]
         include:
           - ios: 26
             runner: macos-26
@@ -310,7 +311,7 @@ jobs:
             runner: xcode-27
     # Named so the run list says which version a leg is, rather than the default
     # expansion of every matrix key including the image.
-    name: iOS ${{ matrix.ios }} attempt ${{ matrix.attempt }}
+    name: iOS ${{ matrix.ios }} ${{ matrix.arm }} ${{ matrix.attempt }}
     # The image is named in the matrix rather than `macos-latest`, so the
     # platform each leg runs on is a property of the file rather than of
     # whatever the alias resolves to that week.
@@ -624,43 +625,49 @@ jobs:
       # smoke runs on Linux under a virtual display instead, in ci.yml's desktop
       # job, on every pull request.
       - name: Test on the resolved simulator, with launch evidence
+        env:
+          ARM: ${{ matrix.arm }}
         run: |
           set -o pipefail
           D="$RUNNER_TEMP/diag"; mkdir -p "$D"
           echo running > "$D/state"
-          date -u +%Y-%m-%dT%H:%M:%S > "$D/start"
+          sysctl -n hw.ncpu hw.memsize > "$D/host"
+          uptime >> "$D/host"
           ( while [ "$(cat "$D/state")" = running ]; do
-              echo "== $(date -u +%T) load $(sysctl -n vm.loadavg)"
-              ps -Ao pcpu,pid,etime,comm -r | awk 'NR>1 && NR<=13 {n=split($4,a,"/"); printf "%s %s %s %s\n", $1, $2, $3, a[n]}'
+              echo "$(date -u +%T) $(sysctl -n vm.loadavg) procs=$(ps -A | wc -l | tr -d ' ')"
+              sleep 5
+            done ) > "$D/load.log" 2>&1 &
+          ( iostat -d -C -w 5 > "$D/iostat.log" 2>&1 ) &
+          iop=$!
+          if [ "$ARM" = probe ]; then
+            t0=$(date +%s)
+            xcrun simctl boot "$SIMULATOR_UDID"
+            xcrun simctl bootstatus "$SIMULATOR_UDID" -b > "$D/bootstatus.log" 2>&1
+            echo "booted after $(( $(date +%s) - t0 ))s at $(date -u +%T)" > "$D/booted"
+            end=$(( $(date +%s) + 420 ))
+            while [ "$(date +%s)" -lt "$end" ]; do
+              a=$(python3 -c 'import time; print(time.time())')
+              xcrun simctl launch "$SIMULATOR_UDID" com.apple.Preferences > /dev/null 2>&1
+              b=$(python3 -c 'import time; print(time.time())')
+              xcrun simctl terminate "$SIMULATOR_UDID" com.apple.Preferences > /dev/null 2>&1
+              echo "$(date -u +%T) since_boot=$(( $(date +%s) - t0 )) launch=$(python3 -c "print(round($b-$a,2))") load=$(sysctl -n vm.loadavg)" >> "$D/probe.log"
               sleep 2
-            done ) > "$D/cpu.log" 2>&1 &
-          ( seen=""
-            while [ "$(cat "$D/state")" = running ]; do
-              if pgrep -f ChelaUITests-Runner >/dev/null; then
-                for pid in $(pgrep -f 'Chela[.]app/Chela( |$)'); do
-                  n=$(printf '%s\n' $seen | grep -c "^$pid$")
-                  if [ "$n" -lt 10 ]; then
-                    seen="$seen $pid"
-                    sample "$pid" 2 -file "$D/sample-$pid-$(date -u +%H%M%S).txt" >/dev/null 2>&1 &
-                  fi
-                done
-              fi
-              sleep 6
-            done ) &
-          ( until xcrun simctl list devices | grep -F "$SIMULATOR_UDID" | grep -q Booted; do [ "$(cat "$D/state")" = running ] || exit 0; sleep 1; done
-            echo "booted at $(date -u +%T)" > "$D/booted"
-            xcrun simctl spawn "$SIMULATOR_UDID" log stream --style compact --level info --predicate 'process == "runningboardd" OR process == "SpringBoard" OR process == "Chela" OR process == "testmanagerd" OR process == "installd" OR process == "ChelaUITests-Runner" OR eventMessage CONTAINS "claw-mobile"' > "$D/simlog.txt" 2>&1 ) &
-          xcodebuild -project Chela.xcodeproj -scheme Chela -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" -derivedDataPath "$DERIVED_DATA" -resultBundlePath "$D/result.xcresult" test-without-building 2>&1 | tee "$D/xcodebuild.log" | grep -E "Test Case|Launch com|automation session|Terminate com|IDELaunchParametersSnapshot: no|Failed to launch|Executed|TEST (SUCC|FAIL)|Wait for com"
+            done
+          fi
+          date -u +%T > "$D/tests-start"
+          xcodebuild -project Chela.xcodeproj -scheme Chela -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" -derivedDataPath "$DERIVED_DATA" -resultBundlePath "$D/result.xcresult" test-without-building > "$D/xcodebuild.log" 2>&1
           rc=$?
           echo "rc=$rc" > "$D/rc"
           echo done > "$D/state"
-          ls -la "$D"
+          kill $iop 2>/dev/null
+          grep -E "Test Case '-.ChelaUITests.NoticeBanner|t = .*(Launch com|automation session|Terminate com)|Executed .* tests" "$D/xcodebuild.log" | tail -20
+          [ -f "$D/probe.log" ] && awk 'NR%5==1' "$D/probe.log"
           exit 0
       - name: Upload the evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: launch-diag-ios${{ matrix.ios }}-${{ matrix.attempt }}
+          name: launch-diag2-ios${{ matrix.ios }}-${{ matrix.arm }}-${{ matrix.attempt }}
           path: ${{ runner.temp }}/diag
           retention-days: 7
 
