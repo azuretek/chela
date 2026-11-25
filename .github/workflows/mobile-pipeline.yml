@@ -302,8 +302,8 @@ jobs:
       fail-fast: false
       matrix:
         ios: [26, 27]
-        attempt: [1, 2, 3]
-        arm: [base, secondboot]
+        attempt: [1, 2]
+        arm: [base]
         include:
           - ios: 26
             runner: macos-26
@@ -633,8 +633,10 @@ jobs:
           echo running > "$D/state"
           uptime > "$D/host"
           ( while [ "$(cat "$D/state")" = running ]; do
-              echo "$(date -u +%T) $(sysctl -n vm.loadavg) procs=$(ps -A | wc -l | tr -d ' ')"
-              sleep 5
+              echo "== $(date -u +%T) $(sysctl -n vm.loadavg) procs=$(ps -A | wc -l | tr -d ' ') swap: $(sysctl -n vm.swapusage)"
+              top -l 1 -n 12 -o cpu -stats pid,cpu,mem,command 2>/dev/null | sed -n '1,30p' | grep -E 'CPU usage|PhysMem|^ *[0-9]+ ' | cut -c1-120
+              vm_stat | grep -E 'Pageins|Pageouts|Swapins|Swapouts|Compressions|Decompressions|Pages free|occupied by compressor'
+              sleep 10
             done ) > "$D/load.log" 2>&1 &
           only=""
           if [ "$ARM" = secondboot ]; then
@@ -663,7 +665,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: launch-diag6-ios${{ matrix.ios }}-${{ matrix.arm }}-${{ matrix.attempt }}
+          name: launch-diag7-ios${{ matrix.ios }}-${{ matrix.arm }}-${{ matrix.attempt }}
           path: ${{ runner.temp }}/diag
           retention-days: 7
 
