@@ -302,8 +302,8 @@ jobs:
       fail-fast: false
       matrix:
         ios: [26, 27]
-        attempt: [1, 2]
-        arm: [base, nocapture, early]
+        attempt: [1, 2, 3]
+        arm: [base, uionly]
         include:
           - ios: 26
             runner: macos-26
@@ -465,31 +465,6 @@ jobs:
           echo "using $bundle (Xcode $version)"
           "$chosen/usr/bin/xcodebuild" -version
           xcrun simctl list runtimes
-
-      - name: Boot the simulator early (diagnostic arm)
-        if: matrix.arm == 'early'
-        env:
-          IOS_MAJOR: ${{ matrix.ios }}
-        run: |
-          sim="$(xcrun simctl list devices available --json | python3 -c '
-          import json, os, re, sys
-          wanted = int(os.environ["IOS_MAJOR"])
-          best = None
-          for identifier, entries in json.load(sys.stdin)["devices"].items():
-              m = re.search(r"SimRuntime\.iOS-([0-9-]+)$", identifier)
-              if not m: continue
-              v = tuple(int(p) for p in m.group(1).split("-"))
-              if v[0] != wanted: continue
-              for d in entries:
-                  if d.get("isAvailable") and d["name"].startswith("iPhone"):
-                      if best is None or v > best[0]: best = (v, d["udid"])
-                      break
-          print(best[1])
-          ')"
-          echo "early boot of $sim at $(date -u +%T)"
-          echo "EARLY_UDID=$sim" >> "$GITHUB_ENV"
-          echo "EARLY_T0=$(date +%s)" >> "$GITHUB_ENV"
-          nohup xcrun simctl boot "$sim" > "$RUNNER_TEMP/early-boot.log" 2>&1 &
 
       # xcodegen is not part of Xcode and the image may or may not carry it.
       # HOMEBREW_NO_AUTO_UPDATE keeps the install from spending a minute
@@ -661,19 +636,11 @@ jobs:
               echo "$(date -u +%T) $(sysctl -n vm.loadavg) procs=$(ps -A | wc -l | tr -d ' ')"
               sleep 5
             done ) > "$D/load.log" 2>&1 &
-          if [ "$ARM" != base ]; then
-            perl -0pi -e 's/onlyGenerateCoverageForSpecifiedTargets = "NO">/onlyGenerateCoverageForSpecifiedTargets = "NO"\n      systemAttachmentLifetime = "keepNever">/' Chela.xcodeproj/xcshareddata/xcschemes/Chela.xcscheme
-            grep -n systemAttachmentLifetime Chela.xcodeproj/xcshareddata/xcschemes/Chela.xcscheme
-          fi
-          if [ "$ARM" = early ]; then
-            [ "$EARLY_UDID" = "$SIMULATOR_UDID" ] || echo "::warning::early boot was $EARLY_UDID, tests use $SIMULATOR_UDID"
-            a=$(date +%s)
-            xcrun simctl bootstatus "$SIMULATOR_UDID" -b > "$D/bootstatus.log" 2>&1
-            echo "boot started $(( a - EARLY_T0 ))s before the tests; bootstatus waited $(( $(date +%s) - a ))s" | tee "$D/booted"
-          fi
+          only=""
+          [ "$ARM" = uionly ] && only="-only-testing:ChelaUITests"
           start=$(date +%s)
           date -u +%T > "$D/tests-start"
-          xcodebuild -project Chela.xcodeproj -scheme Chela -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" -derivedDataPath "$DERIVED_DATA" test-without-building > "$D/xcodebuild.log" 2>&1
+          xcodebuild -project Chela.xcodeproj -scheme Chela -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" -derivedDataPath "$DERIVED_DATA" $only test-without-building > "$D/xcodebuild.log" 2>&1
           rc=$?
           echo "rc=$rc test-step=$(( $(date +%s) - start ))s" | tee "$D/rc"
           echo done > "$D/state"
@@ -683,7 +650,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: launch-diag4-ios${{ matrix.ios }}-${{ matrix.arm }}-${{ matrix.attempt }}
+          name: launch-diag5-ios${{ matrix.ios }}-${{ matrix.arm }}-${{ matrix.attempt }}
           path: ${{ runner.temp }}/diag
           retention-days: 7
 
