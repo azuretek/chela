@@ -16,20 +16,21 @@
 #   sim-warm.sh boot <udid> <archive>   put the archived data in place unless the
 #                                       device already holds it, then boot it and
 #                                       wait for the boot to finish
+#   sim-warm.sh settle                  only the wait, for the tests
 #
-# Settled means the simulator's own processes used at most QUIET_CPU seconds of
-# CPU in each of QUIET_WINDOWS consecutive WINDOW-second windows. SETTLE_LIMIT
-# bounds the wait; reaching it archives the device anyway and says so, because a
-# device that booted once is still the better one to test on.
+# Settled means the simulator's own processes used at most QUIET_MILLICORES
+# thousandths of a core, measured between samples WINDOW seconds apart, for
+# QUIET_WINDOWS samples in a row. It is a rate over the real time between samples
+# because taking a sample is itself slow on a starved runner: measured, one took
+# a minute. On the first warm, the rate fell from 74% of a core to under 20% about
+# five minutes after the boot and then rose again with periodic work, so the
+# threshold is 25% rather than idle. SETTLE_LIMIT bounds the wait; reaching it
+# archives the device anyway and says so, because a device that booted once is
+# still the better one to test on.
 set -euo pipefail
 
-cmd=${1:?usage: sim-warm.sh warm|boot <udid> <archive>}
-udid=${2:?missing udid}
-archive=${3:?missing archive path}
-data="$HOME/Library/Developer/CoreSimulator/Devices/$udid/data"
-marker="$data/.chela-warm"
-
-: "${WINDOW:=10}" "${QUIET_CPU:=3}" "${QUIET_WINDOWS:=3}" "${SETTLE_LIMIT:=600}"
+cmd=${1:?usage: sim-warm.sh warm|boot <udid> <archive>, or sim-warm.sh settle}
+: "${WINDOW:=10}" "${QUIET_MILLICORES:=250}" "${QUIET_WINDOWS:=3}" "${SETTLE_LIMIT:=600}"
 
 # CPU seconds used so far by every process of the booted simulator runtime. Only
 # one simulator is booted on a test leg, so the runtime's processes are its own.
@@ -41,6 +42,36 @@ sim_cpu() {
   } END { printf "%d", t }'
 }
 
+settle() {
+  local t0=$SECONDS last=$SECONDS quiet=0 prev now used dt rate
+  prev=$(sim_cpu)
+  while [ "$quiet" -lt "$QUIET_WINDOWS" ]; do
+    if [ $(( SECONDS - t0 )) -ge "$SETTLE_LIMIT" ]; then
+      echo "::warning::the simulator was still busy after ${SETTLE_LIMIT} s; archiving it anyway"
+      return 0
+    fi
+    sleep "$WINDOW"
+    now=$(sim_cpu)
+    dt=$(( SECONDS - last )) last=$SECONDS
+    [ "$dt" -gt 0 ] || dt=1
+    used=$(( now - prev )) prev=$now
+    rate=$(( used * 1000 / dt ))
+    if [ "$rate" -le "$QUIET_MILLICORES" ]; then quiet=$(( quiet + 1 )); else quiet=0; fi
+    echo "settling: ${used} CPU s over ${dt} s, $(( rate / 10 ))% of a core ($(( SECONDS - t0 )) s in)"
+  done
+  echo "settled after $(( SECONDS - t0 )) s"
+}
+
+if [ "$cmd" = settle ]; then
+  settle
+  exit 0
+fi
+
+udid=${2:?missing udid}
+archive=${3:?missing archive path}
+data="$HOME/Library/Developer/CoreSimulator/Devices/$udid/data"
+marker="$data/.chela-warm"
+
 boot_and_wait() {
   local t0=$SECONDS
   xcrun simctl boot "$udid"
@@ -51,18 +82,7 @@ boot_and_wait() {
 case "$cmd" in
   warm)
     boot_and_wait
-    t0=$SECONDS quiet=0 prev=$(sim_cpu)
-    while [ "$quiet" -lt "$QUIET_WINDOWS" ]; do
-      if [ $(( SECONDS - t0 )) -ge "$SETTLE_LIMIT" ]; then
-        echo "::warning::the simulator was still busy after ${SETTLE_LIMIT} s; archiving it anyway"
-        break
-      fi
-      sleep "$WINDOW"
-      now=$(sim_cpu)
-      used=$(( now - prev )) prev=$now
-      if [ "$used" -le "$QUIET_CPU" ]; then quiet=$(( quiet + 1 )); else quiet=0; fi
-      echo "settling: ${used} CPU s in the last ${WINDOW} s ($(( SECONDS - t0 )) s since boot)"
-    done
+    settle
     xcrun simctl shutdown "$udid"
     touch "$marker"
     tar -cf "$archive" -C "$data" .
@@ -79,7 +99,7 @@ case "$cmd" in
     boot_and_wait
     ;;
   *)
-    echo "usage: sim-warm.sh warm|boot <udid> <archive>" >&2
+    echo "usage: sim-warm.sh warm|boot <udid> <archive>, or sim-warm.sh settle" >&2
     exit 2
     ;;
 esac

@@ -21,6 +21,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -93,4 +94,39 @@ test('sim-warm.sh is an executable shell program bash can parse', () => {
   assert.equal(parsed.status, 0, 'bash cannot parse sim-warm.sh: ' + parsed.stderr);
   const usage = spawnSync('bash', [WARM, 'nonsense', 'udid', 'archive'], { encoding: 'utf8' });
   assert.equal(usage.status, 2, 'an unknown subcommand must be a usage error, not a silent success');
+});
+
+// sim_cpu reads ps, so a stand-in ps on PATH drives the wait: a simulator that
+// has gone quiet must end it, and one that never does must stop at the limit with
+// a warning rather than hold the leg until the job is killed.
+function settleWith(step, env) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sim-warm-'));
+  fs.writeFileSync(path.join(dir, 'ps'), [
+    '#!/bin/sh',
+    'n=$(cat "$STUB_COUNTER" 2>/dev/null || echo 0)',
+    'n=$((n + STUB_STEP)); echo "$n" > "$STUB_COUNTER"',
+    'printf "%d:%02d.00 /Runtimes/iOS.simruntime/Contents/Resources/RuntimeRoot/usr/libexec/stubd\\n" $((n / 60)) $((n % 60))',
+    'printf "0:01.00 /usr/libexec/unrelated\\n"',
+    '',
+  ].join('\n'), { mode: 0o755 });
+  const run = spawnSync('bash', [WARM, 'settle'], {
+    encoding: 'utf8',
+    env: { ...process.env, PATH: dir + ':' + process.env.PATH, STUB_COUNTER: path.join(dir, 'n'), STUB_STEP: String(step), ...env },
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+  return run;
+}
+
+test('the wait ends once the simulator has gone quiet', () => {
+  const run = settleWith(0, { WINDOW: '0', QUIET_WINDOWS: '3', SETTLE_LIMIT: '30' });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /settled after/, 'a simulator using no CPU was not called settled: ' + run.stdout);
+  assert.equal((run.stdout.match(/^settling:/gm) || []).length, 3, 'it should take exactly QUIET_WINDOWS quiet samples');
+});
+
+test('a simulator that never goes quiet stops the wait at the limit, with a warning', () => {
+  const run = settleWith(100, { WINDOW: '0.5', QUIET_WINDOWS: '3', SETTLE_LIMIT: '2' });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /::warning::the simulator was still busy after 2 s/, 'the limit did not end the wait: ' + run.stdout);
+  assert.doesNotMatch(run.stdout, /settled after/, 'a busy simulator was called settled');
 });
