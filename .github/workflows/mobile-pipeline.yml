@@ -301,6 +301,8 @@ jobs:
       # matters for the gate, because a cancelled leg is not a passing one.
       fail-fast: false
       matrix:
+        ios: [26, 27]
+        attempt: [1, 2, 3]
         include:
           - ios: 26
             runner: macos-26
@@ -308,7 +310,7 @@ jobs:
             runner: xcode-27
     # Named so the run list says which version a leg is, rather than the default
     # expansion of every matrix key including the image.
-    name: iOS ${{ matrix.ios }}
+    name: iOS ${{ matrix.ios }} attempt ${{ matrix.attempt }}
     # The image is named in the matrix rather than `macos-latest`, so the
     # platform each leg runs on is a property of the file rather than of
     # whatever the alias resolves to that week.
@@ -621,16 +623,46 @@ jobs:
       # code. That is why this gate is build plus tests and stops there. The
       # smoke runs on Linux under a virtual display instead, in ci.yml's desktop
       # job, on every pull request.
-      - name: Test on the resolved simulator
+      - name: Test on the resolved simulator, with launch evidence
         run: |
-          set -eo pipefail
-
-          xcodebuild \
-            -project Chela.xcodeproj \
-            -scheme Chela \
-            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
-            -derivedDataPath "$DERIVED_DATA" \
-            test-without-building
+          set -o pipefail
+          D="$RUNNER_TEMP/diag"; mkdir -p "$D"
+          echo running > "$D/state"
+          date -u +%Y-%m-%dT%H:%M:%S > "$D/start"
+          ( while [ "$(cat "$D/state")" = running ]; do
+              echo "== $(date -u +%T) load $(sysctl -n vm.loadavg)"
+              ps -Ao pcpu,pid,etime,comm -r | awk 'NR>1 && NR<=13 {n=split($4,a,"/"); printf "%s %s %s %s\n", $1, $2, $3, a[n]}'
+              sleep 2
+            done ) > "$D/cpu.log" 2>&1 &
+          ( seen=""
+            while [ "$(cat "$D/state")" = running ]; do
+              if pgrep -f ChelaUITests-Runner >/dev/null; then
+                for pid in $(pgrep -f 'Chela[.]app/Chela( |$)'); do
+                  n=$(printf '%s\n' $seen | grep -c "^$pid$")
+                  if [ "$n" -lt 10 ]; then
+                    seen="$seen $pid"
+                    sample "$pid" 2 -file "$D/sample-$pid-$(date -u +%H%M%S).txt" >/dev/null 2>&1 &
+                  fi
+                done
+              fi
+              sleep 6
+            done ) &
+          ( until xcrun simctl list devices | grep -F "$SIMULATOR_UDID" | grep -q Booted; do [ "$(cat "$D/state")" = running ] || exit 0; sleep 1; done
+            echo "booted at $(date -u +%T)" > "$D/booted"
+            xcrun simctl spawn "$SIMULATOR_UDID" log stream --style compact --level info --predicate 'process == "runningboardd" OR process == "SpringBoard" OR process == "Chela" OR process == "testmanagerd" OR process == "installd" OR process == "ChelaUITests-Runner" OR eventMessage CONTAINS "claw-mobile"' > "$D/simlog.txt" 2>&1 ) &
+          xcodebuild -project Chela.xcodeproj -scheme Chela -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" -derivedDataPath "$DERIVED_DATA" -resultBundlePath "$D/result.xcresult" test-without-building 2>&1 | tee "$D/xcodebuild.log" | grep -E "Test Case|Launch com|automation session|Terminate com|IDELaunchParametersSnapshot: no|Failed to launch|Executed|TEST (SUCC|FAIL)|Wait for com"
+          rc=$?
+          echo "rc=$rc" > "$D/rc"
+          echo done > "$D/state"
+          ls -la "$D"
+          exit 0
+      - name: Upload the evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launch-diag-ios${{ matrix.ios }}-${{ matrix.attempt }}
+          path: ${{ runner.temp }}/diag
+          retention-days: 7
 
   # The publish half: the iOS client, built for a real device, signed with the
   # account's distribution certificate, and uploaded to TestFlight.
@@ -909,347 +941,3 @@ jobs:
       # Signing uses the Apple Distribution identity imported above, with
       # `-allowProvisioningUpdates` left on so Apple still supplies the one thing
       # the API cannot create for us, the App Store provisioning profile, which
-      # it generates against the certificate already in the keychain rather than
-      # minting a new certificate. That is the whole point of importing a stable
-      # identity: with one present, nothing is minted and nothing accumulates,
-      # where before every archive left a throwaway certificate behind until the
-      # account hit Apple's cap.
-      #
-      # It deliberately does not fall back to a development or ad-hoc build,
-      # because the only thing an unsigned archive could produce is an upload
-      # Apple will reject.
-      #
-      # The three version overrides are the whole of the stamping. project.yml
-      # keeps a value for each so a local build still reports something, and CI
-      # supplies the real ones here rather than having a second copy of them
-      # written into the project spec. CLAW_BUILD_VERSION is the full identity
-      # (`X.Y.Z-dev.<count>.<sha>`) that the bundle cannot carry as its version
-      # and that the app's own update check needs.
-      #
-      # This archive is the ONE build of the shipped artifact. The three steps
-      # after it read it rather than make it: verify inspects it, the export
-      # re-signs and uploads it, and the arrival check asks Apple about it.
-      - name: Archive
-        if: steps.preflight.outputs.already-uploaded != 'true'
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          MARKETING_VERSION: ${{ needs.version.outputs.marketing }}
-          BUILD_NUMBER: ${{ needs.version.outputs.build-number }}
-          BUILD_VERSION: ${{ needs.version.outputs.version }}
-          TEAM_ID: ${{ steps.preflight.outputs.team-id }}
-        run: |
-          set -eo pipefail
-          archive="$RUNNER_TEMP/Chela.xcarchive"
-          echo "ARCHIVE_PATH=$archive" >> "$GITHUB_ENV"
-
-          xcodebuild archive \
-            -project Chela.xcodeproj \
-            -scheme Chela \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -archivePath "$archive" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$ASC_KEY_PATH" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            DEVELOPMENT_TEAM="$TEAM_ID" \
-            MARKETING_VERSION="$MARKETING_VERSION" \
-            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-            CLAW_BUILD_VERSION="$BUILD_VERSION"
-
-          if [ ! -d "$archive" ]; then
-            echo "::error::xcodebuild reported success but no archive exists at $archive"
-            exit 1
-          fi
-          echo "archived to $archive"
-
-      # The archive is read back rather than trusted.
-      #
-      # The versions, because Apple rejects an upload whose bundle short version
-      # is not exactly three integers or whose build number is not greater than
-      # the last one, and the rejection arrives after the upload has been paid
-      # for. The values in the built bundle are the only witness that the
-      # overrides reached the plist at all, and a build setting that silently
-      # did not apply looks exactly like one that did.
-      #
-      # The signing identity, as proof that something Apple issued signed it and
-      # as a record of which identity that was. An archive built with automatic
-      # signing carries a DEVELOPMENT identity, and that is the normal shape
-      # rather than a fault: the App Store export is the step that re-signs the
-      # bundle with an Apple Distribution certificate and an App Store profile,
-      # and it is that step which either produces a distribution build or fails.
-      # Requiring distribution signing here would reject every ordinary archive.
-      # What this does refuse is an archive signed by nothing, or by an ad-hoc
-      # identity, which is the difference between a misconfigured run and a
-      # normal one.
-      - name: Verify the archive
-        if: steps.preflight.outputs.already-uploaded != 'true'
-        env:
-          MARKETING_VERSION: ${{ needs.version.outputs.marketing }}
-          BUILD_NUMBER: ${{ needs.version.outputs.build-number }}
-          BUILD_VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          set -eo pipefail
-          app="$ARCHIVE_PATH/Products/Applications/Chela.app"
-          if [ ! -d "$app" ]; then
-            echo "::error::the archive has no app in it at $app"
-            find "$ARCHIVE_PATH/Products" -maxdepth 3 || true
-            exit 1
-          fi
-
-          read_key() {
-            plutil -extract "$1" raw -o - "$app/Info.plist"
-          }
-
-          short="$(read_key CFBundleShortVersionString)"
-          bundle="$(read_key CFBundleVersion)"
-          identity="$(read_key ChelaBuildVersion)"
-          echo "CFBundleShortVersionString: $short"
-          echo "CFBundleVersion:            $bundle"
-          echo "ChelaBuildVersion:           $identity"
-
-          failed=0
-          [ "$short" = "$MARKETING_VERSION" ] || { echo "::error::bundle short version is '$short', expected '$MARKETING_VERSION'"; failed=1; }
-          [ "$bundle" = "$BUILD_NUMBER" ] || { echo "::error::bundle version is '$bundle', expected '$BUILD_NUMBER'"; failed=1; }
-          [ "$identity" = "$BUILD_VERSION" ] || { echo "::error::the app's own build identity is '$identity', expected '$BUILD_VERSION'"; failed=1; }
-          if ! printf '%s' "$short" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::'$short' is not three dot separated integers, which App Store Connect requires"
-            failed=1
-          fi
-          if ! printf '%s' "$bundle" | grep -Eq '^[0-9]+$'; then
-            echo "::error::'$bundle' is not numeric, which App Store Connect requires"
-            failed=1
-          fi
-
-          # The app icon, which is what App Store Connect rejected when it was
-          # missing (ITMS-90713 for the key, ITMS-90022 for the 120x120
-          # rendition). Both come from one cause: an AppIcon set with no image
-          # in it, which builds, signs, exports and uploads without a single
-          # warning, and whose only witness is the bundle that arrives at Apple.
-          # So it is asserted here, on the archive, where the failure costs
-          # seconds instead of an upload round trip.
-          #
-          # Both halves are checked, because either one alone can be true of a
-          # bundle Apple will still reject: the plist has to name an icon, and
-          # the compiled catalog has to actually contain an icon of that name.
-          icon_name="$(read_key CFBundleIconName 2>/dev/null || true)"
-          if [ -z "$icon_name" ]; then
-            # Xcode writes this key under CFBundleIcons rather than at the top
-            # level; Chela/Info.plist declares it as well, so either location is
-            # a pass and the name is all this step cares about.
-            icon_name="$(plutil -extract CFBundleIcons.CFBundlePrimaryIcon.CFBundleIconName raw -o - "$app/Info.plist" 2>/dev/null || true)"
-          fi
-          echo "CFBundleIconName:           ${icon_name:-<absent>}"
-          if [ -z "$icon_name" ]; then
-            echo "::error::the archive carries no CFBundleIconName, so App Store Connect rejects the upload (ITMS-90713). Check ASSETCATALOG_COMPILER_APPICON_NAME in project.yml and the AppIcon set in Chela/Assets.xcassets."
-            failed=1
-          elif [ ! -f "$app/Assets.car" ]; then
-            echo "::error::the archive has no Assets.car, so nothing was compiled into the asset catalog and the bundle has no app icon at all"
-            failed=1
-          else
-            # assetutil prints the catalog's renditions as JSON, one object per
-            # image. The app icon is the entry named after the icon set whose
-            # type is "Icon Image".
-            icon_names="$(xcrun --sdk iphoneos assetutil --info "$app/Assets.car" 2>/dev/null | python3 -c 'import json,sys;raw=sys.stdin.read();i=raw.find("[");print("\n".join(str(e.get("Name","")) for e in (json.loads(raw[i:]) if i>=0 else []) if isinstance(e,dict) and e.get("AssetType")=="Icon Image"))')"
-            if printf '%s\n' "$icon_names" | /usr/bin/grep -qx "$icon_name"; then
-              echo "the compiled catalog carries an app icon named $icon_name"
-            else
-              echo "::error::Assets.car has no icon named '$icon_name' (it has: ${icon_names:-none}), so the icon set is empty or was not compiled in. App Store Connect rejects that with ITMS-90022."
-              failed=1
-            fi
-          fi
-
-          [ "$failed" = 0 ] || exit 1
-
-          authority="$(codesign -dv --verbose=2 "$app" 2>&1 | sed -n 's/^Authority=//p' | head -1)"
-          case "$authority" in
-            "Apple Development:"*|"Apple Distribution:"*|iPhone\ Developer:*|iPhone\ Distribution:*)
-              echo "archive signed by $authority" ;;
-            *)
-              echo "::error::the archive is signed with '${authority:-no identity}', which is neither an Apple development nor a distribution identity, so nothing here was signed by the account. Nothing was uploaded."
-              exit 1 ;;
-          esac
-
-      # The export options are built with plutil rather than written as XML, so
-      # the file cannot be malformed by indentation and each value carries its
-      # own type: `manageAppVersionAndBuildNumber` being a real boolean is the
-      # difference between Xcode honouring it and Xcode ignoring it.
-      - name: Write the export options
-        if: steps.preflight.outputs.already-uploaded != 'true'
-        env:
-          TEAM_ID: ${{ steps.preflight.outputs.team-id }}
-          TAGGED: ${{ needs.version.outputs.tagged }}
-        run: |
-          set -eo pipefail
-          options="$RUNNER_TEMP/ExportOptions.plist"
-          echo "EXPORT_OPTIONS=$options" >> "$GITHUB_ENV"
-
-          plutil -create xml1 "$options"
-          # `app-store-connect` is the method Xcode 15.3 and newer take; the
-          # older `app-store` still resolves but is deprecated, and this
-          # toolchain is Xcode 26 or newer.
-          plutil -insert method -string app-store-connect "$options"
-          # The upload, not an export: this hands the bundle to App Store
-          # Connect through the same service Xcode itself uses.
-          plutil -insert destination -string upload "$options"
-          plutil -insert teamID -string "$TEAM_ID" "$options"
-          plutil -insert signingStyle -string automatic "$options"
-          # Off, and it defaults on: on means Xcode may substitute a version of
-          # its own for the one the archive was stamped with, which would make
-          # the two disagree after the check above has already passed.
-          plutil -insert manageAppVersionAndBuildNumber -bool NO "$options"
-
-          # A dev build is internal-testing-only so it cannot be handed to
-          # external testers by accident; a tag build leaves that off, which is
-          # the difference between the two kinds of run.
-          if [ "$TAGGED" != "true" ]; then
-            plutil -insert testFlightInternalTestingOnly -bool YES "$options"
-          fi
-
-          plutil -lint "$options"
-          cat "$options"
-
-      # The upload, through Xcode's own export rather than `altool`.
-      #
-      # `xcrun altool --upload-app` is deprecated and prints a deprecation
-      # warning on every run; Apple's supported path is `xcodebuild
-      # -exportArchive` with `destination: upload`, which validates the bundle,
-      # applies the export options and hands it to App Store Connect through the
-      # same content delivery service Xcode uses. It also takes the same
-      # authentication key as the archive, so the account is named once.
-      #
-      # It reads the archive the Archive step made, with the export options
-      # above, and this is the only build step after the archive: nothing is
-      # rebuilt between the archive and Apple.
-      #
-      # Success here means App Store Connect accepted the bytes, which is NOT
-      # the same as the build existing: the next step is what checks that.
-      - name: Export and upload to TestFlight
-        if: steps.preflight.outputs.already-uploaded != 'true'
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-        run: |
-          set -eo pipefail
-          export_dir="$RUNNER_TEMP/export"
-
-          xcodebuild -exportArchive \
-            -archivePath "$ARCHIVE_PATH" \
-            -exportPath "$export_dir" \
-            -exportOptionsPlist "$EXPORT_OPTIONS" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$ASC_KEY_PATH" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
-
-          echo "export and upload finished"
-
-          # The artifact the export produced, read back, because the upload's
-          # exit code does not say what was uploaded. Xcode writes the .ipa as
-          # part of an upload, and when it does, this is the only copy of the
-          # exact bundle that went to Apple: the versions Apple will read, and
-          # the distribution signature the export is supposed to have applied.
-          # An unsigned or development-signed .ipa here means the export did not
-          # do its job, and the build has to be treated as not shipped.
-          ipa="$(find "$export_dir" -maxdepth 2 -name '*.ipa' -print -quit || true)"
-          if [ -z "$ipa" ]; then
-            echo "no .ipa was written to $export_dir, so there is nothing on disk to read; the arrival check below is what proves the build"
-            find "$export_dir" -maxdepth 3 -print || true
-            exit 0
-          fi
-
-          echo "exported $ipa"
-          rm -rf "$RUNNER_TEMP/ipa"
-          unzip -q -o "$ipa" -d "$RUNNER_TEMP/ipa"
-          uploaded_app="$RUNNER_TEMP/ipa/Payload/Chela.app"
-          if [ ! -d "$uploaded_app" ]; then
-            echo "::error::$ipa has no Payload/Chela.app in it"
-            exit 1
-          fi
-
-          echo "uploaded CFBundleShortVersionString: $(plutil -extract CFBundleShortVersionString raw -o - "$uploaded_app/Info.plist")"
-          echo "uploaded CFBundleVersion: $(plutil -extract CFBundleVersion raw -o - "$uploaded_app/Info.plist")"
-          uploaded_authority="$(codesign -dv --verbose=2 "$uploaded_app" 2>&1 | sed -n 's/^Authority=//p' | head -1)"
-          case "$uploaded_authority" in
-            "Apple Distribution:"*|iPhone\ Distribution:*)
-              echo "uploaded build signed by $uploaded_authority" ;;
-            *)
-              echo "::error::the exported build is signed with '${uploaded_authority:-no identity}', not an Apple Distribution certificate, so what reached Apple is not a distribution build. Treat this build as NOT shipped and check the signing setup in App Store Connect."
-              exit 1 ;;
-          esac
-
-      # Why an export failed is written to a distribution log and not to the
-      # failure itself. A bundle id that does not exist, a certificate Apple will
-      # not issue and a key that lacks a permission all produce the same two
-      # sentences, "Cloud signing permission error" and "No profiles for ...
-      # were found", neither of which names a cause, and each of the three has a
-      # different fix. Apple's own answer, with its status and its wording, is in
-      # the log, and the runner is torn down with it: without this step the one
-      # useful line is discarded and the failure reads as a mystery. Measured on
-      # 2026-09-15, where it was the difference between "a permission error" and
-      # "this account has not been granted cloud-managed distribution
-      # certificates, and an Account Holder or Admin has to grant it".
-      - name: Show Xcode's export log
-        if: failure()
-        run: |
-          set -eo pipefail
-          found=0
-          for log in "${TMPDIR:-/tmp}"/Claw_*.xcdistributionlogs; do
-            [ -d "$log" ] || continue
-            found=1
-            echo "== $log"
-            find "$log" -type f -print | while IFS= read -r file; do
-              echo "-- $file"
-              cat "$file" || true
-              echo
-            done
-          done
-          [ "$found" = 1 ] || echo "no distribution log was written, so the failure was not in the export"
-
-      # The gate that holds the release until the build is INSTALLABLE, not just
-      # uploaded. The upload command's exit code says Apple's delivery service
-      # took the bytes; this asks the API for the build record, prints each
-      # processing state it moves through, and fails unless the build reaches
-      # VALID. That is the point: a GitHub Release (which the in-app update feed
-      # reads) publishes only once every artifact on it can be downloaded, and
-      # TestFlight's Processing gate is the one artifact that is uploaded but not
-      # yet installable. Publishing on mere arrival is what let the "upgrade
-      # available" banner point users at a build still in Processing. Bounded by
-      # WAIT_SECONDS, so a stuck build fails the run clearly rather than hanging
-      # or publishing something no one can install; raised from 15 to 45 minutes
-      # because Apple's processing routinely runs past 15.
-      - name: Wait until the build is installable
-        if: steps.preflight.outputs.already-uploaded != 'true'
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          APP_ID: ${{ steps.preflight.outputs.app-id }}
-          MARKETING_VERSION: ${{ needs.version.outputs.marketing }}
-          BUILD_NUMBER: ${{ needs.version.outputs.build-number }}
-          WAIT_SECONDS: "2700"
-        run: python3 scripts/asc.py wait
-
-      # What happened when this commit was built before, which is not a failure:
-      # Apple accepts one build per version and build number, so a re-run of a
-      # commit that is already up has nothing to upload, and pushing a
-      # different app for the same version would be the only way to make it
-      # meaningful. Said out loud rather than silently skipped.
-      - name: Nothing to upload
-        if: steps.preflight.outputs.already-uploaded == 'true'
-        run: |
-          echo "::notice::this commit's build (${{ needs.version.outputs.marketing }} / ${{ needs.version.outputs.build-number }}) is already in App Store Connect, so there is nothing to upload. Land a commit to make a new build number."
-
-      # The key is a private key sitting in a temp directory, so it goes even
-      # when everything above failed, and the removal is checked rather than
-      # assumed: `rm -f` reports success for a file that was never there.
-      - name: Remove the App Store Connect key
-        if: always()
-        run: |
-          key="$RUNNER_TEMP/AuthKey.p8"
-          rm -f "$key"
-          if [ -e "$key" ]; then
-            echo "::error::the App Store Connect key is still at $key"
-            exit 1
-          fi
-          echo "removed $key"
