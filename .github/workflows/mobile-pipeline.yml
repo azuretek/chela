@@ -303,7 +303,7 @@ jobs:
       matrix:
         ios: [26, 27]
         attempt: [1, 2, 3]
-        arm: [base, uionly]
+        arm: [base, secondboot]
         include:
           - ios: 26
             runner: macos-26
@@ -637,7 +637,20 @@ jobs:
               sleep 5
             done ) > "$D/load.log" 2>&1 &
           only=""
-          [ "$ARM" = uionly ] && only="-only-testing:ChelaUITests"
+          if [ "$ARM" = secondboot ]; then
+            t0=$(date +%s)
+            xcrun simctl boot "$SIMULATOR_UDID"
+            xcrun simctl bootstatus "$SIMULATOR_UDID" -b > /dev/null 2>&1
+            t1=$(date +%s)
+            sleep 300
+            xcrun simctl shutdown "$SIMULATOR_UDID"
+            t2=$(date +%s)
+            xcrun simctl boot "$SIMULATOR_UDID"
+            xcrun simctl bootstatus "$SIMULATOR_UDID" -b > /dev/null 2>&1
+            t3=$(date +%s)
+            du -sh ~/Library/Developer/CoreSimulator/Devices/"$SIMULATOR_UDID" | tee "$D/devsize"
+            echo "first boot $(( t1 - t0 ))s, second boot $(( t3 - t2 ))s" | tee "$D/booted"
+          fi
           start=$(date +%s)
           date -u +%T > "$D/tests-start"
           xcodebuild -project Chela.xcodeproj -scheme Chela -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" -derivedDataPath "$DERIVED_DATA" $only test-without-building > "$D/xcodebuild.log" 2>&1
@@ -650,7 +663,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: launch-diag5-ios${{ matrix.ios }}-${{ matrix.arm }}-${{ matrix.attempt }}
+          name: launch-diag6-ios${{ matrix.ios }}-${{ matrix.arm }}-${{ matrix.attempt }}
           path: ${{ runner.temp }}/diag
           retention-days: 7
 
