@@ -303,7 +303,7 @@ jobs:
       matrix:
         ios: [26, 27]
         attempt: [1, 2, 3]
-        arm: [base, probe]
+        arm: [base]
         include:
           - ios: 26
             runner: macos-26
@@ -625,8 +625,6 @@ jobs:
       # smoke runs on Linux under a virtual display instead, in ci.yml's desktop
       # job, on every pull request.
       - name: Test on the resolved simulator, with launch evidence
-        env:
-          ARM: ${{ matrix.arm }}
         run: |
           set -o pipefail
           D="$RUNNER_TEMP/diag"; mkdir -p "$D"
@@ -637,37 +635,26 @@ jobs:
               echo "$(date -u +%T) $(sysctl -n vm.loadavg) procs=$(ps -A | wc -l | tr -d ' ')"
               sleep 5
             done ) > "$D/load.log" 2>&1 &
-          ( iostat -d -C -w 5 > "$D/iostat.log" 2>&1 ) &
-          iop=$!
-          if [ "$ARM" = probe ]; then
-            t0=$(date +%s)
-            xcrun simctl boot "$SIMULATOR_UDID"
-            xcrun simctl bootstatus "$SIMULATOR_UDID" -b > "$D/bootstatus.log" 2>&1
-            echo "booted after $(( $(date +%s) - t0 ))s at $(date -u +%T)" > "$D/booted"
-            end=$(( $(date +%s) + 420 ))
-            while [ "$(date +%s)" -lt "$end" ]; do
-              a=$(python3 -c 'import time; print(time.time())')
-              xcrun simctl launch "$SIMULATOR_UDID" com.apple.Preferences > /dev/null 2>&1
-              b=$(python3 -c 'import time; print(time.time())')
-              xcrun simctl terminate "$SIMULATOR_UDID" com.apple.Preferences > /dev/null 2>&1
-              echo "$(date -u +%T) since_boot=$(( $(date +%s) - t0 )) launch=$(python3 -c "print(round($b-$a,2))") load=$(sysctl -n vm.loadavg)" >> "$D/probe.log"
-              sleep 2
-            done
-          fi
+          ps -Ao cputime=,pid=,ppid=,etime=,args= > "$D/ps-before.txt"
+          ls -la ~/Library/Logs/DiagnosticReports > "$D/crashes-before.txt" 2>&1
+          ( sleep 150; ps -Ao cputime=,pid=,ppid=,etime=,args= > "$D/ps-150s.txt" ) &
+          ( sleep 300; ps -Ao cputime=,pid=,ppid=,etime=,args= > "$D/ps-300s.txt" ) &
           date -u +%T > "$D/tests-start"
-          xcodebuild -project Chela.xcodeproj -scheme Chela -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" -derivedDataPath "$DERIVED_DATA" -resultBundlePath "$D/result.xcresult" test-without-building > "$D/xcodebuild.log" 2>&1
+          xcodebuild -project Chela.xcodeproj -scheme Chela -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" -derivedDataPath "$DERIVED_DATA" test-without-building > "$D/xcodebuild.log" 2>&1
           rc=$?
           echo "rc=$rc" > "$D/rc"
+          ps -Ao cputime=,pid=,ppid=,etime=,args= > "$D/ps-after.txt"
           echo done > "$D/state"
-          kill $iop 2>/dev/null
-          grep -E "Test Case '-.ChelaUITests.NoticeBanner|t = .*(Launch com|automation session|Terminate com)|Executed .* tests" "$D/xcodebuild.log" | tail -20
-          [ -f "$D/probe.log" ] && awk 'NR%5==1' "$D/probe.log"
+          ls -la ~/Library/Logs/DiagnosticReports > "$D/crashes-after.txt" 2>&1
+          mkdir -p "$D/reports"; cp ~/Library/Logs/DiagnosticReports/*.ips "$D/reports/" 2>/dev/null || true
+          find ~/Library/Developer/CoreSimulator/Devices/"$SIMULATOR_UDID"/data/Library/Logs -maxdepth 3 -type f 2>/dev/null | head -200 > "$D/device-logs.txt"
+          grep -E "Test Case '-.ChelaUITests.NoticeBanner|t = .*(Launch com|automation session|Terminate com)" "$D/xcodebuild.log" | tail -20
           exit 0
       - name: Upload the evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: launch-diag2-ios${{ matrix.ios }}-${{ matrix.arm }}-${{ matrix.attempt }}
+          name: launch-diag3-ios${{ matrix.ios }}-${{ matrix.attempt }}
           path: ${{ runner.temp }}/diag
           retention-days: 7
 
