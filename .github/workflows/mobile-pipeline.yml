@@ -302,8 +302,8 @@ jobs:
       fail-fast: false
       matrix:
         ios: [26, 27]
-        attempt: [1, 2, 3]
-        arm: [base]
+        attempt: [1, 2]
+        arm: [base, nocapture, early]
         include:
           - ios: 26
             runner: macos-26
@@ -466,6 +466,31 @@ jobs:
           "$chosen/usr/bin/xcodebuild" -version
           xcrun simctl list runtimes
 
+      - name: Boot the simulator early (diagnostic arm)
+        if: matrix.arm == 'early'
+        env:
+          IOS_MAJOR: ${{ matrix.ios }}
+        run: |
+          sim="$(xcrun simctl list devices available --json | python3 -c '
+          import json, os, re, sys
+          wanted = int(os.environ["IOS_MAJOR"])
+          best = None
+          for identifier, entries in json.load(sys.stdin)["devices"].items():
+              m = re.search(r"SimRuntime\.iOS-([0-9-]+)$", identifier)
+              if not m: continue
+              v = tuple(int(p) for p in m.group(1).split("-"))
+              if v[0] != wanted: continue
+              for d in entries:
+                  if d.get("isAvailable") and d["name"].startswith("iPhone"):
+                      if best is None or v > best[0]: best = (v, d["udid"])
+                      break
+          print(best[1])
+          ')"
+          echo "early boot of $sim at $(date -u +%T)"
+          echo "EARLY_UDID=$sim" >> "$GITHUB_ENV"
+          echo "EARLY_T0=$(date +%s)" >> "$GITHUB_ENV"
+          nohup xcrun simctl boot "$sim" > "$RUNNER_TEMP/early-boot.log" 2>&1 &
+
       # xcodegen is not part of Xcode and the image may or may not carry it.
       # HOMEBREW_NO_AUTO_UPDATE keeps the install from spending a minute
       # updating the tap index for one formula.
@@ -625,36 +650,40 @@ jobs:
       # smoke runs on Linux under a virtual display instead, in ci.yml's desktop
       # job, on every pull request.
       - name: Test on the resolved simulator, with launch evidence
+        env:
+          ARM: ${{ matrix.arm }}
         run: |
           set -o pipefail
           D="$RUNNER_TEMP/diag"; mkdir -p "$D"
           echo running > "$D/state"
-          sysctl -n hw.ncpu hw.memsize > "$D/host"
-          uptime >> "$D/host"
+          uptime > "$D/host"
           ( while [ "$(cat "$D/state")" = running ]; do
               echo "$(date -u +%T) $(sysctl -n vm.loadavg) procs=$(ps -A | wc -l | tr -d ' ')"
               sleep 5
             done ) > "$D/load.log" 2>&1 &
-          ps -Ao cputime=,pid=,ppid=,etime=,args= > "$D/ps-before.txt"
-          ls -la ~/Library/Logs/DiagnosticReports > "$D/crashes-before.txt" 2>&1
-          ( sleep 150; ps -Ao cputime=,pid=,ppid=,etime=,args= > "$D/ps-150s.txt" ) &
-          ( sleep 300; ps -Ao cputime=,pid=,ppid=,etime=,args= > "$D/ps-300s.txt" ) &
+          if [ "$ARM" != base ]; then
+            perl -0pi -e 's/onlyGenerateCoverageForSpecifiedTargets = "NO">/onlyGenerateCoverageForSpecifiedTargets = "NO"\n      systemAttachmentLifetime = "keepNever">/' Chela.xcodeproj/xcshareddata/xcschemes/Chela.xcscheme
+            grep -n systemAttachmentLifetime Chela.xcodeproj/xcshareddata/xcschemes/Chela.xcscheme
+          fi
+          if [ "$ARM" = early ]; then
+            [ "$EARLY_UDID" = "$SIMULATOR_UDID" ] || echo "::warning::early boot was $EARLY_UDID, tests use $SIMULATOR_UDID"
+            a=$(date +%s)
+            xcrun simctl bootstatus "$SIMULATOR_UDID" -b > "$D/bootstatus.log" 2>&1
+            echo "boot started $(( a - EARLY_T0 ))s before the tests; bootstatus waited $(( $(date +%s) - a ))s" | tee "$D/booted"
+          fi
+          start=$(date +%s)
           date -u +%T > "$D/tests-start"
           xcodebuild -project Chela.xcodeproj -scheme Chela -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" -derivedDataPath "$DERIVED_DATA" test-without-building > "$D/xcodebuild.log" 2>&1
           rc=$?
-          echo "rc=$rc" > "$D/rc"
-          ps -Ao cputime=,pid=,ppid=,etime=,args= > "$D/ps-after.txt"
+          echo "rc=$rc test-step=$(( $(date +%s) - start ))s" | tee "$D/rc"
           echo done > "$D/state"
-          ls -la ~/Library/Logs/DiagnosticReports > "$D/crashes-after.txt" 2>&1
-          mkdir -p "$D/reports"; cp ~/Library/Logs/DiagnosticReports/*.ips "$D/reports/" 2>/dev/null || true
-          find ~/Library/Developer/CoreSimulator/Devices/"$SIMULATOR_UDID"/data/Library/Logs -maxdepth 3 -type f 2>/dev/null | head -200 > "$D/device-logs.txt"
           grep -E "Test Case '-.ChelaUITests.NoticeBanner|t = .*(Launch com|automation session|Terminate com)" "$D/xcodebuild.log" | tail -20
           exit 0
       - name: Upload the evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: launch-diag3-ios${{ matrix.ios }}-${{ matrix.attempt }}
+          name: launch-diag4-ios${{ matrix.ios }}-${{ matrix.arm }}-${{ matrix.attempt }}
           path: ${{ runner.temp }}/diag
           retention-days: 7
 
