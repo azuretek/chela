@@ -1,0 +1,49 @@
+# Simulator launchd jobs the test legs boot with disabled (scripts/sim-boot.sh).
+#
+# Why (#190): a fresh iOS simulator starts about 300 processes, and on the 3-core,
+# 7.5 GB runners that fills memory: measured during the test step, 7.0 GB used,
+# 70 to 100 MB free, 1.4 GB compressed, code paged back in at 1,000 to 2,000
+# pages a second, and 25 to 45% of the CPU in the kernel. Launching the app,
+# terminating it and XCTest's automation all wait on SpringBoard, runningboardd
+# and dyld paging their code back in, which is how a launch reached 203 s and
+# failed. Most of those processes are services the tests never touch: the widget
+# host and its dozens of widget extensions, Health, Siri and the intelligence
+# platform, mail, calendar and contacts sync, Wallet, Home, sharing and search.
+# They are the largest users of CPU and memory in the first minutes after a boot
+# (measured on a booted iOS 27 simulator, by CPU time and resident size).
+#
+# One launchd label per line. A label the runtime does not have is ignored by
+# simctl, so the same list serves every iOS version the matrix runs. Only add a
+# job the app and the tests do not use; desktop/test/ios-lean-simulator.test.js
+# holds the list to labels and keeps the ones the tests need off it.
+
+# Widgets: chronod hosts every home screen and lock screen widget extension.
+com.apple.chronod
+
+# Health and fitness.
+com.apple.healthappd
+com.apple.healthd
+
+# Siri, Apple Intelligence and App Store engagement.
+com.apple.assistantd
+com.apple.siriactionsd
+com.apple.intelligenceplatformd
+com.apple.intelligenceflowd
+com.apple.amsengagementd
+
+# Mail, calendar, contacts and reminders, and their sync.
+com.apple.email.maild
+com.apple.calaccessd
+com.apple.remindd
+com.apple.dataaccess.dataaccessd
+com.apple.addressbooksyncd
+
+# Watch companion, Wallet companion and notification forwarding.
+com.apple.companionappd
+com.apple.NPKCompanionAgent
+com.apple.bulletindistributord
+
+# Home, AirDrop and sharing, and on-device search.
+com.apple.homed
+com.apple.sharingd
+com.apple.searchd

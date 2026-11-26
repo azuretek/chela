@@ -577,7 +577,7 @@ jobs:
         run: |
           set -eo pipefail
 
-          found="$(xcrun simctl list devices available --json | python3 -c '
+          sim="$(xcrun simctl list devices available --json | python3 -c '
           import json, os, re, sys
           wanted = int(os.environ["IOS_MAJOR"])
           devices = json.load(sys.stdin)["devices"]
@@ -592,13 +592,12 @@ jobs:
               for device in entries:
                   if device.get("isAvailable") and device["name"].startswith("iPhone"):
                       if best is None or version > best[0]:
-                          best = (version, device["udid"], identifier, device.get("deviceTypeIdentifier", "iPhone"))
+                          best = (version, device["udid"])
                       break
           if best is None:
               sys.exit(1)
-          print(*best[1:])
+          print(best[1])
           ' || true)"
-          read -r sim runtime devtype <<< "$found" || true
 
           if [ -z "$sim" ]; then
             echo "::error::no available iPhone simulator on iOS $IOS_MAJOR on this runner, so the iOS $IOS_MAJOR leg has nothing to verify against. Runtimes this image does carry:"
@@ -608,70 +607,29 @@ jobs:
           fi
 
           echo "SIMULATOR_UDID=$sim" >> "$GITHUB_ENV"
-          echo "SIMULATOR_RUNTIME=$runtime" >> "$GITHUB_ENV"
-          echo "SIMULATOR_TYPE=$devtype" >> "$GITHUB_ENV"
           echo "resolved simulator for iOS $IOS_MAJOR:"
           xcrun simctl list devices available | grep -F "$sim" || true
 
-      # ★ The tests run on a device that has booted before, and that is the fix
-      # for #190 rather than a speed-up. Every device on the image is one that
-      # has never booted, and xcodebuild used to boot it inside the test step,
-      # so the UI tests launched the app minutes into iOS's first-boot setup.
-      # On these 3-core runners that setup keeps every core busy for minutes
-      # (measured on the runner: CPU idle 0%, load average 100 to 650), and the
-      # first app launch of the UI tests took up to 220 s and twice failed
-      # outright, as "Timed out while launching application via Xcode" and
-      # "Failed to get background assertion for target app". A second boot of
-      # the same device skips that setup: measured on the runner at 52 to 79 s
-      # against 132 to 149 s for the first, with the first UI launch after it
-      # under 8 s.
+      # ★ The simulator boots without the services the tests never use, and that
+      # is the fix for #190. A fresh iOS simulator starts about 300 processes,
+      # and on these 3-core, 7.5 GB runners that fills memory: measured during
+      # the test step, 7.0 GB used, 70 to 100 MB free, 1.4 GB compressed, code
+      # paged back in at 1,000 to 2,000 pages a second, CPU idle 0% and 25 to 45%
+      # of it in the kernel. Launching the app, terminating it and XCTest's
+      # automation all wait on SpringBoard, runningboardd and dyld paging their
+      # code back in, so the first UI launch took up to 220 s and the leg failed
+      # three ways: "Timed out while launching application via Xcode", "Failed
+      # to get background assertion for target app" and "Failed to terminate".
+      # The widget host alone starts dozens of widget extensions of 200 to 300 MB
+      # each; scripts/sim-disabled-jobs.txt lists what is turned off and why.
       #
-      # So the device is warmed once per image, archived, and carried by the
-      # cache: the first run on a new image boots it, waits for the first-boot
-      # work to settle and saves it (scripts/sim-warm.sh warm), and every run
-      # after that restores it and boots it a second time. The key names the
-      # image, the runtime build, the device type and the device itself, so a
-      # roll of any of them warms a new one rather than restoring a stale one.
-      #
-      # The boot comes after the compile, not underneath it, for the reason the
-      # note above the simulator resolution gives.
-      - name: Name the warmed simulator
-        id: warm-key
-        run: |
-          set -eo pipefail
-          build="$(xcrun simctl list runtimes --json | python3 -c '
-          import json, os, sys
-          for runtime in json.load(sys.stdin)["runtimes"]:
-              if runtime["identifier"] == os.environ["SIMULATOR_RUNTIME"]:
-                  print(runtime["buildversion"])
-          ')"
-          key="sim-warm-${{ matrix.ios }}-${ImageVersion:-unknown}-${build}-${SIMULATOR_TYPE##*.}-${SIMULATOR_UDID}"
-          echo "key=$key" >> "$GITHUB_OUTPUT"
-          echo "SIM_WARM_ARCHIVE=$RUNNER_TEMP/sim-warm.tar" >> "$GITHUB_ENV"
-          echo "warmed simulator key: $key"
-
-      - name: Restore the warmed simulator
-        id: warm
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ runner.temp }}/sim-warm.tar
-          key: ${{ steps.warm-key.outputs.key }}
-
-      - name: Warm the simulator, on the first run on this image only
-        if: steps.warm.outputs.cache-hit != 'true'
-        timeout-minutes: 15
-        run: scripts/sim-warm.sh warm "$SIMULATOR_UDID" "$SIM_WARM_ARCHIVE"
-
-      - name: Save the warmed simulator
-        if: steps.warm.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ runner.temp }}/sim-warm.tar
-          key: ${{ steps.warm-key.outputs.key }}
-
-      - name: Boot the warmed simulator
+      # xcodebuild used to boot the device itself inside the test step. It is
+      # booted here instead so the boot can carry those flags, and still after
+      # the compile, for the reason the note above the simulator resolution
+      # gives.
+      - name: Boot the simulator without the services the tests never use
         timeout-minutes: 10
-        run: scripts/sim-warm.sh boot "$SIMULATOR_UDID" "$SIM_WARM_ARCHIVE"
+        run: scripts/sim-boot.sh "$SIMULATOR_UDID"
 
       # Gate 2, the real verification: unit tests plus the parity suites, which
       # are the ones that compare the client's behaviour against core rather
@@ -701,9 +659,8 @@ jobs:
             test-without-building 2>&1 | tee "$RUNNER_TEMP/test.log"
 
       # How long each UI test waited for the app to launch, in the run summary,
-      # and a warning on the run when one waited longer than a warmed device
-      # ever has. This is how a return of #190 shows itself before it fails a
-      # leg: the launch gets slow first.
+      # and a warning on the run when one waited over 20 s. This is how a return
+      # of #190 shows itself before it fails a leg: the launch gets slow first.
       - name: Report how long the UI tests waited for the app
         if: always()
         run: python3 scripts/ui_launch_times.py "$RUNNER_TEMP/test.log" --budget 20 --summary "$GITHUB_STEP_SUMMARY"
