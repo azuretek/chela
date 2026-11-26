@@ -251,13 +251,13 @@ interface:
   nothing is shared across that boundary. Within a leg the compile gate and the
   test run use one `build-for-testing` product; within the release job the
   single archive is verified, exported and uploaded without being rebuilt.
-- A leg boots its simulator itself, with the services the tests never use turned
-  off (`scripts/sim-boot.sh`, listed with the reason in
-  `scripts/sim-disabled-jobs.txt`). A full simulator filled the runner's memory and
-  starved the processes an app launch waits on, which made the first UI launch
-  take minutes and time out (#190). The run summary lists how long every UI test
-  waited for the app to launch (`scripts/ui_launch_times.py`), with a warning on
-  the run when a launch takes over 20 s.
+- A leg boots its simulator itself, waits for the boot to finish, and stops the
+  services the tests never use (`scripts/sim-boot.sh`, listed with the reason in
+  `scripts/sim-disabled-jobs.txt`). A full simulator kept the runner's CPU at 100%
+  and its memory full, which made the first UI launch take minutes and time out
+  (#190). The run summary lists how long every UI test waited for the app to
+  launch (`scripts/ui_launch_times.py`), with a warning on the run when a launch
+  takes over 20 s.
 - The app record in App Store Connect is the one thing CI cannot create: the
   workflow checks for it before building and stops with Apple's own message when
   it is missing, and the bundle id itself is registered.

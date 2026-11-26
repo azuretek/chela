@@ -610,24 +610,26 @@ jobs:
           echo "resolved simulator for iOS $IOS_MAJOR:"
           xcrun simctl list devices available | grep -F "$sim" || true
 
-      # ★ The simulator boots without the services the tests never use, and that
-      # is the fix for #190. A fresh iOS simulator starts about 300 processes,
-      # and on these 3-core, 7.5 GB runners that fills memory: measured during
-      # the test step, 7.0 GB used, 70 to 100 MB free, 1.4 GB compressed, code
-      # paged back in at 1,000 to 2,000 pages a second, CPU idle 0% and 25 to 45%
-      # of it in the kernel. Launching the app, terminating it and XCTest's
-      # automation all wait on SpringBoard, runningboardd and dyld paging their
-      # code back in, so the first UI launch took up to 220 s and the leg failed
-      # three ways: "Timed out while launching application via Xcode", "Failed
-      # to get background assertion for target app" and "Failed to terminate".
-      # The widget host alone starts dozens of widget extensions of 200 to 300 MB
-      # each; scripts/sim-disabled-jobs.txt lists what is turned off and why.
+      # ★ The tests run on a simulator that has finished booting and has had the
+      # services the tests never use stopped, and that is the fix for #190. A
+      # booted iOS simulator runs about 300 processes, and on these 3-core,
+      # 7.5 GB runners that keeps the CPU at 100% and memory full for the whole
+      # test step (measured: CPU idle 0%, load average 100 to 650, 7.0 GB used,
+      # 70 to 100 MB free, 1.4 GB compressed, code paged back in at 1,000 to
+      # 2,000 pages a second). Launching the app, terminating it and XCTest's
+      # automation all wait on SpringBoard, runningboardd and dyld getting a
+      # turn, so the first UI launch took up to 220 s and the leg failed as
+      # "Timed out while launching application via Xcode" and "Failed to get
+      # background assertion for target app". scripts/sim-boot.sh boots the
+      # device, waits for `simctl bootstatus -b`, and stops the services listed
+      # with their reasons in scripts/sim-disabled-jobs.txt, the widget host and
+      # its dozens of widget extensions first. It prints the simulator's process
+      # count and resident memory before and after.
       #
-      # xcodebuild used to boot the device itself inside the test step. It is
-      # booted here instead so the boot can carry those flags, and still after
-      # the compile, for the reason the note above the simulator resolution
-      # gives.
-      - name: Boot the simulator without the services the tests never use
+      # xcodebuild used to boot the device itself inside the test step. The boot
+      # still comes after the compile, not underneath it, for the reason the note
+      # above the simulator resolution gives.
+      - name: Boot the simulator and stop what the tests never use
         timeout-minutes: 10
         run: scripts/sim-boot.sh "$SIMULATOR_UDID"
 

@@ -1,4 +1,4 @@
-# Simulator launchd jobs the test legs boot with disabled (scripts/sim-boot.sh).
+# Simulator services the test legs disable and stop after the boot (scripts/sim-boot.sh).
 #
 # Why (#190): a fresh iOS simulator starts about 300 processes, and on the 3-core,
 # 7.5 GB runners that fills memory: measured during the test step, 7.0 GB used,
@@ -12,10 +12,10 @@
 # They are the largest users of CPU and memory in the first minutes after a boot
 # (measured on a booted iOS 27 simulator, by CPU time and resident size).
 #
-# One launchd label per line. A label the runtime does not have is ignored by
-# simctl, so the same list serves every iOS version the matrix runs. Only add a
-# job the app and the tests do not use; desktop/test/ios-lean-simulator.test.js
-# holds the list to labels and keeps the ones the tests need off it.
+# One launchd label per line. A label the runtime does not have is skipped, so
+# the same list serves every iOS version the matrix runs. Only add a job the app
+# and the tests do not use; desktop/test/ios-sim-boot.test.js holds the list to
+# labels and keeps the ones a launch needs off it.
 
 # Widgets: chronod hosts every home screen and lock screen widget extension.
 com.apple.chronod
