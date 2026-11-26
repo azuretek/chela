@@ -106,7 +106,7 @@ Three other things can block a publish, and none of them is this gate:
 **That is the honest reason the end-to-end numbers cannot go much lower from inside this directory:**
 
 - **The four notarizations are serial inside one electron-builder invocation.** Overlapping them would take the macOS leg to roughly 3 m 30 s, about four minutes off the shared critical path, and it is `electron-builder.yml` and `desktop/scripts/notarize.js` that would have to change, not a workflow.
-- **Both iOS legs are the point of the matrix**, and a leg cannot verify a runtime it never booted.
+- **Both iOS legs are the point of the matrix**, and a leg cannot verify a runtime it never booted. The UI tests are the exception to running everything everywhere: they run once, on their own leg, on the oldest runtime of the deployment target's major and its smallest iPhone, because a full simulator on the 3-core runner starves an XCUITest launch for minutes (#190). The version legs still boot and test on their runtime.
 - **The payload has to cross a runner boundary.** The build legs upload ~600 MB of installers as artifacts and the publish job downloads them to check the set. On 2026-09-17 the upload path was degraded to about 1 MB/s against 24 MB/s earlier that day, and that, rather than the job's own work, is what a slow publish job on such a day is.
 
 **What the 2026-09-17 speed pass changed**, none of it by weakening a gate:
