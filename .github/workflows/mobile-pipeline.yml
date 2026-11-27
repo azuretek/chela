@@ -300,15 +300,65 @@ jobs:
       # the whole point of the matrix is to learn which versions break. It also
       # matters for the gate, because a cancelled leg is not a passing one.
       fail-fast: false
+      # ★ The UI tests run on their own leg, on the lightest simulator the app
+      # supports, and that is the fix for #190. A booted iOS simulator runs about
+      # 300 processes, and on these 3-core, 7.5 GB runners that keeps the CPU at
+      # 100% and memory full for the whole test step (measured: CPU idle 0%, load
+      # average 100 to 650, 7.0 GB used, 70 to 100 MB free, 1.4 GB compressed,
+      # code paged back in at 1,000 to 2,000 pages a second). The unit tests run
+      # inside the app and take that in their stride. A UI test cannot: launching
+      # the app, terminating it and XCTest's automation all wait on SpringBoard,
+      # runningboardd and dyld getting a turn, so the first UI launch took up to
+      # 220 s and failed the leg as "Timed out while launching application via
+      # Xcode" and "Failed to get background assertion for target app".
+      #
+      # So the version legs run the unit and parity tests on the newest minor of
+      # their major, and the UI leg runs the UI tests alone on the OLDEST runtime
+      # of the deployment target's major and the smallest iPhone the image has
+      # for it. Every leg still boots and tests on its runtime, which is what the
+      # matrix is for. Issue #190 and PR #192 have the numbers measured on the
+      # runner for each simulator tried.
+      #
+      # The UI tests are split across UI legs, each on a fresh simulator, so no
+      # leg launches the app more than a few times. The last UI leg runs the
+      # whole UI target less the tests the other UI legs name, so a new UI test
+      # runs without anyone having to list it. ONLY and SKIP are space-separated
+      # test identifiers, passed to xcodebuild as -only-testing and -skip-testing.
       matrix:
         include:
           - ios: 26
             runner: macos-26
+            suite: unit
+            skip: ChelaUITests
           - ios: 27
             runner: xcode-27
+            suite: unit
+            skip: ChelaUITests
+          - ios: 26
+            runner: macos-26
+            suite: ui
+            group: mark all read
+            runtime: oldest
+            devices: iPhone 16e,iPhone 17e
+            only: ChelaUITests/NoticeBannerUITests/testMarkAllReadTakesTheWholeBannerAway
+          - ios: 26
+            runner: macos-26
+            suite: ui
+            group: card
+            runtime: oldest
+            devices: iPhone 16e,iPhone 17e
+            only: ChelaUITests/NoticeBannerUITests/testTheXOnACardMarksItRead
+          - ios: 26
+            runner: macos-26
+            suite: ui
+            group: the rest
+            runtime: oldest
+            devices: iPhone 16e,iPhone 17e
+            only: ChelaUITests
+            skip: ChelaUITests/NoticeBannerUITests/testMarkAllReadTakesTheWholeBannerAway ChelaUITests/NoticeBannerUITests/testTheXOnACardMarksItRead
     # Named so the run list says which version a leg is, rather than the default
     # expansion of every matrix key including the image.
-    name: iOS ${{ matrix.ios }}
+    name: iOS ${{ matrix.ios }}${{ matrix.suite == 'ui' && format(' UI tests ({0})', matrix.group) || '' }}
     # The image is named in the matrix rather than `macos-latest`, so the
     # platform each leg runs on is a property of the file rather than of
     # whatever the alias resolves to that week.
@@ -515,6 +565,11 @@ jobs:
       - name: Test the release gate (asc)
         run: python3 scripts/asc_test.py
 
+      # The launch report below is Python too, so its parser is tested here the
+      # same way, before anything it reads exists.
+      - name: Test the UI launch report
+        run: python3 scripts/ui_launch_times_test.py
+
       # The derived data path is pinned so the two steps share one product tree
       # instead of each getting a private one, which is what makes the second
       # step a reuse rather than a rebuild.
@@ -566,17 +621,27 @@ jobs:
       #
       # The JSON form of the same command is used because it is the one that can
       # be parsed without guessing at column widths.
+      #
+      # The UI leg asks for the oldest minor instead (RUNTIME=oldest) and for a
+      # device by name in order of preference (DEVICES), because the lightest
+      # simulator is the point of that leg. A preferred device the image does not
+      # carry falls back to the first iPhone with a warning naming it, rather than
+      # failing a leg over a device name.
       - name: Resolve an available iPhone simulator
         env:
           IOS_MAJOR: ${{ matrix.ios }}
+          RUNTIME: ${{ matrix.runtime || 'newest' }}
+          DEVICES: ${{ matrix.devices || '' }}
         run: |
           set -eo pipefail
 
           sim="$(xcrun simctl list devices available --json | python3 -c '
           import json, os, re, sys
           wanted = int(os.environ["IOS_MAJOR"])
+          oldest = os.environ.get("RUNTIME") == "oldest"
+          preferred = [name.strip() for name in os.environ.get("DEVICES", "").split(",") if name.strip()]
           devices = json.load(sys.stdin)["devices"]
-          best = None
+          found = []
           for identifier, entries in devices.items():
               match = re.search(r"SimRuntime\.iOS-([0-9-]+)$", identifier)
               if not match:
@@ -586,12 +651,20 @@ jobs:
                   continue
               for device in entries:
                   if device.get("isAvailable") and device["name"].startswith("iPhone"):
-                      if best is None or version > best[0]:
-                          best = (version, device["udid"])
-                      break
-          if best is None:
+                      found.append((version, device["name"], device["udid"]))
+          if not found:
               sys.exit(1)
-          print(best[1])
+          versions = sorted({version for version, _, _ in found})
+          version = versions[0] if oldest else versions[-1]
+          on = [(name, udid) for v, name, udid in found if v == version]
+          for name in preferred:
+              for device_name, udid in on:
+                  if device_name == name:
+                      print(udid)
+                      sys.exit(0)
+          if preferred:
+              print("::warning::none of " + ", ".join(preferred) + " on this image for iOS " + ".".join(map(str, version)) + "; using " + on[0][0], file=sys.stderr)
+          print(on[0][1])
           ' || true)"
 
           if [ -z "$sim" ]; then
@@ -604,6 +677,17 @@ jobs:
           echo "SIMULATOR_UDID=$sim" >> "$GITHUB_ENV"
           echo "resolved simulator for iOS $IOS_MAJOR:"
           xcrun simctl list devices available | grep -F "$sim" || true
+
+      # xcodebuild used to boot the device itself inside the test step, and start
+      # testing as soon as it reported Booted, which comes while iOS is still
+      # starting its system apps and services. scripts/sim-boot.sh boots it and
+      # waits for `simctl bootstatus -b`, which returns when the boot has
+      # finished, and prints the simulator's process count and memory. The boot
+      # still comes after the compile, not underneath it, for the reason the note
+      # above the simulator resolution gives.
+      - name: Boot the simulator and wait for the boot to finish
+        timeout-minutes: 10
+        run: scripts/sim-boot.sh "$SIMULATOR_UDID"
 
       # Gate 2, the real verification: unit tests plus the parity suites, which
       # are the ones that compare the client's behaviour against core rather
@@ -621,16 +705,36 @@ jobs:
       # code. That is why this gate is build plus tests and stops there. The
       # smoke runs on Linux under a virtual display instead, in ci.yml's desktop
       # job, on every pull request.
+      #
+      # A version leg skips the UI test target and each UI leg runs its share of
+      # it, so between them every test runs once, and the UI tests run on the
+      # simulator picked for them above.
       - name: Test on the resolved simulator
+        env:
+          ONLY: ${{ matrix.only || '' }}
+          SKIP: ${{ matrix.skip || '' }}
         run: |
           set -eo pipefail
+
+          only=()
+          for id in $ONLY; do only+=("-only-testing:$id"); done
+          for id in $SKIP; do only+=("-skip-testing:$id"); done
+          echo "testing on this leg: only [$ONLY] skip [$SKIP]"
 
           xcodebuild \
             -project Chela.xcodeproj \
             -scheme Chela \
             -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
             -derivedDataPath "$DERIVED_DATA" \
-            test-without-building
+            "${only[@]}" \
+            test-without-building 2>&1 | tee "$RUNNER_TEMP/test.log"
+
+      # How long each UI test waited for the app to launch, in the run summary,
+      # and a warning on the run when one waited over 20 s. This is how a return
+      # of #190 shows itself before it fails a leg: the launch gets slow first.
+      - name: Report how long the UI tests waited for the app
+        if: always()
+        run: python3 scripts/ui_launch_times.py "$RUNNER_TEMP/test.log" --budget 20 --summary "$GITHUB_STEP_SUMMARY"
 
   # The publish half: the iOS client, built for a real device, signed with the
   # account's distribution certificate, and uploaded to TestFlight.
