@@ -318,22 +318,47 @@ jobs:
       # for it. Every leg still boots and tests on its runtime, which is what the
       # matrix is for. Issue #190 and PR #192 have the numbers measured on the
       # runner for each simulator tried.
+      #
+      # The UI tests are split across UI legs, each on a fresh simulator, so no
+      # leg launches the app more than a few times. The last UI leg runs the
+      # whole UI target less the tests the other UI legs name, so a new UI test
+      # runs without anyone having to list it. ONLY and SKIP are space-separated
+      # test identifiers, passed to xcodebuild as -only-testing and -skip-testing.
       matrix:
         include:
           - ios: 26
             runner: macos-26
             suite: unit
+            skip: ChelaUITests
           - ios: 27
             runner: xcode-27
             suite: unit
+            skip: ChelaUITests
           - ios: 26
             runner: macos-26
             suite: ui
+            group: mark all read
             runtime: oldest
             devices: iPhone 16e,iPhone 17e
+            only: ChelaUITests/NoticeBannerUITests/testMarkAllReadTakesTheWholeBannerAway
+          - ios: 26
+            runner: macos-26
+            suite: ui
+            group: card
+            runtime: oldest
+            devices: iPhone 16e,iPhone 17e
+            only: ChelaUITests/NoticeBannerUITests/testTheXOnACardMarksItRead
+          - ios: 26
+            runner: macos-26
+            suite: ui
+            group: the rest
+            runtime: oldest
+            devices: iPhone 16e,iPhone 17e
+            only: ChelaUITests
+            skip: ChelaUITests/NoticeBannerUITests/testMarkAllReadTakesTheWholeBannerAway ChelaUITests/NoticeBannerUITests/testTheXOnACardMarksItRead
     # Named so the run list says which version a leg is, rather than the default
     # expansion of every matrix key including the image.
-    name: iOS ${{ matrix.ios }}${{ matrix.suite == 'ui' && ' UI tests' || '' }}
+    name: iOS ${{ matrix.ios }}${{ matrix.suite == 'ui' && format(' UI tests ({0})', matrix.group) || '' }}
     # The image is named in the matrix rather than `macos-latest`, so the
     # platform each leg runs on is a property of the file rather than of
     # whatever the alias resolves to that week.
@@ -681,20 +706,20 @@ jobs:
       # smoke runs on Linux under a virtual display instead, in ci.yml's desktop
       # job, on every pull request.
       #
-      # A version leg skips the UI test target and the UI leg runs only it, so
-      # between them every test runs once, and the UI tests run on the
+      # A version leg skips the UI test target and each UI leg runs its share of
+      # it, so between them every test runs once, and the UI tests run on the
       # simulator picked for them above.
       - name: Test on the resolved simulator
         env:
-          SUITE: ${{ matrix.suite }}
+          ONLY: ${{ matrix.only || '' }}
+          SKIP: ${{ matrix.skip || '' }}
         run: |
           set -eo pipefail
 
-          case "$SUITE" in
-            ui) only=(-only-testing:ChelaUITests) ;;
-            unit) only=(-skip-testing:ChelaUITests) ;;
-            *) echo "::error::unknown suite '$SUITE'"; exit 1 ;;
-          esac
+          only=()
+          for id in $ONLY; do only+=("-only-testing:$id"); done
+          for id in $SKIP; do only+=("-skip-testing:$id"); done
+          echo "testing on this leg: only [$ONLY] skip [$SKIP]"
 
           xcodebuild \
             -project Chela.xcodeproj \

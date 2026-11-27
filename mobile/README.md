@@ -251,9 +251,9 @@ interface:
   nothing is shared across that boundary. Within a leg the compile gate and the
   test run use one `build-for-testing` product; within the release job the
   single archive is verified, exported and uploaded without being rebuilt.
-- The UI tests run on a leg of their own, on the oldest iOS 26 runtime the image
-  carries and its smallest iPhone, and the iOS 26 and 27 legs run the unit and
-  parity tests. A full simulator kept the runner's CPU at 100% and its memory
+- The UI tests are split across legs of their own, each on a fresh simulator on
+  the oldest iOS 26 runtime the image carries and its smallest iPhone, and the
+  iOS 26 and 27 legs run the unit and parity tests. A full simulator kept the runner's CPU at 100% and its memory
   full, which made the first UI launch take minutes and time out (#190). Each leg
   boots its simulator and waits for the boot to finish (`scripts/sim-boot.sh`)
   before it tests. The run summary lists how long every UI test waited for the

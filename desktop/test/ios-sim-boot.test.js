@@ -6,8 +6,9 @@
 // launch took up to 220 s and failed the leg. This holds the fix in place,
 // because each part is a line someone can drop for looking redundant:
 //
-//   the UI tests have their own leg   the version legs skip them, the UI leg
-//                                     runs only them, on the oldest runtime of
+//   the UI tests have their own legs  the version legs skip them, and the UI
+//                                     legs split them between them, each on a
+//                                     fresh simulator on the oldest runtime of
 //                                     its major and the smallest iPhone named
 //   the resolver honours that         the oldest minor and the preferred device
 //                                     are what it picks, and the version legs
@@ -96,22 +97,43 @@ function legs() {
   });
 }
 
-test('the UI tests run alone on their own leg, on the oldest runtime and a small iPhone', () => {
+test('every UI test runs once, on a UI leg of its own on the oldest runtime and a small iPhone', () => {
   const all = legs();
   const ui = all.filter((leg) => leg.suite === 'ui');
   const versions = all.filter((leg) => leg.suite === 'unit');
-  assert.equal(ui.length, 1, 'there must be exactly one UI test leg; there are ' + ui.length);
   assert.equal(versions.length + ui.length, all.length, 'every leg must name its suite, unit or ui');
   assert.deepEqual(versions.map((leg) => leg.ios).sort(), ['26', '27'], 'both versions keep a leg of their own, which is what the matrix is for');
-  assert.equal(ui[0].runtime, 'oldest', 'the UI leg must ask for the oldest runtime of its major, the lightest one the app supports');
-  assert.match(ui[0].devices || '', /^iPhone \S+e(,|$)/, 'the UI leg must name the small iPhone it prefers first');
+  for (const leg of versions) {
+    assert.equal(leg.skip, 'ChelaUITests', 'the iOS ' + leg.ios + ' leg must skip the UI test target and nothing else');
+    assert.equal(leg.only, undefined, 'the iOS ' + leg.ios + ' leg must run every other test');
+  }
+  assert.ok(ui.length >= 2, 'the UI tests must be split across UI legs; there are ' + ui.length);
+  for (const leg of ui) {
+    assert.equal(leg.runtime, 'oldest', 'the ' + leg.group + ' UI leg must ask for the oldest runtime of its major');
+    assert.match(leg.devices || '', /^iPhone \S+e(,|$)/, 'the ' + leg.group + ' UI leg must name the small iPhone it prefers first');
+    assert.ok(leg.group, 'every UI leg needs a group name, which is what tells them apart in the run list');
+  }
+  assert.equal(new Set(ui.map((leg) => leg.group)).size, ui.length, 'two UI legs share a group name');
+  const named = ui.filter((leg) => leg.only !== 'ChelaUITests');
+  const rest = ui.filter((leg) => leg.only === 'ChelaUITests');
+  assert.equal(rest.length, 1, 'exactly one UI leg must run the rest of the UI target, so a new UI test runs without being listed');
+  const picked = named.flatMap((leg) => leg.only.split(' '));
+  for (const id of picked) assert.match(id, /^ChelaUITests\/\w+\/test\w+$/, id + ' is not a single UI test');
+  assert.equal(new Set(picked).size, picked.length, 'a UI test is picked by two legs');
+  assert.deepEqual((rest[0].skip || '').split(' ').filter(Boolean).sort(), [...picked].sort(),
+    'the rest leg must skip exactly the tests the other UI legs run, or a test runs twice or not at all');
+  for (const id of picked) {
+    const [, cls, fn] = id.split('/');
+    const source = fs.readFileSync(path.join(ROOT, 'mobile', 'ChelaUITests', cls + '.swift'), 'utf8');
+    assert.match(source, new RegExp('func ' + fn + '\\('), id + ' names a test that does not exist, so its leg would run nothing');
+  }
   const steps = testJobSteps();
   const tests = steps[stepIndex(steps, 'Test on the resolved simulator')].block;
-  assert.match(tests, /SUITE: \$\{\{ matrix\.suite \}\}/, 'the test step no longer reads the leg\'s suite');
-  assert.match(tests, /ui\) only=\(-only-testing:ChelaUITests\)/, 'the UI leg no longer runs only the UI tests');
-  assert.match(tests, /unit\) only=\(-skip-testing:ChelaUITests\)/, 'the version legs no longer skip the UI tests');
-  assert.match(tests, /"\$\{only\[@\]\}"/, 'the suite selection is no longer passed to xcodebuild');
-  assert.match(pipeline, /name: iOS \$\{\{ matrix\.ios \}\}\$\{\{ matrix\.suite == 'ui' && ' UI tests' \|\| '' \}\}/, 'the UI leg must be named apart from the version legs in the run list');
+  assert.match(tests, /ONLY: \$\{\{ matrix\.only \|\| '' \}\}/, 'the test step no longer reads the leg\'s tests');
+  assert.match(tests, /SKIP: \$\{\{ matrix\.skip \|\| '' \}\}/, 'the test step no longer reads the leg\'s skips');
+  assert.match(tests, /for id in \$ONLY; do only\+=\("-only-testing:\$id"\); done/, 'ONLY is no longer passed as -only-testing');
+  assert.match(tests, /for id in \$SKIP; do only\+=\("-skip-testing:\$id"\); done/, 'SKIP is no longer passed as -skip-testing');
+  assert.match(tests, /"\$\{only\[@\]\}"/, 'the selection is no longer passed to xcodebuild');
 });
 
 test('the resolver picks the oldest minor and the preferred device for the UI leg, the newest for the others', () => {
